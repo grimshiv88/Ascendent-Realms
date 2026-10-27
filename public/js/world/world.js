@@ -5,7 +5,7 @@ import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
 import { buildCave } from './caves.js';
 import { createCreatures } from './creatures.js';
-import { BREAKABLE } from './scenery.js';
+import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
 import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT } from '../data/world-layout.mjs';
@@ -219,7 +219,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     onHitPlayer(m) {
       if (!game || dead) return;
       const s = game.stats();
-      const dmg = Math.max(1, Math.round(m.atk * (0.85 + Math.random() * 0.3) - s.def * 0.4));
+      const dmg = Math.max(1, Math.round(m.atk * (0.85 + Math.random() * 0.3) - s.def * buffed('def') * 0.4));
       lastHurt = clock.elapsedTime;
       floatText(`-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
       if (game.damage(dmg)) defeated(m);
@@ -256,32 +256,76 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     attackT = 0;
     swingDone = false;
   }
+  // Skills that raise ATK or DEF for a while
+  const buffs = { atk: { pct: 0, until: 0 }, def: { pct: 0, until: 0 } };
+  const buffed = (stat) => (clock.elapsedTime < buffs[stat].until ? 1 + buffs[stat].pct / 100 : 1);
+
+  // Hit a monster with your weapon (or fists); `mult` and `magic` come from skills
+  function damageMonster(m, mult = 1, magic = null) {
+    const w = game?.weapon();
+    const s = game.stats();
+    const useMagic = magic ?? !!w?.magic;
+    let dmg = (w || magic ? (useMagic ? s.matk : s.atk) : s.base.atk * 0.6 + 2) * mult * buffed('atk');
+    dmg = dmg * (0.9 + Math.random() * 0.2) - m.def * 0.5;
+    const crit = Math.random() < 0.1 + Math.min(character.stats.dex * 0.002, 0.25);
+    if (crit) dmg *= 1.6;
+    dmg = Math.max(1, Math.round(dmg));
+    floatText(`${dmg}${crit ? '!' : ''}`, new THREE.Vector3(m.x, m.y + m.height + 0.2, m.z), crit ? 'crit' : 'dmg');
+    const reward = creatures.hit(m, dmg);
+    if (reward) {
+      // monsters far below your level teach you little
+      const gap = game.character.level - m.level;
+      reward.exp = Math.max(1, Math.round(reward.exp * (gap <= 3 ? 1 : Math.max(0.1, 1 - (gap - 3) * 0.15))));
+      floatText(`+${reward.exp} EXP`, new THREE.Vector3(m.x, m.y + m.height + 0.7, m.z), 'exp');
+      game.gainExp(reward.exp);
+      game.gainCoins(reward.coins);
+      for (const [id, n] of reward.drops) game.addItem(id, n);
+      onEvent?.('kill', reward);
+    }
+  }
+
+  // Use a skill (see data/skills.mjs). Returns 'ok', 'sp' (not enough SP), 'none' (nothing to hit) or 'busy'.
+  function useSkill(sk) {
+    if (!game || dead || resting()) return 'busy';
+    const c = game.character;
+    if (c.sp < sk.sp) return 'sp';
+    const reachNear = bodyR + 1.8 * Math.max(0.8, bodyH / 1.8);
+    if (sk.type === 'strike' || sk.type === 'bolt') {
+      const m = creatures.target(pos.x, pos.z, heading, sk.type === 'bolt' ? sk.reach : reachNear + 0.4);
+      if (!m) return 'none';
+      damageMonster(m, sk.mult, sk.magic || null);
+    } else if (sk.type === 'sweep') {
+      const near = creatures.list.filter((m) => !m.dead && Math.hypot(m.x - pos.x, m.z - pos.z) - m.radius < sk.radius);
+      if (!near.length) return 'none';
+      for (const m of near) damageMonster(m, sk.mult, sk.magic || null);
+    } else if (sk.type === 'dash') {
+      // rush forward, stopping at the first foe in the way
+      for (let d = 0; d < sk.dist; d += 0.4) {
+        pos.x += Math.sin(heading) * 0.4; pos.z += Math.cos(heading) * 0.4;
+        colliders.push(pos, bodyR);
+        const m = creatures.target(pos.x, pos.z, heading, reachNear);
+        if (m) { damageMonster(m, sk.mult); break; }
+      }
+      pos.y = Math.max(pos.y, heightAt(pos.x, pos.z));
+    } else if (sk.type === 'heal') {
+      game.heal(game.stats().hp * sk.pct / 100);
+      floatText(`+${Math.round(game.stats().hp * sk.pct / 100)} HP`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'exp');
+    } else if (sk.type === 'buff') {
+      buffs[sk.stat] = { pct: sk.pct, until: clock.elapsedTime + sk.secs };
+    }
+    c.sp = Math.max(0, c.sp - sk.sp);
+    game.touch('sp');
+    if (sk.type !== 'heal' && sk.type !== 'buff') { attackT = 0; swingDone = true; } // swing for show
+    say(sk.name, 'exp');
+    return 'ok';
+  }
+
   function resolveSwing() {
     const w = game?.weapon();
     const reach = bodyR + (w ? (w.type === 'dagger' ? 1.1 : w.type === 'staff' ? 1.8 : 1.6) : 0.9) * Math.max(0.8, bodyH / 1.8);
     // monsters first
     const m = creatures.target(pos.x, pos.z, heading, reach);
-    if (m) {
-      const s = game.stats();
-      let dmg = w ? (w.magic ? s.matk : s.atk) : s.base.atk * 0.6 + 2;
-      dmg = dmg * (0.9 + Math.random() * 0.2) - m.def * 0.5;
-      const crit = Math.random() < 0.1 + Math.min(character.stats.dex * 0.002, 0.25);
-      if (crit) dmg *= 1.6;
-      dmg = Math.max(1, Math.round(dmg));
-      floatText(`${dmg}${crit ? '!' : ''}`, new THREE.Vector3(m.x, m.y + m.height + 0.2, m.z), crit ? 'crit' : 'dmg');
-      const reward = creatures.hit(m, dmg);
-      if (reward) {
-        // monsters far below your level teach you little
-        const gap = game.character.level - m.level;
-        reward.exp = Math.max(1, Math.round(reward.exp * (gap <= 3 ? 1 : Math.max(0.1, 1 - (gap - 3) * 0.15))));
-        floatText(`+${reward.exp} EXP`, new THREE.Vector3(m.x, m.y + m.height + 0.7, m.z), 'exp');
-        game.gainExp(reward.exp);
-        game.gainCoins(reward.coins);
-        for (const [id, n] of reward.drops) game.addItem(id, n);
-        onEvent?.('kill', reward);
-      }
-      return;
-    }
+    if (m) { damageMonster(m); return; }
     // then bushes and small trees in front of you
     const fx = pos.x + Math.sin(heading) * reach * 0.6, fz = pos.z + Math.cos(heading) * reach * 0.6;
     let best = null, bestD = Infinity;
@@ -295,7 +339,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       say(best.kind === 'rock' ? 'Too hard to break' : best.kind === 'wall' ? 'Solid rock' : 'Too big to break by hand');
       return;
     }
-    best.hp -= w ? w.chop : FIST.chop;
+    // big trees need an axe and strength (or huge strength); tell the player what it takes
+    const need = info.needs;
+    const str = game.character.stats.str;
+    const chop = w ? w.chop : FIST.chop;
+    if (need && !((chop >= need.chop && str >= need.str) || str >= need.bare)) {
+      say(`${info.label}: ${breakNeeds(best.kind)}`, 'hurt');
+      return;
+    }
+    best.hp -= chop * (1 + str / 100); // stronger arms chop faster
     floatText(best.hp > 0 ? 'Crack!' : '', new THREE.Vector3(best.x, best.y + best.height * 0.6, best.z), 'dmg');
     if (best.hp <= 0) {
       land.breakThing(best);
@@ -572,10 +624,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         regenAcc = 0;
         const s = game.stats();
         const c = game.character;
-        if (t - lastHurt > 6 && (c.hp < s.hp || c.sp < s.sp)) {
-          c.sp = Math.min(s.sp, c.sp + s.sp * 0.02);
-          game.heal(s.hp * 0.015);
-        }
+        // SP always comes back slowly (faster at rest); HP only when nothing has hit you for a while
+        if (c.sp < s.sp) { c.sp = Math.min(s.sp, c.sp + s.sp * (t - lastHurt > 6 ? 0.03 : 0.012)); game.touch('sp'); }
+        if (t - lastHurt > 6 && c.hp < s.hp) game.heal(s.hp * 0.015);
       }
     }
 
@@ -639,6 +690,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   return {
     position: () => ({ x: pos.x, z: pos.z, heading }),
     attack,
+    useSkill,
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
     sleep: toggleSleep,

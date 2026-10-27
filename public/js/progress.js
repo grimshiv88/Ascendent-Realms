@@ -3,6 +3,7 @@
 import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
 import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult } from './data/items.mjs';
 import { fillBoard, progressOf } from './quests.js';
+import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, RESERVED_KEYS, skillOffers } from './data/skills.mjs';
 
 const BAG_SLOTS = 30;
 const uid = () => `g${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
@@ -13,6 +14,10 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.boosts ||= [];
   c.torches ||= [];
   c.fatigue ??= 0;
+  // Skills: learned ones, the ones ready on keys (the rest are kept in storage), and choices still to make
+  c.skills = (c.skills || []).filter((id) => SKILLS[id]);
+  c.skillBar = (c.skillBar || []).filter((b) => c.skills.includes(b?.id));
+  c.skillPicks ??= Math.max(0, Math.floor(c.level / UPGRADE_EVERY) - c.skills.length);
   // time away counts as rest: fatigue falls 2 points per real minute you were gone
   if (c.savedAt) c.fatigue = Math.max(0, c.fatigue - ((Date.now() - c.savedAt) / 60000) * 2);
   // Gear doesn't stack: each piece has its own id so it can be equipped and upgraded
@@ -53,13 +58,14 @@ export function createProgress(c, { save, onChange, onEvent }) {
   let saveTimer = null;
   function changed(what) {
     onChange?.(what);
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => save?.(snapshot()), 1500);
+    // saved at most every 1.5 s, so a steady trickle of changes (SP coming back) still gets saved
+    saveTimer ??= setTimeout(() => { saveTimer = null; save?.(snapshot()); }, 1500);
   }
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     quests: c.quests, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
+    skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks,
   });
 
   // worn gear doesn't take up room in the bag
@@ -213,6 +219,12 @@ export function createProgress(c, { save, onChange, onEvent }) {
         c.coins += (key ? 5 : 1) * (20 + c.level * 10);
         c.uniquePoints += key ? 5 : 1;
         c.stats[CLASSES[c.cls].main] += 1;
+        // every 10th level: a new skill to choose, and (between evolutions) a little more of every stat
+        if (c.level % UPGRADE_EVERY === 0) {
+          c.skillPicks += 1;
+          if (!key) for (const k of Object.keys(c.stats)) c.stats[k] += UPGRADE_STATS;
+          onEvent?.('upgrade', { level: c.level, evolution: key });
+        }
         c.hp = stats().hp;
         c.sp = stats().sp;
       }
@@ -261,6 +273,35 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (ready.length) changed('quests');
       return ready;
     },
+    // ---------- skills ----------
+    skillOffers: () => (c.skillPicks > 0 ? skillOffers(c) : []),
+    learnSkill(id) {
+      if (c.skillPicks <= 0 || !skillOffers(c).includes(id)) return false;
+      c.skills.push(id);
+      c.skillPicks -= 1;
+      if (c.skillBar.length < SKILL_BAR) this.readySkill(id);
+      changed('skills');
+      return true;
+    },
+    // put a stored skill on the bar, on the first free key
+    readySkill(id) {
+      if (!c.skills.includes(id) || c.skillBar.some((b) => b.id === id) || c.skillBar.length >= SKILL_BAR) return false;
+      const key = DEFAULT_KEYS.find((k) => !c.skillBar.some((b) => b.key === k)) || null;
+      c.skillBar.push({ id, key });
+      changed('skills');
+      return true;
+    },
+    storeSkill(id) { c.skillBar = c.skillBar.filter((b) => b.id !== id); changed('skills'); },
+    // any key the game doesn't already use; a key taken by another skill moves to this one
+    setSkillKey(id, code) {
+      if (RESERVED_KEYS.includes(code)) return 'reserved';
+      const b = c.skillBar.find((x) => x.id === id);
+      if (!b) return 'none';
+      for (const o of c.skillBar) if (o.key === code) o.key = null;
+      b.key = code;
+      changed('skills');
+      return 'ok';
+    },
     // Something changed that only the HUD shows (fatigue ticking)
     touch(what) { changed(what); },
     // Torches: take one from the bag and stand it in the ground (up to 10 burn at once)
@@ -271,7 +312,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       changed('torches');
       return 'ok';
     },
-    saveNow() { clearTimeout(saveTimer); return save?.(snapshot()); },
+    saveNow() { clearTimeout(saveTimer); saveTimer = null; return save?.(snapshot()); },
     // the server's count after it charged you (for land)
     setCoins(n) { c.coins = n; changed('coins'); },
   };

@@ -629,3 +629,26 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .rk-level { text-align: right; font-weight: 600; }
 .rankings small { font: 0.8rem Georgia, serif; color: #b9ab8a; }
 .sys-sell-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
+/* Skill bar: bottom middle on desktop, above the attack button on touch screens */
+#skill-bar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 8px; z-index: 2; }
+.sk-btn { position: relative; width: 56px; height: 56px; border-radius: 10px; border: 2px solid var(--gold-2); background: radial-gradient(circle at 40% 35%, #2a2414, #0d0905); color: #fff3cf; font-size: 1.6rem; cursor: pointer; overflow: hidden; touch-action: none; padding: 0; }
+.sk-btn kbd { position: absolute; right: 3px; bottom: 2px; font: 700 0.7rem 'Oswald', sans-serif; color: #f2b51e; text-shadow: 0 0 3px #000; }
+.sk-btn .sk-cool { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0, 0, 0, 0.65); pointer-events: none; }
+.sk-btn.no-sp { filter: grayscale(0.8) brightness(0.7); }
+@media (pointer: coarse) {
+  #skill-bar { left: auto; right: 18px; bottom: 128px; transform: none; display: grid; grid-template-columns: repeat(2, 56px); direction: rtl; }
+}
+
+/* Skills window */
+.skills-window { text-transform: none; }
+.sk-offers { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.sk-offer { display: grid; gap: 4px; justify-items: start; text-align: left; padding: 12px; background: #0d0a05; border: 1px solid #c8921a; border-radius: 6px; color: #fff3cf; font: inherit; cursor: pointer; }
+.sk-offer:hover { background: #1a1408; }
+.sk-offer small, .sk-name small { font: 0.85rem Georgia, serif; color: #b9ab8a; }
+.sk-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 6px; background: #0d0a05; border: 1px solid #4a3608; border-radius: 4px; }
+.sk-name { flex: 1; display: grid; }
+.sk-icon { font-size: 1.5rem; width: 34px; text-align: center; }
+.sk-cost { display: block; color: #8fb7ff; }
+.sk-key { min-width: 92px; padding: 6px 10px; border-radius: 4px; border: 1px solid #c8921a; background: #2a2010; color: #f2b51e; font: 600 0.85rem 'Oswald', sans-serif; cursor: pointer; }
+.sk-key.waiting { background: #f2b51e; color: #1a1206; }

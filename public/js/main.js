@@ -14,6 +14,8 @@ import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
 import { fillIcons } from './characters/icons.js';
+import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
+import { SKILLS } from './data/skills.mjs';
 
 paintCloudBanks();
 
@@ -125,13 +127,54 @@ function startGame(character) {
       // HP ticks often while resting, so the HUD redraws at most once a frame
       if (!hudQueued) { hudQueued = true; requestAnimationFrame(() => { hudQueued = false; drawHud(); }); }
       if (what === 'gear') world?.refreshGear();
-      if (what !== 'hp' && what !== 'fatigue' && !overlay.classList.contains('hidden')) drawPanel();
+      if (what !== 'hp' && what !== 'fatigue' && what !== 'sp' && !overlay.classList.contains('hidden')) drawPanel();
+      if (what === 'skills') drawSkillBar();
     },
     onEvent(type, data) {
       if (type === 'level') { world?.say(`Level ${data}!`, 'exp'); showArea(`Level ${data}! New Stat Points and a purse of coins.`); }
       if (type === 'bag-full') world?.say('Your bag is full', 'hurt');
+      if (type === 'upgrade') showArea(data.evolution ? `Level ${data.level}! A new skill to choose (K).` : `Level ${data.level} upgrade! Every stat +2, and a new skill to choose (K).`);
     },
   });
+
+  // ---------- skills ----------
+  const skillBar = $('skill-bar');
+  let barSig = '';
+  function drawSkillBar() {
+    const sig = JSON.stringify(character.skillBar);
+    if (sig === barSig) return;
+    barSig = sig;
+    renderSkillBar(skillBar, game);
+  }
+  const readyAt = {}; // skill id -> time (ms) it can be used again
+  const cooling = (id) => Math.max(0, (readyAt[id] || 0) - performance.now()) / (SKILLS[id].cd * 1000);
+  function trySkill(id) {
+    const sk = SKILLS[id];
+    if (!sk || !world) return;
+    if (cooling(id) > 0) { world.say(`${sk.name}: not ready yet`, 'hurt'); return; }
+    const r = world.useSkill(sk);
+    if (r === 'sp') world.say(`Not enough SP (${sk.name} needs ${sk.sp})`, 'hurt');
+    else if (r === 'none') world.say('Nothing in reach', 'hurt');
+    else if (r === 'ok') readyAt[id] = performance.now() + sk.cd * 1000;
+  }
+  skillBar.addEventListener('pointerdown', (e) => {
+    const b = e.target.closest('[data-skill]');
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    trySkill(b.dataset.skill);
+  });
+  setInterval(() => updateSkillBar(skillBar, game, cooling), 200);
+  // choosing a key for a skill: the next key pressed is the one
+  window.addEventListener('keydown', (e) => {
+    if (!ui.binding) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.code !== 'Escape') {
+      const r = game.setSkillKey(ui.binding, e.code);
+      ui.skillMsg = r === 'reserved' ? `${e.key.toUpperCase()} is already used by the game. Pick another key.` : r === 'ok' ? `${SKILLS[ui.binding].name} is now on ${e.key.toUpperCase()}.` : '';
+    }
+    ui.binding = null;
+    drawPanel();
+  }, true);
 
   // Land: L shows the grid of plots around you; tap one to see it in the Land window
   function toggleLand() {
@@ -190,6 +233,7 @@ function startGame(character) {
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })));
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '');
+    else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'rankings') renderRankings(overlay, ui.top, character.name);
     else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy });
     else overlay.innerHTML = HELP_HTML;
@@ -200,7 +244,7 @@ function startGame(character) {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
     world?.releaseMouse();
     overlay.dataset.panel = name;
-    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = '';
+    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.skillMsg = ''; ui.binding = null;
     if (name === 'rankings') {
       ui.top = null;
       game.saveNow();
@@ -294,6 +338,10 @@ function startGame(character) {
     if (t('data-land-change') != null) { landAction(() => api.landPurpose(ui.plot.ix, ui.plot.iz, ui.landChoice), 'Purpose changed.'); return; }
     if (t('data-land-prepare') != null) { landAction(() => api.landPrepare(ui.plot.ix, ui.plot.iz), 'Cleared and levelled. Ready to build on.'); return; }
     if (t('data-signout') != null) { logOut(); return; }
+    if ((v = t('data-learn')) != null) { if (game.learnSkill(v)) ui.skillMsg = `You learned ${SKILLS[v].name}!`; drawPanel(); return; }
+    if ((v = t('data-ready')) != null) { game.readySkill(v); ui.skillMsg = ''; drawPanel(); return; }
+    if ((v = t('data-store')) != null) { game.storeSkill(v); ui.skillMsg = `${SKILLS[v].name} stored.`; drawPanel(); return; }
+    if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }
     if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
@@ -358,6 +406,8 @@ function startGame(character) {
       if (e.code === 'KeyM') openPanel('map');
       if (e.code === 'KeyO') openPanel('settings');
       if (e.code === 'KeyR') openPanel('rankings');
+      if (e.code === 'KeyK') openPanel('skills');
+      if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); }
       if (e.code === 'KeyL') toggleLand();
       // Esc opens the options; Esc again (or on any window) closes it
       if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('settings'); else closePanel(); }
@@ -372,6 +422,7 @@ function startGame(character) {
     const p = world?.position();
     if (p) for (const title of game.questVisit(p.x, p.z)) questReady(title);
   }, 1500);
+  drawSkillBar();
   // the minimap in the corner follows you; tap it for the world map
   createMinimap($('minimap'), () => world?.position(), () => openPanel('map'));
   openPanel('help');

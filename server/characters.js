@@ -1,6 +1,7 @@
 // Character creation and saving. The rules live in the shared game-data module.
 const db = require('./db');
 const { newCharacter } = require('../public/js/data/game-data.mjs');
+const { SKILLS } = require('../public/js/data/skills.mjs');
 
 function load(accountId) {
   const row = db.prepare('SELECT data FROM characters WHERE account_id = ?').get(accountId);
@@ -87,7 +88,13 @@ function saveProgress(accountId, p) {
   const torches = (Array.isArray(p.torches) ? p.torches.slice(0, 10) : [])
     .filter((t) => Number.isFinite(t?.x) && Number.isFinite(t?.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6)
     .map((t) => ({ x: t.x, z: t.z }));
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, torches });
+  // Skills: known skill ids, up to 6 on keys
+  const skills = (Array.isArray(p.skills) ? p.skills.slice(0, 200) : []).filter((id) => typeof id === 'string' && SKILLS[id]);
+  const skillBar = (Array.isArray(p.skillBar) ? p.skillBar.slice(0, 6) : [])
+    .filter((b) => skills.includes(b?.id) && (b.key === null || (typeof b.key === 'string' && /^[A-Za-z0-9]{1,20}$/.test(b.key))))
+    .map((b) => ({ id: b.id, key: b.key }));
+  const skillPicks = int(p.skillPicks ?? 0, 0, 1000) ?? 0;
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, torches, skills, skillBar, skillPicks });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };

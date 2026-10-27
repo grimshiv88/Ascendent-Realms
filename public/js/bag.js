@@ -14,7 +14,7 @@ export function tabsHtml(active) {
 }
 
 function describe(it, plus = 0) {
-  if (it.kind === 'weapon') return `${it.magic ? 'MATK' : 'ATK'} +${upgraded(it.power, plus)} · ${it.speed}s per swing${it.chop >= 2 ? ' · chops trees fast' : ''}`;
+  if (it.kind === 'weapon') return `${it.magic ? 'MATK' : 'ATK'} +${upgraded(it.power, plus)} · ${it.speed}s per swing${it.chop >= 4 ? ' · fells even great trees' : it.chop >= 3 ? ' · fells big trees' : it.chop >= 1.5 ? ' · chops young trees fast' : ''}`;
   if (it.kind === 'armour') return `${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
   if (it.kind === 'food') return [it.heal && `Restores ${it.heal} HP`, it.sp && (it.sp > 999 ? 'Fills SP' : `Restores ${it.sp} SP`), it.boost && `+${it.boost.sp} max SP for ${it.boost.minutes} min`].filter(Boolean).join(' · ');
   if (it.id === 'torch') return 'Lights the night and keeps monsters away';

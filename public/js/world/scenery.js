@@ -178,13 +178,27 @@ const FLORA = {
   sun: [['cactus', 0, 0.012], ['rock', 0, 0.025]],
 };
 // Small things you can break with your hands (or a weapon): hit points, and what they drop
+// What can be broken, and what it takes. Big trees need an axe (`chop`: a Hand Axe is 3, a War Axe 4)
+// and enough Strength, or a great deal of Strength to fell them with whatever you hold (`bare`).
 export const BREAKABLE = {
   young: { hp: 3, drops: [['log', 2, 3]], label: 'Young tree' },
   bush: { hp: 1, drops: [['berries', 2, 4]], label: 'Berry bush' },
   dead: { hp: 2, drops: [['log', 1, 2]], label: 'Dead tree' },
   cactus: { hp: 2, drops: [['cactus_flesh', 1, 2]], label: 'Cactus' },
   reeds: { hp: 1, drops: [['reed', 2, 4]], label: 'Reeds' },
+  pine: { hp: 6, drops: [['log', 4, 6]], label: 'Pine', needs: { chop: 3, str: 15, bare: 40 } },
+  snowpine: { hp: 6, drops: [['log', 4, 6]], label: 'Snow pine', needs: { chop: 3, str: 18, bare: 45 } },
+  oak: { hp: 8, drops: [['log', 5, 8]], label: 'Oak', needs: { chop: 3, str: 22, bare: 50 } },
+  swamp: { hp: 9, drops: [['log', 5, 8], ['reed', 1, 2]], label: 'Swamp tree', needs: { chop: 3, str: 28, bare: 60 } },
+  glow: { hp: 8, drops: [['log', 3, 5], ['fae_dust', 1, 2]], label: 'Glowing fae tree', needs: { chop: 3, str: 32, bare: 70 } },
+  great: { hp: 24, drops: [['log', 15, 25]], label: 'Great tree', needs: { chop: 4, str: 60, bare: 150 } },
 };
+// "Needs an axe and 22 STR (or 50 STR without one)"
+export function breakNeeds(kind) {
+  const n = BREAKABLE[kind]?.needs;
+  if (!n) return '';
+  return `Needs ${n.chop >= 4 ? 'a War Axe' : 'an axe'} and ${n.str} STR (or ${n.bare} STR without one)`;
+}
 const ROCK_TINT = { heart: '#86817a', peaks: '#4a4440', warrens: '#a87a52', fae: '#8a9a90', mire: '#5e5a4a', frost: '#9aa0a8', sun: '#c09a68' };
 const SOLID = { pine: 0.45, snowpine: 0.45, oak: 0.7, dead: 0.3, swamp: 0.9, glow: 0.4, cactus: 0.4, young: 0.15, great: 3.2, bush: 0.4 };
 
@@ -280,7 +294,7 @@ export function scenery() {
         if (BREAKABLE[kind]) {
           // things you can break keep a link to their instance so they can be removed
           const e = entry || { x: p.x, z: p.z, r: 0 };
-          Object.assign(e, { kind, mesh, index: i, y: p.y, hp: BREAKABLE[kind].hp, key: spotKey(kind, p.x, p.z), height: kind === 'young' ? 3.5 * sc : 1.2 * sc });
+          Object.assign(e, { kind, mesh, index: i, y: p.y, hp: BREAKABLE[kind].hp, key: spotKey(kind, p.x, p.z), height: kind === 'young' ? 3.5 * sc : BREAKABLE[kind].needs ? 5 * sc : 1.2 * sc });
           solid.push(e);
         } else if (entry) {
           entry.kind = kind;

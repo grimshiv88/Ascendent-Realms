@@ -1,9 +1,10 @@
 // The in-game HUD and the Status Window (laid out like Mohammed's black-and-gold design).
 import {
-  RACES, CLASSES, ADVANCEMENTS, derivedStats, expToNext, rankFor,
+  RACES, CLASSES, ADVANCEMENTS, KEY_LEVELS, derivedStats, expToNext, rankFor,
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
 import { gameTime, clockText } from './data/clock.mjs';
+import { SKILLS, UPGRADE_EVERY } from './data/skills.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -24,6 +25,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
       <div class="hud-bar fatigue" title="Fatigue: sleep (Z) by a fire or torch before it fills"><span style="width:${Math.min(100, c.fatigue || 0)}%"></span><b>FATIGUE ${Math.round(c.fatigue || 0)} / 100</b></div>
       <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
+      ${c.skillPicks ? `<button type="button" class="hud-points" data-open="skills">A new skill to choose (K)</button>` : ''}
     </div>
     <div class="hud-menu">
       <button type="button" class="menu-btn" data-menu aria-label="Menu" aria-expanded="${menuOpen}">
@@ -34,6 +36,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
         <button type="button" data-open="bag">Bag <kbd>I</kbd></button>
         <button type="button" data-open="shop">Shop <kbd>B</kbd></button>
         <button type="button" data-open="quests">Quests <kbd>Q</kbd></button>
+        <button type="button" data-open="skills">Skills <kbd>K</kbd></button>
         <button type="button" data-open="map">Map <kbd>M</kbd></button>
         <button type="button" data-open="land">Buy land <kbd>L</kbd></button>
         <button type="button" data-open="help">Controls <kbd>H</kbd></button>
@@ -44,6 +47,9 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
     </div>
     </div>`;
 }
+
+// the next 10th level that isn't an evolution
+const nextUpgrade = (level) => { let l = (Math.floor(level / UPGRADE_EVERY) + 1) * UPGRADE_EVERY; while (KEY_LEVELS.includes(l)) l += UPGRADE_EVERY; return l; };
 
 // `pending` holds Stat Points placed with the + buttons but not yet confirmed
 export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.level)) {
@@ -73,7 +79,8 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('LVL', c.level)}
           ${row('Rank', rankFor(c.level))}
           ${row('Unique', `<span class="sw-unique" title="${esc(c.uniqueSkill.text)} Sealed: ${esc(c.uniqueSkill.sealed)}">${esc(c.uniqueSkill.name)}</span> <small>(${5 - c.uniqueSkill.sealsOpen} seals)</small>`)}
-          ${isMonster ? row('Next evolution', '???') : row('Next advancement', '???')}
+          ${row(isMonster ? 'Next evolution' : 'Next advancement', `??? <small>at Lv ${KEY_LEVELS.find((k) => k > c.level) ?? '—'}</small>`)}
+          ${row('Next upgrade', `Lv ${nextUpgrade(c.level)} <small>(stronger, + a new skill)</small>`)}
         </dl>
       </div>
       <hr>
@@ -103,7 +110,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
       <dl>
         ${row('Titles', c.titles.length ? c.titles.map(esc).join(', ') : 'None yet')}
         ${row('Elements', c.elements.join(', '))}
-        ${row('Skills', c.skills.length ? c.skills.map(esc).join(', ') : 'None yet')}
+        ${row('Skills', c.skills.length ? c.skills.map((id) => esc(SKILLS[id]?.name || id)).join(', ') : 'None yet')}${c.skillPicks ? ` <button type="button" class="hud-points" data-open="skills">Choose a new skill (K)</button>` : ''}
       </dl>
       <p class="sw-points">Unspent points: <b>${left}</b></p>
       ${placed ? `<p class="sw-confirm">Points can't be taken back once confirmed.
@@ -165,10 +172,12 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Jump</dt><dd>Space</dd></div>
       <div class="sw-row"><dt>Camera</dt><dd>Click the game once, then move the mouse to look around and steer; scroll to zoom</dd></div>
       <div class="sw-row"><dt>Attack / punch</dt><dd>Click, or F (touch: the fist button)</dd></div>
+      <div class="sw-row"><dt>Trees</dt><dd>Young and dead trees, bushes: by hand. Pines: an axe and 15 STR (or 40 STR). Oaks: an axe and 22 STR (or 50). Swamp and fae trees: an axe and 28 to 32 STR. Great trees: a War Axe and 60 STR. Hitting a tree also tells you what it needs.</dd></div>
       <div class="sw-row"><dt>Options</dt><dd>Esc (also frees the mouse)</dd></div>
       <div class="sw-row"><dt>Status</dt><dd>C</dd></div>
       <div class="sw-row"><dt>Bag and shop</dt><dd>I and B</dd></div>
       <div class="sw-row"><dt>Quests</dt><dd>Q</dd></div>
+      <div class="sw-row"><dt>Skills</dt><dd>K opens them. Use a skill with its key (1 to 6 at first; you can change them), or tap its button</dd></div>
       <div class="sw-row"><dt>Sleep</dt><dd>Z, by a campfire or a torch (lowers Fatigue)</dd></div>
       <div class="sw-row"><dt>Place a torch</dt><dd>T (buy torches in the shop; they keep monsters away at night)</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
