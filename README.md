@@ -1,6 +1,6 @@
 # Ascendent Realms
 
-An online 3D adventure game where you play as a non-human race (Elf, Dwarf, Hobbit, Giant, Beastkin) or a monster (Goblin, Slime, Fairy, Lizardman, Naga, Dragonewt), pick a class, and rise through the ranks. Only one character per server can become King.
+An online 3D adventure game where you play as a non-human race (Elf, Dwarf, Hobbit, Giant, Beastkin) or a monster (Goblin, Slime, Fairy, Lizardman, Naga, Dragonewt), pick a class, and rise through the ranks. Each class has a single King crown for Players and one for Monsters, and only one character can hold each at a time.
 
 ## Running it on your computer
 
