@@ -8,7 +8,7 @@ const canvas = document.getElementById('c');
 const { renderer, scene, camera, resize } = makeStage(canvas);
 
 const params = new URLSearchParams(location.search);
-let race = params.get('race') || 'lizardman';
+let race = params.get('race') || 'goblin';
 let form = params.get('form') || 'monster';
 let lineup = new THREE.Group();
 scene.add(lineup);
@@ -18,7 +18,9 @@ function rebuild() {
   lineup = new THREE.Group();
   const isMonster = RACES[race].side === 'monster';
   const names = isMonster ? EVOLUTIONS[race] : ADVANCEMENTS.swordsman;
-  const chars = names.map((_, stage) => buildCharacter({ race, form: isMonster ? form : 'humanoid', stage }));
+  const only = params.get('stage');
+  const stages = names.map((_, i) => i).filter((i) => only === null || String(i) === only);
+  const chars = stages.map((stage) => buildCharacter({ race, form: isMonster ? form : 'humanoid', stage }));
   // spread them out so each has room
   let x = 0;
   const xs = [];
@@ -38,13 +40,13 @@ function rebuild() {
   scene.add(lineup);
   const tallest = Math.max(...chars.map((c) => c.userData.box.y));
   const width = xs[xs.length - 1] - xs[0] + 2;
-  const dist = Math.max(width / (2 * Math.tan((camera.fov * Math.PI) / 360) * camera.aspect), tallest * 1.6) * 1.05;
+  const dist = Math.max(width / (2 * Math.tan((camera.fov * Math.PI) / 360) * camera.aspect), tallest * (stages.length === 1 ? 2.1 : 1.6)) * 1.05;
   camera.position.set(0, tallest * 0.6, dist);
   camera.lookAt(0, tallest * 0.42, 0);
 
   const labels = document.getElementById('labels');
-  labels.style.gridTemplateColumns = `repeat(${names.length}, 1fr)`;
-  labels.innerHTML = names.map((n, i) => `<div><b>${n}</b>Level ${EVOLUTION_LEVELS[i]}</div>`).join('');
+  labels.style.gridTemplateColumns = `repeat(${stages.length}, 1fr)`;
+  labels.innerHTML = stages.map((i) => `<div><b>${names[i]}</b>Level ${EVOLUTION_LEVELS[i]}</div>`).join('');
   if (!isMonster) labels.insertAdjacentHTML('beforeend', '');
 
   document.getElementById('forms').style.display = isMonster ? '' : 'none';

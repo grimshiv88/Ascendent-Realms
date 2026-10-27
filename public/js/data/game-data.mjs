@@ -134,7 +134,7 @@ export const APPEARANCE = {
   hobbit:    { skin: ['#c99b6d', '#a7764f', '#d8b48a', '#8a6a4a'], accent: ['#6b3f1f', '#2f2018', '#c78a3a', '#9a5a2a'], eyes: ['#5a8f4a', '#4a6fa5', '#8a5a2a', '#3a3a3a'] },
   giant:     { skin: ['#8f8778', '#7d8a8f', '#9a7f6a', '#6f7a64'], accent: ['#e8e0cc', '#4a3a2a', '#9aa3a8', '#c9b98f'], eyes: ['#ffd36b', '#8fd3ff', '#ff8f6b', '#d0d0d0'] },
   beastkin:  { skin: ['#7a5a3a', '#9a9a9a', '#c08a4a', '#3a3530'], accent: ['#efe6d6', '#2a2522', '#d8b07a', '#6a6a6a'], eyes: ['#ffcf3f', '#7fd0ff', '#9fe07f', '#ff7f4f'] },
-  goblin:    { skin: ['#6f9a4a', '#5a7f3a', '#8aa35a', '#4f6f5a'], accent: ['#3a2a1e', '#8a3a2a', '#c9b98f', '#2a2a3a'], eyes: ['#ffd23f', '#ff5f3f', '#9fff7f', '#ffffff'] },
+  goblin:    { skin: ['#5f7a36', '#5a7f3a', '#8aa35a', '#4f6f5a'], accent: ['#3a2a1e', '#8a3a2a', '#c9b98f', '#2a2a3a'], eyes: ['#ffd23f', '#ff5f3f', '#9fff7f', '#ffffff'] },
   slime:     { skin: ['#4fb3ff', '#5fe0a0', '#c07fff', '#ff7fae'], accent: ['#dff4ff', '#e6fff2', '#f2e6ff', '#ffe6f0'], eyes: ['#ffffff', '#1a1a2a', '#ffe14f', '#ff4f4f'] },
   fairy:     { skin: ['#f4dcc8', '#c8e8d8', '#dcd0f4', '#f4e8b8'], accent: ['#9fe8ff', '#ffb8f0', '#b8ffb0', '#ffe08a'], eyes: ['#5ff0ff', '#ff7fe0', '#7fff8f', '#ffd24f'] },
   lizardman: { skin: ['#4f7a4a', '#3f6a7a', '#8a7a3a', '#6a4a3a'], accent: ['#d8c88a', '#c8d8a8', '#e0b07a', '#a8c0c8'], eyes: ['#ffcf3f', '#ff6f3f', '#bfff5f', '#5fdfff'] },
