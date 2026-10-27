@@ -3,7 +3,7 @@
 // Admins are the accounts whose emails are listed in the ADMIN_EMAILS setting (comma-separated).
 // Passwords are stored hashed, so nobody (admins included) can read them; they can only be replaced.
 const db = require('./db');
-const { hashPassword } = require('./auth');
+const { hashPassword, shownEmail } = require('./auth');
 
 const adminEmails = () => (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
 const isAdmin = (account) => !!account && adminEmails().includes(String(account.email).toLowerCase());
@@ -19,7 +19,7 @@ function accounts() {
     accounts: rows.map((r) => {
       const c = r.data ? JSON.parse(r.data) : null;
       return {
-        id: r.id, email: r.email, username: r.username, createdAt: r.created_at, lastPlayed: r.updated_at,
+        id: r.id, email: shownEmail(r.email), username: r.username, createdAt: r.created_at, lastPlayed: r.updated_at,
         signedIn: r.sessions > 0, plots: r.plots, admin: adminEmails().includes(r.email.toLowerCase()),
         character: c && { name: c.name, race: c.race, cls: c.cls, form: c.form, level: c.level, coins: c.coins, exp: c.exp },
       };

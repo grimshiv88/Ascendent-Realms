@@ -104,6 +104,10 @@ async function cloudStart() {
 }
 export const cloudSaves = () => !!cloud;
 
+// Email is optional; an account made without one keeps this stand-in and shows it as blank
+const NO_EMAIL = '@no-email.local';
+const shownEmail = (email) => (email && email.endsWith(NO_EMAIL) ? '' : email);
+
 // Preview mode: the same rules as the server, stored in localStorage (and the cloud, when there is one).
 const preview = {
   accounts() { try { return JSON.parse(storage.get('ar.preview.accounts')) || []; } catch { return []; } },
@@ -113,26 +117,28 @@ const preview = {
     if (changed) cloudPush(`accounts/${cloudKey(changed.email)}`, changed);
   },
   async signUp({ email, password, username, remember }) {
-    email = email.trim(); username = username.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please enter a valid email address.');
+    email = (email || '').trim(); username = username.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please enter a valid email address, or leave it blank.');
     if (password.length < 8) throw new Error('Your password needs at least 8 characters.');
     if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) throw new Error('Usernames are 3 to 16 letters, numbers or underscores.');
     const list = this.accounts();
     if (list.some((a) => a.email.toLowerCase() === email.toLowerCase())) throw new Error('An account with this email already exists. Try signing in.');
     if (list.some((a) => a.username.toLowerCase() === username.toLowerCase())) throw new Error('That username is taken. Please choose another.');
+    if (!email) email = `${username.toLowerCase()}${NO_EMAIL}`; // the same stand-in the server stores
     const digest = await sha256(password);
     const acc = { email, username, digest, character: null };
     list.push(acc);
     this.save(list, acc);
     token.set(`preview:${email}`, remember);
-    return { account: { email, username, character: null }, isNew: true };
+    return { account: { email: shownEmail(email), username, character: null }, isNew: true };
   },
-  async signIn({ email, password, remember }) {
+  async signIn({ login, password, remember }) {
     const digest = await sha256(password);
-    const acc = this.accounts().find((a) => a.email.toLowerCase() === email.trim().toLowerCase() && a.digest === digest);
-    if (!acc) throw new Error('That email and password don\'t match an account.');
+    login = (login || '').trim().toLowerCase();
+    const acc = this.accounts().find((a) => (a.email.toLowerCase() === login || a.username.toLowerCase() === login) && a.digest === digest);
+    if (!acc) throw new Error('That username or email and password don\'t match an account.');
     token.set(`preview:${acc.email}`, remember);
-    return { account: { email: acc.email, username: acc.username, character: acc.character }, isNew: false };
+    return { account: { email: shownEmail(acc.email), username: acc.username, character: acc.character }, isNew: false };
   },
 };
 
@@ -174,7 +180,7 @@ export function isPreviewMode() {
 export function deviceAccounts() {
   if (previewMode !== true) return null;
   return preview.accounts().map(({ email, username, character: c }) => ({
-    email, username, character: c && { name: c.name, race: c.race, cls: c.cls, level: c.level || 1, coins: c.coins || 0 },
+    email: shownEmail(email), username, character: c && { name: c.name, race: c.race, cls: c.cls, level: c.level || 1, coins: c.coins || 0 },
   }));
 }
 
@@ -218,7 +224,7 @@ export async function resume() {
   if (!t) return null;
   if (await isPreviewMode()) {
     const acc = preview.accounts().find((a) => `preview:${a.email}` === t);
-    return acc ? { account: { email: acc.email, username: acc.username, character: acc.character } } : null;
+    return acc ? { account: { email: shownEmail(acc.email), username: acc.username, character: acc.character } } : null;
   }
   try {
     return await request('api/me');
