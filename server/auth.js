@@ -64,11 +64,15 @@ function signIn({ email, password }) {
   return { token: newSession(row.id), account: publicAccount(row), isNew: false };
 }
 
-function accountFromToken(token) {
+function accountRow(token) {
   if (!token) return null;
-  const row = db
+  return db
     .prepare('SELECT a.* FROM sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token = ?')
-    .get(token);
+    .get(token) || null;
+}
+
+function accountFromToken(token) {
+  const row = accountRow(token);
   return row ? publicAccount(row) : null;
 }
 
@@ -76,4 +80,4 @@ function signOut(token) {
   db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
 }
 
-module.exports = { signUp, signIn, signOut, accountFromToken };
+module.exports = { signUp, signIn, signOut, accountFromToken, accountRow };

@@ -1,0 +1,149 @@
+// The spawn point: a ring of standing stones around a glowing crystal, with a campfire and signpost.
+import * as THREE from 'three';
+import { heightAt } from './terrain.js';
+
+export function buildSpawn() {
+  const g = new THREE.Group();
+  const baseY = heightAt(0, 0);
+  g.position.y = baseY;
+  const stone = new THREE.MeshStandardMaterial({ color: '#8a857a', roughness: 0.9 });
+  const darkStone = new THREE.MeshStandardMaterial({ color: '#6a665e', roughness: 0.95 });
+  const gold = new THREE.MeshStandardMaterial({ color: '#f5c84c', emissive: '#f5a81c', emissiveIntensity: 1.6, roughness: 0.3 });
+
+  // Platform: a low round dais with steps
+  const dais = new THREE.Mesh(new THREE.CylinderGeometry(7, 7.6, 0.45, 48), stone);
+  dais.position.y = 0.22;
+  const step = new THREE.Mesh(new THREE.CylinderGeometry(7.9, 8.4, 0.2, 48), darkStone);
+  step.position.y = 0.1;
+  for (const m of [dais, step]) { m.receiveShadow = true; m.castShadow = true; g.add(m); }
+
+  // Glowing rune ring set into the dais
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(5.2, 0.06, 8, 96), gold);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.46;
+  g.add(ring);
+  const inner = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.05, 8, 64), gold);
+  inner.rotation.x = Math.PI / 2;
+  inner.position.y = 0.46;
+  g.add(inner);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const rune = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.12), gold);
+    rune.position.set(Math.cos(a) * 3.7, 0.46, Math.sin(a) * 3.7);
+    rune.rotation.y = -a;
+    g.add(rune);
+  }
+
+  // Standing stones around the edge, about 3.5 m tall
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    const h = 3.2 + (i % 3) * 0.4;
+    const s = new THREE.Mesh(new THREE.BoxGeometry(0.9, h, 0.6), stone);
+    s.position.set(Math.cos(a) * 9.5, heightAt(Math.cos(a) * 9.5, Math.sin(a) * 9.5) - baseY + h / 2 - 0.1, Math.sin(a) * 9.5);
+    s.rotation.y = -a;
+    s.rotation.z = (i % 2 ? 1 : -1) * 0.04;
+    s.castShadow = true;
+    s.receiveShadow = true;
+    g.add(s);
+    const glyph = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.9), gold);
+    glyph.position.copy(s.position).add(new THREE.Vector3(-Math.cos(a) * 0.31, 0.4, -Math.sin(a) * 0.31));
+    glyph.rotation.y = -a - Math.PI / 2;
+    g.add(glyph);
+  }
+
+  // Floating crystal in the centre
+  const crystal = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.7, 0),
+    new THREE.MeshStandardMaterial({ color: '#ffe08a', emissive: '#f5b52c', emissiveIntensity: 2.2, roughness: 0.15, metalness: 0.2 }),
+  );
+  crystal.scale.set(1, 1.7, 1);
+  crystal.position.y = 2.6;
+  crystal.castShadow = true;
+  g.add(crystal);
+  const crystalLight = new THREE.PointLight('#ffc860', 25, 22, 1.6);
+  crystalLight.position.y = 2.6;
+  g.add(crystalLight);
+
+  // Campfire beside the path
+  const fire = new THREE.Group();
+  fire.position.set(9.5, heightAt(9.5, -11) - baseY, -11);
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22, 0), darkStone);
+    r.position.set(Math.cos(a) * 0.8, 0.1, Math.sin(a) * 0.8);
+    fire.add(r);
+  }
+  const logMat = new THREE.MeshStandardMaterial({ color: '#4a3020', roughness: 1 });
+  for (let i = 0; i < 4; i++) {
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.1, 6), logMat);
+    log.rotation.set(Math.PI / 2 - 0.5, (i / 4) * Math.PI * 2, 0);
+    log.position.y = 0.25;
+    fire.add(log);
+  }
+  const flameMat = new THREE.MeshStandardMaterial({ color: '#ffb347', emissive: '#ff7a1a', emissiveIntensity: 3, transparent: true, opacity: 0.9 });
+  const flames = [];
+  for (let i = 0; i < 3; i++) {
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.25 - i * 0.05, 0.9 - i * 0.15, 8), flameMat);
+    f.position.set((i - 1) * 0.12, 0.6, (i % 2) * 0.1);
+    fire.add(f);
+    flames.push(f);
+  }
+  const fireLight = new THREE.PointLight('#ff9a3c', 18, 16, 1.8);
+  fireLight.position.y = 1;
+  fire.add(fireLight);
+  // logs to sit on
+  for (const [x, z, ry] of [[-1.8, 0.3, 0.2], [1.6, 1.2, -0.9]]) {
+    const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 2, 10), logMat);
+    seat.rotation.set(0, ry, Math.PI / 2);
+    seat.position.set(x, 0.28, z);
+    seat.castShadow = true;
+    fire.add(seat);
+  }
+  g.add(fire);
+
+  // Signpost pointing north along the path
+  const post = new THREE.Group();
+  post.position.set(-4.5, heightAt(-4.5, -16) - baseY, -16);
+  const wood = new THREE.MeshStandardMaterial({ color: '#6b4a2e', roughness: 0.95 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 2.4, 8), wood);
+  pole.position.y = 1.2;
+  post.add(pole);
+  const board = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 0.06), wood);
+  board.position.set(0.4, 2.0, 0);
+  post.add(board);
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.36), new THREE.MeshBasicMaterial({ map: textTexture('Central Forest  ↑'), transparent: true }));
+  sign.position.set(0.4, 2.0, 0.035);
+  post.add(sign);
+  const signBack = sign.clone();
+  signBack.rotation.y = Math.PI;
+  signBack.position.z = -0.035;
+  post.add(signBack);
+  post.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.add(post);
+
+  return {
+    group: g,
+    update(t) {
+      crystal.rotation.y = t * 0.6;
+      crystal.position.y = 2.6 + Math.sin(t * 1.3) * 0.15;
+      crystalLight.intensity = 22 + Math.sin(t * 2.1) * 4;
+      flames.forEach((f, i) => { f.scale.y = 1 + Math.sin(t * 12 + i * 2) * 0.18; f.rotation.y = t * (1 + i); });
+      fireLight.intensity = 16 + Math.sin(t * 17) * 2 + Math.sin(t * 7.3) * 2;
+    },
+  };
+}
+
+function textTexture(text) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#f0e2c0';
+  ctx.font = 'bold 60px Cinzel, Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 256, 68);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

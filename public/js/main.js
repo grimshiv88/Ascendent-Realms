@@ -2,11 +2,14 @@
 import { startIntro } from './intro.js';
 import * as api from './api.js';
 import { paintCloudBanks } from './clouds.js';
+import { openCreator } from './creator.js';
+import { startWorld } from './world/world.js';
+import { renderHud, renderStatus, HELP_HTML } from './status.js';
 
 paintCloudBanks();
 
 const $ = (id) => document.getElementById(id);
-const panels = ['choose', 'signup', 'signin', 'arrival'];
+const panels = ['choose', 'signup', 'signin'];
 
 function show(panelId) {
   for (const id of panels) $(id).classList.toggle('hidden', id !== panelId);
@@ -57,20 +60,61 @@ async function cloudTransition(loadNext) {
   clouds.classList.remove('closed');
 }
 
-function enterRealm({ account, isNew }) {
+// After signing in: character creation for a new account, otherwise straight into the world.
+function enterRealm({ account }) {
   return cloudTransition(async () => {
-    $('title').classList.add('hidden');
-    const heading = $('arrival-heading');
-    const text = $('arrival-text');
-    if (!account.character) {
-      heading.textContent = isNew ? `Welcome, ${account.username}` : `Welcome back, ${account.username}`;
-      text.textContent = 'Next you will choose to be a Player or a Monster, then your race and class. Character creation is the next part being built.';
-    } else {
-      heading.textContent = `Welcome back, ${account.username}`;
-      text.textContent = `Returning you to ${account.character.location || 'where you last saved'}.`;
-    }
-    show('arrival');
+    intro.stop();
+    $('scene').classList.add('hidden');
+    $('ui').classList.add('hidden');
+    if (account.character) startGame(account.character);
+    else openCreation(account.username);
   });
+}
+
+let creator = null;
+function openCreation(username) {
+  $('creator-root').classList.remove('hidden');
+  creator = openCreator($('creator-root'), {
+    username,
+    async onCreate(choice) {
+      const { character } = await api.createCharacter(choice);
+      await cloudTransition(async () => {
+        creator.close();
+        $('creator-root').classList.add('hidden');
+        startGame(character);
+      });
+    },
+  });
+}
+
+let world = null;
+function startGame(character) {
+  $('game').classList.remove('hidden');
+  const overlay = $('overlay');
+  const openPanel = (name) => {
+    if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { overlay.classList.add('hidden'); return; }
+    overlay.dataset.panel = name;
+    if (name === 'status') renderStatus(overlay, character);
+    else overlay.innerHTML = HELP_HTML;
+    overlay.classList.remove('hidden');
+  };
+  renderHud($('hud'), character);
+  $('hud').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-open]');
+    if (b) openPanel(b.dataset.open);
+  });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay || e.target.closest('[data-close]')) overlay.classList.add('hidden');
+  });
+  world = startWorld($('world'), character, {
+    onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
+    onKey(e) {
+      if (e.code === 'KeyC') openPanel('status');
+      if (e.code === 'KeyH') openPanel('help');
+      if (e.code === 'Escape') overlay.classList.add('hidden');
+    },
+  });
+  openPanel('help');
 }
 
 function wireForm(formId, action) {
@@ -112,10 +156,3 @@ wireForm('signup-form', ({ confirm, ...fields }) => {
 });
 wireForm('signin-form', api.signIn);
 
-$('signout').addEventListener('click', () =>
-  cloudTransition(async () => {
-    await api.signOut();
-    $('title').classList.remove('hidden');
-    show('choose');
-  }),
-);

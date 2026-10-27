@@ -2,6 +2,7 @@
 const path = require('node:path');
 const express = require('express');
 const auth = require('./auth');
+const characters = require('./characters');
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -25,6 +26,23 @@ app.get('/api/me', (req, res) => {
   const account = auth.accountFromToken(bearer(req));
   if (!account) return res.status(401).json({ error: 'Not signed in.' });
   res.json({ account });
+});
+
+// Requests below need a signed-in account
+function requireAccount(req, res, next) {
+  req.account = auth.accountRow(bearer(req));
+  if (!req.account) return res.status(401).json({ error: 'Not signed in.' });
+  next();
+}
+
+app.post('/api/character', requireAccount, (req, res) => {
+  const result = characters.create(req.account.id, req.account.username, req.body || {});
+  res.status(result.error ? 400 : 201).json(result);
+});
+
+app.post('/api/character/location', requireAccount, (req, res) => {
+  const result = characters.saveLocation(req.account.id, req.body || {});
+  res.status(result.error ? 400 : 200).json(result);
 });
 
 app.post('/api/signout', (req, res) => {

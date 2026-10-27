@@ -1,5 +1,7 @@
 // Talks to the game server. If no server is reachable (for example, a static preview page),
 // it falls back to a preview mode that keeps accounts in this browser only.
+import { newCharacter } from './data/game-data.mjs';
+
 const TOKEN_KEY = 'ar.token';
 
 const storage = {
@@ -45,6 +47,17 @@ const preview = {
   },
 };
 
+// Preview mode: find the signed-in preview account and change it in place
+function updatePreviewAccount(change) {
+  const email = (storage.get(TOKEN_KEY) || '').replace(/^preview:/, '');
+  const list = preview.accounts();
+  const acc = list.find((a) => a.email === email);
+  if (!acc) throw new Error('Please sign in again.');
+  const result = change(acc);
+  preview.save(list);
+  return result;
+}
+
 async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -80,4 +93,27 @@ export async function signIn(fields) {
 export async function signOut() {
   if (!(await isPreviewMode())) await request('api/signout', { method: 'POST' }).catch(() => {});
   storage.remove(TOKEN_KEY);
+}
+
+export async function createCharacter(choice) {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => {
+      if (acc.character) throw new Error('This account already has a character.');
+      const result = newCharacter(acc.username, choice);
+      if (result.error) throw new Error(result.error);
+      acc.character = result.character;
+      return result;
+    });
+  }
+  return request('api/character', { method: 'POST', body: choice });
+}
+
+export async function saveLocation(loc) {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => {
+      if (acc.character) acc.character.location = { ...acc.character.location, ...loc };
+      return { ok: true };
+    });
+  }
+  return request('api/character/location', { method: 'POST', body: loc });
 }

@@ -6,7 +6,7 @@
   <title>Ascendent Realms</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@500;700&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.js" } }
@@ -56,13 +56,17 @@
       </form>
     </section>
 
-    <!-- Shown after the clouds clear. Character creation and the world come in the next steps. -->
-    <section id="arrival" class="panel hidden" aria-live="polite">
-      <h2 id="arrival-heading"></h2>
-      <p id="arrival-text"></p>
-      <button class="link-button" type="button" id="signout">Sign out</button>
-    </section>
   </main>
+
+  <!-- Character creation, shown after the clouds for an account with no character yet -->
+  <section id="creator-root" class="screen hidden"></section>
+
+  <!-- The world -->
+  <section id="game" class="screen hidden">
+    <canvas id="world"></canvas>
+    <div id="hud"></div>
+    <div id="overlay" class="hidden"></div>
+  </section>
 
   <div id="clouds" aria-hidden="true">
     <div class="cloud-bank left"></div>
