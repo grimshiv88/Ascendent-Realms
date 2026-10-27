@@ -183,21 +183,66 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const tl of torchLights) tl.flame.scale.y = 1 + Math.sin(t * 11 + tl.x) * 0.15;
   }
   const TORCH_SAFE = 12, FIRE_SAFE = 35;
-  // Somewhere monsters won't come at night: beside a torch, or by a waystone's campfire
+  // Your tent: a canvas ridge tent on two poles
+  const tentGroup = new THREE.Group();
+  scene.add(tentGroup);
+  const TENT_SAFE = 6, TENT_IN = 2.6;
+  function drawTent() {
+    for (const o of [...tentGroup.children]) { tentGroup.remove(o); o.geometry?.dispose(); }
+    const tn = game?.character.tent;
+    if (!tn) return;
+    const y = heightAt(tn.x, tn.z);
+    const cloth = new THREE.MeshStandardMaterial({ color: '#b89a6a', roughness: 0.95, side: THREE.DoubleSide });
+    // a triangular prism: 2.6 m long, 2.2 m wide, 1.7 m high
+    const shape = new THREE.Shape([new THREE.Vector2(-1.1, 0), new THREE.Vector2(1.1, 0), new THREE.Vector2(0, 1.7)]);
+    const body = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 2.6, bevelEnabled: false }), cloth);
+    body.geometry.translate(0, 0, -1.3);
+    const dark = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, 1.1)])),
+      new THREE.MeshBasicMaterial({ color: '#1a120a' }));
+    dark.position.z = 1.31; // the doorway
+    const pole = new THREE.MeshStandardMaterial({ color: '#5a3a22' });
+    const poles = [-1.35, 1.35].map((z) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.9, 6), pole); m.position.set(0, 0.95, z); return m; });
+    const g = new THREE.Group();
+    g.add(body, dark, ...poles);
+    g.position.set(tn.x, y, tn.z);
+    g.rotation.y = tn.heading || 0;
+    body.castShadow = true;
+    tentGroup.add(g);
+  }
+  const nearTent = (x, z, r) => { const tn = game?.character.tent; return !!tn && Math.hypot(tn.x - x, tn.z - z) < r; };
+  function pitchTent() {
+    if (!game || dead) return;
+    const tn = game.character.tent;
+    if (tn && nearTent(pos.x, pos.z, TENT_IN + 1)) {
+      const r = game.packTent();
+      say(r === 'ok' ? 'Tent packed into your bag' : 'Your bag is full', r === 'ok' ? 'note' : 'hurt');
+    } else {
+      const r = game.pitchTent(pos.x + Math.sin(heading) * 2.5, pos.z + Math.cos(heading) * 2.5, heading + Math.PI);
+      say(r === 'ok' ? (tn ? 'Tent moved here. Sleep inside with Z' : 'Tent pitched. Sleep inside with Z') : 'You have no tent. Buy one in the shop, or craft one from 8 logs.', r === 'ok' ? 'note' : 'hurt');
+    }
+    drawTent();
+  }
+  drawTent();
+
+  // Somewhere monsters won't come at night: beside a torch, your tent, or a waystone's campfire
   function isSafe(x, z) {
+    if (nearTent(x, z, TENT_SAFE)) return true;
     if (torchLights.some((tl) => Math.hypot(tl.x - x, tl.z - z) < TORCH_SAFE)) return true;
     return placesWithPositions().some((p) => !p.cave && Math.hypot(p.x - x, p.z - z) < FIRE_SAFE);
   }
 
   // Sleeping (Z, only somewhere safe) and collapsing from exhaustion
+  let inTent = false; // asleep inside your tent: hidden, and resting faster
   let sleeping = false, collapsed = 0, fatigueAcc = 0, warnedTired = false, lastTime = -1;
   const resting = () => sleeping || collapsed > 0;
   function toggleSleep() {
     if (!game || dead) return;
     if (sleeping) { sleeping = false; say('You wake up', 'note'); return; }
-    if (!isSafe(pos.x, pos.z)) { say('Too dangerous to sleep here. Find a fire, or place a torch (T)', 'hurt'); return; }
+    if (!isSafe(pos.x, pos.z)) { say('Too dangerous to sleep here. Pitch a tent (P), find a fire, or place a torch (T)', 'hurt'); return; }
     sleeping = true;
-    say('You lie down to sleep… (move to wake)', 'note');
+    inTent = nearTent(pos.x, pos.z, TENT_IN + 1);
+    if (inTent) { const tn = game.character.tent; pos.x = tn.x; pos.z = tn.z; }
+    say(inTent ? 'You crawl into your tent to sleep… (move to wake)' : 'You lie down to sleep… (move to wake)', 'note');
   }
   function placeTorch() {
     if (!game || dead) return;
@@ -366,6 +411,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (e.code === 'KeyF') attack();
     if (e.code === 'KeyZ') toggleSleep();
     if (e.code === 'KeyT') placeTorch();
+    if (e.code === 'KeyP') pitchTent();
     onKey?.(e);
   };
   const up = (e) => keys.delete(e.code);
@@ -574,6 +620,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     avatar.position.copy(pos);
     avatar.rotation.y = heading;
     avatar.rotation.z = dead || resting() ? Math.min(Math.PI / 2, (avatar.rotation.z || 0) + dt * 3) : 0;
+    avatar.visible = !(sleeping && inTent); // hidden inside the tent
     const rig = avatar.userData.rig;
     rig.root.position.z = 0;
     animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 1.6);
@@ -599,7 +646,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const step = fatigueAcc;
         fatigueAcc = 0;
         if (sleeping) {
-          c.fatigue = Math.max(0, c.fatigue - step * 1.6);
+          c.fatigue = Math.max(0, c.fatigue - step * (inTent ? 3 : 1.6));
           game.heal(game.stats().hp * 0.03 * step);
           if (c.fatigue <= 0) { sleeping = false; say('You wake up rested', 'exp'); }
         } else if (collapsed > 0) {
@@ -695,6 +742,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
     sleep: toggleSleep,
     placeTorch,
+    pitchTent,
     get resting() { return sleeping ? 'sleeping' : collapsed > 0 ? 'collapsed' : null; },
     say,
     // Land: show or hide the buying grid, and take everyone's plots from the server

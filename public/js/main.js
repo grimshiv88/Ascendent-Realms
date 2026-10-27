@@ -296,6 +296,8 @@ function startGame(character) {
     if (e.target.closest('[data-menu]')) { toggleMenu(); drawHud(); return; }
     const b = e.target.closest('[data-open]');
     if (e.target.closest('[data-signout]')) { logOut(); return; }
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act) { toggleMenu(false); drawHud(); if (act === 'sleep') world?.sleep(); if (act === 'tent') world?.pitchTent(); return; }
     if (b) { toggleMenu(false); drawHud(); if (b.dataset.open === 'land') toggleLand(); else openPanel(b.dataset.open); }
   });
   async function logOut() {
@@ -343,6 +345,7 @@ function startGame(character) {
     if ((v = t('data-store')) != null) { game.storeSkill(v); ui.skillMsg = `${SKILLS[v].name} stored.`; drawPanel(); return; }
     if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }
     if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
+    if (t('data-tent') != null) { closePanel(); world?.pitchTent(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if (t('data-confirm-points') != null) { game.spendPoints(ui.pending); ui.pending = {}; drawPanel(); return; }

@@ -18,6 +18,7 @@ function describe(it, plus = 0) {
   if (it.kind === 'armour') return `${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
   if (it.kind === 'food') return [it.heal && `Restores ${it.heal} HP`, it.sp && (it.sp > 999 ? 'Fills SP' : `Restores ${it.sp} SP`), it.boost && `+${it.boost.sp} max SP for ${it.boost.minutes} min`].filter(Boolean).join(' · ');
   if (it.id === 'torch') return 'Lights the night and keeps monsters away';
+  if (it.id === 'tent') return 'Sleep anywhere and clear your Fatigue';
   return 'Material';
 }
 
@@ -52,6 +53,7 @@ export function renderBag(el, game, selected) {
     const actions = [];
     if (isGear(sel)) actions.push(`<button type="button" class="gold-button small" data-equip="${keyOf(e)}">${game.isEquipped(e) ? 'Take off' : 'Equip'}</button>`);
     if (e.id === 'torch') actions.push(`<button type="button" class="gold-button small" data-torch>Place here (T)</button>`);
+    if (e.id === 'tent') actions.push(`<button type="button" class="gold-button small" data-tent>Pitch here (P)</button>`);
     if (sel.kind === 'food') actions.push(`<button type="button" class="gold-button small" data-use="${keyOf(e)}">Use</button>`);
     actions.push(`<button type="button" class="link-button" data-drop="${keyOf(e)}">Drop one</button>`);
     details = `<div class="bag-detail"><span class="bag-big">${pic(e.id, e.plus, '')}</span><div><h3>${esc(nameOf(e))}</h3><p>${esc(sel.text)}</p><p class="bag-stat">${describe(sel, e.plus)}</p><div class="bag-actions">${actions.join('')}</div></div></div>`;

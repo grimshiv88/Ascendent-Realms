@@ -13,6 +13,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.equipped = { ...Object.fromEntries(SLOTS.map(([s]) => [s, null])), ...(c.equipped || {}) };
   c.boosts ||= [];
   c.torches ||= [];
+  c.tent ??= null; // where your tent is pitched
   c.fatigue ??= 0;
   // Skills: learned ones, the ones ready on keys (the rest are kept in storage), and choices still to make
   c.skills = (c.skills || []).filter((id) => SKILLS[id]);
@@ -65,7 +66,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     quests: c.quests, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks,
+    skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent,
   });
 
   // worn gear doesn't take up room in the bag
@@ -310,6 +311,21 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (!removeItem('torch', 1)) return 'none';
       c.torches.push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 });
       changed('torches');
+      return 'ok';
+    },
+    // Your tent: pitching it uses the one in your bag (or moves it if it's already up); packing it
+    // puts it back in the bag
+    pitchTent(x, z, heading) {
+      if (!c.tent && !removeItem('tent', 1)) return 'none';
+      c.tent = { x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, heading: Math.round(heading * 100) / 100 };
+      changed('tent');
+      return 'ok';
+    },
+    packTent() {
+      if (!c.tent) return 'none';
+      if (!addItem('tent', 1)) return 'full';
+      c.tent = null;
+      changed('tent');
       return 'ok';
     },
     saveNow() { clearTimeout(saveTimer); saveTimer = null; return save?.(snapshot()); },

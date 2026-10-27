@@ -64,6 +64,10 @@ export const LAKES = [
 export const CAVES = [
   [262, 432, 0.4], [236, 410, 2.2], [276, 404, 4.1], [206, 598, 1.5], [188, 622, 3.2],
   [722, 500, 0.6], [880, 562, 2.5], [992, 420, 4], [760, 172, 1], [250, 98, 2], [1420, 300, 3.6],
+  // small caves dotted through the Heartland's forest and hills, the nearest a short walk from the spawn
+  [811, 529, 3.9], [787, 512, 0.9], [806, 503, 5.2], [779, 538, 1.8], [826, 517, 4.6], [770, 495, 0.2],
+  [842, 548, 3.1], [748, 530, 1.2], [818, 480, 5.8], [856, 498, 4.4], [735, 470, 0.7], [795, 575, 2.9],
+  [870, 600, 3.6], [700, 540, 1.4], [905, 470, 4.9], [660, 450, 0.4],
 ];
 export const VOLCANOES = [[700, 110], [905, 95], [800, 150]];
 
@@ -220,6 +224,11 @@ export function sample(x, z, out = {}, withLakes = true) {
         base = 30 + (roll - 0.5) * 60 + bumps * 6;
         const east = smoothstep(px, 940, 1060);
         base += Math.pow(ridged(x / 4000, z / 4000), 1.4) * 520 * east;
+        // knolls and small rocky crags all through the forest (gentle right by the spawn)
+        const away = smoothstep(Math.hypot(x, z), 350, 1500);
+        const knolls = Math.pow(smoothstep(fbm(x / 650 + 11, z / 650 - 3, 3), 0.48, 0.78), 1.6) * 70;
+        const crags = Math.pow(ridged(x / 1100 + 2, z / 1100 + 9, 4), 2.2) * 230 * smoothstep(fbm(x / 2600 - 6, z / 2600 + 1, 3), 0.5, 0.64);
+        base += (knolls + crags) * away;
         // scattered mountain groups, kept away from the spawn
         const group = smoothstep(fbm(x / 9000 + 30, z / 9000 - 12, 3), 0.6, 0.72) * smoothstep(Math.hypot(x, z), 5000, 9000);
         base += Math.pow(ridged(x / 2600 + 7, z / 2600, 5), 1.5) * 750 * group;
@@ -227,6 +236,7 @@ export function sample(x, z, out = {}, withLakes = true) {
         const f = Math.hypot((px - 800) / 1.3, py - 520) / 190;
         forest = smoothstep(1.05 - f, 0, 0.25) * (0.35 + fbm(x / 700 + 9, z / 700, 3) * 0.9);
         forest = Math.max(forest, smoothstep(fbm(x / 1500 + 4, z / 1500 + 4, 3), 0.55, 0.7) * 0.6);
+        forest *= 1 - smoothstep(crags * away, 70, 160); // bare rock on the crag tops
         break;
       }
       case 'peaks': {

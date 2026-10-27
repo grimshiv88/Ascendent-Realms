@@ -21,6 +21,7 @@ export const ITEMS = {
   frost_core: { name: 'Frost Core', icon: '❄️', kind: 'material', price: 25, text: 'A cold heart from a frost slime.' },
   // food and potions
   torch: { name: 'Torch', icon: '🔥', kind: 'material', price: 12, text: 'Stand it in the ground with T. Its light keeps monsters away at night, and lets you sleep (Z) beside it.' },
+  tent: { name: 'Tent', icon: '⛺', kind: 'material', price: 60, text: 'Pitch it anywhere (P, or from your bag) and sleep inside it (Z) to clear your Fatigue. Monsters leave you alone near it. Pack it up again when you move on.' },
   bread: { name: 'Bread', icon: '🍞', kind: 'food', heal: 25, price: 6, text: 'Restores 25 HP.' },
   herb: { name: 'Healing Herb', icon: '🌿', kind: 'food', heal: 50, price: 15, text: 'Restores 50 HP.' },
   potion: { name: 'Health Potion', icon: '🧪', kind: 'food', heal: 150, price: 45, text: 'Restores 150 HP.' },
@@ -67,7 +68,7 @@ for (const [id, it] of Object.entries(ITEMS)) it.id = id;
 // What the shop sells, and the level at which each item unlocks
 export const SHOP = [
   // potions and food
-  ['bread', 1], ['herb', 1], ['torch', 1], ['sp_potion', 2], ['potion', 5], ['sp_booster', 5], ['big_potion', 20],
+  ['bread', 1], ['herb', 1], ['torch', 1], ['tent', 1], ['sp_potion', 2], ['potion', 5], ['sp_booster', 5], ['big_potion', 20],
   // weapons
   ['wooden_club', 1], ['rusty_sword', 1], ['hand_axe', 3], ['iron_dagger', 3], ['oak_staff', 3], ['iron_sword', 5],
   ['iron_mace', 8], ['steel_sword', 12], ['war_axe', 15], ['crystal_staff', 20], ['knight_blade', 20], ['dragonbone_sword', 50],
@@ -105,6 +106,7 @@ export function mergeResult(a, b) {
 // Things you can make from what you carry
 export const RECIPES = [
   { makes: 'wooden_club', needs: [['log', 3]] },
+  { makes: 'tent', needs: [['log', 8]] },
 ];
 
 // The weapon each class starts with in the bag

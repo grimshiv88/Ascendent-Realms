@@ -39,6 +39,8 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
         <button type="button" data-open="skills">Skills <kbd>K</kbd></button>
         <button type="button" data-open="map">Map <kbd>M</kbd></button>
         <button type="button" data-open="land">Buy land <kbd>L</kbd></button>
+        <button type="button" data-act="sleep">Sleep / wake <kbd>Z</kbd></button>
+        <button type="button" data-act="tent">Pitch / pack tent <kbd>P</kbd></button>
         <button type="button" data-open="help">Controls <kbd>H</kbd></button>
         <button type="button" data-open="rankings">Top players <kbd>R</kbd></button>
         <button type="button" data-open="settings">Settings <kbd>O</kbd></button>
@@ -178,7 +180,8 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Bag and shop</dt><dd>I and B</dd></div>
       <div class="sw-row"><dt>Quests</dt><dd>Q</dd></div>
       <div class="sw-row"><dt>Skills</dt><dd>K opens them. Use a skill with its key (1 to 6 at first; you can change them), or tap its button</dd></div>
-      <div class="sw-row"><dt>Sleep</dt><dd>Z, by a campfire or a torch (lowers Fatigue)</dd></div>
+      <div class="sw-row"><dt>Sleep</dt><dd>Z, inside your tent, by a campfire or by a torch (lowers Fatigue; fastest in a tent)</dd></div>
+      <div class="sw-row"><dt>Tent</dt><dd>P pitches your tent in front of you (buy one in the shop, or craft it from 8 logs). Press P beside it to pack it up</dd></div>
       <div class="sw-row"><dt>Place a torch</dt><dd>T (buy torches in the shop; they keep monsters away at night)</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
       <div class="sw-row"><dt>Land</dt><dd>L shows the grid of plots; tap a square to buy it or manage it</dd></div>

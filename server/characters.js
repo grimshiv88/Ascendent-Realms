@@ -94,7 +94,10 @@ function saveProgress(accountId, p) {
     .filter((b) => skills.includes(b?.id) && (b.key === null || (typeof b.key === 'string' && /^[A-Za-z0-9]{1,20}$/.test(b.key))))
     .map((b) => ({ id: b.id, key: b.key }));
   const skillPicks = int(p.skillPicks ?? 0, 0, 1000) ?? 0;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, torches, skills, skillBar, skillPicks });
+  const t = p.tent;
+  const tent = t && Number.isFinite(t.x) && Number.isFinite(t.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6
+    ? { x: t.x, z: t.z, heading: Number.isFinite(t.heading) ? t.heading : 0 } : null;
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, torches, skills, skillBar, skillPicks, tent });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };
