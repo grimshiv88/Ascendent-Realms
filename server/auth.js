@@ -80,4 +80,4 @@ function signOut(token) {
   db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
 }
 
-module.exports = { signUp, signIn, signOut, accountFromToken, accountRow };
+module.exports = { signUp, signIn, signOut, accountFromToken, accountRow, hashPassword };

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Board · Ascendant Realms</title>
+  <meta name="robots" content="noindex">
+  <style>
+    :root { --gold: #f2b51e; --gold-dim: #8a6a14; --ink: #f4ead2; --quiet: #a99d80; --bg: #0b0906; --panel: #15110b; --bad: #e0574a; --ok: #8fe36a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, sans-serif; }
+    main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 60px; }
+    h1 { margin: 0 0 4px; font: 700 1.6rem Georgia, serif; color: var(--gold); letter-spacing: 0.04em; }
+    .sub { margin: 0 0 20px; color: var(--quiet); }
+    .card { background: var(--panel); border: 1px solid #3a2c10; border-radius: 8px; padding: 18px; }
+    form.signin { max-width: 360px; display: grid; gap: 10px; }
+    label { display: grid; gap: 4px; font-size: 0.9rem; color: var(--quiet); }
+    input { padding: 9px 10px; border-radius: 5px; border: 1px solid #4a3a18; background: #0e0b07; color: var(--ink); font: inherit; }
+    input:focus { outline: 2px solid var(--gold-dim); }
+    button { font: inherit; cursor: pointer; border-radius: 5px; padding: 7px 12px; border: 1px solid var(--gold-dim); background: #2a2010; color: var(--ink); }
+    button.primary { background: var(--gold); color: #1a1206; border-color: var(--gold); font-weight: 600; }
+    button.danger { border-color: #7a2a22; color: #ffb3aa; background: #2a100c; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .msg { min-height: 1.4em; margin: 8px 0; }
+    .msg.bad { color: var(--bad); } .msg.good { color: var(--ok); }
+    .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .stats { display: flex; gap: 18px; color: var(--quiet); }
+    .stats b { color: var(--ink); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #2a2010; vertical-align: top; }
+    th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--quiet); font-weight: 600; }
+    td small { display: block; color: var(--quiet); }
+    .tag { display: inline-block; font-size: 0.75rem; padding: 1px 6px; border-radius: 3px; background: #2a2010; color: var(--gold); margin-left: 4px; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #555; margin-right: 6px; }
+    .dot.on { background: var(--ok); }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pw-form { display: flex; gap: 6px; margin-top: 8px; }
+    .pw-form[hidden] { display: none; }
+    .pw-form input { width: 170px; padding: 6px 8px; }
+    .note { margin-top: 16px; font-size: 0.85rem; color: var(--quiet); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Ascendant Realms · Admin Board</h1>
+  <p class="sub">Every account and character on this server. Only admin accounts can open it.</p>
+
+  <section id="login" class="card" hidden>
+    <form class="signin" id="signin">
+      <label>Email <input name="email" type="email" autocomplete="username" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="primary" type="submit">Sign in</button>
+      <p class="msg bad" id="login-msg" role="status"></p>
+    </form>
+  </section>
+
+  <section id="board" hidden>
+    <div class="bar">
+      <input id="search" type="search" placeholder="Search name, email or character" aria-label="Search accounts" style="min-width:260px">
+      <div class="stats" id="stats"></div>
+      <button type="button" id="logout">Sign out of the board</button>
+    </div>
+    <p class="msg" id="msg" role="status"></p>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr><th>Account</th><th>Character</th><th>Level · Coins</th><th>Created</th><th>Last played</th><th>Land</th><th>Actions</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="note">Passwords are stored scrambled (hashed), so they can't be shown, not even here. If a player forgets theirs, set a new one and tell them what it is; they are signed out everywhere until they use it.</p>
+  </section>
+</main>
+<script>
+const KEY = 'ar.admin.token';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const token = { get: () => { try { return localStorage.getItem(KEY); } catch { return null; } }, set: (t) => { try { t ? localStorage.setItem(KEY, t) : localStorage.removeItem(KEY); } catch {} } };
+
+async function call(path, body) {
+  const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.get() || ''}` }, body: body && JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(data.error || 'Something went wrong.'); e.status = res.status; throw e; }
+  return data;
+}
+
+let all = [];
+const when = (s) => s ? new Date(s.replace(' ', 'T') + 'Z').toLocaleString() : '—';
+function draw() {
+  const q = $('search').value.trim().toLowerCase();
+  const list = all.filter((a) => !q || [a.username, a.email, a.character?.name, a.character?.race, a.character?.cls].some((v) => String(v || '').toLowerCase().includes(q)));
+  $('stats').innerHTML = `<span>Accounts <b>${all.length}</b></span><span>With a character <b>${all.filter((a) => a.character).length}</b></span><span>Signed in on a device <b>${all.filter((a) => a.signedIn).length}</b></span>`;
+  $('rows').innerHTML = list.map((a) => `
+    <tr>
+      <td><span class="dot${a.signedIn ? ' on' : ''}" title="${a.signedIn ? 'Signed in on a device' : 'Signed out'}"></span><b>${esc(a.username)}</b>${a.admin ? '<span class="tag">admin</span>' : ''}<small>${esc(a.email)}</small></td>
+      <td>${a.character ? `${esc(a.character.name)}<small>${esc(a.character.race)} · ${esc(a.character.cls)}${a.character.form === 'humanoid' ? ' · humanoid form' : ''}</small>` : '<small>No character yet</small>'}</td>
+      <td>${a.character ? `Lv ${a.character.level}<small>${a.character.coins} coins</small>` : '—'}</td>
+      <td>${when(a.createdAt)}</td>
+      <td>${when(a.lastPlayed)}</td>
+      <td>${a.plots ? `${a.plots} plot${a.plots > 1 ? 's' : ''}` : '—'}</td>
+      <td>
+        <div class="actions">
+          <button type="button" data-pw="${a.id}">New password</button>
+          <button type="button" data-out="${a.id}" ${a.signedIn ? '' : 'disabled'}>Sign out</button>
+          <button type="button" class="danger" data-del="${a.id}" ${a.admin ? 'disabled' : ''}>Delete</button>
+        </div>
+        <form class="pw-form" data-pw-form="${a.id}" hidden>
+          <input type="text" name="password" minlength="8" placeholder="New password (8+)" aria-label="New password for ${esc(a.username)}" required>
+          <button class="primary" type="submit">Save</button>
+        </form>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="7">No accounts match.</td></tr>';
+}
+
+function say(text, good) { $('msg').textContent = text; $('msg').className = `msg ${good ? 'good' : 'bad'}`; }
+
+async function load() {
+  try {
+    all = (await call('api/admin/accounts')).accounts;
+    $('login').hidden = true; $('board').hidden = false;
+    draw();
+  } catch (e) {
+    $('board').hidden = true; $('login').hidden = false;
+    if (e.status === 403) $('login-msg').textContent = 'That account is not an admin. Add its email to ADMIN_EMAILS on the server.';
+    else if (e.status !== 401) $('login-msg').textContent = e.message;
+  }
+}
+
+$('signin').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('login-msg').textContent = '';
+  try {
+    const r = await call('api/signin', Object.fromEntries(new FormData(e.target)));
+    token.set(r.token);
+    load();
+  } catch (err) { $('login-msg').textContent = err.message; }
+});
+$('logout').addEventListener('click', async () => { await call('api/signout', {}).catch(() => {}); token.set(null); location.reload(); });
+$('search').addEventListener('input', draw);
+
+$('rows').addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const name = (id) => all.find((a) => a.id === Number(id))?.username;
+  if (b.dataset.pw) { const f = document.querySelector(`[data-pw-form="${b.dataset.pw}"]`); f.hidden = !f.hidden; f.querySelector('input').focus(); }
+  if (b.dataset.out) {
+    try { await call('api/admin/signout', { id: Number(b.dataset.out) }); say(`${name(b.dataset.out)} was signed out everywhere.`, true); load(); } catch (err) { say(err.message); }
+  }
+  if (b.dataset.del) {
+    const n = name(b.dataset.del);
+    if (!confirm(`Delete ${n}'s account, character and land for good? This can't be undone.`)) return;
+    try { await call('api/admin/delete', { id: Number(b.dataset.del) }); say(`${n}'s account was deleted.`, true); load(); } catch (err) { say(err.message); }
+  }
+});
+$('rows').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = Number(e.target.dataset.pwForm);
+  const password = e.target.password.value;
+  try {
+    await call('api/admin/password', { id, password });
+    say(`New password saved for ${all.find((a) => a.id === id)?.username}. Tell them to sign in with it.`, true);
+    load();
+  } catch (err) { say(err.message); }
+});
+
+load();
+</script>
+</body>
+</html>

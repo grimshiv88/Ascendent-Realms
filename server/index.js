@@ -4,6 +4,7 @@ const express = require('express');
 const auth = require('./auth');
 const characters = require('./characters');
 const land = require('./land');
+const admin = require('./admin');
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -56,6 +57,21 @@ app.get('/api/land', requireAccount, (req, res) => res.json(land.list(req.accoun
 for (const [route, fn] of [['buy', land.buy], ['purpose', land.setPurpose], ['prepare', land.prepare]]) {
   app.post(`/api/land/${route}`, requireAccount, (req, res) => {
     const result = fn(req.account.id, req.body || {});
+    res.status(result.error ? 400 : 200).json(result);
+  });
+}
+
+// The admin board (admin.html): only for accounts listed in ADMIN_EMAILS
+function requireAdmin(req, res, next) {
+  req.account = auth.accountRow(bearer(req));
+  if (!req.account) return res.status(401).json({ error: 'Please sign in.' });
+  if (!admin.isAdmin(req.account)) return res.status(403).json({ error: 'This account is not an admin.' });
+  next();
+}
+app.get('/api/admin/accounts', requireAdmin, (req, res) => res.json(admin.accounts()));
+for (const [route, fn] of [['password', admin.setPassword], ['signout', admin.signOutEverywhere], ['delete', admin.remove]]) {
+  app.post(`/api/admin/${route}`, requireAdmin, (req, res) => {
+    const result = fn(req.body || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);
   });
 }
