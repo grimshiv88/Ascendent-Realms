@@ -451,6 +451,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       heading += diff * Math.min(1, dt * TURN);
       // move the way you want to go, even while still turning to face it
       target = (running ? RUN : WALK) * speedBonus * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
+      // Steering: while you walk forward and lean left or right, the camera eases round behind you,
+      // so holding forward and tapping right curves you gently to the right
+      if (fz > 0.1 && Math.abs(fx) > 0.05 && !look) {
+        const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
+        yaw += back * Math.min(1, dt * 2.2);
+      }
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
