@@ -98,4 +98,13 @@ function store(accountId, character) {
     .run(JSON.stringify(character), accountId);
 }
 
-module.exports = { create, load, store, saveLocation, saveProgress };
+// The highest-level characters on the server (EXP breaks ties)
+function top(limit = 10) {
+  return db.prepare('SELECT data FROM characters').all()
+    .map((r) => JSON.parse(r.data))
+    .map((c) => ({ name: c.name, race: c.race, cls: c.cls, side: c.side, level: c.level || 1, exp: c.exp || 0 }))
+    .sort((a, b) => b.level - a.level || b.exp - a.exp)
+    .slice(0, limit);
+}
+
+module.exports = { create, load, store, saveLocation, saveProgress, top };

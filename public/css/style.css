@@ -607,3 +607,25 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .device-accounts { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; }
 .device-accounts li { padding: 8px 10px; border: 1px solid rgba(200, 146, 26, 0.4); border-radius: 4px; background: rgba(0, 0, 0, 0.3); font-size: 0.9rem; }
 .device-accounts small { color: #b9ab8a; }
+
+/* "Keep me signed in" on the sign-in and sign-up forms */
+.remember { display: flex; align-items: center; gap: 8px; flex-direction: row; font-size: 0.9rem; cursor: pointer; }
+.remember input { width: 18px; height: 18px; accent-color: #f2b51e; margin: 0; }
+
+/* Settings: change password */
+.pw-change { display: grid; gap: 8px; margin-bottom: 12px; }
+.pw-change label { display: grid; gap: 4px; font: 0.9rem Georgia, serif; color: #b9ab8a; }
+.pw-change input { padding: 8px 10px; border-radius: 4px; border: 1px solid #4a3608; background: #0d0a05; color: #fff3cf; font: inherit; }
+.pw-change .gold-button { justify-self: start; }
+
+/* Top players */
+.rankings-window { text-transform: none; }
+.rankings { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.rankings li { display: grid; grid-template-columns: 36px 1fr auto; align-items: center; gap: 10px; padding: 8px 12px; background: #0d0a05; border: 1px solid #4a3608; border-radius: 4px; }
+.rankings li.me { border-color: #f2b51e; }
+.rankings li:first-child .rk-place { color: #f2b51e; font-size: 1.4rem; }
+.rk-place { font: 700 1.1rem 'Cinzel', serif; color: #c8b98a; text-align: center; }
+.rk-name, .rk-level { display: grid; color: #fff3cf; }
+.rk-level { text-align: right; font-weight: 600; }
+.rankings small { font: 0.8rem Georgia, serif; color: #b9ab8a; }
+.sys-sell-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }

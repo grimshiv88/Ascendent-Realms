@@ -40,7 +40,7 @@ export const CLASSES = {
   assassin:    { name: 'Assassin',    bonus: { agi: 6, dex: 4 },         main: 'agi', blurb: 'Stealth. +20% critical damage from behind.' },
   healer:      { name: 'Healer',      bonus: { int: 6, sta: 4 },         main: 'int', blurb: 'Healing spells are 20% stronger.' },
   blacksmith:  { name: 'Blacksmith',  bonus: { str: 4, sta: 4, dex: 2 }, main: 'str', blurb: 'Crafts and upgrades items 25% cheaper, and can open a shop.' },
-  businessman: { name: 'Businessman', bonus: { int: 7, agi: 3 },         main: 'int', blurb: 'Can own trading buildings. +10% coins from sales and quests.' },
+  businessman: { name: 'Businessman', bonus: { int: 7, agi: 3 },         main: 'int', blurb: 'Can own trading buildings. Shops pay a Businessman far more for what he sells (70% of the price, not 40%).' },
   builder:     { name: 'Builder',     bonus: { str: 4, sta: 4, int: 2 }, main: 'sta', blurb: 'Builds 30% faster with 20% less material.' },
   farmer:      { name: 'Farmer',      bonus: { sta: 6, str: 4 },         main: 'sta', blurb: 'Grows crops and raises animals. Food made removes 50% more Fatigue.' },
 };
@@ -91,11 +91,12 @@ export const SECOND_ELEMENT_CHANCE = { default: 0.2, mage: 0.35 };
 // Calculated stats (rulebook: Stats → Calculated stats)
 export function derivedStats(s, level = 1) {
   return {
-    hp: 50 + s.sta * 10 + s.str * 2 + level * 5,
-    sp: 20 + s.int * 5 + level * 2,
+    // kept low at the start so even goblins are a real fight; grows with Stamina, Strength and level
+    hp: Math.round(20 + s.sta * 3 + s.str * 0.5 + level * 4),
+    sp: Math.round(10 + s.int * 2 + level),
     atk: Math.round(s.str * 2 + s.dex * 0.5),
     matk: Math.round(s.int * 2 + s.dex * 0.5),
-    def: Math.round(s.sta * 1.5 + s.str * 0.5),
+    def: Math.round(s.sta * 0.8 + s.str * 0.2),
     mdef: Math.round(s.int + s.sta * 0.5),
   };
 }

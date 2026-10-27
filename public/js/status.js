@@ -37,7 +37,9 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
         <button type="button" data-open="map">Map <kbd>M</kbd></button>
         <button type="button" data-open="land">Buy land <kbd>L</kbd></button>
         <button type="button" data-open="help">Controls <kbd>H</kbd></button>
+        <button type="button" data-open="rankings">Top players <kbd>R</kbd></button>
         <button type="button" data-open="settings">Settings <kbd>O</kbd></button>
+        <button type="button" data-signout>Log out</button>
       </div>
     </div>
     </div>`;
@@ -111,7 +113,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
 }
 
 // Player settings, kept in this browser
-export function renderSettings(el, settings, accounts = null, cloud = false) {
+export function renderSettings(el, settings, accounts = null, cloud = false, passwordMsg = '') {
   const opt = (value, title, text) => `<button type="button" class="setting-opt" data-camera="${value}" aria-pressed="${settings.camera === value}"><b>${title}</b><span>${text}</span></button>`;
   el.innerHTML = `
     <div class="status-window settings-window" role="dialog" aria-label="Settings">
@@ -123,11 +125,33 @@ export function renderSettings(el, settings, accounts = null, cloud = false) {
         ${opt('follow', 'Follow your body', 'The camera stays behind your character. Left and right turn your body, forward walks the way you face.')}
       </div>
       <h3 class="bag-sub">Account</h3>
-      <p class="bag-hint">This browser keeps you signed in. Sign out on shared computers.</p>
-      <button type="button" class="link-button" data-signout>Sign out</button>
+      <form class="pw-change" data-password>
+        <label>New password <input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
+        <label>Type it again <input name="confirm" type="password" minlength="8" autocomplete="new-password" required></label>
+        <button type="submit" class="gold-button small">Change password</button>
+        <p class="bag-hint" role="status">${esc(passwordMsg)}</p>
+      </form>
+      <button type="button" class="gold-button small" data-signout>Log out</button>
       ${accounts ? `<h3 class="bag-sub">Saved accounts</h3>
       <p class="bag-hint">${cloud ? 'Saved privately online, so they follow you to any device you open the game on.' : 'Kept in this browser only.'} Passwords are stored scrambled, so they can't be shown.</p>
       <ul class="device-accounts">${accounts.map((a) => `<li><b>${esc(a.username)}</b> <small>${esc(a.email)}</small><br>${a.character ? `${esc(a.character.name)} · ${esc(RACES[a.character.race]?.name || a.character.race)} ${esc(CLASSES[a.character.cls]?.name || a.character.cls)} · Lv ${a.character.level} · ${a.character.coins} coins` : 'No character yet'}</li>`).join('') || '<li>None</li>'}</ul>` : ''}
+    </div>`;
+}
+
+// The highest-level players. `me` is your character's name, to mark your own row.
+export function renderRankings(el, players, me) {
+  const rows = players === null ? '<p class="bag-hint">Loading…</p>'
+    : players.length ? `<ol class="rankings">${players.map((p, i) => `
+        <li class="${p.name === me ? 'me' : ''}"><span class="rk-place">${i + 1}</span>
+          <span class="rk-name">${esc(p.name)}<small>${esc(RACES[p.race]?.name || p.race)} · ${esc(CLASSES[p.cls]?.name || p.cls)}</small></span>
+          <span class="rk-level">Lv ${p.level}<small>${rankFor(p.level)}</small></span></li>`).join('')}</ol>`
+      : '<p class="bag-hint">No players yet.</p>';
+  el.innerHTML = `
+    <div class="status-window rankings-window" role="dialog" aria-label="Top players">
+      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      <h2>Top Players</h2>
+      <p class="bag-hint">The highest-level characters right now.</p>
+      ${rows}
     </div>`;
 }
 
@@ -136,7 +160,7 @@ export const HELP_HTML = `
     <button type="button" class="sw-close" data-close aria-label="Close">×</button>
     <h2>Controls</h2>
     <dl>
-      <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys. Hold W and press A or D to curve gently left or right, even while sprinting</dd></div>
+      <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys. Hold W and press A or D to curve gently left or right, even while sprinting. S turns you round to face behind you</dd></div>
       <div class="sw-row"><dt>Run</dt><dd>Hold Shift</dd></div>
       <div class="sw-row"><dt>Jump</dt><dd>Space</dd></div>
       <div class="sw-row"><dt>Camera</dt><dd>Drag with the mouse, scroll to zoom</dd></div>
@@ -148,6 +172,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Place a torch</dt><dd>T (buy torches in the shop; they keep monsters away at night)</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
       <div class="sw-row"><dt>Land</dt><dd>L shows the grid of plots; tap a square to buy it or manage it</dd></div>
+      <div class="sw-row"><dt>Top players</dt><dd>R</dd></div>
       <div class="sw-row"><dt>Settings</dt><dd>O (a free camera, or one that follows your body)</dd></div>
       <div class="sw-row"><dt>Swim</dt><dd>Walk into deep water</dd></div>
       <div class="sw-row"><dt>Touch</dt><dd>The stick on the left moves in any direction; drag on the right to turn the camera</dd></div>

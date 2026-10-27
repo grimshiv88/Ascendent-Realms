@@ -5,7 +5,7 @@ import { paintCloudBanks } from './clouds.js';
 import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
-import { renderHud, renderStatus, renderSettings, toggleMenu, HELP_HTML } from './status.js';
+import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, tabsHtml } from './bag.js';
 import { renderQuests } from './quests.js';
@@ -173,6 +173,15 @@ function startGame(character) {
   }
 
   function drawPanel() {
+    // keep the window scrolled where it was (buying and selling redraw it)
+    const keep = overlay.dataset.shown === overlay.dataset.panel ? [...overlay.querySelectorAll('*')].filter((n) => n.scrollTop > 0).map((n) => [n.className, n.scrollTop]) : [];
+    const keepSelf = overlay.dataset.shown === overlay.dataset.panel ? overlay.scrollTop : 0;
+    drawPanelNow();
+    overlay.dataset.shown = overlay.dataset.panel;
+    overlay.scrollTop = keepSelf;
+    for (const [cls, top] of keep) { const n = cls && overlay.getElementsByClassName(cls.split(' ')[0])[0]; if (n) n.scrollTop = top; }
+  }
+  function drawPanelNow() {
     const name = overlay.dataset.panel;
     if (name === 'status') renderStatus(overlay, character, ui.pending, game.stats());
     else if (name === 'bag') { renderBag(overlay, game, ui.selected); preview.mount(overlay.querySelector('[data-preview]')); }
@@ -180,7 +189,8 @@ function startGame(character) {
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })));
-    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves());
+    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '');
+    else if (name === 'rankings') renderRankings(overlay, ui.top, character.name);
     else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy });
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();
@@ -189,11 +199,16 @@ function startGame(character) {
   const openPanel = (name) => {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
     overlay.dataset.panel = name;
-    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = '';
+    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = '';
+    if (name === 'rankings') {
+      ui.top = null;
+      Promise.resolve(game.saveNow()).catch(() => {}).then(() => api.topPlayers()).then((r) => { ui.top = r.players; }).catch(() => { ui.top = []; })
+        .then(() => { if (overlay.dataset.panel === 'rankings') drawPanel(); });
+    }
     drawPanel();
     overlay.classList.remove('hidden');
   };
-  const closePanel = () => { overlay.classList.add('hidden'); preview.unmount(); };
+  const closePanel = () => { overlay.classList.add('hidden'); overlay.dataset.shown = ''; preview.unmount(); };
 
   // Your character in the bag, turning slowly, wearing what you have on
   const preview = (() => {
@@ -234,7 +249,26 @@ function startGame(character) {
   $('hud').addEventListener('click', (e) => {
     if (e.target.closest('[data-menu]')) { toggleMenu(); drawHud(); return; }
     const b = e.target.closest('[data-open]');
+    if (e.target.closest('[data-signout]')) { logOut(); return; }
     if (b) { toggleMenu(false); drawHud(); if (b.dataset.open === 'land') toggleLand(); else openPanel(b.dataset.open); }
+  });
+  async function logOut() {
+    await Promise.resolve(game.saveNow()).catch(() => {});
+    world?.stop();
+    await api.signOut();
+    location.reload();
+  }
+  // Settings: set a new password (for now without the old one)
+  overlay.addEventListener('submit', async (e) => {
+    if (!e.target.matches('[data-password]')) return;
+    e.preventDefault();
+    const { password, confirm } = Object.fromEntries(new FormData(e.target));
+    try {
+      if (password !== confirm) throw new Error('The two passwords don\'t match.');
+      await api.changePassword(password);
+      ui.passwordMsg = 'Password changed. Use the new one next time you sign in.';
+    } catch (err) { ui.passwordMsg = err.message; }
+    drawPanel();
   });
   $('attack-btn').classList.remove('hidden');
   $('attack-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.attack(); });
@@ -257,7 +291,7 @@ function startGame(character) {
     if (t('data-land-buy') != null) { landAction(() => api.landBuy(ui.plot.ix, ui.plot.iz, ui.landChoice), 'The land is yours!'); return; }
     if (t('data-land-change') != null) { landAction(() => api.landPurpose(ui.plot.ix, ui.plot.iz, ui.landChoice), 'Purpose changed.'); return; }
     if (t('data-land-prepare') != null) { landAction(() => api.landPrepare(ui.plot.ix, ui.plot.iz), 'Cleared and levelled. Ready to build on.'); return; }
-    if (t('data-signout') != null) { game.saveNow(); world?.stop(); api.signOut().then(() => location.reload()); return; }
+    if (t('data-signout') != null) { logOut(); return; }
     if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
@@ -269,7 +303,14 @@ function startGame(character) {
     if ((v = t('data-craft')) != null) { game.craft(game.recipes.find((r) => r.makes === v)); return; }
     if ((v = t('data-item')) != null) { ui.selected = ui.selected === v ? null : v; drawPanel(); return; }
     if ((v = t('data-buy')) != null) { ui.shopMsg = SHOP_SAYS[game.buy(v)]; drawPanel(); return; }
-    if ((v = t('data-sell')) != null) { const e2 = game.entry(v); const price = e2 && game.sellPrice(e2); game.sell(v); ui.shopMsg = price ? `Sold for ${price} coins.` : ''; drawPanel(); return; }
+    if ((v = t('data-sell')) != null || (v = t('data-sell-all')) != null) {
+      const all = t('data-sell-all') != null;
+      const e2 = game.entry(v);
+      const got = game.sell(v, all ? e2?.n : 1);
+      ui.shopMsg = got ? `Sold ${all ? `${e2.n} ` : ''}for ${got} coins.` : '';
+      if (got) world?.say(`+${got} G`, 'exp');
+      drawPanel(); return;
+    }
     if ((v = t('data-pick')) != null) {
       if (ui.pick.includes(v)) ui.pick = ui.pick.filter((k) => k !== v);
       else ui.pick = [...ui.pick, v].slice(-2);
@@ -298,6 +339,8 @@ function startGame(character) {
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       if (type === 'kill') for (const title of game.questKill(data.kind)) questReady(title);
+      if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
+      if (type === 'drawn') showArea(`A ${data.name} has caught the scent of your strength…`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
       if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
       if (type === 'defeated') showArea(`Defeated by a ${data.by}. You wake up back home.`);
@@ -310,6 +353,7 @@ function startGame(character) {
       if (e.code === 'KeyH') openPanel('help');
       if (e.code === 'KeyM') openPanel('map');
       if (e.code === 'KeyO') openPanel('settings');
+      if (e.code === 'KeyR') openPanel('rankings');
       if (e.code === 'KeyL') toggleLand();
       if (e.code === 'Escape') closePanel();
     },

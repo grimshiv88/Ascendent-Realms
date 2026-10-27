@@ -107,7 +107,7 @@ export function renderShop(el, game, message = '') {
   const sell = sellable.length ? sellable.map((e) => {
     const it = ITEMS[e.id];
     return `<div class="sys-row"><span class="sys-mini">${pic(e.id, e.plus)}</span><span class="sys-name"><b>${esc(nameOf(e))}</b><small>You have ${e.n} · shop price ${it.price} G</small></span>
-      <span class="sys-price">${game.sellPrice(e)} G</span><button type="button" class="sys-button ghost" data-sell="${keyOf(e)}">Sell one</button></div>`;
+      <span class="sys-price">${game.sellPrice(e)} G</span><span class="sys-sell-btns"><button type="button" class="sys-button ghost" data-sell="${keyOf(e)}">Sell one</button>${e.n > 1 ? `<button type="button" class="sys-button" data-sell-all="${keyOf(e)}">Sell all ${e.n} · ${game.sellPrice(e) * e.n} G</button>` : ''}</span></div>`;
   }).join('') : '<p class="sys-hint">Nothing to sell yet. Gather wood and berries, or defeat monsters for their drops. Take gear off before selling it.</p>';
   const bad = /not|need|full/i.test(message);
   el.innerHTML = `

@@ -83,7 +83,9 @@ export const isGear = (it) => it && (it.kind === 'weapon' || it.kind === 'armour
 export const slotOf = (it) => (it.kind === 'weapon' ? 'weapon' : it.slot);
 
 // Sell price: the shop buys things back for 40% of what it sells them for, more for upgraded gear
-export const sellPrice = (it, plus = 0) => Math.max(1, Math.floor(it.price * 0.4 * (1 + plus * 0.5)));
+// Shops buy at 40% of their price; a Businessman knows how to bargain and gets 70%
+export const SELL_SHARE = 0.4, BUSINESS_SHARE = 0.7;
+export const sellPrice = (it, plus = 0, cls = null) => Math.max(1, Math.floor(it.price * (cls === 'businessman' ? BUSINESS_SHARE : SELL_SHARE) * (1 + plus * 0.5)));
 
 // Upgrades from merging: each + makes a weapon or armour 12% stronger
 export const UPGRADE_STEP = 0.12;

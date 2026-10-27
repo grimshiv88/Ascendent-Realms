@@ -53,6 +53,12 @@ app.post('/api/character/progress', requireAccount, (req, res) => {
 });
 
 // Land: everyone's plots, buying one, choosing its purpose, and clearing it
+app.post('/api/password', requireAccount, (req, res) => {
+  const result = auth.changePassword(req.account.id, req.body?.password, bearer(req));
+  res.status(result.error ? 400 : 200).json(result);
+});
+app.get('/api/top', (req, res) => res.json({ players: characters.top() }));
+
 app.get('/api/land', requireAccount, (req, res) => res.json(land.list(req.account.id)));
 for (const [route, fn] of [['buy', land.buy], ['purpose', land.setPurpose], ['prepare', land.prepare]]) {
   app.post(`/api/land/${route}`, requireAccount, (req, res) => {

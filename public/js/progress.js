@@ -142,14 +142,17 @@ export function createProgress(c, { save, onChange, onEvent }) {
       changed('coins');
       return 'ok';
     },
-    sellPrice: (e) => sellPrice(ITEMS[e.id], e.plus || 0),
-    sell(key) {
+    sellPrice: (e) => sellPrice(ITEMS[e.id], e.plus || 0, c.cls),
+    // sells `n` of an item (all of them when n is left out); returns the coins earned
+    sell(key, n = 1) {
       const e = entry(key);
-      if (!e) return;
-      const price = sellPrice(ITEMS[e.id], e.plus || 0);
-      if (!removeItem(key, 1)) return;
-      c.coins += price;
+      if (!e) return 0;
+      n = Math.min(n ?? e.n, e.n);
+      const price = sellPrice(ITEMS[e.id], e.plus || 0, c.cls);
+      if (!removeItem(key, n)) return 0;
+      c.coins += price * n;
       changed('coins');
+      return price * n;
     },
     canCraft: (r) => r.needs.every(([id, n]) => count(id) >= n),
     craft(r) {

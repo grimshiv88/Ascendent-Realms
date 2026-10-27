@@ -80,4 +80,14 @@ function signOut(token) {
   db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
 }
 
-module.exports = { signUp, signIn, signOut, accountFromToken, accountRow, hashPassword };
+// For now a signed-in player can set a new password straight away.
+// Later this should also ask for the old password or a code sent by email.
+function changePassword(accountId, password, keepToken) {
+  password = String(password || '');
+  if (password.length < 8) return { error: 'Your new password needs at least 8 characters.' };
+  db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ?').run(hashPassword(password), accountId);
+  db.prepare('DELETE FROM sessions WHERE account_id = ? AND token != ?').run(accountId, keepToken); // other devices sign in again
+  return { ok: true };
+}
+
+module.exports = { signUp, signIn, signOut, accountFromToken, accountRow, hashPassword, changePassword };

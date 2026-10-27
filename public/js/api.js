@@ -11,10 +11,22 @@ const storage = {
   remove(key) { try { localStorage.removeItem(key); } catch { /* storage blocked */ } },
 };
 
+// The sign-in token: kept in this browser only when the player asks to stay signed in;
+// otherwise it lasts until the tab is closed.
+const token = {
+  get() { try { return sessionStorage.getItem(TOKEN_KEY) || storage.get(TOKEN_KEY); } catch { return storage.get(TOKEN_KEY); } },
+  set(value, remember) {
+    this.remove();
+    if (remember) storage.set(TOKEN_KEY, value);
+    else { try { sessionStorage.setItem(TOKEN_KEY, value); } catch { storage.set(TOKEN_KEY, value); } }
+  },
+  remove() { storage.remove(TOKEN_KEY); try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* blocked */ } },
+};
+
 async function request(path, { method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  const token = storage.get(TOKEN_KEY);
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const t = token.get();
+  if (t) headers.Authorization = `Bearer ${t}`;
   const res = await fetch(path, { method, headers, body: body && JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
@@ -95,7 +107,7 @@ const preview = {
     storage.set('ar.preview.accounts', JSON.stringify(list));
     if (changed) cloudPush(`accounts/${cloudKey(changed.email)}`, changed);
   },
-  async signUp({ email, password, username }) {
+  async signUp({ email, password, username, remember }) {
     email = email.trim(); username = username.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please enter a valid email address.');
     if (password.length < 8) throw new Error('Your password needs at least 8 characters.');
@@ -107,21 +119,21 @@ const preview = {
     const acc = { email, username, digest, character: null };
     list.push(acc);
     this.save(list, acc);
-    storage.set(TOKEN_KEY, `preview:${email}`);
+    token.set(`preview:${email}`, remember);
     return { account: { email, username, character: null }, isNew: true };
   },
-  async signIn({ email, password }) {
+  async signIn({ email, password, remember }) {
     const digest = await sha256(password);
     const acc = this.accounts().find((a) => a.email.toLowerCase() === email.trim().toLowerCase() && a.digest === digest);
     if (!acc) throw new Error('That email and password don\'t match an account.');
-    storage.set(TOKEN_KEY, `preview:${acc.email}`);
+    token.set(`preview:${acc.email}`, remember);
     return { account: { email: acc.email, username: acc.username, character: acc.character }, isNew: false };
   },
 };
 
 // Preview mode: find the signed-in preview account and change it in place
 function updatePreviewAccount(change) {
-  const email = (storage.get(TOKEN_KEY) || '').replace(/^preview:/, '');
+  const email = (token.get() || '').replace(/^preview:/, '');
   const list = preview.accounts();
   const acc = list.find((a) => a.email === email);
   if (!acc) throw new Error('Please sign in again.');
@@ -161,39 +173,59 @@ export function deviceAccounts() {
   }));
 }
 
-export async function signUp(fields) {
-  if (await isPreviewMode()) return preview.signUp(fields);
+// `remember` (the "Keep me signed in" box) decides whether this browser keeps the sign-in
+export async function signUp({ remember, ...fields }) {
+  if (await isPreviewMode()) return preview.signUp({ ...fields, remember });
   const data = await request('api/signup', { method: 'POST', body: fields });
-  storage.set(TOKEN_KEY, data.token);
+  token.set(data.token, remember);
   return data;
 }
 
-export async function signIn(fields) {
-  if (await isPreviewMode()) return preview.signIn(fields);
+export async function signIn({ remember, ...fields }) {
+  if (await isPreviewMode()) return preview.signIn({ ...fields, remember });
   const data = await request('api/signin', { method: 'POST', body: fields });
-  storage.set(TOKEN_KEY, data.token);
+  token.set(data.token, remember);
   return data;
+}
+
+// For now no old password is asked for; later this will need it, or a code sent by email
+export async function changePassword(password) {
+  if (password.length < 8) throw new Error('Your new password needs at least 8 characters.');
+  if (await isPreviewMode()) {
+    const digest = await sha256(password);
+    return updatePreviewAccount((acc) => { acc.digest = digest; return { ok: true }; });
+  }
+  return request('api/password', { method: 'POST', body: { password } });
+}
+
+// The highest-level characters
+export async function topPlayers() {
+  if (await isPreviewMode()) {
+    const list = preview.accounts().filter((a) => a.character).map(({ character: c }) => ({ name: c.name, race: c.race, cls: c.cls, side: c.side, level: c.level || 1, exp: c.exp || 0 }));
+    return { players: list.sort((a, b) => b.level - a.level || b.exp - a.exp).slice(0, 10) };
+  }
+  return request('api/top');
 }
 
 // The account this browser is still signed in to, or null
 export async function resume() {
-  const token = storage.get(TOKEN_KEY);
-  if (!token) return null;
+  const t = token.get();
+  if (!t) return null;
   if (await isPreviewMode()) {
-    const acc = preview.accounts().find((a) => `preview:${a.email}` === token);
+    const acc = preview.accounts().find((a) => `preview:${a.email}` === t);
     return acc ? { account: { email: acc.email, username: acc.username, character: acc.character } } : null;
   }
   try {
     return await request('api/me');
   } catch {
-    storage.remove(TOKEN_KEY); // the session ended on the server
+    token.remove(); // the session ended on the server
     return null;
   }
 }
 
 export async function signOut() {
   if (!(await isPreviewMode())) await request('api/signout', { method: 'POST' }).catch(() => {});
-  storage.remove(TOKEN_KEY);
+  token.remove();
 }
 
 export async function createCharacter(choice) {

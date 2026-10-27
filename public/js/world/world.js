@@ -211,8 +211,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let dead = false;
   let lastHurt = -99;
   const creatures = createCreatures(scene, {
-    getPlayer: () => ({ x: pos.x, z: pos.z, radius: bodyR, dead, safe: isSafe(pos.x, pos.z) }),
+    getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, moving: speedNow > 1 }),
     isNight: () => night,
+    onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
+    onDrawn(name) { onEvent?.('drawn', { name }); },
     isInsideCave: insideCave,
     onHitPlayer(m) {
       if (!game || dead) return;
@@ -381,6 +383,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const clock = new THREE.Clock();
   const move = new THREE.Vector3();
   let speedNow = 0;
+  // Pressing back turns you round to face behind you (the camera swings round too); keep holding it
+  // and you walk on in the new direction
+  let backWas = false, aboutFace = false, turnLeft = 0, backYaw = 0, backHeading = 0;
   let lastSave = 0;
   let regenAcc = 0;
   const B = WORLD_BOUNDS;
@@ -431,6 +436,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (keys.has('KeyD') || keys.has('ArrowRight')) fx += 1;
       fx += stick.x; fz -= stick.y;
     }
+    const backNow = fz < -0.4 && Math.abs(fx) < 0.6;
+    if (backNow && !backWas && !look) { aboutFace = true; turnLeft = Math.PI; backYaw = yaw + Math.PI; backHeading = heading + Math.PI; }
+    if (fz > -0.1) aboutFace = false;
+    backWas = backNow;
+    if (turnLeft > 0) {
+      const step = Math.min(turnLeft, dt * Math.PI / 0.35); // half a turn in about a third of a second
+      turnLeft -= step;
+      if (cameraMode === 'follow') heading += step; else yaw += step;
+    }
+    else { backYaw = yaw; backHeading = heading; } // once round, carry on from wherever you face
+    if (aboutFace) fz = -fz;
     const running = keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(stick.x, stick.y) > 0.9;
     const amount = Math.min(1, Math.hypot(fx, fz));
     let target = 0;
@@ -439,7 +455,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // and the camera swings round behind you
       heading -= fx * dt * (running ? STEER_RUN : STEER);
       if (Math.abs(fz) > 0.05) {
-        move.set(Math.sin(heading) * Math.sign(fz), 0, Math.cos(heading) * Math.sign(fz));
+        const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
+        move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
         target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * speedBonus * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
       }
       if (!look) {
@@ -450,8 +467,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // Steering: while you go forward (walking or sprinting), left and right turn you gently,
       // as much as you press, and the camera turns with you. Only sideways on its own steps sideways.
       const steering = fz > 0.1 && !look;
-      if (steering) yaw -= fx * dt * (running ? STEER_RUN : STEER);
-      const camFwd = v3.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+      if (steering) { const turn = fx * dt * (running ? STEER_RUN : STEER); yaw -= turn; backYaw -= turn; }
+      const ya = aboutFace ? backYaw : yaw; // turning round: walk the new way while the camera catches up
+      const camFwd = v3.set(-Math.sin(ya), 0, -Math.cos(ya));
       const side = steering ? fx * 0.25 : fx; // a slight lean into the turn instead of a sharp angle
       move.set(camFwd.x * fz - camFwd.z * side, 0, camFwd.z * fz + camFwd.x * side).normalize();
       const want = Math.atan2(move.x, move.z);
