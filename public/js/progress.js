@@ -2,6 +2,7 @@
 // Every change is saved to the server a moment later.
 import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
 import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult } from './data/items.mjs';
+import { fillBoard, progressOf } from './quests.js';
 
 const BAG_SLOTS = 30;
 const uid = () => `g${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
@@ -54,20 +55,23 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
+    quests: c.quests,
   });
 
+  // worn gear doesn't take up room in the bag
+  const used = () => c.inventory.filter((s) => !(s.uid && Object.values(c.equipped).includes(s.uid))).length;
   const count = (id) => c.inventory.reduce((n, s) => n + (s.id === id ? s.n : 0), 0);
   function addItem(id, n = 1, plus = 0) {
     const it = ITEMS[id];
     if (isGear(it)) {
       for (let i = 0; i < n; i++) {
-        if (c.inventory.length >= BAG_SLOTS) { onEvent?.('bag-full'); return false; }
+        if (used() >= BAG_SLOTS) { onEvent?.('bag-full'); return false; }
         c.inventory.push({ id, n: 1, uid: uid(), ...(plus ? { plus } : {}) });
       }
     } else {
       const slot = c.inventory.find((s) => s.id === id);
       if (slot) slot.n += n;
-      else if (c.inventory.length < BAG_SLOTS) c.inventory.push({ id, n });
+      else if (used() < BAG_SLOTS) c.inventory.push({ id, n });
       else { onEvent?.('bag-full'); return false; }
     }
     changed('bag');
@@ -195,9 +199,11 @@ export function createProgress(c, { save, onChange, onEvent }) {
         c.exp -= expToNext(c.level, c.race);
         c.level += 1;
         levels += 1;
-        // each level: free Stat Points, +1 to the class's main stat, and Unique Points (rulebook)
+        // each level: 3 free Stat Points (10 at key levels), +1 to the class's main stat, Unique Points
+        // and a purse of coins
         const key = KEY_LEVELS.includes(c.level);
-        c.unspentPoints += key ? 15 : 5;
+        c.unspentPoints += key ? 10 : 3;
+        c.coins += (key ? 5 : 1) * (20 + c.level * 10);
         c.uniquePoints += key ? 5 : 1;
         c.stats[CLASSES[c.cls].main] += 1;
         c.hp = stats().hp;
@@ -214,6 +220,39 @@ export function createProgress(c, { save, onChange, onEvent }) {
       for (const [k, v] of Object.entries(add)) if (v > 0 && k in c.stats) c.stats[k] += v;
       c.unspentPoints -= total;
       changed('stats');
+    },
+    // Quests. `here` is where you stand, so new quests fit the area.
+    fillQuests(here) { const before = (c.quests || []).length; fillBoard(c, here); if (c.quests.length !== before) changed('quests'); },
+    questAccept(i) { if (c.quests[i]) { c.quests[i].accepted = true; changed('quests'); } },
+    questDrop(i, here) { c.quests.splice(i, 1); fillBoard(c, here); changed('quests'); },
+    // Returns the reward if the quest was finished
+    questClaim(i, here) {
+      const q = c.quests[i];
+      if (!q?.accepted || progressOf(q, this) < q.need) return null;
+      if (q.type === 'gather') removeItem(q.item, q.need);
+      c.quests.splice(i, 1);
+      fillBoard(c, here);
+      if (q.reward.item) addItem(q.reward.item, 1);
+      this.gainCoins(q.reward.coins);
+      this.gainExp(q.reward.exp);
+      return q.reward;
+    },
+    // Called when you defeat a monster or move: returns titles of quests that just became complete
+    questKill(kind) {
+      const ready = [];
+      for (const q of c.quests || []) {
+        if (q.accepted && q.type === 'hunt' && q.kind === kind && q.have < q.need) { q.have += 1; if (q.have >= q.need) ready.push(q.title); }
+      }
+      if (ready.length || (c.quests || []).some((q) => q.accepted && q.type === 'hunt' && q.kind === kind)) changed('quests');
+      return ready;
+    },
+    questVisit(x, z) {
+      const ready = [];
+      for (const q of c.quests || []) {
+        if (q.accepted && q.type === 'explore' && !q.have && Math.hypot(x - q.place.x, z - q.place.z) < q.place.r) { q.have = 1; ready.push(q.title); }
+      }
+      if (ready.length) changed('quests');
+      return ready;
     },
     saveNow() { clearTimeout(saveTimer); save?.(snapshot()); },
   };

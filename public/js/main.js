@@ -5,12 +5,15 @@ import { paintCloudBanks } from './clouds.js';
 import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { drawWorldMap } from './world/mapdraw.js';
-import { renderHud, renderStatus, HELP_HTML } from './status.js';
+import { toMap } from './data/world-layout.mjs';
+import { renderHud, renderStatus, renderSettings, toggleMenu, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
-import { renderBag, renderShop, renderSmith } from './bag.js';
+import { renderBag, renderShop, renderSmith, tabsHtml } from './bag.js';
+import { renderQuests } from './quests.js';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
+import { fillIcons } from './characters/icons.js';
 
 paintCloudBanks();
 
@@ -94,13 +97,17 @@ function openCreation(username) {
 }
 
 let world = null;
+const settings = (() => {
+  try { return { camera: 'free', ...JSON.parse(localStorage.getItem('ar-settings') || '{}') }; } catch { return { camera: 'free' }; }
+})();
+const saveSettings = () => { try { localStorage.setItem('ar-settings', JSON.stringify(settings)); } catch { /* private window */ } };
 const FIST = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7.5a1.5 1.5 0 0 1 3 0V10m0-3.2a1.5 1.5 0 0 1 3 0V10m0-2.6a1.5 1.5 0 0 1 3 0V11m0-1.4a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a6 6 0 0 1-6-6v-2.2a2 2 0 0 1 2.4-2l1.6.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const SWORD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4l-9.5 9.5M20 4h-4l-8 8m12-8v4l-8 8M6.5 13.5l4 4M8 15l-4 4m0 0l1 1m-1-1l-1-1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 function startGame(character) {
   $('game').classList.remove('hidden');
   const overlay = $('overlay');
-  const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '' };
+  const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '' };
   let hudQueued = false;
 
   const game = createProgress(character, {
@@ -112,10 +119,13 @@ function startGame(character) {
       if (what !== 'hp' && !overlay.classList.contains('hidden')) drawPanel();
     },
     onEvent(type, data) {
-      if (type === 'level') { world?.say(`Level ${data}!`, 'exp'); showArea(`Level ${data} reached. You have Stat Points to place.`); }
+      if (type === 'level') { world?.say(`Level ${data}!`, 'exp'); showArea(`Level ${data}! New Stat Points and a purse of coins.`); }
       if (type === 'bag-full') world?.say('Your bag is full', 'hurt');
     },
   });
+
+  const here = () => world?.position() || { x: character.location?.x || 0, z: character.location?.z || 0 };
+  const questReady = (title) => { showArea(`${title}: done! Open Quests (Q) to claim the reward.`); world?.say('Quest ready', 'exp'); };
 
   function drawHud() {
     renderHud($('hud'), character, game.stats());
@@ -132,14 +142,17 @@ function startGame(character) {
     else if (name === 'bag') { renderBag(overlay, game, ui.selected); preview.mount(overlay.querySelector('[data-preview]')); }
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
-    else if (name === 'map') renderMap(overlay, world?.position());
+    else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
+    else if (name === 'map') renderMap(overlay, world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })));
+    else if (name === 'settings') renderSettings(overlay, settings);
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();
+    if (name === 'bag' || name === 'shop') fillIcons(overlay);
   }
   const openPanel = (name) => {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
     overlay.dataset.panel = name;
-    ui.shopMsg = ''; ui.smithMsg = '';
+    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = '';
     drawPanel();
     overlay.classList.remove('hidden');
   };
@@ -182,8 +195,9 @@ function startGame(character) {
 
   drawHud();
   $('hud').addEventListener('click', (e) => {
+    if (e.target.closest('[data-menu]')) { toggleMenu(); drawHud(); return; }
     const b = e.target.closest('[data-open]');
-    if (b) openPanel(b.dataset.open);
+    if (b) { toggleMenu(false); drawHud(); openPanel(b.dataset.open); }
   });
   $('attack-btn').classList.remove('hidden');
   $('attack-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.attack(); });
@@ -195,6 +209,14 @@ function startGame(character) {
     const t = (attr) => e.target.closest(`[${attr}]`)?.getAttribute(attr);
     let v;
     if ((v = t('data-open')) != null) { overlay.dataset.panel = ''; openPanel(v); return; }
+    if ((v = t('data-quest-accept')) != null) { game.questAccept(Number(v)); ui.questMsg = 'Quest accepted.'; drawPanel(); return; }
+    if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here()); ui.questMsg = 'Quest given up. A new one has appeared.'; drawPanel(); return; }
+    if ((v = t('data-quest-claim')) != null) {
+      const r = game.questClaim(Number(v), here());
+      if (r) { ui.questMsg = `Quest complete: +${r.exp} EXP, +${r.coins} G${r.item ? `, ${r.item.replace(/_/g, ' ')}` : ''}.`; world?.say('Quest complete!', 'exp'); }
+      drawPanel(); return;
+    }
+    if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if (t('data-confirm-points') != null) { game.spendPoints(ui.pending); ui.pending = {}; drawPanel(); return; }
     if (t('data-reset-points') != null) { ui.pending = {}; drawPanel(); return; }
@@ -220,21 +242,31 @@ function startGame(character) {
 
   world = startWorld($('world'), character, {
     game,
+    view: { camera: settings.camera },
     onArea: (name) => showArea(name),
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
+      if (type === 'kill') for (const title of game.questKill(data.kind)) questReady(title);
       if (type === 'defeated') showArea(`Defeated by a ${data.by}. You wake up back home.`);
     },
     onKey(e) {
       if (e.code === 'KeyC') openPanel('status');
       if (e.code === 'KeyI') openPanel('bag');
       if (e.code === 'KeyB') openPanel('shop');
+      if (e.code === 'KeyQ') openPanel('quests');
       if (e.code === 'KeyH') openPanel('help');
       if (e.code === 'KeyM') openPanel('map');
+      if (e.code === 'KeyO') openPanel('settings');
       if (e.code === 'Escape') closePanel();
     },
   });
   window.addEventListener('pagehide', () => game.saveNow());
+  // Explore quests finish when you reach the place
+  game.fillQuests(here());
+  setInterval(() => {
+    const p = world?.position();
+    if (p) for (const title of game.questVisit(p.x, p.z)) questReady(title);
+  }, 1500);
   openPanel('help');
 }
 
@@ -250,15 +282,73 @@ function showArea(name) {
   areaTimer = setTimeout(() => el.classList.remove('show'), 4000);
 }
 
-function renderMap(el, player) {
+function renderMap(el, player, marks = []) {
   el.innerHTML = `
     <div class="status-window map-window" role="dialog" aria-label="World map">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       <h2>World Map</h2>
-      <canvas width="1600" height="1000" aria-label="World map with your position"></canvas>
-      <p class="map-note">The red arrow is you. 1 cm on this map is many kilometres: the Heartland alone is about 75 km across.</p>
+      <div class="map-frame">
+        <canvas width="1600" height="1000" aria-label="World map with your position"></canvas>
+        <div class="map-zoom"><button type="button" data-zoom="1" aria-label="Zoom in">+</button><button type="button" data-zoom="-1" aria-label="Zoom out">−</button><button type="button" data-zoom="0" aria-label="Show the whole map">⤢</button></div>
+      </div>
+      <p class="map-note">Scroll or pinch to zoom, drag to move around. The red arrow is you; blue diamonds are places your quests send you.</p>
     </div>`;
-  drawWorldMap(el.querySelector('canvas'), { player });
+  // the whole map is drawn once, large, and the window shows the zoomed part of it
+  const full = document.createElement('canvas');
+  full.width = 3200; full.height = 1000 * 2;
+  drawWorldMap(full, { player, marks });
+  const cv = el.querySelector('canvas');
+  const ctx = cv.getContext('2d');
+  const me = player ? toMap(player.x, player.z) : { x: 800, y: 500 };
+  const view = { zoom: 1, cx: 800, cy: 500 };
+  const draw = () => {
+    view.zoom = Math.min(8, Math.max(1, view.zoom));
+    const sw = 1600 / view.zoom, sh = 1000 / view.zoom;
+    view.cx = Math.min(1600 - sw / 2, Math.max(sw / 2, view.cx));
+    view.cy = Math.min(1000 - sh / 2, Math.max(sh / 2, view.cy));
+    ctx.clearRect(0, 0, 1600, 1000);
+    ctx.drawImage(full, (view.cx - sw / 2) * 2, (view.cy - sh / 2) * 2, sw * 2, sh * 2, 0, 0, 1600, 1000);
+  };
+  // zoom keeping the map point under (px, py) on the canvas still
+  const zoomAt = (factor, px = 800, py = 500) => {
+    const mx = view.cx + (px - 800) / view.zoom, my = view.cy + (py - 500) / view.zoom;
+    view.zoom *= factor;
+    view.zoom = Math.min(8, Math.max(1, view.zoom));
+    view.cx = mx - (px - 800) / view.zoom;
+    view.cy = my - (py - 500) / view.zoom;
+    draw();
+  };
+  const toCanvas = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * 1600 / r.width, (e.clientY - r.top) * 1000 / r.height]; };
+  cv.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, ...toCanvas(e)); }, { passive: false });
+  const touches = new Map();
+  let pinch = 0;
+  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); touches.set(e.pointerId, toCanvas(e)); });
+  cv.addEventListener('pointermove', (e) => {
+    if (!touches.has(e.pointerId)) return;
+    const [x, y] = toCanvas(e);
+    const [ox, oy] = touches.get(e.pointerId);
+    touches.set(e.pointerId, [x, y]);
+    if (touches.size === 2) {
+      const [a, b] = [...touches.values()];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pinch) zoomAt(d / pinch, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      pinch = d;
+    } else {
+      view.cx -= (x - ox) / view.zoom;
+      view.cy -= (y - oy) / view.zoom;
+      draw();
+    }
+  });
+  const lift = (e) => { touches.delete(e.pointerId); pinch = 0; };
+  cv.addEventListener('pointerup', lift);
+  cv.addEventListener('pointercancel', lift);
+  el.querySelector('.map-zoom').addEventListener('click', (e) => {
+    const z = e.target.closest('[data-zoom]')?.dataset.zoom;
+    if (z === '1') { view.cx = view.zoom === 1 ? me.x : view.cx; view.cy = view.zoom === 1 ? me.y : view.cy; zoomAt(1.6); }
+    else if (z === '-1') zoomAt(1 / 1.6);
+    else if (z === '0') { view.zoom = 1; draw(); }
+  });
+  draw();
 }
 
 function wireForm(formId, action) {

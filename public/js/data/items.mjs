@@ -61,6 +61,7 @@ export const ITEMS = {
   knight_blade: { name: 'Knight\'s Blade', icon: '⚔️', kind: 'weapon', type: 'sword', power: 32, speed: 0.5, chop: 1, price: 2200, text: 'Forged for the realm\'s knights.' },
   dragonbone_sword: { name: 'Dragonbone Sword', icon: '🐉', kind: 'weapon', type: 'sword', power: 60, speed: 0.5, chop: 1.2, price: 15000, text: 'Carved from an ancient dragon\'s bone.' },
 };
+for (const [id, it] of Object.entries(ITEMS)) it.id = id;
 
 // What the shop sells, and the level at which each item unlocks
 export const SHOP = [

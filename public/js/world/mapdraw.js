@@ -4,15 +4,33 @@ import { REGIONS, PLACES, RIVERS, LAKE, noise1, toMap } from '../data/world-layo
 let cache = null;
 
 // Draws the map once and keeps it; `player` ({x, z, heading} in world metres) adds a marker.
-export function drawWorldMap(cv, { player = null } = {}) {
+// `marks` ([{x, z, label}]) adds quest targets as glowing blue diamonds.
+export function drawWorldMap(cv, { player = null, marks = [] } = {}) {
   const ctx = cv.getContext('2d');
   if (!cache) {
+    // painted at twice the size so the map stays sharp when zoomed in
     cache = document.createElement('canvas');
-    cache.width = 1600;
-    cache.height = 1000;
-    paint(cache.getContext('2d'), cache.width, cache.height);
+    cache.width = 3200;
+    cache.height = 2000;
+    const c2 = cache.getContext('2d');
+    c2.scale(2, 2);
+    paint(c2, 1600, 1000);
   }
   ctx.drawImage(cache, 0, 0, cv.width, cv.height);
+  for (const m of marks) {
+    const p = toMap(m.x, m.z);
+    const x = p.x * cv.width / 1600, y = p.y * cv.height / 1000;
+    ctx.save();
+    ctx.shadowColor = '#3d9bff'; ctx.shadowBlur = 12;
+    ctx.fillStyle = '#9fd4ff'; ctx.strokeStyle = '#0a1a33'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, y - 11); ctx.lineTo(x + 8, y); ctx.lineTo(x, y + 11); ctx.lineTo(x - 8, y); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 15px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(m.label, x, y - 16);
+    ctx.fillStyle = '#e6f3ff'; ctx.fillText(m.label, x, y - 16);
+    ctx.restore();
+  }
   if (player) {
     const p = toMap(player.x, player.z);
     const sx = cv.width / 1600, sy = cv.height / 1000;

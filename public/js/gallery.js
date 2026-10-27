@@ -41,8 +41,18 @@ function rebuild() {
   const tallest = Math.max(...chars.map((c) => c.userData.box.y));
   const width = xs[xs.length - 1] - xs[0] + 2;
   const dist = Math.max(width / (2 * Math.tan((camera.fov * Math.PI) / 360) * camera.aspect), tallest * (stages.length === 1 ? 2.1 : 1.6)) * 1.05;
-  camera.position.set(0, tallest * 0.6, dist);
-  camera.lookAt(0, tallest * 0.42, 0);
+  // ?face=1 with a single stage looks closely at the head; ?turn=radians turns the body
+  if (params.get('turn')) chars.forEach((c) => { c.rotation.y = Number(params.get('turn')); });
+  if (params.get('face') && stages.length === 1) {
+    lineup.updateMatrixWorld(true);
+    const rig = chars[0].userData.rig;
+    const at = rig.head.getWorldPosition(new THREE.Vector3());
+    camera.position.set(at.x, at.y, at.z + rig.headR * 7);
+    camera.lookAt(at);
+  } else {
+    camera.position.set(0, tallest * 0.6, dist);
+    camera.lookAt(0, tallest * 0.42, 0);
+  }
 
   const labels = document.getElementById('labels');
   labels.style.gridTemplateColumns = `repeat(${stages.length}, 1fr)`;

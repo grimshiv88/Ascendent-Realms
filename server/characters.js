@@ -65,7 +65,25 @@ function saveProgress(accountId, p) {
   const boosts = Array.isArray(p.boosts)
     ? p.boosts.slice(0, 10).filter((b) => int(b?.sp, 0, 1e6) !== null && int(b?.until, 0, 1e15) !== null).map((b) => ({ sp: b.sp, until: b.until }))
     : [];
-  Object.assign(character, fields, { stats, inventory, equipped, boosts });
+  // Quests are kept as plain data: only known types, small numbers and short text
+  const str = (v, n) => (typeof v === 'string' && v.length <= n ? v : null);
+  const quests = [];
+  for (const q of Array.isArray(p.quests) ? p.quests.slice(0, 3) : []) {
+    if (!['hunt', 'gather', 'explore'].includes(q?.type)) continue;
+    const r = q.reward || {};
+    const clean = {
+      type: q.type, need: int(q.need, 1, 100), have: int(q.have, 0, 100), accepted: q.accepted === true,
+      title: str(q.title, 120), text: str(q.text, 300),
+      reward: { exp: int(r.exp, 0, 1e9), coins: int(r.coins, 0, 1e9), ...(r.item ? { item: str(r.item, 32) } : {}) },
+    };
+    if (q.type === 'hunt') clean.kind = str(q.kind, 32);
+    if (q.type === 'gather') clean.item = str(q.item, 32);
+    if (q.type === 'explore') clean.place = { x: int(q.place?.x, -1e6, 1e6), z: int(q.place?.z, -1e6, 1e6), r: int(q.place?.r, 1, 1000) };
+    const flat = JSON.stringify(clean);
+    if (flat.includes('null')) continue;
+    quests.push(clean);
+  }
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };

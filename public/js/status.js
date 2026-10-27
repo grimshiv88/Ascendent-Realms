@@ -6,6 +6,10 @@ import { tabsHtml } from './bag.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// The ☰ menu in the top right; the letter keys open the same windows directly
+let menuOpen = false;
+export const toggleMenu = (open = !menuOpen) => { menuOpen = open; };
+
 // `d` is the stats including gear; without it the base stats are shown
 export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
   const hp = Math.round(c.hp ?? d.hp);
@@ -18,12 +22,20 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
       <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
     </div>
-    <div class="hud-buttons">
-      <button type="button" data-open="status">Status <kbd>C</kbd></button>
-      <button type="button" data-open="bag">Bag <kbd>I</kbd></button>
-      <button type="button" data-open="shop">Shop <kbd>B</kbd></button>
-      <button type="button" data-open="map">Map <kbd>M</kbd></button>
-      <button type="button" data-open="help">Controls <kbd>H</kbd></button>
+    <div class="hud-menu">
+      <button type="button" class="menu-btn" data-menu aria-label="Menu" aria-expanded="${menuOpen}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </button>
+      <div class="hud-buttons${menuOpen ? '' : ' hidden'}">
+        <button type="button" data-open="status">Status <kbd>C</kbd></button>
+        <button type="button" data-open="bag">Bag <kbd>I</kbd></button>
+        <button type="button" data-open="shop">Shop <kbd>B</kbd></button>
+        <button type="button" data-open="quests">Quests <kbd>Q</kbd></button>
+        <button type="button" data-open="map">Map <kbd>M</kbd></button>
+        <button type="button" data-open="help">Controls <kbd>H</kbd></button>
+        <button type="button" data-open="settings">Settings <kbd>O</kbd></button>
+      </div>
+    </div>
     </div>`;
 }
 
@@ -94,6 +106,21 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
     </div>`;
 }
 
+// Player settings, kept in this browser
+export function renderSettings(el, settings) {
+  const opt = (value, title, text) => `<button type="button" class="setting-opt" data-camera="${value}" aria-pressed="${settings.camera === value}"><b>${title}</b><span>${text}</span></button>`;
+  el.innerHTML = `
+    <div class="status-window settings-window" role="dialog" aria-label="Settings">
+      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      <h2>Settings</h2>
+      <h3 class="bag-sub">Camera</h3>
+      <div class="setting-opts">
+        ${opt('free', 'Free camera', 'You turn the camera yourself (drag the mouse, or drag on the right of the screen). Your character walks the way you push, relative to the camera.')}
+        ${opt('follow', 'Follow your body', 'The camera stays behind your character. Left and right turn your body, forward walks the way you face.')}
+      </div>
+    </div>`;
+}
+
 export const HELP_HTML = `
   <div class="status-window help-window" role="dialog" aria-label="Controls">
     <button type="button" class="sw-close" data-close aria-label="Close">×</button>
@@ -106,7 +133,9 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Attack / punch</dt><dd>Click, or F (touch: the fist button)</dd></div>
       <div class="sw-row"><dt>Status</dt><dd>C</dd></div>
       <div class="sw-row"><dt>Bag and shop</dt><dd>I and B</dd></div>
+      <div class="sw-row"><dt>Quests</dt><dd>Q</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
+      <div class="sw-row"><dt>Settings</dt><dd>O (a free camera, or one that follows your body)</dd></div>
       <div class="sw-row"><dt>Swim</dt><dd>Walk into deep water</dd></div>
       <div class="sw-row"><dt>Touch</dt><dd>The stick on the left moves in any direction; drag on the right to turn the camera</dd></div>
     </dl>

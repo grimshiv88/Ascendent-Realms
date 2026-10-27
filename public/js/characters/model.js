@@ -592,12 +592,12 @@ const GOBLIN_STAGES = [
   },
   { // Hobgoblin: taller and lean with shaggy hair, a red skirt and cloth wraps
     h: 1.45, hh: 1.65, bulk: 0.88, muscle: 0.45, head: 1.2, hunch: 0.14, bend: 0.2, arm: 0.42, leg: 0.45,
-    ears: 1.3, nose: 0.38, hand: 1.15, fingers: 1.1, hair: { volume: 1, length: 0, spiky: 1.1 },
+    ears: 1.3, nose: 0.38, hand: 1.15, fingers: 1.1, hair: { volume: 1, length: 0.8, spiky: 1.3, swept: true },
     outfit: { skirt: { color: '#7d2a20', height: 0.15 }, belt: { color: '#4a2a1a' }, wraps: { color: '#6b2f22' } },
   },
   { // Goblin Chieftain: muscular, war paint, fur mantle, fang necklace and a skull on the belt
     h: 1.75, hh: 1.75, bulk: 1.0, muscle: 0.75, head: 1.02, hunch: 0.08, bend: 0.12, arm: 0.4, leg: 0.46,
-    ears: 1.2, nose: 0.34, hand: 1.1, hair: { volume: 1.1, length: 2.2 },
+    ears: 1.2, nose: 0.34, hand: 1.1, hair: { volume: 1.1, length: 2.2, spiky: 1.2, swept: true },
     outfit: {
       skirt: { color: '#7a2a1e', height: 0.18 }, belt: { color: '#4a2a1a', buckle: 'skull' },
       wraps: { color: '#6b2f22', legs: false }, fur: '#6a4a32', necklace: true, paint: '#8a2418',
@@ -605,25 +605,25 @@ const GOBLIN_STAGES = [
   },
   { // Goblin Lord: tall and upright, long hair, a purple loincloth with a gold buckle
     h: 2.1, hh: 1.9, bulk: 1.02, muscle: 0.85, head: 0.92, hunch: 0.03, bend: 0.05, arm: 0.39, leg: 0.48,
-    ears: 1.1, nose: 0.3, hand: 1.05, hair: { volume: 1.1, length: 3.2 },
+    ears: 1.1, nose: 0.3, hand: 1.05, hair: { volume: 1.1, length: 3.2, swept: true },
     outfit: {
-      skirt: { color: '#2e2234', height: 0.12 }, front: { color: '#43304f', length: 0.24 }, back: { color: '#43304f', length: 0.2 },
+      skirt: { color: '#2e2234', height: 0.12 }, front: { color: '#43304f', length: 0.3 }, back: { color: '#43304f', length: 0.2 },
       belt: { color: '#3a2418', buckle: 'gold' },
     },
   },
   { // Ogre Lord: a huge, heavy body, small head, tusks and a darker, greyer skin
-    h: 2.55, hh: 2.2, bulk: 1.55, muscle: 1.0, belly: 0.35, chestBroad: 1.15, head: 0.78, hunch: 0.12, bend: 0.08, arm: 0.41, leg: 0.42,
-    ears: 0.75, broadNose: true, tusks: true, hand: 1.15, hair: { volume: 0.9, length: 0.6, spiky: 0.8 },
+    h: 2.55, hh: 2.2, bulk: 1.42, muscle: 1.0, belly: 0.2, chestBroad: 1.12, head: 0.92, hunch: 0.12, bend: 0.08, arm: 0.41, leg: 0.42,
+    ears: 0.75, broadNose: true, tusks: true, hand: 1.15, hair: { volume: 0.8, length: 0.5, spiky: 0.7, swept: true },
     skinShift: ['#6b7559', 0.4],
-    outfit: { skirt: { color: '#2a2018', height: 0.2, tears: 0.3 }, front: { color: '#2a2018', length: 0.26 }, belt: { color: '#5a3a22', thick: 1.8 } },
+    outfit: { skirt: { color: '#2a2018', height: 0.2, tears: 0.3 }, front: { color: '#2a2018', length: 0.32 }, belt: { color: '#5a3a22', thick: 1.8 } },
   },
   { // Goblin Emperor: the tallest, lean and powerful, long flowing hair, a spiked gold crown,
     // black loincloth with gold trim, brighter skin
     h: 2.7, hh: 2.3, bulk: 1.08, muscle: 0.95, head: 0.84, hunch: 0, bend: 0, arm: 0.39, leg: 0.5,
-    ears: 1.15, nose: 0.3, hand: 1.0, hair: { volume: 1.2, length: 5 },
+    ears: 1.15, nose: 0.3, hand: 1.0, hair: { volume: 1.2, length: 5, swept: true },
     skinShift: ['#7aa83c', 0.25],
     outfit: {
-      skirt: { color: '#1d1a20', height: 0.1 }, front: { color: '#1d1a20', length: 0.36, trim: '#c99a3a' },
+      skirt: { color: '#1d1a20', height: 0.1 }, front: { color: '#1d1a20', length: 0.4, trim: '#c99a3a' },
       back: { color: '#1d1a20', length: 0.3, trim: '#c99a3a' }, belt: { color: '#2a1e14', buckle: 'gold' }, crown: true,
     },
   },
@@ -655,9 +655,9 @@ function tierOutfit(name, c) {
       skirt: { color: '#2a2228', height: 0.12 }, front: { color: c.lord, length: 0.24 }, back: { color: c.lord, length: 0.2 },
       belt: { color: '#3a2418', buckle: 'gold' },
     };
-    case 'brute': return { skirt: { color: '#2a2018', height: 0.2, tears: 0.3 }, front: { color: '#2a2018', length: 0.26 }, belt: { color: '#5a3a22', thick: 1.8 } };
+    case 'brute': return { skirt: { color: '#2a2018', height: 0.2, tears: 0.3 }, front: { color: '#2a2018', length: 0.32 }, belt: { color: '#5a3a22', thick: 1.8 } };
     default: return {
-      skirt: { color: '#1d1a20', height: 0.1 }, front: { color: '#1d1a20', length: 0.36, trim: '#c99a3a' },
+      skirt: { color: '#1d1a20', height: 0.1 }, front: { color: '#1d1a20', length: 0.4, trim: '#c99a3a' },
       back: { color: '#1d1a20', length: 0.3, trim: '#c99a3a' }, belt: { color: '#2a1e14', buckle: 'gold' }, crown: true,
     };
   }
@@ -745,11 +745,12 @@ const BUILDERS = {
       height: human ? s.hh : s.h, bulk: s.bulk, muscle: s.muscle, belly: s.belly || 0, chestBroad: s.chestBroad || 1,
       headScale: human ? 1 + (s.head - 1) * 0.35 : s.head, hunch: human ? s.hunch * 0.25 : s.hunch,
       armFrac: human ? Math.min(s.arm, 0.39) : s.arm, legFrac: human ? Math.max(s.leg, 0.47) : s.leg,
-      handScale: human ? 1 : s.hand, fingerLen: human ? 1 : s.fingers || 1, toes: true, noSkull: true,
+      handScale: human ? 1 : s.hand, fingerLen: human ? 1 : s.fingers || 1, toes: true, noSkull: true, footScale: human ? 1.05 : 1.25,
     }, m);
     goblinHead(rig, m, {
       noseLen: (s.nose || 0.3) * (human ? 0.7 : 1), broadNose: s.broadNose, tusks: s.tusks, fangs: !s.tusks,
       jawW: s.broadNose ? 1.25 : 1, eyeSize: stage === 0 && !human ? 1.25 : 1,
+      refine: human ? 1 : Math.min(1, stage * 0.5), // later stages get a longer, stronger, more human face
     });
     pointedEars(rig.head, rig.headR, m, { size: s.ears * (human ? 0.75 : 1), lift: stage === 0 ? 0.25 : 0.4, sweep: 0.3 });
     if (s.hair) hair(rig.head, rig.headR, m.accent, { ...s.hair, seed: 20 + stage });

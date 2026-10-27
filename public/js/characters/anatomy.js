@@ -233,8 +233,8 @@ export function sculptedHumanoid(P, mats) {
     const k = 0.5 + m * 0.5;
     for (const side of [-1, 1]) {
       // chest muscles
-      const pec = ellipsoid(chestR * 0.5 * k, tl * 0.12 * k, front * 0.3, skin);
-      pec.position.set(side * chestR * 0.4, tl * 0.77, front * 0.74);
+      const pec = ellipsoid(chestR * 0.52 * k, tl * 0.13 * k, front * 0.22, skin);
+      pec.position.set(side * chestR * 0.38, tl * 0.76, front * 0.76);
       pec.rotation.z = side * 0.18;
       detail(pec);
       // the slope from the neck to the shoulders
@@ -252,7 +252,7 @@ export function sculptedHumanoid(P, mats) {
       const s = (m - 0.2) * 1.1;
       for (let row = 0; row < 3; row++) {
         for (const side of [-1, 1]) {
-          const ab = ellipsoid(waistR * 0.26, tl * 0.06, waistR * 0.05 * s, skin);
+          const ab = ellipsoid(waistR * 0.24, tl * 0.055, waistR * 0.03 * s, skin);
           ab.position.set(side * waistR * 0.24, tl * (0.2 + row * 0.12), waistR * depth * 0.93 + (P.belly || 0) * waistR * 0.2);
           detail(ab);
         }
@@ -380,12 +380,14 @@ export function pointedEars(head, r, mats, { size = 1, lift = 0.35, sweep = 0.35
 }
 
 // Messy hair made of clumps, plus long strands down the back when `length` is above 0.
-export function hair(head, r, baseMat, { volume = 1, length = 0, seed = 7, spiky = 1, fringe = true } = {}) {
+// `swept` brushes everything up and back off the face, like the goblin-line sculpts.
+export function hair(head, r, baseMat, { volume = 1, length = 0, seed = 7, spiky = 1, fringe = true, swept = false } = {}) {
   const rand = seeded(seed);
   const mat = new THREE.MeshStandardMaterial({ color: baseMat.color.clone().multiplyScalar(0.7), roughness: 0.95 });
   const g = new THREE.Group();
-  const cap = ellipsoid(r * 0.95, r * 0.9, r * 1.0, mat);
-  cap.position.set(0, r * 0.14, -r * 0.08);
+  // swept hair starts higher, leaving the forehead clear
+  const cap = swept ? ellipsoid(r * 0.95, r * 0.88, r * 0.98, mat) : ellipsoid(r * 0.98, r * 0.96, r * 1.04, mat);
+  cap.position.set(0, r * (swept ? 0.26 : 0.16), -r * (swept ? 0.2 : 0.1));
   g.add(cap);
   const clumps = Math.round(34 * volume);
   for (let i = 0; i < clumps; i++) {
@@ -394,9 +396,11 @@ export function hair(head, r, baseMat, { volume = 1, length = 0, seed = 7, spiky
     const dir = new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
     if (dir.z > 0.45 && dir.y < 0.75 && !fringe) continue;
     if (dir.z > 0.55 && dir.y < 0.45) continue; // keep the face clear
-    const base = dir.clone().multiplyScalar(r * 0.88).add(new THREE.Vector3(0, r * 0.14, -r * 0.08));
+    if (swept && dir.z > 0.2 && dir.y < 0.35) continue; // and the temples
+    const base = dir.clone().multiplyScalar(r * 0.88).add(new THREE.Vector3(0, r * (swept ? 0.22 : 0.14), -r * (swept ? 0.16 : 0.08)));
     const out = dir.clone().lerp(new THREE.Vector3(dir.x * 0.5, -0.7, -1), 0.5 + rand() * 0.2);
-    if (dir.z > 0.3) out.lerp(new THREE.Vector3(dir.x * 0.6, -0.6, 0.8), 0.5); // fringe falls forward over the brow
+    if (swept) out.copy(dir).lerp(new THREE.Vector3(dir.x * 0.4, 0.45, -1), 0.7); // spikes brushed up and back
+    else if (dir.z > 0.3) out.lerp(new THREE.Vector3(dir.x * 0.6, -0.6, 0.8), 0.5); // fringe falls forward over the brow
     g.add(spike(base, out, r * (0.4 + rand() * 0.4) * spiky, r * (0.2 + rand() * 0.08), mat));
   }
   if (length > 0) {
@@ -418,6 +422,8 @@ export function hair(head, r, baseMat, { volume = 1, length = 0, seed = 7, spiky
       }
     }
   }
+  // hair throws no shadow, so the face isn't striped by the clumps above it
+  g.traverse((o) => { o.castShadow = false; });
   head.add(g);
   return g;
 }
@@ -426,41 +432,69 @@ export function hair(head, r, baseMat, { volume = 1, length = 0, seed = 7, spiky
 export function goblinHead(rig, mats, f) {
   const { head, headR: r } = rig;
   const skin = mats.skin;
+  const k = f.refine || 0; // 0: the little goblin's face; 1: long, strong and nearly human
+  const L = THREE.MathUtils.lerp;
   const cranium = ellipsoid(r * 0.9 * (f.craniumW || 1), r * 0.95, r * 1.0, skin);
   cranium.position.set(0, r * 0.1, -r * 0.06);
   head.add(cranium);
-  const jaw = ellipsoid(r * 0.68 * (f.jawW || 1), r * 0.52, r * 0.72, skin);
-  jaw.position.set(0, -r * 0.36, r * 0.16);
+  const jaw = ellipsoid(r * L(0.68, 0.62, k) * (f.jawW || 1), r * L(0.52, 0.6, k), r * 0.72, skin);
+  jaw.position.set(0, -r * L(0.36, 0.42, k), r * 0.16);
   head.add(jaw);
-  const chin = ellipsoid(r * 0.3 * (f.jawW || 1), r * 0.22, r * 0.25, skin);
-  chin.position.set(0, -r * 0.7, r * 0.55);
+  const chin = ellipsoid(r * L(0.3, 0.34, k) * (f.jawW || 1), r * 0.22, r * 0.25, skin);
+  chin.position.set(0, -r * L(0.7, 0.86, k), r * L(0.55, 0.5, k));
   head.add(chin);
   for (const side of [-1, 1]) {
-    const cheek = ellipsoid(r * 0.28, r * 0.2, r * 0.28, skin);
-    cheek.position.set(side * r * 0.42, -r * 0.1, r * 0.52);
+    // round goblin cheeks become high, flat cheekbones
+    const cheek = ellipsoid(r * L(0.28, 0.2, k), r * L(0.2, 0.1, k), r * L(0.28, 0.16, k), skin);
+    cheek.position.set(side * r * L(0.42, 0.44, k), r * L(-0.1, -0.02, k), r * L(0.52, 0.66, k));
+    cheek.rotation.z = side * 0.3 * k;
     head.add(cheek);
+    // the jaw line from ear to chin
+    if (k > 0) {
+      const jl = ellipsoid(r * 0.1, r * 0.34, r * 0.12, skin);
+      jl.position.set(side * r * 0.42, -r * 0.5, r * 0.36);
+      jl.rotation.set(0.5, 0, side * 0.6);
+      head.add(jl);
+    }
     // a heavy brow, angled down toward the nose for the scowl
-    const brow = ellipsoid(r * 0.3, r * 0.1 * (f.browH || 1), r * 0.2, skin);
-    brow.position.set(side * r * 0.28, r * 0.26, r * 0.78);
-    brow.rotation.z = side * 0.38;
+    const brow = ellipsoid(r * 0.3, r * 0.1 * (f.browH || 1) * (1 + k * 0.25), r * 0.2, skin);
+    brow.position.set(side * r * 0.28, r * L(0.26, 0.24, k), r * L(0.78, 0.82, k));
+    brow.rotation.z = side * L(0.38, 0.22, k);
     head.add(brow);
-    // eye in a shadowed socket
-    const socket = ellipsoid(r * 0.19, r * 0.12, r * 0.08, mats.dark);
+    // eye in a shadowed socket, narrower as the face matures
+    const es = (f.eyeSize || 1) * L(1, 0.8, k);
+    const socket = ellipsoid(r * 0.19, r * L(0.12, 0.1, k), r * 0.08, mats.dark);
     socket.position.set(side * r * 0.29, r * 0.1, r * 0.8);
     head.add(socket);
-    const eye = ellipsoid(r * 0.135 * (f.eyeSize || 1), r * 0.09 * (f.eyeSize || 1), r * 0.06, mats.eye);
+    const eye = ellipsoid(r * 0.135 * es, r * 0.09 * es * L(1, 0.75, k), r * 0.06, mats.eye);
     eye.position.set(side * r * 0.29, r * 0.1, r * 0.845);
     eye.rotation.z = side * 0.18;
     head.add(eye);
-    const pupil = ellipsoid(r * 0.035, r * 0.06, r * 0.02, mats.pupil);
+    const pupil = ellipsoid(r * 0.035 * es, r * 0.06 * es * L(1, 0.8, k), r * 0.02, mats.pupil);
     pupil.position.set(side * r * 0.27, r * 0.1, r * 0.9);
     head.add(pupil);
   }
-  // nose: long and hooked for small goblins, broad for ogres
+  // nose: long and hooked for the small goblin, long and straight later, broad for ogres
   if (f.broadNose) {
     const nose = ellipsoid(r * 0.2, r * 0.16, r * 0.18, skin);
     nose.position.set(0, -r * 0.08, r * 0.95);
     head.add(nose);
+    const bridge = ellipsoid(r * 0.1, r * 0.2, r * 0.1, skin);
+    bridge.position.set(0, r * 0.08, r * 0.88);
+    head.add(bridge);
+  } else if (k > 0.4) {
+    const bridge = ellipsoid(r * 0.075, r * 0.3, r * 0.1, skin);
+    bridge.position.set(0, -r * 0.02, r * 0.92);
+    bridge.rotation.x = -0.28;
+    head.add(bridge);
+    const tip = ellipsoid(r * 0.085, r * 0.08, r * 0.09, skin);
+    tip.position.set(0, -r * 0.26, r * 1.02);
+    head.add(tip);
+    for (const side of [-1, 1]) {
+      const wing = ellipsoid(r * 0.06, r * 0.05, r * 0.06, skin);
+      wing.position.set(side * r * 0.08, -r * 0.27, r * 0.95);
+      head.add(wing);
+    }
   } else {
     const nose = new THREE.Mesh(CONE, skin);
     nose.scale.set(r * 0.11, r * (f.noseLen || 0.4), r * 0.11);
@@ -472,23 +506,24 @@ export function goblinHead(rig, mats, f) {
     head.add(bridge);
   }
   // a downturned mouth
-  const mouth = ellipsoid(r * 0.24, r * 0.025, r * 0.05, mats.pupil);
-  mouth.position.set(0, -r * 0.46, r * 0.84);
+  const my = -r * L(0.46, 0.52, k);
+  const mouth = ellipsoid(r * L(0.24, 0.2, k), r * 0.025, r * 0.05, mats.pupil);
+  mouth.position.set(0, my, r * L(0.84, 0.86, k));
   head.add(mouth);
   for (const side of [-1, 1]) {
     const corner = ellipsoid(r * 0.06, r * 0.022, r * 0.04, mats.pupil);
-    corner.position.set(side * r * 0.24, -r * 0.5, r * 0.78);
+    corner.position.set(side * r * L(0.24, 0.2, k), my - r * 0.04, r * 0.8);
     corner.rotation.z = side * 0.5;
     head.add(corner);
   }
   if (f.tusks) {
     for (const side of [-1, 1]) {
-      head.add(spike(new THREE.Vector3(side * r * 0.2, -r * 0.5, r * 0.82), new THREE.Vector3(side * 0.15, 1, 0.15), r * 0.26, r * 0.055, mats.bone));
+      head.add(spike(new THREE.Vector3(side * r * 0.2, my - r * 0.04, r * 0.82), new THREE.Vector3(side * 0.15, 1, 0.15), r * 0.26, r * 0.055, mats.bone));
     }
   }
   if (f.fangs) {
     for (const side of [-1, 1]) {
-      head.add(spike(new THREE.Vector3(side * r * 0.11, -r * 0.44, r * 0.86), new THREE.Vector3(0, -1, 0.1), r * 0.1, r * 0.03, mats.bone));
+      head.add(spike(new THREE.Vector3(side * r * 0.11, my + r * 0.02, r * 0.86), new THREE.Vector3(0, -1, 0.1), r * 0.1 * L(1, 0.7, k), r * 0.03, mats.bone));
     }
   }
 }

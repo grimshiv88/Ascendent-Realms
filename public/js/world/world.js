@@ -11,8 +11,8 @@ import { wearGear } from '../characters/gear.js';
 import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS } from '../data/world-layout.mjs';
 import { RACES } from '../data/game-data.mjs';
 
-const WALK = 1.6;   // metres per second, a normal walking pace
-const RUN = 4.6;
+const WALK = 3.4;   // metres per second, a brisk game walking pace
+const RUN = 8;
 const SWIM = 0.45;  // share of walking speed while swimming
 const TURN = 9;     // how quickly you turn to face where you're going
 
@@ -20,7 +20,7 @@ const TURN = 9;     // how quickly you turn to face where you're going
 // defeat and level-ups to the page.
 export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, view } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // sharper costs a lot of speed on iPads
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -99,6 +99,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let pitch = view?.pitch ?? 0.32;
   let dist = view?.dist ?? THREE.MathUtils.clamp(bodyH * 2.6 + 2, 3, 16);
   let camDist = dist;
+  // 'free': you turn the camera yourself and move relative to it. 'follow': it stays behind your body.
+  let cameraMode = view?.camera === 'follow' ? 'follow' : 'free';
 
   // ---------- floating text (damage numbers, pickups) ----------
   const floatLayer = document.createElement('div');
@@ -175,6 +177,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       floatText(`${dmg}${crit ? '!' : ''}`, new THREE.Vector3(m.x, m.y + m.height + 0.2, m.z), crit ? 'crit' : 'dmg');
       const reward = creatures.hit(m, dmg);
       if (reward) {
+        // monsters far below your level teach you little
+        const gap = game.character.level - m.level;
+        reward.exp = Math.max(1, Math.round(reward.exp * (gap <= 3 ? 1 : Math.max(0.1, 1 - (gap - 3) * 0.15))));
         floatText(`+${reward.exp} EXP`, new THREE.Vector3(m.x, m.y + m.height + 0.7, m.z), 'exp');
         game.gainExp(reward.exp);
         game.gainCoins(reward.coins);
@@ -311,7 +316,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
 
   renderer.setAnimationLoop(() => {
-    const dt = Math.min(clock.getDelta(), 0.05);
+    const dt = Math.min(clock.getDelta(), 0.1); // a slow frame still moves you the full distance
     const t = clock.elapsedTime;
 
     // Movement relative to the camera, in any direction
@@ -326,7 +331,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const running = keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(stick.x, stick.y) > 0.9;
     const amount = Math.min(1, Math.hypot(fx, fz));
     let target = 0;
-    if (amount > 0.05) {
+    if (cameraMode === 'follow') {
+      // Follow camera: left and right turn your body, forward and back walk the way you face,
+      // and the camera swings round behind you
+      heading -= fx * dt * 2.8;
+      if (Math.abs(fz) > 0.05) {
+        move.set(Math.sin(heading) * Math.sign(fz), 0, Math.cos(heading) * Math.sign(fz));
+        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * speedBonus * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
+      }
+      if (!look) {
+        const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
+        yaw += back * Math.min(1, dt * 4);
+      }
+    } else if (amount > 0.05) {
       const camFwd = v3.set(-Math.sin(yaw), 0, -Math.cos(yaw));
       move.set(camFwd.x * fz - camFwd.z * fx, 0, camFwd.z * fz + camFwd.x * fx).normalize();
       const want = Math.atan2(move.x, move.z);
@@ -334,7 +351,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       heading += diff * Math.min(1, dt * TURN);
       // move the way you want to go, even while still turning to face it
-      target = (running ? RUN : WALK) * speedBonus * amount * Math.max(0.6, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
+      target = (running ? RUN : WALK) * speedBonus * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
@@ -361,7 +378,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     avatar.rotation.z = dead ? Math.min(Math.PI / 2, (avatar.rotation.z || 0) + dt * 3) : 0;
     const rig = avatar.userData.rig;
     rig.root.position.z = 0;
-    animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 0.9);
+    animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 1.6);
 
     // Attacks
     cooldown = Math.max(0, cooldown - dt);
@@ -448,6 +465,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
     say,
+    setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     stop() {
       saveNow();
       renderer.setAnimationLoop(null);

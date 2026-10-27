@@ -4,7 +4,7 @@ import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { sample } from '../data/world-layout.mjs';
 
 // [name, body to build, level range, aggressive?, speed m/s, drops [item, chance, min, max]]
-const KINDS = {
+export const KINDS = {
   slime: { name: 'Wild Slime', body: { race: 'slime', form: 'monster', look: { skin: '#6fb8e8' }, size: 0.6 }, levels: [1, 3], aggressive: false, speed: 1.2, drops: [['slime_gel', 0.8, 1, 2]] },
   goblin: { name: 'Wild Goblin', body: { race: 'goblin', form: 'monster', stage: 0 }, levels: [2, 5], aggressive: true, speed: 2.4, drops: [['goblin_ear', 0.6, 1, 1], ['bread', 0.15, 1, 1]] },
   hobgoblin: { name: 'Hobgoblin', body: { race: 'goblin', form: 'monster', stage: 1 }, levels: [8, 14], aggressive: true, speed: 2.8, drops: [['goblin_ear', 0.8, 1, 2], ['herb', 0.2, 1, 1], ['rusty_sword', 0.05, 1, 1]] },
@@ -15,7 +15,7 @@ const KINDS = {
   frostslime: { name: 'Frost Slime', body: { race: 'slime', form: 'monster', look: { skin: '#dff3ff' }, size: 0.9 }, levels: [14, 20], aggressive: true, speed: 1.5, drops: [['frost_core', 0.5, 1, 1], ['slime_gel', 0.6, 1, 2]] },
   sandlizard: { name: 'Sand Lizard', body: { race: 'lizardman', form: 'monster', look: { skin: '#c9a060' } }, levels: [12, 18], aggressive: true, speed: 3, drops: [['lizard_scale', 0.7, 1, 2], ['cactus_flesh', 0.3, 1, 1]] },
 };
-const BY_REGION = {
+export const BY_REGION = {
   heart: ['slime', 'slime', 'goblin'], warrens: ['goblin', 'goblin', 'hobgoblin', 'slime'], peaks: ['drake'],
   fae: ['wisp', 'wisp', 'slime'], mire: ['lizard', 'lizard', 'serpent'], frost: ['frostslime'], sun: ['sandlizard'],
 };
@@ -170,7 +170,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave })
     for (const [id, chance, min, max] of m.kind.drops) {
       if (Math.random() < chance) drops.push([id, min + Math.floor(Math.random() * (max - min + 1))]);
     }
-    return { exp: Math.round(10 * m.level ** 1.25), coins: 2 + m.level * 2 + Math.floor(Math.random() * (m.level + 2)), drops, name: m.kind.name };
+    // a goblin is a small fraction of a level; tougher monsters are worth far more
+    return { exp: Math.round(1 + 0.6 * m.level ** 1.35), coins: 2 + m.level * 2 + Math.floor(Math.random() * (m.level + 2)), drops, name: m.kind.name, kind: m.kindId };
   }
 
   return {
