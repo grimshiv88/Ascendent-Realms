@@ -328,6 +328,16 @@ export function createProgress(c, { save, onChange, onEvent }) {
       changed('tent');
       return 'ok';
     },
+    // pick a placed torch back up (the nearest within `r` metres of x, z)
+    takeTorch(x, z, r = 2.2) {
+      let best = -1, bestD = r;
+      c.torches.forEach((t, i) => { const d = Math.hypot(t.x - x, t.z - z); if (d < bestD) { bestD = d; best = i; } });
+      if (best < 0) return 'none';
+      if (!addItem('torch', 1)) return 'full';
+      c.torches.splice(best, 1);
+      changed('torches');
+      return 'ok';
+    },
     saveNow() { clearTimeout(saveTimer); saveTimer = null; return save?.(snapshot()); },
     // the server's count after it charged you (for land)
     setCoins(n) { c.coins = n; changed('coins'); },

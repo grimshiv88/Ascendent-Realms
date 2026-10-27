@@ -77,30 +77,20 @@ function plate(name, level) {
   return { sprite, draw };
 }
 
-export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, onDrawn }) {
+export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush }) {
   const list = [];
   const tmp = {};
   let spawnTimer = 0;
 
-  // A monster's level leans towards yours: stronger players meet stronger monsters of each kind
+  // Monsters turn up close to your own level (bosses are the exception)
   function levelFor(kind, playerLevel) {
-    const [lo, hi] = kind.levels;
-    const want = playerLevel + Math.round(rand(-3, 4));
-    return Math.max(lo, Math.min(hi, Math.random() < 0.3 ? Math.round(rand(lo, hi)) : want));
+    return Math.max(1, playerLevel + Math.round(rand(-2, 2)));
   }
 
-  // The kind to spawn here. A player far stronger than the local monsters draws in the next evolution
-  // of the goblin line instead ("something strong has caught your scent").
-  function kindFor(s, x, z, playerLevel) {
+  // The kind to spawn here: whatever lives in this part of the land
+  function kindFor(s, x, z) {
     const kinds = kindsAt(x, z, s.region);
-    if (!kinds) return null;
-    let id = pickOne(kinds);
-    const top = Math.max(...kinds.map((k) => KINDS[k].levels[1]));
-    if (playerLevel > top + 4 && GOBLIN_LINE.includes(id) && Math.random() < 0.35) {
-      const stronger = GOBLIN_LINE.find((k) => KINDS[k].levels[1] >= playerLevel) || 'emperor';
-      if (GOBLIN_LINE.indexOf(stronger) > GOBLIN_LINE.indexOf(id)) return { id: stronger, drawn: true };
-    }
-    return { id, drawn: false };
+    return kinds ? { id: pickOne(kinds) } : null;
   }
 
   function make(kindId, level, x, y, z, extra = {}) {
@@ -111,7 +101,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const tag = plate(kind.name, level);
     tag.sprite.position.set(x, y + h + 0.5, z);
     scene.add(body, tag.sprite);
-    const maxHp = 18 + level * 14;
+    // a normal monster has less HP than a player of its level; a boss has far more
+    const maxHp = Math.round((10 + level * 7) * (extra.boss ? 6 : 1));
     const m = {
       kind, kindId, level, body, tag, x, z, y, heading: Math.random() * 6.28, hp: maxHp, maxHp,
       atk: 4 + level * 3, def: 1 + level, speed: kind.speed, radius: Math.max(0.4, h * 0.3), height: h,
@@ -133,7 +124,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     for (let tries = 0; tries < 6; tries++) {
       const at = spot(p.x, p.z, SPAWN_MIN + Math.random() * (SPAWN_MAX - SPAWN_MIN));
       if (!at) continue;
-      const pick = kindFor(at.s, at.x, at.z, p.level);
+      const pick = kindFor(at.s, at.x, at.z);
       if (!pick) continue;
       const kind = KINDS[pick.id];
       // goblins roam in small packs
@@ -141,10 +132,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       for (let i = 0; i < n; i++) {
         const q = i ? spot(at.x, at.z, rand(2, 5)) : at;
         if (!q) continue;
-        // a monster drawn by your strength already knows where you are
-        make(pick.id, levelFor(kind, p.level), q.x, q.y, q.z, pick.drawn ? { hunting: true } : {});
+        make(pick.id, levelFor(kind, p.level), q.x, q.y, q.z);
       }
-      if (pick.drawn) onDrawn?.(kind.name);
       return;
     }
   }
@@ -228,7 +217,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         else { animateCharacter(m.body, t, 0); continue; }
       }
       // by day only angry monsters come for you; at night they all do. They notice you from afar
-      // and creep closer before they charge; a monster drawn by your strength tracks you down.
+      // and creep closer before they charge; an ambusher that has sprung tracks you down.
       const sense = m.hunting ? 140 : m.state === 'chase' ? 40 : night ? NOTICE + 10 : NOTICE;
       const chase = (m.angry || night) && !p.dead && !hidden && dist < sense;
       const stalk = !chase && m.angry && !p.dead && !hidden && dist < STALK;

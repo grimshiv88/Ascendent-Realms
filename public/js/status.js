@@ -44,6 +44,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
         <button type="button" data-open="help">Controls <kbd>H</kbd></button>
         <button type="button" data-open="rankings">Top players <kbd>R</kbd></button>
         <button type="button" data-open="settings">Settings <kbd>O</kbd></button>
+        <button type="button" data-switch>Switch account</button>
         <button type="button" data-signout>Log out</button>
       </div>
     </div>
@@ -137,10 +138,12 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
       <form class="pw-change" data-password>
         <label>New password <input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
         <label>Type it again <input name="confirm" type="password" minlength="8" autocomplete="new-password" required></label>
-        <button type="submit" class="gold-button small">Change password</button>
+        <div class="pw-buttons"><button type="submit" class="gold-button small">Change password</button>
+          <button type="button" class="link-button" data-show-pw aria-pressed="false">Show</button></div>
         <p class="bag-hint" role="status">${esc(passwordMsg)}</p>
       </form>
-      <button type="button" class="gold-button small" data-signout>Log out</button>
+      <div class="pw-buttons"><button type="button" class="gold-button small" data-signout>Log out</button>
+        <button type="button" class="gold-button small" data-switch>Switch account</button></div>
       ${accounts ? `<h3 class="bag-sub">Saved accounts</h3>
       <p class="bag-hint">${cloud ? 'Saved privately online, so they follow you to any device you open the game on.' : 'Kept in this browser only.'} Passwords are stored scrambled, so they can't be shown.</p>
       <ul class="device-accounts">${accounts.map((a) => `<li><b>${esc(a.username)}</b> <small>${esc(a.email)}</small><br>${a.character ? `${esc(a.character.name)} · ${esc(RACES[a.character.race]?.name || a.character.race)} ${esc(CLASSES[a.character.cls]?.name || a.character.cls)} · Lv ${a.character.level} · ${a.character.coins} coins` : 'No character yet'}</li>`).join('') || '<li>None</li>'}</ul>` : ''}
@@ -182,7 +185,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Skills</dt><dd>K opens them. Use a skill with its key (1 to 6 at first; you can change them), or tap its button</dd></div>
       <div class="sw-row"><dt>Sleep</dt><dd>Z, inside your tent, by a campfire or by a torch (lowers Fatigue; fastest in a tent)</dd></div>
       <div class="sw-row"><dt>Tent</dt><dd>P pitches your tent in front of you (buy one in the shop, or craft it from 8 logs). Press P beside it to pack it up</dd></div>
-      <div class="sw-row"><dt>Place a torch</dt><dd>T (buy torches in the shop; they keep monsters away at night)</dd></div>
+      <div class="sw-row"><dt>Torches</dt><dd>T places one (buy them in the shop; they keep monsters away at night). Press T beside one to pick it back up</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
       <div class="sw-row"><dt>Land</dt><dd>L shows the grid of plots; tap a square to buy it or manage it</dd></div>
       <div class="sw-row"><dt>Top players</dt><dd>R</dd></div>

@@ -246,6 +246,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   function placeTorch() {
     if (!game || dead) return;
+    // standing by one of your torches, T picks it back up
+    const took = game.takeTorch(pos.x, pos.z);
+    if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
     const r = game.placeTorch(pos.x + Math.sin(heading) * 1.2, pos.z + Math.cos(heading) * 1.2);
     say(r === 'ok' ? 'Torch placed' : r === 'none' ? 'You have no torches. The shop sells them.' : 'You can only keep 10 torches lit', r === 'ok' ? 'note' : 'hurt');
     if (r === 'ok') drawTorches();
@@ -259,7 +262,6 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, moving: speedNow > 1 }),
     isNight: () => night,
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
-    onDrawn(name) { onEvent?.('drawn', { name }); },
     isInsideCave: insideCave,
     onHitPlayer(m) {
       if (!game || dead) return;

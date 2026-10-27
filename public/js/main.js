@@ -41,7 +41,10 @@ const intro = startIntro($('scene'), {
   onDone() {
     $('title').classList.remove('reveal');
     $('title').classList.add('docked');
-    setTimeout(() => show('choose'), 900);
+    // after "Switch account" the sign-in form opens straight away
+    let switching = false;
+    try { switching = sessionStorage.getItem('ar.switch') === '1'; sessionStorage.removeItem('ar.switch'); } catch { /* blocked */ }
+    setTimeout(() => show(switching ? 'signin' : 'choose'), 900);
     removeSkip();
   },
 });
@@ -296,11 +299,13 @@ function startGame(character) {
     if (e.target.closest('[data-menu]')) { toggleMenu(); drawHud(); return; }
     const b = e.target.closest('[data-open]');
     if (e.target.closest('[data-signout]')) { logOut(); return; }
+    if (e.target.closest('[data-switch]')) { logOut(true); return; }
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act) { toggleMenu(false); drawHud(); if (act === 'sleep') world?.sleep(); if (act === 'tent') world?.pitchTent(); return; }
     if (b) { toggleMenu(false); drawHud(); if (b.dataset.open === 'land') toggleLand(); else openPanel(b.dataset.open); }
   });
-  async function logOut() {
+  async function logOut(switchAccount = false) {
+    if (switchAccount) { try { sessionStorage.setItem('ar.switch', '1'); } catch { /* blocked */ } }
     await Promise.resolve(game.saveNow()).catch(() => {});
     world?.stop();
     await api.signOut();
@@ -340,6 +345,15 @@ function startGame(character) {
     if (t('data-land-change') != null) { landAction(() => api.landPurpose(ui.plot.ix, ui.plot.iz, ui.landChoice), 'Purpose changed.'); return; }
     if (t('data-land-prepare') != null) { landAction(() => api.landPrepare(ui.plot.ix, ui.plot.iz), 'Cleared and levelled. Ready to build on.'); return; }
     if (t('data-signout') != null) { logOut(); return; }
+    if (t('data-switch') != null) { logOut(true); return; }
+    if (t('data-show-pw') != null) {
+      const btn = e.target.closest('[data-show-pw]');
+      const on = btn.getAttribute('aria-pressed') !== 'true';
+      for (const i of overlay.querySelectorAll('[data-password] input')) i.type = on ? 'text' : 'password';
+      btn.setAttribute('aria-pressed', String(on));
+      btn.textContent = on ? 'Hide' : 'Show';
+      return;
+    }
     if ((v = t('data-learn')) != null) { if (game.learnSkill(v)) ui.skillMsg = `You learned ${SKILLS[v].name}!`; drawPanel(); return; }
     if ((v = t('data-ready')) != null) { game.readySkill(v); ui.skillMsg = ''; drawPanel(); return; }
     if ((v = t('data-store')) != null) { game.storeSkill(v); ui.skillMsg = `${SKILLS[v].name} stored.`; drawPanel(); return; }
@@ -395,7 +409,6 @@ function startGame(character) {
     onEvent(type, data) {
       if (type === 'kill') for (const title of game.questKill(data.kind)) questReady(title);
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
-      if (type === 'drawn') showArea(`A ${data.name} has caught the scent of your strength…`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
       if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
       if (type === 'defeated') showArea(`Defeated by a ${data.by}. You wake up back home.`);
