@@ -12,7 +12,12 @@ export const MATS = {
   roof: mat('#9c3f2b'),
   glass: new THREE.MeshStandardMaterial({ color: '#9fd0ff', transparent: true, opacity: 0.45, roughness: 0.1 }),
   scaffold: mat('#c9a46a', { transparent: true, opacity: 0.55 }),
+  // castles are stone through and through
+  keep: mat('#9a958a', { roughness: 0.95 }),
+  keepTrim: mat('#6f6a60', { roughness: 0.95 }),
+  slate: mat('#4a4f5a'),
 };
+const STONE = { plaster: MATS.keep, timber: MATS.keepTrim, roof: MATS.slate, floor: MATS.keepTrim };
 const unit = new THREE.BoxGeometry(1, 1, 1);
 const cone = new THREE.ConeGeometry(CELL * 0.72, 1.3, 4, 1);
 cone.rotateY(Math.PI / 4);
@@ -28,9 +33,9 @@ function block(g, m, x, y, z, w, h, d) {
 }
 
 // One piece's meshes. `y0` is the height of its storey's floor; `look` swaps every material (ghosts)
-function drawPiece(g, p, y0, look) {
-  const X = p.x * CELL, Z = p.z * CELL, H = STOREY, T = 0.3;
-  const m = (k) => look || MATS[k];
+function drawPiece(g, p, y0, look, stone) {
+  const X = p.x * CELL, Z = p.z * CELL, H = STOREY, T = stone ? 0.6 : 0.3;
+  const m = (k) => look || (stone && STONE[k]) || MATS[k];
   // a wall-like piece along its edge; `parts` are [from, to, bottom, top] in metres along and up the edge
   const along = (parts, k = 'plaster') => {
     for (const [a, b, lo, hi] of parts) {
@@ -84,13 +89,13 @@ export const storeyY = (flat, l) => flat + SLAB + l * STOREY;
 
 // A group for a list of pieces. `flatOf(piece)` gives the levelled ground under it.
 // Pieces a hired builder is still working on (u in the future) show as scaffolding.
-export function buildPieces(pieces, flatOf, { look = null, now = Date.now() } = {}) {
+export function buildPieces(pieces, flatOf, { look = null, now = Date.now(), stone = false } = {}) {
   const g = new THREE.Group();
   for (const p of pieces) {
     if (!PIECES[p.t]) continue;
     const working = !look && p.u && p.u > now;
     const from = g.children.length;
-    drawPiece(g, p, storeyY(flatOf(p), p.l), look || (working ? MATS.scaffold : null));
+    drawPiece(g, p, storeyY(flatOf(p), p.l), look || (working ? MATS.scaffold : null), stone);
     for (let i = from; i < g.children.length; i++) g.children[i].userData.piece = p; // so the Builder View can pick it
   }
   return g;

@@ -9,6 +9,8 @@ import { buildDepths } from './depths.js';
 import { buildPortal } from './portal.js';
 import { buildPieces, pieceColliders } from './buildings.js';
 import { allPortals, nearestPortal } from '../data/portals.mjs';
+import { allCastles, KING_RETURNS_MS } from '../data/kings.mjs';
+import { placeBuilding } from '../data/building.mjs';
 import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
@@ -29,6 +31,7 @@ const STEER_RUN = 0.9;
 // `game` is the progress object (HP, bag, gear). `onEvent(type, data)` reports kills, pickups,
 // defeat and level-ups to the page.
 export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onMouseFreed, view } = {}) {
+  allCastles(); // levels the ground under the Monster Kings' castles before any land is built
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // sharper costs a lot of speed on iPads
   renderer.shadowMap.enabled = true;
@@ -70,8 +73,58 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else if (d > 1200 && q.built) { scene.remove(q.built.group); q.built = null; }
     }
   }
+  // The Monster Kings' castles, built when you come near, with their courts inside
+  const castles = allCastles().map((c) => ({ c, built: null, court: null }));
+  let courts = [];
+  function updateCastles(x, z) {
+    for (const q of castles) {
+      const d = Math.hypot(x - q.c.x, z - q.c.z);
+      if (d < 1100 && !q.built) {
+        const pieces = placeBuilding('castle', q.c.cell[0], q.c.cell[1], 0);
+        const group = buildPieces(pieces, () => q.c.flat, { stone: true });
+        // the throne, in the middle of the keep
+        const throne = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.6, 1.2), new THREE.MeshStandardMaterial({ color: '#c9a03a', metalness: 0.6, roughness: 0.35 }));
+        throne.position.set(q.c.x, q.c.flat + 0.3 + 1.3, q.c.z - 1.5);
+        group.add(throne);
+        const solid = pieceColliders(pieces, () => q.c.flat);
+        scene.add(group); colliders.add(solid);
+        q.built = { group, solid };
+        q.court = null;
+        seatCourt(q);
+      } else if (d > 1400 && q.built) {
+        scene.remove(q.built.group); colliders.remove(q.built.solid);
+        creatures?.removeWhere((m) => m.site === `castle-${q.c.race}`);
+        q.built = null; q.court = null;
+      }
+    }
+  }
+  // put the King, the Overlords and the guards in their places (once per visit)
+  function seatCourt(q) {
+    const court = courts.find((k) => k.race === q.c.race);
+    if (!q.built || !court || !creatures || q.court) return;
+    q.court = court;
+    const { x, z, race, title } = q.c;
+    const site = `castle-${race}`;
+    const extra = (more) => ({ keep: true, site, angry: false, ...more });
+    // two guards outside the gate and four in the courtyard
+    for (const [gx, gz] of [[-3, 21.5], [3, 21.5], [-10, 10], [10, 10], [-10, -10], [10, -10]]) {
+      creatures.spawnAt(`guard_${race}`, 400 + Math.round(Math.random() * 200), x + gx, z + gz, extra({ guard: { heading: 0 }, title: 'Royal Guard' }));
+    }
+    // the Overlords stand around the throne room
+    court.overlords.forEach((o, i) => {
+      const a = Math.PI * (0.15 + (i / Math.max(1, court.overlords.length - 1)) * 0.7);
+      creatures.spawnAt(`overlord_${race}`, o.level, x + Math.cos(a) * 5, z - 1.5 + Math.sin(a) * 4, extra({ guard: { heading: 0 }, boss: true, title: o.name }));
+    });
+    // the King sits the throne, unless it is empty or a player wears the crown
+    if (court.king?.npc && Date.now() - (court.slainAt || 0) >= KING_RETURNS_MS) {
+      const lvl = court.king.level;
+      const king = creatures.spawnAt(`king_${race}`, lvl, x, z - 0.2, extra({ guard: { heading: 0 }, boss: true, title: `${court.king.name}, ${title}`, maxHp: Math.round((8 + lvl * 3.5) * 12), hp: Math.round((8 + lvl * 3.5) * 12) }));
+      king.onDeath = () => onEvent?.('king-slain', { race, name: court.king.name, title });
+    }
+  }
   function updateSites(x, z) {
     updatePortals(x, z);
+    updateCastles(x, z);
     for (const s of sites) {
       const d = Math.hypot(x - s.place.x, z - s.place.z);
       if (d < 1000 && !s.built) {
@@ -1082,6 +1135,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     teleport,
     get atPortal() { return atPortal; },
     set paused(v) { paused = !!v; keys.clear(); },
+    // the Monster Kings' courts, from the server
+    setCourts(list) { courts = list || []; for (const q of castles) { if (q.court && q.built) continue; seatCourt(q); } },
     attack,
     useSkill,
     // Redraw your gear after equipping or taking something off

@@ -69,7 +69,7 @@ async function cloudStart() {
     if (!window.claude?.use) return;
     const db = await Promise.race([window.claude.use('db'), new Promise((r) => setTimeout(() => r(null), 8000))]);
     if (!db) return;
-    const [accSnap, landSnap, caveSnap] = await Promise.all([db.collection('accounts').get(), db.doc('world/lands').get(), db.doc('world/caves').get()]);
+    const [accSnap, landSnap, caveSnap, kingSnap] = await Promise.all([db.collection('accounts').get(), db.doc('world/lands').get(), db.doc('world/caves').get(), db.doc('world/kings').get()]);
     cloud = db;
     const local = preview.accounts();
     const merged = new Map(local.map((a) => [cloudKey(a.email), a]));
@@ -97,6 +97,11 @@ async function cloudStart() {
     for (const c of previewCaves.all()) if (!caves.some((q) => q.cave === c.cave)) caves.push(c);
     storage.set('ar.preview.caves', JSON.stringify(caves));
     if (caves.length !== remoteCaves.length) await db.doc('world/caves').set({ caves }).catch(() => {});
+    // the Monster Kings' courts: the one with the latest change to its throne wins
+    const remoteCourts = kingSnap.exists ? kingSnap.data().courts || [] : [];
+    const courts = new Map(previewKings.saved().map((c) => [c.race, c]));
+    for (const c of remoteCourts) if (!courts.has(c.race) || (c.slainAt || 0) >= (courts.get(c.race).slainAt || 0)) courts.set(c.race, c);
+    storage.set('ar.preview.kings', JSON.stringify([...courts.values()]));
   } catch (e) {
     console.warn('Cloud saves are off for this visit', e?.code || e);
     cloud = null;
@@ -376,4 +381,38 @@ export async function landBuild(body) {
     });
   }
   return request('api/land/build', { method: 'POST', body });
+}
+
+// ---------- the Monster Kings' courts ----------
+const previewKings = {
+  saved() { try { return JSON.parse(storage.get('ar.preview.kings')) || []; } catch { return []; } },
+  async all() {
+    const K = await import('./data/kings.mjs');
+    const saved = this.saved();
+    return Object.keys(K.CASTLES).map((race) => saved.find((c) => c.race === race) || K.startingCourt(race));
+  },
+  save(list) { storage.set('ar.preview.kings', JSON.stringify(list)); cloudPush('world/kings', { courts: list }); },
+};
+export async function kingsList() {
+  if (await isPreviewMode()) return { courts: await previewKings.all() };
+  return request('api/kings');
+}
+// You struck down the King of `race`
+export async function kingSlain(race) {
+  if (await isPreviewMode()) {
+    const K = await import('./data/kings.mjs');
+    const { RACES } = await import('./data/game-data.mjs');
+    const courts = await previewKings.all();
+    return updatePreviewAccount((acc) => {
+      const i = courts.findIndex((c) => c.race === race);
+      if (i < 0) throw new Error('There is no such King.');
+      if (Date.now() - (courts[i].slainAt || 0) < K.KING_RETURNS_MS) throw new Error('The throne is already empty.');
+      const c = acc.character;
+      const r = K.afterKingSlain(courts[i], { name: c.name, race: c.race, level: c.level || 1, monster: RACES[c.race]?.side === 'monster' });
+      courts[i] = r.court;
+      previewKings.save(courts);
+      return { ok: true, crowned: r.crowned, courts };
+    });
+  }
+  return request('api/kings/slain', { method: 'POST', body: { race } });
 }

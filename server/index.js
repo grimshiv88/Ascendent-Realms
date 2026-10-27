@@ -4,6 +4,7 @@ const express = require('express');
 const auth = require('./auth');
 const characters = require('./characters');
 const land = require('./land');
+const kings = require('./kings');
 const admin = require('./admin');
 
 const app = express();
@@ -67,6 +68,11 @@ for (const [route, fn] of [['buy', land.buy], ['purpose', land.setPurpose], ['pr
   });
 }
 
+app.get('/api/kings', requireAccount, (req, res) => res.json(kings.list()));
+app.post('/api/kings/slain', requireAccount, (req, res) => {
+  const result = kings.slain(req.account.id, req.body || {});
+  res.status(result.error ? 400 : 200).json(result);
+});
 app.get('/api/caves', requireAccount, (req, res) => res.json(land.caves(req.account.id)));
 app.post('/api/caves/buy', requireAccount, (req, res) => {
   const result = land.buyCave(req.account.id, req.body || {});

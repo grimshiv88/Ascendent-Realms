@@ -398,9 +398,14 @@ export const PLOT = 20;
 const PLOT_RAMP = 6;
 const PREPARED = new Map(); // "ix,iz" -> level height
 export const plotOf = (x, z) => ({ ix: Math.floor(x / PLOT), iz: Math.floor(z / PLOT) });
+const FIXED = new Map(); // ground levelled for good (under the Monster Kings' castles)
 export function setPreparedPlots(plots) {
   PREPARED.clear();
+  for (const [k, f] of FIXED) PREPARED.set(k, f);
   for (const p of plots) if (Number.isFinite(p.flat)) PREPARED.set(`${p.ix},${p.iz}`, p.flat);
+}
+export function addFixedFlats(plots) {
+  for (const p of plots) { FIXED.set(`${p.ix},${p.iz}`, p.flat); PREPARED.set(`${p.ix},${p.iz}`, p.flat); }
 }
 export const isPrepared = (x, z) => PREPARED.has(`${Math.floor(x / PLOT)},${Math.floor(z / PLOT)}`);
 

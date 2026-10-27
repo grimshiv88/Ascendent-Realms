@@ -267,7 +267,7 @@ function startGame(character) {
       ui.trip = { from: world.atPortal, to: null, onPick: showTrip };
       renderMap(overlay, () => world?.position(), [], { plots: ui.myPlots || [], caves: [] }, null, ui.trip);
     }
-    else if (name === 'rankings') renderRankings(overlay, ui.top, character.name);
+    else if (name === 'rankings') renderRankings(overlay, ui.top, character.name, ui.courts || []);
     else if (name === 'cave' && ui.atCave) {
       const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
       renderCave(overlay, ui.atCave, game, { owner: own?.owner, mine: own?.mine, message: ui.caveMsg || '', busy: ui.caveBusy });
@@ -543,6 +543,13 @@ function startGame(character) {
         if (data && game.caveCleared(data.id) && !own) showArea(`You beat this cave's boss: you can buy ${data.name} (tap its name under your bars).`);
       }
       if (type === 'cave-boss') showArea(`You beat the boss of the ${data.name}! Open its chest, and the cave can now be bought up top.`);
+      if (type === 'king-slain') {
+        showArea(`${data.name}, ${data.title}, has fallen!`);
+        api.kingSlain(data.race).then((r) => {
+          ui.courts = r.courts;
+          showArea(r.crowned ? `You beat the King in a fight and take the crown: you are the ${data.title}!` : `${data.name} has fallen. You take the EXP and loot; the strongest Overlord will take the throne.`);
+        }).catch(() => {});
+      }
       if (type === 'chest') showArea(`The chest held ${data.coins} G, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();
       if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
@@ -573,6 +580,7 @@ function startGame(character) {
   // Everyone's land: posts on owned plots, and levelled ground
   api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
   loadCaves();
+  api.kingsList().then((r) => { ui.courts = r.courts; world.setCourts(r.courts); }).catch(() => {});
   // Explore quests finish when you reach the place
   game.fillQuests(here());
   setInterval(() => {

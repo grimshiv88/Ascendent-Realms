@@ -4,6 +4,7 @@ import { drawWorldMap } from './world/mapdraw.js';
 import { createTerrainPainter } from './world/terrainmap.js';
 import { toMap, toWorld, METRES_PER_PX, placesWithPositions, PLOT } from './data/world-layout.mjs';
 import { allPortals, portalsFrom } from './data/portals.mjs';
+import { allCastles } from './data/kings.mjs';
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
@@ -207,6 +208,19 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
         ctx.fillStyle = chosen ? '#fff' : here ? '#ffd76a' : '#e2d2ff'; ctx.fillText(label, x, y - 11);
       }
       ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+    // the Monster Kings' castles
+    ctx.save();
+    ctx.font = '700 14px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
+    for (const c of allCastles()) {
+      const q = toMap(c.x, c.z);
+      const [x, y] = toCanvas(q.x, q.y);
+      ctx.fillStyle = '#3a2a4a'; ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - 9, y + 7); ctx.lineTo(x - 9, y - 5); ctx.lineTo(x - 5, y - 1); ctx.lineTo(x, y - 9); ctx.lineTo(x + 5, y - 1); ctx.lineTo(x + 9, y - 5); ctx.lineTo(x + 9, y + 7); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(c.castle, x, y - 14);
+      ctx.fillStyle = '#ffd76a'; ctx.fillText(c.castle, x, y - 14);
     }
     ctx.restore();
     for (const m of marks) { const q = toMap(m.x, m.z); diamond(ctx, ...toCanvas(q.x, q.y), m.label); }

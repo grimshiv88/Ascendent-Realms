@@ -20,6 +20,15 @@ export const KINDS = {
   frostslime: { name: 'Frost Slime', body: { race: 'slime', form: 'monster', look: { skin: '#dff3ff' }, size: 0.9 }, levels: [14, 20], aggressive: true, speed: 1.5, drops: [['frost_core', 0.5, 1, 1], ['slime_gel', 0.6, 1, 2]] },
   sandlizard: { name: 'Sand Lizard', body: { race: 'lizardman', form: 'monster', look: { skin: '#c9a060' } }, levels: [12, 18], aggressive: true, speed: 3, drops: [['lizard_scale', 0.7, 1, 2], ['cactus_flesh', 0.3, 1, 1]] },
 };
+// The Monster Kings' courts: the King (in humanoid form, crowned), the Overlords and the castle guards.
+// They leave you alone unless you strike first.
+const ROYAL_RACES = { goblin: {}, slime: { look: { skin: '#6fb8e8' } }, fairy: { size: 1.4 }, lizardman: {}, naga: {}, dragonewt: {} };
+for (const [race, b] of Object.entries(ROYAL_RACES)) {
+  const loot = [['big_potion', 1, 2, 4], ['moonstone', 0.8, 1, 3], ['dragonite', 0.5, 1, 2]];
+  KINDS[`king_${race}`] = { name: 'Monster King', body: { race, form: 'humanoid', stage: 5, ...b }, levels: [1000, 1000], aggressive: false, speed: 3.4, royal: true, drops: [...loot, ['knight_blade', 0.6, 1, 1], ['steel_plate', 0.5, 1, 1]] };
+  KINDS[`overlord_${race}`] = { name: 'Overlord', body: { race, form: 'humanoid', stage: 4, ...b }, levels: [990, 999], aggressive: false, speed: 3.2, royal: true, drops: loot };
+  KINDS[`guard_${race}`] = { name: 'Royal Guard', body: { race, form: 'monster', stage: 3, ...b }, levels: [400, 600], aggressive: false, speed: 3, royal: true, drops: [['big_potion', 0.6, 1, 2], ['gold_ore', 0.5, 1, 3]] };
+}
 export const BY_REGION = {
   heart: ['slime', 'slime', 'goblin'], warrens: ['goblin', 'hobgoblin', 'hobgoblin', 'slime'], peaks: ['drake'],
   fae: ['wisp', 'wisp', 'slime'], mire: ['lizard', 'lizard', 'serpent'], frost: ['frostslime'], sun: ['sandlizard'],

@@ -1,4 +1,5 @@
 // The in-game HUD and the Status Window (laid out like Mohammed's black-and-gold design).
+import { CASTLES, castleOf, KING_RETURNS_MS } from './data/kings.mjs';
 import {
   RACES, CLASSES, ADVANCEMENTS, KEY_LEVELS, derivedStats, expToNext, rankFor, TRAINED,
 } from './data/game-data.mjs';
@@ -149,7 +150,7 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
 }
 
 // The highest-level players. `me` is your character's name, to mark your own row.
-export function renderRankings(el, players, me) {
+export function renderRankings(el, players, me, courts = []) {
   const rows = players === null ? '<p class="bag-hint">Loading…</p>'
     : players.length ? `<ol class="rankings">${players.map((p, i) => `
         <li class="${p.name === me ? 'me' : ''}"><span class="rk-place">${i + 1}</span>
@@ -160,8 +161,18 @@ export function renderRankings(el, players, me) {
     <div class="status-window rankings-window" role="dialog" aria-label="Top players">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       <h2>Top Players</h2>
+      ${courts.length ? `<h3>The Monster Kings</h3>
+      <p class="bag-hint">Each sits in a castle in the race's homeland, guarded by Overlords. A monster of the same race who beats the King takes the crown.</p>
+      <ul class="crowns">${courts.map((c) => {
+        const castle = castleOf(c.race);
+        const empty = Date.now() - (c.slainAt || 0) < KING_RETURNS_MS;
+        return `<li><b>${esc(CASTLES[c.race].title)}</b> <span>${empty ? `The throne is empty: ${esc(c.king.name)} takes it ${new Date((c.slainAt || 0) + KING_RETURNS_MS).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : `${esc(c.king.name)}${c.king.npc ? '' : ' <small>(a player)</small>'} · Lv ${c.king.level}`}</span>
+          <small>${esc(castle?.castle || CASTLES[c.race].castle)} · ${c.overlords.length} Overlords</small></li>`;
+      }).join('')}</ul>` : ''}
+      <h3>Top players</h3>
       <p class="bag-hint">The highest-level characters right now.</p>
       ${rows}
+
     </div>`;
 }
 

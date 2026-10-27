@@ -699,3 +699,7 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .bv-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .bv-offer p { margin: 0; width: 100%; }
 .bv-hint { font-size: 0.8rem; opacity: 0.8; margin: 0; }
+.crowns { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.crowns li { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid rgba(200, 146, 26, 0.45); border-radius: 4px; background: rgba(0, 0, 0, 0.3); }
+.crowns b { color: #ffd76a; font-family: 'Cinzel', serif; }
+.crowns small { color: #b9ab8a; }
