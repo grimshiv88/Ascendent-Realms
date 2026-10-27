@@ -4,6 +4,7 @@ const characters = require('./characters');
 const { PURPOSES, PURPOSE_FEE, whyNot, plotPrice, prepareCost, levelHeight } = require('../public/js/data/land.mjs');
 const { setPreparedPlots } = require('../public/js/data/world-layout.mjs');
 const { caveById, cavePrice } = require('../public/js/data/depths.mjs');
+const B = require('../public/js/data/building.mjs');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS lands (
@@ -18,8 +19,11 @@ db.exec(`
   );
 `);
 
-const all = () => db.prepare('SELECT ix, iz, owner, purpose, flat, account_id FROM lands').all()
-  .map((r) => ({ ix: r.ix, iz: r.iz, owner: r.owner, purpose: r.purpose, flat: r.flat, accountId: r.account_id }));
+// what's built on each plot (pieces, see building.mjs)
+if (!db.prepare("SELECT 1 FROM pragma_table_info('lands') WHERE name = 'build'").get()) db.exec('ALTER TABLE lands ADD COLUMN build TEXT');
+
+const all = () => db.prepare('SELECT ix, iz, owner, purpose, flat, account_id, build FROM lands').all()
+  .map((r) => ({ ix: r.ix, iz: r.iz, owner: r.owner, purpose: r.purpose, flat: r.flat, accountId: r.account_id, pieces: r.build ? JSON.parse(r.build) : [] }));
 // keep the server's copy of the levelled ground in step, so prices and checks see it too
 const sync = () => setPreparedPlots(all());
 sync();
@@ -79,6 +83,23 @@ function prepare(accountId, body) {
   return { ok: true, coins: paid.coins, ...list(accountId) };
 }
 
+// Building on your own levelled land: pieces one by one, or a ready-made building, put up yourself
+// at once or by a hired builder (cheaper, but it takes a while). Removing pieces is free.
+// The shared rules work out what it costs and whether everything still stands.
+function build(accountId, body) {
+  const c = characters.load(accountId);
+  if (!c) return { error: 'No character yet.' };
+  const result = B.applyBuild(all().filter((p) => p.accountId === accountId), body, c.cls, Date.now());
+  if (result.error) return result;
+  const paid = spend(accountId, result.cost);
+  if (paid.error) return paid;
+  const save = db.prepare('UPDATE lands SET build = ? WHERE ix = ? AND iz = ? AND account_id = ?');
+  db.exec('BEGIN');
+  for (const [k, pieces] of result.byPlot) { const [ix, iz] = k.split(',').map(Number); save.run(JSON.stringify(pieces), ix, iz, accountId); }
+  db.exec('COMMIT');
+  return { ok: true, coins: paid.coins, cost: result.cost, ...list(accountId) };
+}
+
 // Caves: once you've beaten a cave's boss you can buy the cave itself. One owner per cave.
 db.exec(`
   CREATE TABLE IF NOT EXISTS cave_owners (
@@ -102,4 +123,4 @@ function buyCave(accountId, body) {
   return { ok: true, coins: paid.coins, ...caves(accountId) };
 }
 
-module.exports = { list, buy, setPurpose, prepare, caves, buyCave };
+module.exports = { list, buy, setPurpose, prepare, caves, buyCave, build };

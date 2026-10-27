@@ -361,3 +361,19 @@ export async function landPrepare(ix, iz) {
   }
   return request('api/land/prepare', { method: 'POST', body: { ix, iz } });
 }
+
+// Build on your land: { add, remove } pieces, or { building: { type, x, z, r, how } }
+export async function landBuild(body) {
+  if (await isPreviewMode()) {
+    const BM = await import('./data/building.mjs');
+    return previewLand.run((plots, acc, spend) => {
+      const mine = plots.filter((p) => p.owner === acc.character.name);
+      for (const p of mine) p.pieces ||= [];
+      const r = BM.applyBuild(mine, body, acc.character.cls, Date.now());
+      if (r.error) throw new Error(r.error);
+      spend(r.cost);
+      for (const [k, pieces] of r.byPlot) mine.find((q) => `${q.ix},${q.iz}` === k).pieces = pieces;
+    });
+  }
+  return request('api/land/build', { method: 'POST', body });
+}

@@ -7,6 +7,7 @@ import { buildCave } from './caves.js';
 import { createCreatures, KINDS } from './creatures.js';
 import { buildDepths } from './depths.js';
 import { buildPortal } from './portal.js';
+import { buildPieces, pieceColliders } from './buildings.js';
 import { allPortals, nearestPortal } from '../data/portals.mjs';
 import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
@@ -640,7 +641,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (best.kind === 'chest') { openChest(best); return; }
     const info = BREAKABLE[best.kind];
     if (!info) {
-      say(best.kind === 'rock' ? 'Too hard to break' : best.kind === 'wall' ? 'Solid rock' : 'Too big to break by hand');
+      say(best.built ? 'Change buildings in the Builder View (V)' : best.kind === 'rock' ? 'Too hard to break' : best.kind === 'wall' ? 'Solid rock' : 'Too big to break by hand');
       return;
     }
     // big trees need an axe and strength (or huge strength); tell the player what it takes
@@ -800,7 +801,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
 
+  let paused = false; // the Builder View covers the world, so it stops drawing meanwhile
   renderer.setAnimationLoop(() => {
+    if (paused) { clock.getDelta(); return; }
     const dt = Math.min(clock.getDelta(), 0.1); // a slow frame still moves you the full distance
     const t = clock.elapsedTime;
 
@@ -1035,6 +1038,31 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const saveNow = () => onSaveLocation?.(here());
   window.addEventListener('pagehide', saveNow);
 
+  // What everyone has built on their land; redrawn when it changes or a hired builder finishes
+  const structures = new Map(); // "ix,iz" -> { group, solid, sig }
+  let lastLands = [];
+  function showStructures(list) {
+    lastLands = list;
+    const now = Date.now();
+    const seen = new Set();
+    for (const p of list) {
+      if (!p.pieces?.length || !Number.isFinite(p.flat)) continue;
+      const k = `${p.ix},${p.iz}`;
+      seen.add(k);
+      // the drawing changes when the pieces do, or when scaffolding comes down
+      const sig = JSON.stringify(p.pieces) + p.pieces.filter((q) => q.u && q.u > now).length;
+      const old = structures.get(k);
+      if (old?.sig === sig) continue;
+      if (old) { scene.remove(old.group); colliders.remove(old.solid); }
+      const group = buildPieces(p.pieces, () => p.flat, { now });
+      const solid = pieceColliders(p.pieces, () => p.flat);
+      scene.add(group); colliders.add(solid);
+      structures.set(k, { group, solid, sig });
+    }
+    for (const [k, old] of structures) if (!seen.has(k)) { scene.remove(old.group); colliders.remove(old.solid); structures.delete(k); }
+  }
+  setInterval(() => { if (lastLands.length) showStructures(lastLands); }, 15000);
+
   // Step out of a portal somewhere else (a few metres in front of its stones)
   function teleport(x, z) {
     if (depth || dead) return false;
@@ -1053,6 +1081,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     position: () => ({ x: pos.x, z: pos.z, heading }),
     teleport,
     get atPortal() { return atPortal; },
+    set paused(v) { paused = !!v; keys.clear(); },
     attack,
     useSkill,
     // Redraw your gear after equipping or taking something off
@@ -1080,6 +1109,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         land.refreshAt((ix + 0.5) * PLOT, (iz + 0.5) * PLOT);
       }
       plots.setLands(list);
+      showStructures(list);
     },
     // let the mouse go (a window is opening)
     releaseMouse() { if (locked()) { letGo = true; document.exitPointerLock(); } },

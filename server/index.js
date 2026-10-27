@@ -60,7 +60,7 @@ app.post('/api/password', requireAccount, (req, res) => {
 app.get('/api/top', (req, res) => res.json({ players: characters.top() }));
 
 app.get('/api/land', requireAccount, (req, res) => res.json(land.list(req.account.id)));
-for (const [route, fn] of [['buy', land.buy], ['purpose', land.setPurpose], ['prepare', land.prepare]]) {
+for (const [route, fn] of [['buy', land.buy], ['purpose', land.setPurpose], ['prepare', land.prepare], ['build', land.build]]) {
   app.post(`/api/land/${route}`, requireAccount, (req, res) => {
     const result = fn(req.account.id, req.body || {});
     res.status(result.error ? 400 : 200).json(result);

@@ -12,6 +12,7 @@ import { renderQuests } from './quests.js';
 import { renderLand, renderCave } from './landui.js';
 import { caveById } from './data/depths.mjs';
 import { portalFee, portalKm } from './data/portals.mjs';
+import { openBuilder as openBuilderView } from './builder.js';
 import { PLOT } from './data/land.mjs';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
@@ -378,7 +379,32 @@ function startGame(character) {
     openPanel('portal');
   }
 
-  function openBuilder() { showArea('Builder View is coming soon.'); }
+  // The Builder View: your land in 3D, to put up buildings
+  async function openBuilder() {
+    if (ui.builder) { ui.builder.close(); return; }
+    if (world?.underground) { showArea('Come up to the surface to build.'); return; }
+    world?.releaseMouse();
+    closePanel();
+    let list;
+    try { list = (await api.landList()).plots || []; } catch (err) { showArea(err.message); return; }
+    setLands(list);
+    ui.builder = openBuilderView($('builder-host'), {
+      plots: list,
+      cls: character.cls,
+      coins: () => character.coins,
+      async build(body) {
+        await game.saveNow(); // so the server charges from your latest coins
+        const r = await api.landBuild(body);
+        game.setCoins(r.coins);
+        setLands(r.plots);
+        drawHud();
+        return r.plots;
+      },
+      onClose: () => { ui.builder = null; if (world) world.paused = false; },
+    });
+    if (ui.builder && world) world.paused = true;
+    if (!ui.builder) showArea("You don't own any land yet. Press L for the land grid and buy a plot, then build on it here.");
+  }
   // actions the menu and the Options window can run, like their keys do
   function runAct(act) {
     if (act === 'sleep') world?.sleep();
@@ -535,6 +561,7 @@ function startGame(character) {
       if (e.code === 'KeyO') openPanel('settings');
       if (e.code === 'KeyR') openPanel('rankings');
       if (e.code === 'KeyK') openPanel('skills');
+      if (e.code === 'KeyV' && !ui.builder) openBuilder();
       if (e.code === 'KeyG') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); }
       if (e.code === 'KeyL') toggleLand();
