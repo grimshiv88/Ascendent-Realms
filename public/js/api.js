@@ -79,6 +79,14 @@ export async function isPreviewMode() {
   return previewMode;
 }
 
+// Preview mode only: the accounts saved in this browser (without their scrambled passwords)
+export function deviceAccounts() {
+  if (previewMode !== true) return null;
+  return preview.accounts().map(({ email, username, character: c }) => ({
+    email, username, character: c && { name: c.name, race: c.race, cls: c.cls, level: c.level || 1, coins: c.coins || 0 },
+  }));
+}
+
 export async function signUp(fields) {
   if (await isPreviewMode()) return preview.signUp(fields);
   const data = await request('api/signup', { method: 'POST', body: fields });
