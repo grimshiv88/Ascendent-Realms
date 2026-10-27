@@ -1,11 +1,13 @@
-// The spawn point: a ring of standing stones around a glowing crystal, with a campfire and signpost.
+// A waystone shrine: a ring of standing stones around a glowing crystal, with a campfire and signpost.
+// The spawn point in the Central Forest is one; every homeland has its own.
 import * as THREE from 'three';
-import { heightAt } from './terrain.js';
+import { heightAt } from '../data/world-layout.mjs';
 
-export function buildSpawn() {
+export function buildSpawn(place = { x: 0, z: 0, name: 'Central Forest' }) {
   const g = new THREE.Group();
-  const baseY = heightAt(0, 0);
-  g.position.y = baseY;
+  const cx = place.x, cz = place.z;
+  const baseY = heightAt(cx, cz);
+  g.position.set(cx, baseY, cz);
   const stone = new THREE.MeshStandardMaterial({ color: '#8a857a', roughness: 0.9 });
   const darkStone = new THREE.MeshStandardMaterial({ color: '#6a665e', roughness: 0.95 });
   const gold = new THREE.MeshStandardMaterial({ color: '#f5c84c', emissive: '#f5a81c', emissiveIntensity: 1.6, roughness: 0.3 });
@@ -39,7 +41,7 @@ export function buildSpawn() {
     const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
     const h = 3.2 + (i % 3) * 0.4;
     const s = new THREE.Mesh(new THREE.BoxGeometry(0.9, h, 0.6), stone);
-    s.position.set(Math.cos(a) * 9.5, heightAt(Math.cos(a) * 9.5, Math.sin(a) * 9.5) - baseY + h / 2 - 0.1, Math.sin(a) * 9.5);
+    s.position.set(Math.cos(a) * 9.5, heightAt(cx + Math.cos(a) * 9.5, cz + Math.sin(a) * 9.5) - baseY + h / 2 - 0.1, Math.sin(a) * 9.5);
     s.rotation.y = -a;
     s.rotation.z = (i % 2 ? 1 : -1) * 0.04;
     s.castShadow = true;
@@ -66,7 +68,7 @@ export function buildSpawn() {
 
   // Campfire beside the path
   const fire = new THREE.Group();
-  fire.position.set(9.5, heightAt(9.5, -11) - baseY, -11);
+  fire.position.set(9.5, heightAt(cx + 9.5, cz - 11) - baseY, -11);
   for (let i = 0; i < 9; i++) {
     const a = (i / 9) * Math.PI * 2;
     const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22, 0), darkStone);
@@ -103,7 +105,7 @@ export function buildSpawn() {
 
   // Signpost pointing north along the path
   const post = new THREE.Group();
-  post.position.set(-4.5, heightAt(-4.5, -16) - baseY, -16);
+  post.position.set(-4.5, heightAt(cx - 4.5, cz - 16) - baseY, -16);
   const wood = new THREE.MeshStandardMaterial({ color: '#6b4a2e', roughness: 0.95 });
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 2.4, 8), wood);
   pole.position.y = 1.2;
@@ -111,7 +113,7 @@ export function buildSpawn() {
   const board = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 0.06), wood);
   board.position.set(0.4, 2.0, 0);
   post.add(board);
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.36), new THREE.MeshBasicMaterial({ map: textTexture('Central Forest  ↑'), transparent: true }));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.36), new THREE.MeshBasicMaterial({ map: textTexture(place.name.replace(/ \(.*\)/, '')), transparent: true }));
   sign.position.set(0.4, 2.0, 0.035);
   post.add(sign);
   const signBack = sign.clone();
@@ -135,14 +137,14 @@ export function buildSpawn() {
 
 function textTexture(text) {
   const c = document.createElement('canvas');
-  c.width = 512;
+  c.width = 640;
   c.height = 128;
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#f0e2c0';
-  ctx.font = 'bold 60px Cinzel, Georgia, serif';
+  ctx.font = `bold ${text.length > 14 ? 48 : 60}px Cinzel, Georgia, serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, 256, 68);
+  ctx.fillText(text, 320, 68);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;

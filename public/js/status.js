@@ -2,27 +2,38 @@
 import {
   RACES, CLASSES, ADVANCEMENTS, derivedStats, expToNext, rankFor,
 } from './data/game-data.mjs';
+import { tabsHtml } from './bag.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-export function renderHud(el, c) {
-  const d = derivedStats(c.stats, c.level);
+// `d` is the stats including gear; without it the base stats are shown
+export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
+  const hp = Math.round(c.hp ?? d.hp);
+  const need = expToNext(c.level, c.race);
   el.innerHTML = `
     <div class="hud-card">
       <p class="hud-name">${esc(c.name)} <span>LVL ${c.level} · ${rankFor(c.level)}</span></p>
-      <div class="hud-bar hp" title="HP"><span style="width:100%"></span><b>HP ${d.hp} / ${d.hp}</b></div>
-      <div class="hud-bar sp" title="SP"><span style="width:100%"></span><b>SP ${d.sp} / ${d.sp}</b></div>
-      <div class="hud-bar fatigue" title="Fatigue"><span style="width:${c.fatigue}%"></span><b>Fatigue ${c.fatigue}</b></div>
+      <div class="hud-bar hp" title="HP"><span style="width:${(hp / d.hp) * 100}%"></span><b>HP ${hp} / ${d.hp}</b></div>
+      <div class="hud-bar sp" title="SP"><span style="width:${((c.sp ?? d.sp) / d.sp) * 100}%"></span><b>SP ${Math.round(c.sp ?? d.sp)} / ${d.sp}</b></div>
+      <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
+      ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
     </div>
     <div class="hud-buttons">
       <button type="button" data-open="status">Status <kbd>C</kbd></button>
+      <button type="button" data-open="bag">Bag <kbd>I</kbd></button>
+      <button type="button" data-open="shop">Shop <kbd>B</kbd></button>
+      <button type="button" data-open="map">Map <kbd>M</kbd></button>
       <button type="button" data-open="help">Controls <kbd>H</kbd></button>
     </div>`;
 }
 
-export function renderStatus(el, c) {
-  const d = derivedStats(c.stats, c.level);
+// `pending` holds Stat Points placed with the + buttons but not yet confirmed
+export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.level)) {
+  const placed = Object.values(pending).reduce((a, b) => a + b, 0);
+  const left = c.unspentPoints - placed;
+  const stat = (k) => `${c.stats[k]}${pending[k] ? ` <b class="sw-pending">+${pending[k]}</b>` : ''}${c.unspentPoints ? ` <button type="button" class="sw-plus" data-add="${k}" aria-label="Add a point" ${left > 0 ? '' : 'disabled'}>+</button>` : ''}`;
   const race = RACES[c.race];
+  const plus = (k) => (d.bonus?.[k] ? ` <small class="sw-gear">(+${d.bonus[k]} gear)</small>` : '');
   const isMonster = race.side === 'monster';
   const className = ADVANCEMENTS[c.cls][c.stage || 0] || CLASSES[c.cls].name;
   const need = expToNext(c.level, c.race);
@@ -30,6 +41,7 @@ export function renderStatus(el, c) {
   el.innerHTML = `
     <div class="status-window" role="dialog" aria-label="Status">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      ${tabsHtml('status')}
       <h2>Status</h2>
       <div class="sw-grid">
         <dl>
@@ -48,26 +60,26 @@ export function renderStatus(el, c) {
       </div>
       <hr>
       <div class="sw-grid">
-        <dl>${row('HP', `${d.hp} / ${d.hp}`)}</dl>
-        <dl>${row('SP', `${d.sp} / ${d.sp}`)}</dl>
+        <dl>${row('HP', `${Math.round(c.hp ?? d.hp)} / ${d.hp}`)}</dl>
+        <dl>${row('SP', `${Math.round(c.sp ?? d.sp)} / ${d.sp}`)}</dl>
       </div>
       <hr>
       <div class="sw-grid">
         <dl>
-          ${row('Strength', c.stats.str)}
-          ${row('Agility', c.stats.agi)}
-          ${row('Dex', c.stats.dex)}
+          ${row('Strength', stat('str'))}
+          ${row('Agility', stat('agi'))}
+          ${row('Dex', stat('dex'))}
         </dl>
         <dl>
-          ${row('Stamina', c.stats.sta)}
-          ${row('Intelligence', c.stats.int)}
+          ${row('Stamina', stat('sta'))}
+          ${row('Intelligence', stat('int'))}
           ${row('Fatigue', `${c.fatigue} / 100`)}
         </dl>
       </div>
       <hr>
       <div class="sw-grid">
-        <dl>${row('ATK', d.atk)}${row('DEF', d.def)}</dl>
-        <dl>${row('MATK', d.matk)}${row('MDEF', d.mdef)}</dl>
+        <dl>${row('ATK', d.atk + plus('atk'))}${row('DEF', d.def + plus('def'))}</dl>
+        <dl>${row('MATK', d.matk + plus('matk'))}${row('MDEF', d.mdef + plus('mdef'))}</dl>
       </div>
       <hr>
       <dl>
@@ -75,7 +87,10 @@ export function renderStatus(el, c) {
         ${row('Elements', c.elements.join(', '))}
         ${row('Skills', c.skills.length ? c.skills.map(esc).join(', ') : 'None yet')}
       </dl>
-      <p class="sw-points">Unspent points: <b>${c.unspentPoints}</b></p>
+      <p class="sw-points">Unspent points: <b>${left}</b></p>
+      ${placed ? `<p class="sw-confirm">Points can't be taken back once confirmed.
+        <button type="button" class="gold-button small" data-confirm-points>Confirm</button>
+        <button type="button" class="link-button" data-reset-points>Undo</button></p>` : ''}
     </div>`;
 }
 
@@ -84,11 +99,15 @@ export const HELP_HTML = `
     <button type="button" class="sw-close" data-close aria-label="Close">×</button>
     <h2>Controls</h2>
     <dl>
-      <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys</dd></div>
+      <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys, in any direction (W + D goes forward-right)</dd></div>
       <div class="sw-row"><dt>Run</dt><dd>Hold Shift</dd></div>
       <div class="sw-row"><dt>Jump</dt><dd>Space</dd></div>
       <div class="sw-row"><dt>Camera</dt><dd>Drag with the mouse, scroll to zoom</dd></div>
+      <div class="sw-row"><dt>Attack / punch</dt><dd>Click, or F (touch: the fist button)</dd></div>
       <div class="sw-row"><dt>Status</dt><dd>C</dd></div>
-      <div class="sw-row"><dt>Touch</dt><dd>Left side moves, right side turns the camera</dd></div>
+      <div class="sw-row"><dt>Bag and shop</dt><dd>I and B</dd></div>
+      <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
+      <div class="sw-row"><dt>Swim</dt><dd>Walk into deep water</dd></div>
+      <div class="sw-row"><dt>Touch</dt><dd>The stick on the left moves in any direction; drag on the right to turn the camera</dd></div>
     </dl>
   </div>`;

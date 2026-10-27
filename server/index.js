@@ -1,4 +1,4 @@
-// Ascendent Realms game server: serves the game page and the account API.
+// Ascendant Realms game server: serves the game page and the account API.
 const path = require('node:path');
 const express = require('express');
 const auth = require('./auth');
@@ -45,10 +45,15 @@ app.post('/api/character/location', requireAccount, (req, res) => {
   res.status(result.error ? 400 : 200).json(result);
 });
 
+app.post('/api/character/progress', requireAccount, (req, res) => {
+  const result = characters.saveProgress(req.account.id, req.body || {});
+  res.status(result.error ? 400 : 200).json(result);
+});
+
 app.post('/api/signout', (req, res) => {
   auth.signOut(bearer(req));
   res.json({ ok: true });
 });
 
 const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => console.log(`Ascendent Realms running at http://localhost:${port}`));
+app.listen(port, () => console.log(`Ascendant Realms running at http://localhost:${port}`));

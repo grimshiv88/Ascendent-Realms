@@ -387,3 +387,109 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
   .status-window { padding: 22px 20px; }
   .status-window h2 { font-size: 2rem; }
 }
+
+/* Region name banner */
+#area {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%); margin: 0; padding: 0 16px;
+  max-width: calc(100% - 32px); text-align: center; pointer-events: none;
+  font: 700 clamp(1rem, 2.6vw, 1.6rem) 'Cinzel', Georgia, serif; letter-spacing: 0.08em; color: #f5c84c;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8); opacity: 0; transition: opacity 0.8s;
+}
+#area.show { opacity: 1; }
+@media (max-width: 700px) { #area { top: 150px; } }
+
+/* World map window */
+.map-window { width: min(1100px, calc(100% - 32px)); max-width: none; }
+.map-window canvas { display: block; width: 100%; height: auto; border: 2px solid #c8921a; }
+.map-note { margin: 10px 0 0; font: 0.85rem Georgia, serif; color: #b9ab8a; }
+
+/* EXP bar, points and stat + buttons */
+.hud-bar.exp { height: 10px; }
+.hud-bar.exp span { background: linear-gradient(90deg, #5a7a1a, #b8d84a); }
+.hud-bar.exp b { font-size: 0.6rem; line-height: 10px; }
+.hud-points { margin-top: 8px; width: 100%; font: 600 0.8rem 'Oswald', sans-serif; letter-spacing: 0.06em; color: #1a1206; background: linear-gradient(180deg, var(--gold-1), var(--gold-2) 50%, var(--gold-3)); border: 1px solid var(--gold-4); border-radius: 4px; padding: 5px; cursor: pointer; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 12px rgba(245, 200, 76, 0.7); } }
+.sw-plus { margin-left: 6px; width: 22px; height: 22px; line-height: 18px; padding: 0; font: 700 1rem 'Oswald', sans-serif; color: #000; background: #f2b51e; border: none; border-radius: 3px; cursor: pointer; }
+.sw-plus:disabled { opacity: 0.3; cursor: default; }
+.sw-pending { color: #8fe36a; font-weight: 600; }
+.sw-gear { color: #8fd8ff !important; }
+.sw-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0 0; font-size: 0.85rem; text-transform: none; color: #fff3cf; }
+.gold-button.small { width: auto; margin: 0; padding: 6px 14px; font-size: 0.85rem; }
+.gold-button.small:disabled { cursor: not-allowed; }
+
+/* Tabs shared by Status, Bag, Shop and Blacksmith */
+.sw-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 36px 14px 0; }
+.sw-tab { font: 600 0.85rem 'Oswald', sans-serif; letter-spacing: 0.06em; text-transform: uppercase; color: #f2b51e; background: none; border: 1px solid #7a5a12; border-radius: 3px; padding: 5px 10px; cursor: pointer; }
+.sw-tab[aria-pressed="true"] { color: #000; background: #f2b51e; border-color: #f2b51e; }
+.sw-tab kbd { font: inherit; opacity: 0.6; margin-left: 2px; }
+
+/* Bag */
+.bag-window { width: min(860px, 100%); text-transform: none; }
+.bag-window h2, .bag-window .sw-tab { text-transform: uppercase; }
+.bag-top { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 12px; font-size: 0.95rem; color: #c9a24a; }
+.bag-top b { color: #fff3cf; font-weight: 500; }
+.bag-layout { display: grid; grid-template-columns: 280px 1fr; gap: 18px; }
+.bag-doll { display: flex; flex-direction: column; gap: 10px; }
+.bag-preview { position: relative; height: 300px; border: 1px solid #7a5a12; background: radial-gradient(ellipse at 50% 70%, #2a2014, #000 75%); }
+.bag-canvas { display: block; width: 100%; height: 100%; }
+.gear-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.gear-slot { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; border: 1px dashed #7a5a12; border-radius: 4px; background: #0d0a05; color: #c9a24a; font: inherit; }
+.gear-slot.filled { border-style: solid; border-color: #f2b51e; cursor: pointer; }
+.gear-slot small { font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.bag-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.bag-slot { position: relative; aspect-ratio: 1; display: grid; place-items: center; padding: 0; background: #120d06; border: 1px solid #4a3608; border-radius: 4px; color: #fff3cf; font: inherit; cursor: pointer; }
+.bag-slot.empty { cursor: default; opacity: 0.5; }
+.bag-slot[aria-pressed="true"] { border-color: #fff3b0; box-shadow: 0 0 0 2px rgba(245, 200, 76, 0.5); }
+.bag-slot.equipped { border-color: #f2b51e; background: #261c08; }
+.bag-icon { font-size: 1.5rem; line-height: 1; }
+.bag-icon.faint { opacity: 0.35; }
+.bag-n { position: absolute; right: 3px; bottom: 1px; font-size: 0.75rem; color: #fff; text-shadow: 0 1px 2px #000; }
+.bag-plus { position: absolute; left: 3px; top: 1px; font-size: 0.7rem; color: #8fe36a; font-weight: 600; }
+.bag-eq { position: absolute; right: 3px; top: 1px; font-size: 0.65rem; color: #000; background: #f2b51e; border-radius: 2px; padding: 0 3px; }
+.bag-hint { margin: 12px 0; font: 0.85rem Georgia, serif; color: #b9ab8a; text-transform: none; letter-spacing: 0; }
+.bag-detail { display: flex; gap: 14px; margin-top: 14px; padding: 12px; border: 1px solid #4a3608; border-radius: 4px; background: #0d0a05; }
+.bag-detail h3 { margin: 0 0 4px; font-size: 1.1rem; color: #f2b51e; }
+.bag-detail p { margin: 0 0 6px; font: 0.85rem Georgia, serif; color: #e8dcc0; letter-spacing: 0; }
+.bag-detail .bag-stat { font-family: 'Oswald', sans-serif; color: #8fd8ff; }
+.bag-big { font-size: 2.6rem; line-height: 1; }
+.bag-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; }
+.bag-sub { margin: 18px 0 8px; padding-top: 10px; border-top: 1px solid #4a3608; font-size: 1rem; letter-spacing: 0.08em; text-transform: uppercase; color: #f2b51e; }
+@media (max-width: 720px) {
+  .bag-layout { grid-template-columns: 1fr; }
+  .bag-preview { height: 240px; }
+}
+
+/* Shop and Blacksmith rows */
+.shop-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 7px 8px; margin-bottom: 4px; background: #0d0a05; border: 1px solid #2e2208; border-radius: 4px; color: #fff3cf; font: inherit; text-align: left; }
+.shop-row.locked { opacity: 0.5; }
+.shop-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.shop-name b { font-weight: 500; }
+.shop-name small { font: 0.78rem Georgia, serif; color: #b9ab8a; letter-spacing: 0; }
+.shop-price { flex: none; color: #f5c84c; font-weight: 600; }
+.shop-msg { min-height: 1.2em; margin: 0 0 6px; color: #8fe36a; font-size: 0.9rem; }
+.smith-row { cursor: pointer; }
+.smith-row:disabled { opacity: 0.35; cursor: not-allowed; }
+.smith-row.first { border-color: #f2b51e; background: #261c08; }
+.smith-row.second { border-color: #d2483a; background: #2a0e0a; }
+.smith-tag { flex: none; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: #f2b51e; }
+.smith-result { margin: 8px 0; color: #fff3cf; }
+.smith-result b { color: #8fe36a; font-weight: 600; }
+.smith-list { margin-top: 12px; }
+
+/* Floating combat text */
+.floaters { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.floater { position: absolute; left: 0; top: 0; white-space: nowrap; font: 700 1.1rem 'Oswald', sans-serif; letter-spacing: 0.04em; color: #fff; text-shadow: 0 2px 4px #000, 0 0 2px #000; will-change: transform, opacity; }
+.floater.dmg { color: #fff3b0; }
+.floater.crit { color: #ff9a2a; font-size: 1.5rem; }
+.floater.hurt { color: #ff5a4a; }
+.floater.exp { color: #b8f05a; }
+.floater.note { font: 600 0.95rem Georgia, serif; color: #f5e6c0; }
+
+/* Touch controls: a stick for moving and the punch / weapon button */
+.stick { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 2px solid rgba(245, 200, 76, 0.5); background: rgba(0, 0, 0, 0.25); pointer-events: none; }
+.stick span { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; border-radius: 50%; background: rgba(245, 200, 76, 0.7); }
+#attack-btn { position: absolute; right: 24px; bottom: 28px; width: 86px; height: 86px; display: none; place-items: center; padding: 18px; border-radius: 50%; border: 2px solid var(--gold-2); background: radial-gradient(circle at 40% 35%, #3a2a10, #0d0905); color: var(--gold-1); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6); touch-action: none; cursor: pointer; }
+#attack-btn svg { width: 100%; height: 100%; }
+#attack-btn.armed { border-color: #c8ccd2; color: #e8eef5; }
+#attack-btn:active { transform: scale(0.92); }
+@media (pointer: coarse) { #attack-btn:not(.hidden) { display: grid; } }

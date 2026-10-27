@@ -1,4 +1,6 @@
 // Game rules shared by the browser and the server. Numbers come from the rulebook.
+import { homePlace, toWorld } from './world-layout.mjs';
+import { STARTER_ITEMS } from './items.mjs';
 
 export const MAIN_STATS = ['str', 'agi', 'dex', 'sta', 'int'];
 export const STAT_NAMES = { str: 'Strength', agi: 'Agility', dex: 'Dexterity', sta: 'Stamina', int: 'Intelligence' };
@@ -113,7 +115,7 @@ export function rankFor(level) {
 }
 
 // EXP needed to go from `level` to `level + 1` (rulebook: Levelling → EXP formulas)
-const KEY_LEVELS = [20, 50, 100, 150, 200, 300, 400, 500, 700, 1000];
+export const KEY_LEVELS = [20, 50, 100, 150, 200, 300, 400, 500, 700, 1000];
 const roundNice = (x) => {
   const m = 10 ** Math.max(String(Math.floor(x)).length - 2, 0);
   return Math.round(x / m) * m;
@@ -193,9 +195,18 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
       elements: rollElements(raceId, classId),
       uniqueSkill: { ...pick(UNIQUE_SKILLS), sealsOpen: 0 },
       skills: [],
-      // Everyone starts at the forest spawn for now; monster homelands come with the full map.
-      location: { area: 'Central forest', x: 0, y: 0, z: 6, heading: Math.PI },
+      // Player races start at the Central Forest spawn; monster races at their homeland's waystone.
+      location: startLocation(race.home),
+      hp: null, // current HP; null means full
+      inventory: (STARTER_ITEMS[classId] || []).map(([id, n]) => ({ id, n })),
+      equipped: { weapon: null },
       createdAt: new Date().toISOString(),
     },
   };
+}
+
+function startLocation(homeName) {
+  const place = homePlace(homeName);
+  const { x, z } = toWorld(place.px, place.py);
+  return { area: place.name, x, y: 0, z: z + 6, heading: Math.PI };
 }

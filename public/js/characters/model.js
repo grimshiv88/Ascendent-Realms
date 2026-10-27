@@ -530,6 +530,7 @@ function dress(rig, raceId) {
     }
     // muscle shapes sit under the shirt
     for (const part of rig.muscleParts || []) part.visible = false;
+    rig.shirt = true;
     for (const a of rig.arms) {
       const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(H * 0.047 * bulk, H * 0.042 * bulk, a.len * 0.6, 14), shirt);
       sleeve.position.y = -a.len * 0.28;

@@ -1,14 +1,25 @@
-// The playable world: the central forest spawn, your character, and a third-person camera.
+// The playable world: the whole map as streamed 3D land, your character, monsters, and a third-person camera.
 import * as THREE from 'three';
-import { buildGround, buildForest, heightAt, makeColliders, WORLD_SIZE } from './terrain.js';
+import { createLand } from './land.js';
+import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
+import { buildCave } from './caves.js';
+import { createCreatures } from './creatures.js';
+import { BREAKABLE } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { wearGear } from '../characters/gear.js';
+import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS } from '../data/world-layout.mjs';
+import { RACES } from '../data/game-data.mjs';
 
 const WALK = 1.6;   // metres per second, a normal walking pace
 const RUN = 4.6;
+const SWIM = 0.45;  // share of walking speed while swimming
+const TURN = 9;     // how quickly you turn to face where you're going
 
-export function startWorld(canvas, character, { onSaveLocation, onKey } = {}) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// `game` is the progress object (HP, bag, gear). `onEvent(type, data)` reports kills, pickups,
+// defeat and level-ups to the page.
+export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, view } = {}) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -17,39 +28,67 @@ export function startWorld(canvas, character, { onSaveLocation, onKey } = {}) {
   renderer.toneMappingExposure = 1.0;
 
   const scene = new THREE.Scene();
-  const fogColor = new THREE.Color('#b9c9b0');
-  scene.fog = new THREE.FogExp2(fogColor, 0.0085);
-  scene.background = skyTexture();
-
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1200);
+  scene.fog = new THREE.FogExp2(HORIZON, 0.00024);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.2, 40000);
 
   // Light: warm afternoon sun, sky fill, and a sun shadow that follows the player
-  scene.add(new THREE.HemisphereLight('#dfeaff', '#4a5a30', 1.25));
-  const sun = new THREE.DirectionalLight('#fff0d0', 2.6);
+  const sunDir = new THREE.Vector3(60, 90, 40).normalize();
+  const sky = createSky(scene, renderer, sunDir);
+  scene.add(new THREE.HemisphereLight('#dfeaff', '#4a5a30', 0.8));
+  const sun = new THREE.DirectionalLight('#fff0d0', 2.8);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const sc = sun.shadow.camera;
-  sc.left = -40; sc.right = 40; sc.top = 40; sc.bottom = -40; sc.near = 1; sc.far = 220;
+  sc.left = -45; sc.right = 45; sc.top = 45; sc.bottom = -45; sc.near = 1; sc.far = 400;
   sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.05;
   scene.add(sun, sun.target);
-  const sunDir = new THREE.Vector3(60, 90, 40).normalize();
 
-  scene.add(buildGround());
-  const forest = buildForest();
-  scene.add(forest.group);
-  const colliders = makeColliders(forest.trees);
-  const spawn = buildSpawn();
-  scene.add(spawn.group);
+  const land = createLand(scene);
+  const colliders = land.colliders;
 
-  // Your character
-  const avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look });
+  // Waystone shrines (the spawn and each homeland) and caves, built when you come near
+  const sites = placesWithPositions().map((p) => ({ place: p, built: null }));
+  function updateSites(x, z) {
+    for (const s of sites) {
+      const d = Math.hypot(x - s.place.x, z - s.place.z);
+      if (d < 1000 && !s.built) {
+        s.built = s.place.cave ? buildCave(s.place) : buildSpawn(s.place);
+        scene.add(s.built.group);
+        if (s.built.solid) colliders.add(s.built.solid);
+      } else if (d > 1400 && s.built) {
+        scene.remove(s.built.group);
+        if (s.built.solid) colliders.remove(s.built.solid);
+        s.built = null;
+      }
+    }
+  }
+  const insideCave = (x, z) => sites.some((s) => s.built?.inside?.(x, z));
+
+  // Your character, wearing your gear
+  let avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look });
+  if (game) wearGear(avatar, game.worn());
   scene.add(avatar);
   const loc = character.location || {};
   const pos = new THREE.Vector3(loc.x ?? 0, 0, loc.z ?? 6);
   let heading = loc.heading ?? Math.PI;
   let velY = 0;
   let airborne = false;
-  pos.y = heightAt(pos.x, pos.z) + 0.45; // start standing on the dais
+  updateSites(pos.x, pos.z);
+  land.update(pos.x, pos.z, Infinity); // build the land around you before the clouds part
+
+  // The ground under a point, counting the shrine platforms
+  function groundAt(x, z) {
+    let g = heightAt(x, z);
+    for (const s of sites) {
+      if (!s.built || s.place.cave) continue;
+      if (Math.hypot(x - s.place.x, z - s.place.z) < 7.4) g = Math.max(g, s.place.y + 0.45);
+    }
+    return g;
+  }
+  pos.y = groundAt(pos.x, pos.z);
+  let area = '';
+  let lastArea = -10;
 
   const speedBonus = 1 + Math.min(character.stats.agi * 0.003, 0.6);
   const bodyH = avatar.userData.height;
@@ -57,35 +96,158 @@ export function startWorld(canvas, character, { onSaveLocation, onKey } = {}) {
 
   // Camera orbit
   let yaw = heading + Math.PI;
-  let pitch = 0.32;
-  let dist = THREE.MathUtils.clamp(bodyH * 2.6 + 2, 3, 16);
+  let pitch = view?.pitch ?? 0.32;
+  let dist = view?.dist ?? THREE.MathUtils.clamp(bodyH * 2.6 + 2, 3, 16);
+  let camDist = dist;
+
+  // ---------- floating text (damage numbers, pickups) ----------
+  const floatLayer = document.createElement('div');
+  floatLayer.className = 'floaters';
+  canvas.parentElement.appendChild(floatLayer);
+  const floaters = [];
+  function floatText(text, at, kind = '') {
+    const el = document.createElement('div');
+    el.className = `floater ${kind}`;
+    el.textContent = text;
+    floatLayer.appendChild(el);
+    floaters.push({ el, at: at.clone(), t: 0 });
+  }
+  const say = (text, kind = 'note') => floatText(text, pos.clone().add(new THREE.Vector3(0, bodyH + 0.4, 0)), kind);
+
+  // ---------- monsters ----------
+  let dead = false;
+  let lastHurt = -99;
+  const creatures = createCreatures(scene, {
+    getPlayer: () => ({ x: pos.x, z: pos.z, radius: bodyR, dead }),
+    isInsideCave: insideCave,
+    onHitPlayer(m) {
+      if (!game || dead) return;
+      const s = game.stats();
+      const dmg = Math.max(1, Math.round(m.atk * (0.85 + Math.random() * 0.3) - s.def * 0.4));
+      lastHurt = clock.elapsedTime;
+      floatText(`-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
+      if (game.damage(dmg)) defeated(m);
+    },
+  });
+
+  function defeated(m) {
+    dead = true;
+    onEvent?.('defeated', { by: m.kind.name });
+    setTimeout(() => {
+      // wake up at your home waystone
+      const home = homePlace(RACES[character.race].home);
+      const hp = placesWithPositions().find((p) => p.id === home.id);
+      pos.set(hp.x, 0, hp.z + 6);
+      updateSites(pos.x, pos.z);
+      land.update(pos.x, pos.z, Infinity);
+      pos.y = groundAt(pos.x, pos.z);
+      velY = 0;
+      game.respawn();
+      dead = false;
+      onEvent?.('respawned');
+    }, 3500);
+  }
+
+  // ---------- attacking ----------
+  let attackT = -1;      // time since the swing started, or -1
+  let swingDone = false;
+  let cooldown = 0;
+  const FIST = { speed: 0.45, chop: 1 };
+  function attack() {
+    if (dead || cooldown > 0) return;
+    const w = game?.weapon();
+    cooldown = (w || FIST).speed;
+    attackT = 0;
+    swingDone = false;
+  }
+  function resolveSwing() {
+    const w = game?.weapon();
+    const reach = bodyR + (w ? (w.type === 'dagger' ? 1.1 : w.type === 'staff' ? 1.8 : 1.6) : 0.9) * Math.max(0.8, bodyH / 1.8);
+    // monsters first
+    const m = creatures.target(pos.x, pos.z, heading, reach);
+    if (m) {
+      const s = game.stats();
+      let dmg = w ? (w.magic ? s.matk : s.atk) : s.base.atk * 0.6 + 2;
+      dmg = dmg * (0.9 + Math.random() * 0.2) - m.def * 0.5;
+      const crit = Math.random() < 0.1 + Math.min(character.stats.dex * 0.002, 0.25);
+      if (crit) dmg *= 1.6;
+      dmg = Math.max(1, Math.round(dmg));
+      floatText(`${dmg}${crit ? '!' : ''}`, new THREE.Vector3(m.x, m.y + m.height + 0.2, m.z), crit ? 'crit' : 'dmg');
+      const reward = creatures.hit(m, dmg);
+      if (reward) {
+        floatText(`+${reward.exp} EXP`, new THREE.Vector3(m.x, m.y + m.height + 0.7, m.z), 'exp');
+        game.gainExp(reward.exp);
+        game.gainCoins(reward.coins);
+        for (const [id, n] of reward.drops) game.addItem(id, n);
+        onEvent?.('kill', reward);
+      }
+      return;
+    }
+    // then bushes and small trees in front of you
+    const fx = pos.x + Math.sin(heading) * reach * 0.6, fz = pos.z + Math.cos(heading) * reach * 0.6;
+    let best = null, bestD = Infinity;
+    for (const e of colliders.near(fx, fz, reach * 0.8)) {
+      const d = Math.hypot(e.x - pos.x, e.z - pos.z) - e.r;
+      if (d < bestD && d < reach) { best = e; bestD = d; }
+    }
+    if (!best) return;
+    const info = BREAKABLE[best.kind];
+    if (!info) {
+      say(best.kind === 'rock' ? 'Too hard to break' : best.kind === 'wall' ? 'Solid rock' : 'Too big to break by hand');
+      return;
+    }
+    best.hp -= w ? w.chop : FIST.chop;
+    floatText(best.hp > 0 ? 'Crack!' : '', new THREE.Vector3(best.x, best.y + best.height * 0.6, best.z), 'dmg');
+    if (best.hp <= 0) {
+      land.breakThing(best);
+      for (const [id, min, max] of info.drops) {
+        const n = min + Math.floor(Math.random() * (max - min + 1));
+        if (game.addItem(id, n)) onEvent?.('pickup', { id, n });
+      }
+    }
+  }
 
   // ---------- input ----------
   const keys = new Set();
   const down = (e) => {
     if (e.target.closest && e.target.closest('input, textarea')) return;
     keys.add(e.code);
+    if (e.code === 'KeyF') attack();
     onKey?.(e);
   };
   const up = (e) => keys.delete(e.code);
   window.addEventListener('keydown', down);
   window.addEventListener('keyup', up);
 
-  // Mouse drag (or right side of a touch screen) turns the camera; left side of a touch screen moves
+  // Mouse: drag to turn the camera, click to attack. Touch: a stick appears where your left thumb
+  // lands and moves you in any direction; dragging on the right turns the camera.
   let look = null;
   const stick = { id: null, x0: 0, y0: 0, x: 0, y: 0 };
+  const stickEl = document.createElement('div');
+  stickEl.className = 'stick hidden';
+  stickEl.innerHTML = '<span></span>';
+  canvas.parentElement.appendChild(stickEl);
+  const STICK_R = 55;
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45) {
       stick.id = e.pointerId; stick.x0 = e.clientX; stick.y0 = e.clientY; stick.x = 0; stick.y = 0;
+      stickEl.style.left = `${e.clientX}px`;
+      stickEl.style.top = `${e.clientY}px`;
+      stickEl.classList.remove('hidden');
+      stickEl.firstChild.style.transform = 'translate(-50%, -50%)';
     } else {
-      look = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      look = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), mouse: e.pointerType === 'mouse' };
     }
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', (e) => {
     if (e.pointerId === stick.id) {
-      stick.x = THREE.MathUtils.clamp((e.clientX - stick.x0) / 50, -1, 1);
-      stick.y = THREE.MathUtils.clamp((e.clientY - stick.y0) / 50, -1, 1);
+      let dx = e.clientX - stick.x0, dy = e.clientY - stick.y0;
+      const len = Math.hypot(dx, dy);
+      if (len > STICK_R) { dx *= STICK_R / len; dy *= STICK_R / len; }
+      stick.x = dx / STICK_R;
+      stick.y = dy / STICK_R;
+      stickEl.firstChild.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
     } else if (look && e.pointerId === look.id) {
       yaw -= (e.clientX - look.x) * 0.006;
       pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004, -0.15, 1.2);
@@ -93,8 +255,12 @@ export function startWorld(canvas, character, { onSaveLocation, onKey } = {}) {
     }
   });
   const release = (e) => {
-    if (e.pointerId === stick.id) { stick.id = null; stick.x = 0; stick.y = 0; }
-    if (look && e.pointerId === look.id) look = null;
+    if (e.pointerId === stick.id) { stick.id = null; stick.x = 0; stick.y = 0; stickEl.classList.add('hidden'); }
+    if (look && e.pointerId === look.id) {
+      // a quick click without dragging is an attack
+      if (look.mouse && e.type === 'pointerup' && Math.hypot(e.clientX - look.sx, e.clientY - look.sy) < 6 && performance.now() - look.t < 350) attack();
+      look = null;
+    }
   };
   canvas.addEventListener('pointerup', release);
   canvas.addEventListener('pointercancel', release);
@@ -108,7 +274,11 @@ export function startWorld(canvas, character, { onSaveLocation, onKey } = {}) {
   const move = new THREE.Vector3();
   let speedNow = 0;
   let lastSave = 0;
-  const half = WORLD_SIZE / 2 - 20;
+  let regenAcc = 0;
+  const B = WORLD_BOUNDS;
+  let swimming = false;
+  const tmpS = {};
+  const v3 = new THREE.Vector3();
 
   function resize() {
     const w = canvas.clientWidth || window.innerWidth;
@@ -120,70 +290,150 @@ export function startWorld(canvas, character, { onSaveLocation, onKey } = {}) {
   window.addEventListener('resize', resize);
   resize();
 
+  // The arm swing: punch straight ahead, or a downward slash with a weapon
+  function poseAttack(rig, k, armed) {
+    const arm = rig.arms?.[0];
+    if (arm) {
+      if (armed) {
+        const a = k < 0.35 ? THREE.MathUtils.lerp(0, -2.6, k / 0.35) : THREE.MathUtils.lerp(-2.6, -0.4, (k - 0.35) / 0.65);
+        arm.shoulder.rotation.x = a;
+        arm.elbow.rotation.x = -0.3;
+      } else {
+        const p = Math.sin(Math.min(1, k) * Math.PI);
+        arm.shoulder.rotation.x = -1.5 * p;
+        arm.elbow.rotation.x = -1.2 * (1 - p);
+      }
+      if (rig.spine) rig.spine.rotation.y = -0.35 * Math.sin(k * Math.PI);
+    } else {
+      // bodies without arms lunge forward instead
+      rig.root.position.z = Math.sin(Math.min(1, k) * Math.PI) * bodyH * 0.25;
+    }
+  }
+
   renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.05);
     const t = clock.elapsedTime;
 
-    // Movement relative to the camera
+    // Movement relative to the camera, in any direction
     let fx = 0, fz = 0;
-    if (keys.has('KeyW') || keys.has('ArrowUp')) fz += 1;
-    if (keys.has('KeyS') || keys.has('ArrowDown')) fz -= 1;
-    if (keys.has('KeyA') || keys.has('ArrowLeft')) fx -= 1;
-    if (keys.has('KeyD') || keys.has('ArrowRight')) fx += 1;
-    fx += stick.x; fz -= stick.y;
+    if (!dead) {
+      if (keys.has('KeyW') || keys.has('ArrowUp')) fz += 1;
+      if (keys.has('KeyS') || keys.has('ArrowDown')) fz -= 1;
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) fx -= 1;
+      if (keys.has('KeyD') || keys.has('ArrowRight')) fx += 1;
+      fx += stick.x; fz -= stick.y;
+    }
     const running = keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(stick.x, stick.y) > 0.9;
     const amount = Math.min(1, Math.hypot(fx, fz));
     let target = 0;
     if (amount > 0.05) {
-      const camFwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-      const camRight = new THREE.Vector3(-camFwd.z, 0, camFwd.x);
-      move.copy(camFwd).multiplyScalar(fz).addScaledVector(camRight, fx).normalize();
+      const camFwd = v3.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+      move.set(camFwd.x * fz - camFwd.z * fx, 0, camFwd.z * fz + camFwd.x * fx).normalize();
       const want = Math.atan2(move.x, move.z);
       let diff = want - heading;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-      heading += diff * Math.min(1, dt * 10);
-      target = (running ? RUN : WALK) * speedBonus * amount * Math.max(0.6, Math.sqrt(bodyH / 1.8));
+      heading += diff * Math.min(1, dt * TURN);
+      // move the way you want to go, even while still turning to face it
+      target = (running ? RUN : WALK) * speedBonus * amount * Math.max(0.6, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
-      pos.x += Math.sin(heading) * speedNow * dt;
-      pos.z += Math.cos(heading) * speedNow * dt;
+      pos.x += move.x * speedNow * dt;
+      pos.z += move.z * speedNow * dt;
       colliders.push(pos, bodyR);
-      pos.x = THREE.MathUtils.clamp(pos.x, -half, half);
-      pos.z = THREE.MathUtils.clamp(pos.z, -half, half);
+      pos.x = THREE.MathUtils.clamp(pos.x, B.minX + 50, B.maxX - 50);
+      pos.z = THREE.MathUtils.clamp(pos.z, B.minZ + 50, B.maxZ - 50);
     }
 
-    // Ground, jumping and the dais
-    let ground = heightAt(pos.x, pos.z);
-    const r = Math.hypot(pos.x, pos.z);
-    if (r < 7.4) ground = Math.max(ground, heightAt(0, 0) + 0.45);
-    if (keys.has('Space') && !airborne) { velY = 4.2; airborne = true; }
+    // Ground, jumping, the shrine platforms, and swimming in deep water
+    let ground = groundAt(pos.x, pos.z);
+    const water = sample(pos.x, pos.z, tmpS).water;
+    const floatAt = water - bodyH * 0.7;
+    swimming = ground < floatAt;
+    if (swimming) ground = floatAt;
+    if (keys.has('Space') && !airborne && !swimming && !dead) { velY = 4.2; airborne = true; }
     velY -= 9.81 * dt;
     pos.y += velY * dt;
     if (pos.y <= ground) { pos.y = ground; velY = 0; airborne = false; }
 
     avatar.position.copy(pos);
     avatar.rotation.y = heading;
+    avatar.rotation.z = dead ? Math.min(Math.PI / 2, (avatar.rotation.z || 0) + dt * 3) : 0;
+    const rig = avatar.userData.rig;
+    rig.root.position.z = 0;
     animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 0.9);
 
-    // Camera follows behind and above
+    // Attacks
+    cooldown = Math.max(0, cooldown - dt);
+    if (attackT >= 0) {
+      const dur = Math.max(0.25, (game?.weapon() || FIST).speed * 0.8);
+      attackT += dt;
+      const k = attackT / dur;
+      poseAttack(rig, Math.min(1, k), !!game?.weapon());
+      if (!swingDone && k > 0.45) { swingDone = true; resolveSwing(); }
+      if (k >= 1) attackT = -1;
+    }
+    if (keys.has('KeyF') && cooldown <= 0 && attackT < 0) attack();
+
+    // Rest heals you when nothing has hit you for a while
+    if (game && !dead) {
+      regenAcc += dt;
+      if (regenAcc > 1) {
+        regenAcc = 0;
+        const s = game.stats();
+        const c = game.character;
+        if (t - lastHurt > 6 && (c.hp < s.hp || c.sp < s.sp)) {
+          c.sp = Math.min(s.sp, c.sp + s.sp * 0.02);
+          game.heal(s.hp * 0.015);
+        }
+      }
+    }
+
+    // Stream the land, places and monsters
+    land.update(pos.x, pos.z);
+    land.animate(t);
+    creatures.update(dt, t);
+    if (t - lastArea > 0.5) {
+      lastArea = t;
+      updateSites(pos.x, pos.z);
+      const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
+      const here = insideCave(pos.x, pos.z) ? 'A dark cave' : near ? `${regionName(near.place.region)} · ${near.place.name}` : regionName(sample(pos.x, pos.z, tmpS).region);
+      if (here !== area) { area = here; onArea?.(area, { x: pos.x, z: pos.z }); }
+    }
+
+    // Camera follows behind and above, pulled in so trees and cave walls don't block the view
     const focus = new THREE.Vector3(pos.x, pos.y + bodyH * 0.8, pos.z);
-    const cam = new THREE.Vector3(
-      focus.x + Math.sin(yaw) * Math.cos(pitch) * dist,
-      focus.y + Math.sin(pitch) * dist,
-      focus.z + Math.cos(yaw) * Math.cos(pitch) * dist,
-    );
-    cam.y = Math.max(cam.y, heightAt(cam.x, cam.z) + 0.5);
+    const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+    let want = dist;
+    for (let d = 1; d < dist; d += 0.75) {
+      const px = focus.x + dir.x * d, py = focus.y + dir.y * d, pz = focus.z + dir.z * d;
+      const hit = colliders.near(px, pz, 0.6).some((e) => e.r > 0 && py - (e.y ?? groundAt(e.x, e.z)) < (e.height || 8) && Math.hypot(px - e.x, pz - e.z) < Math.min(e.r * (e.kind === 'wall' ? 1.2 : 4), 3.5));
+      if (hit) { want = Math.max(1.2, d - 0.6); break; }
+    }
+    camDist += (want - camDist) * Math.min(1, dt * (want < camDist ? 14 : 3));
+    const cam = focus.clone().addScaledVector(dir, camDist);
+    cam.y = Math.max(cam.y, heightAt(cam.x, cam.z) + 0.5, water + 0.3);
     camera.position.lerp(cam, Math.min(1, dt * 10));
     camera.lookAt(focus);
 
     sun.position.copy(pos).addScaledVector(sunDir, 120);
     sun.target.position.copy(pos);
-    spawn.update(t);
+    for (const s of sites) s.built?.update?.(t);
+    sky.follow(camera);
 
     renderer.render(scene, camera);
 
-    if (t - lastSave > 10 && onSaveLocation) {
+    // floating text rises and fades
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    for (const f of [...floaters]) {
+      f.t += dt;
+      v3.copy(f.at).add(new THREE.Vector3(0, f.t * 0.8, 0)).project(camera);
+      if (f.t > 1.4 || v3.z > 1) { f.el.remove(); floaters.splice(floaters.indexOf(f), 1); continue; }
+      f.el.style.transform = `translate(${(v3.x * 0.5 + 0.5) * w}px, ${(-v3.y * 0.5 + 0.5) * h}px) translate(-50%, -50%)`;
+      f.el.style.opacity = String(Math.min(1, 2.2 - f.t * 1.6));
+    }
+
+    if (t - lastSave > 10 && onSaveLocation && !dead) {
       lastSave = t;
       onSaveLocation({ x: pos.x, y: pos.y, z: pos.z, heading });
     }
@@ -193,9 +443,19 @@ export function startWorld(canvas, character, { onSaveLocation, onKey } = {}) {
   window.addEventListener('pagehide', saveNow);
 
   return {
+    position: () => ({ x: pos.x, z: pos.z, heading }),
+    attack,
+    // Redraw your gear after equipping or taking something off
+    refreshGear() { if (game) wearGear(avatar, game.worn()); },
+    say,
     stop() {
       saveNow();
       renderer.setAnimationLoop(null);
+      creatures.clear();
+      land.dispose();
+      sky.dispose();
+      floatLayer.remove();
+      stickEl.remove();
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('resize', resize);
@@ -203,20 +463,4 @@ export function startWorld(canvas, character, { onSaveLocation, onKey } = {}) {
       renderer.dispose();
     },
   };
-}
-
-function skyTexture() {
-  const c = document.createElement('canvas');
-  c.width = 4;
-  c.height = 256;
-  const ctx = c.getContext('2d');
-  const g = ctx.createLinearGradient(0, 0, 0, 256);
-  g.addColorStop(0, '#5f8fcf');
-  g.addColorStop(0.55, '#a9c6e6');
-  g.addColorStop(1, '#dfe6d6');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 4, 256);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
 }

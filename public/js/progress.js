@@ -1,0 +1,220 @@
+// Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
+// Every change is saved to the server a moment later.
+import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
+import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult } from './data/items.mjs';
+
+const BAG_SLOTS = 30;
+const uid = () => `g${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+
+export function createProgress(c, { save, onChange, onEvent }) {
+  c.inventory ||= [];
+  c.equipped = { ...Object.fromEntries(SLOTS.map(([s]) => [s, null])), ...(c.equipped || {}) };
+  c.boosts ||= [];
+  // Gear doesn't stack: each piece has its own id so it can be equipped and upgraded
+  for (const s of c.inventory) if (isGear(ITEMS[s.id]) && !s.uid) s.uid = uid();
+  // older saves stored the equipped weapon by item id
+  for (const [slot, v] of Object.entries(c.equipped)) {
+    if (v && !c.inventory.some((s) => s.uid === v)) c.equipped[slot] = c.inventory.find((s) => s.id === v)?.uid || null;
+  }
+
+  const entry = (key) => c.inventory.find((s) => s.uid === key) || c.inventory.find((s) => !s.uid && s.id === key);
+  const gearIn = (slot) => {
+    const e = c.equipped[slot] && c.inventory.find((s) => s.uid === c.equipped[slot]);
+    return e ? { ...ITEMS[e.id], entry: e, plus: e.plus || 0 } : null;
+  };
+
+  // Bonuses from what you wear, and from boosters still running
+  function bonus() {
+    const b = { atk: 0, matk: 0, def: 0, mdef: 0, sp: 0 };
+    for (const [slot] of SLOTS) {
+      const g = gearIn(slot);
+      if (!g) continue;
+      if (g.kind === 'weapon') b[g.magic ? 'matk' : 'atk'] += upgraded(g.power, g.plus);
+      else { b.def += upgraded(g.def || 0, g.plus); b.mdef += upgraded(g.mdef || 0, g.plus); }
+    }
+    const now = Date.now();
+    c.boosts = c.boosts.filter((x) => x.until > now);
+    for (const x of c.boosts) b.sp += x.sp || 0;
+    return b;
+  }
+  function stats() {
+    const d = derivedStats(c.stats, c.level);
+    const b = bonus();
+    return { ...d, sp: d.sp + b.sp, atk: d.atk + b.atk, matk: d.matk + b.matk, def: d.def + b.def, mdef: d.mdef + b.mdef, bonus: b, base: d };
+  }
+  if (c.hp == null || c.hp > stats().hp) c.hp = stats().hp;
+  if (c.sp == null || c.sp > stats().sp) c.sp = stats().sp;
+
+  let saveTimer = null;
+  function changed(what) {
+    onChange?.(what);
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => save?.(snapshot()), 1500);
+  }
+  const snapshot = () => ({
+    level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
+    unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
+  });
+
+  const count = (id) => c.inventory.reduce((n, s) => n + (s.id === id ? s.n : 0), 0);
+  function addItem(id, n = 1, plus = 0) {
+    const it = ITEMS[id];
+    if (isGear(it)) {
+      for (let i = 0; i < n; i++) {
+        if (c.inventory.length >= BAG_SLOTS) { onEvent?.('bag-full'); return false; }
+        c.inventory.push({ id, n: 1, uid: uid(), ...(plus ? { plus } : {}) });
+      }
+    } else {
+      const slot = c.inventory.find((s) => s.id === id);
+      if (slot) slot.n += n;
+      else if (c.inventory.length < BAG_SLOTS) c.inventory.push({ id, n });
+      else { onEvent?.('bag-full'); return false; }
+    }
+    changed('bag');
+    return true;
+  }
+  // `key` is a gear piece's uid, or a stackable item's id
+  function removeItem(key, n = 1) {
+    const e = entry(key);
+    if (!e || e.n < n) return false;
+    e.n -= n;
+    if (e.n === 0) {
+      c.inventory.splice(c.inventory.indexOf(e), 1);
+      for (const [slot, v] of Object.entries(c.equipped)) if (e.uid && v === e.uid) c.equipped[slot] = null;
+    }
+    changed('bag');
+    return true;
+  }
+
+  return {
+    character: c,
+    bagSlots: BAG_SLOTS,
+    stats,
+    count,
+    entry,
+    addItem,
+    removeItem,
+    gearIn,
+    weapon: () => gearIn('weapon'),
+    isEquipped: (e) => !!e.uid && Object.values(c.equipped).includes(e.uid),
+    // What to draw on the character: { weapon: item, head: item, ... }
+    worn() {
+      const out = {};
+      for (const [slot] of SLOTS) { const g = gearIn(slot); if (g) out[slot] = g; }
+      return out;
+    },
+
+    equip(key) {
+      const e = entry(key);
+      const it = e && ITEMS[e.id];
+      if (!isGear(it)) return;
+      const slot = slotOf(it);
+      c.equipped[slot] = c.equipped[slot] === e.uid ? null : e.uid;
+      changed('gear');
+    },
+    use(key) {
+      const e = entry(key);
+      const it = e && ITEMS[e.id];
+      if (it?.kind !== 'food') return;
+      removeItem(key, 1);
+      if (it.boost) c.boosts.push({ sp: it.boost.sp, until: Date.now() + it.boost.minutes * 60000 });
+      if (it.heal) c.hp = Math.min(stats().hp, c.hp + it.heal);
+      if (it.sp) c.sp = Math.min(stats().sp, c.sp + it.sp);
+      changed('hp');
+    },
+
+    // Shop: buying needs the level and the coins; selling pays less than the shop asks
+    buy(id) {
+      const unlock = SHOP.find(([sid]) => sid === id)?.[1] ?? Infinity;
+      const it = ITEMS[id];
+      if (c.level < unlock) return 'locked';
+      if (c.coins < it.price) return 'coins';
+      if (!addItem(id, 1)) return 'full';
+      c.coins -= it.price;
+      changed('coins');
+      return 'ok';
+    },
+    sellPrice: (e) => sellPrice(ITEMS[e.id], e.plus || 0),
+    sell(key) {
+      const e = entry(key);
+      if (!e) return;
+      const price = sellPrice(ITEMS[e.id], e.plus || 0);
+      if (!removeItem(key, 1)) return;
+      c.coins += price;
+      changed('coins');
+    },
+    canCraft: (r) => r.needs.every(([id, n]) => count(id) >= n),
+    craft(r) {
+      if (!r.needs.every(([id, n]) => count(id) >= n)) return;
+      for (const [id, n] of r.needs) removeItem(id, n);
+      addItem(r.makes, 1);
+    },
+    recipes: RECIPES,
+
+    // Blacksmiths merge two pieces of the same kind: the first gets stronger, the second is used up
+    canMerge: () => c.cls === 'blacksmith',
+    mergePreview(aKey, bKey) {
+      const a = entry(aKey), b = entry(bKey);
+      if (!a || !b || a === b) return null;
+      return mergeResult(a, b);
+    },
+    merge(aKey, bKey) {
+      if (c.cls !== 'blacksmith') return 'class';
+      const a = entry(aKey), b = entry(bKey);
+      if (!a || !b || a === b) return 'pick';
+      const plus = mergeResult(a, b);
+      if (plus == null) return 'kind';
+      if (plus === (a.plus || 0)) return 'max';
+      a.plus = plus;
+      removeItem(b.uid, 1);
+      changed('gear');
+      return 'ok';
+    },
+
+    heal(n) {
+      c.hp = Math.min(stats().hp, c.hp + n);
+      changed('hp');
+    },
+    // Returns true if this hit defeated you
+    damage(n) {
+      c.hp = Math.max(0, c.hp - n);
+      changed('hp');
+      return c.hp <= 0;
+    },
+    respawn() {
+      c.hp = stats().hp;
+      c.sp = stats().sp;
+      changed('hp');
+    },
+
+    gainCoins(n) { c.coins += n; changed('coins'); },
+    gainExp(n) {
+      c.exp += n;
+      let levels = 0;
+      while (c.exp >= expToNext(c.level, c.race)) {
+        c.exp -= expToNext(c.level, c.race);
+        c.level += 1;
+        levels += 1;
+        // each level: free Stat Points, +1 to the class's main stat, and Unique Points (rulebook)
+        const key = KEY_LEVELS.includes(c.level);
+        c.unspentPoints += key ? 15 : 5;
+        c.uniquePoints += key ? 5 : 1;
+        c.stats[CLASSES[c.cls].main] += 1;
+        c.hp = stats().hp;
+        c.sp = stats().sp;
+      }
+      if (levels) onEvent?.('level', c.level);
+      changed('exp');
+    },
+
+    // Stat Points: place them, then confirm. Once confirmed they can't be taken back.
+    spendPoints(add) {
+      const total = Object.values(add).reduce((a, b) => a + b, 0);
+      if (total <= 0 || total > c.unspentPoints) return;
+      for (const [k, v] of Object.entries(add)) if (v > 0 && k in c.stats) c.stats[k] += v;
+      c.unspentPoints -= total;
+      changed('stats');
+    },
+    saveNow() { clearTimeout(saveTimer); save?.(snapshot()); },
+  };
+}

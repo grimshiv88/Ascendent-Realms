@@ -1,7 +1,7 @@
 {
-  "name": "ascendent-realms",
+  "name": "ascendant-realms",
   "version": "1.0.0",
-  "description": "Ascendent Realms: an online 3D adventure game",
+  "description": "Ascendant Realms: an online 3D adventure game",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js"

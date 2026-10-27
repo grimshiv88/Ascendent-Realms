@@ -117,3 +117,13 @@ export async function saveLocation(loc) {
   }
   return request('api/character/location', { method: 'POST', body: loc });
 }
+
+export async function saveProgress(progress) {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => {
+      if (acc.character) Object.assign(acc.character, progress);
+      return { ok: true };
+    });
+  }
+  return request('api/character/progress', { method: 'POST', body: progress });
+}
