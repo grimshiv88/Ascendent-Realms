@@ -4,8 +4,7 @@ import * as api from './api.js';
 import { paintCloudBanks } from './clouds.js';
 import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
-import { drawWorldMap } from './world/mapdraw.js';
-import { toMap } from './data/world-layout.mjs';
+import { renderMap, createMinimap } from './mapview.js';
 import { renderHud, renderStatus, renderSettings, toggleMenu, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, tabsHtml } from './bag.js';
@@ -180,7 +179,7 @@ function startGame(character) {
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
-    else if (name === 'map') renderMap(overlay, world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })));
+    else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })));
     else if (name === 'settings') renderSettings(overlay, settings);
     else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy });
     else overlay.innerHTML = HELP_HTML;
@@ -324,6 +323,8 @@ function startGame(character) {
     const p = world?.position();
     if (p) for (const title of game.questVisit(p.x, p.z)) questReady(title);
   }, 1500);
+  // the minimap in the corner follows you; tap it for the world map
+  createMinimap($('minimap'), () => world?.position(), () => openPanel('map'));
   openPanel('help');
 }
 
@@ -337,75 +338,6 @@ function showArea(name) {
   el.classList.add('show');
   clearTimeout(areaTimer);
   areaTimer = setTimeout(() => el.classList.remove('show'), 4000);
-}
-
-function renderMap(el, player, marks = []) {
-  el.innerHTML = `
-    <div class="status-window map-window" role="dialog" aria-label="World map">
-      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>World Map</h2>
-      <div class="map-frame">
-        <canvas width="1600" height="1000" aria-label="World map with your position"></canvas>
-        <div class="map-zoom"><button type="button" data-zoom="1" aria-label="Zoom in">+</button><button type="button" data-zoom="-1" aria-label="Zoom out">−</button><button type="button" data-zoom="0" aria-label="Show the whole map">⤢</button></div>
-      </div>
-      <p class="map-note">Scroll or pinch to zoom, drag to move around. The red arrow is you; blue diamonds are places your quests send you.</p>
-    </div>`;
-  // the whole map is drawn once, large, and the window shows the zoomed part of it
-  const full = document.createElement('canvas');
-  full.width = 3200; full.height = 1000 * 2;
-  drawWorldMap(full, { player, marks });
-  const cv = el.querySelector('canvas');
-  const ctx = cv.getContext('2d');
-  const me = player ? toMap(player.x, player.z) : { x: 800, y: 500 };
-  const view = { zoom: 1, cx: 800, cy: 500 };
-  const draw = () => {
-    view.zoom = Math.min(8, Math.max(1, view.zoom));
-    const sw = 1600 / view.zoom, sh = 1000 / view.zoom;
-    view.cx = Math.min(1600 - sw / 2, Math.max(sw / 2, view.cx));
-    view.cy = Math.min(1000 - sh / 2, Math.max(sh / 2, view.cy));
-    ctx.clearRect(0, 0, 1600, 1000);
-    ctx.drawImage(full, (view.cx - sw / 2) * 2, (view.cy - sh / 2) * 2, sw * 2, sh * 2, 0, 0, 1600, 1000);
-  };
-  // zoom keeping the map point under (px, py) on the canvas still
-  const zoomAt = (factor, px = 800, py = 500) => {
-    const mx = view.cx + (px - 800) / view.zoom, my = view.cy + (py - 500) / view.zoom;
-    view.zoom *= factor;
-    view.zoom = Math.min(8, Math.max(1, view.zoom));
-    view.cx = mx - (px - 800) / view.zoom;
-    view.cy = my - (py - 500) / view.zoom;
-    draw();
-  };
-  const toCanvas = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * 1600 / r.width, (e.clientY - r.top) * 1000 / r.height]; };
-  cv.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, ...toCanvas(e)); }, { passive: false });
-  const touches = new Map();
-  let pinch = 0;
-  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); touches.set(e.pointerId, toCanvas(e)); });
-  cv.addEventListener('pointermove', (e) => {
-    if (!touches.has(e.pointerId)) return;
-    const [x, y] = toCanvas(e);
-    const [ox, oy] = touches.get(e.pointerId);
-    touches.set(e.pointerId, [x, y]);
-    if (touches.size === 2) {
-      const [a, b] = [...touches.values()];
-      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
-      if (pinch) zoomAt(d / pinch, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
-      pinch = d;
-    } else {
-      view.cx -= (x - ox) / view.zoom;
-      view.cy -= (y - oy) / view.zoom;
-      draw();
-    }
-  });
-  const lift = (e) => { touches.delete(e.pointerId); pinch = 0; };
-  cv.addEventListener('pointerup', lift);
-  cv.addEventListener('pointercancel', lift);
-  el.querySelector('.map-zoom').addEventListener('click', (e) => {
-    const z = e.target.closest('[data-zoom]')?.dataset.zoom;
-    if (z === '1') { view.cx = view.zoom === 1 ? me.x : view.cx; view.cy = view.zoom === 1 ? me.y : view.cy; zoomAt(1.6); }
-    else if (z === '-1') zoomAt(1 / 1.6);
-    else if (z === '0') { view.zoom = 1; draw(); }
-  });
-  draw();
 }
 
 function wireForm(formId, action) {

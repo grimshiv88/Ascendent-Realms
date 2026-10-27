@@ -133,7 +133,7 @@ export const HELP_HTML = `
     <button type="button" class="sw-close" data-close aria-label="Close">×</button>
     <h2>Controls</h2>
     <dl>
-      <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys, in any direction (W + D goes forward-right)</dd></div>
+      <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys. Hold W and press A or D to curve gently left or right, even while sprinting</dd></div>
       <div class="sw-row"><dt>Run</dt><dd>Hold Shift</dd></div>
       <div class="sw-row"><dt>Jump</dt><dd>Space</dd></div>
       <div class="sw-row"><dt>Camera</dt><dd>Drag with the mouse, scroll to zoom</dd></div>

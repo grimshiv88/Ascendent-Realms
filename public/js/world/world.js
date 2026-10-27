@@ -17,6 +17,8 @@ const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
 const SWIM = 0.45;  // share of walking speed while swimming
 const TURN = 9;     // how quickly you turn to face where you're going
+const STEER = 1.2;  // radians a second you curve while walking forward and pressing left or right
+const STEER_RUN = 0.9;
 
 // `game` is the progress object (HP, bag, gear). `onEvent(type, data)` reports kills, pickups,
 // defeat and level-ups to the page.
@@ -346,8 +348,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       stick.y = dy / STICK_R;
       stickEl.firstChild.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
     } else if (look && e.pointerId === look.id) {
-      yaw -= (e.clientX - look.x) * 0.006;
-      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004, -0.15, 1.2);
+      // a finger turns the camera more gently than a mouse, so small swipes are small turns
+      const k = look.mouse ? 1 : 0.55;
+      yaw -= (e.clientX - look.x) * 0.006 * k;
+      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k, -0.15, 1.2);
       look.x = e.clientX; look.y = e.clientY;
     }
   });
@@ -433,7 +437,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (cameraMode === 'follow') {
       // Follow camera: left and right turn your body, forward and back walk the way you face,
       // and the camera swings round behind you
-      heading -= fx * dt * 2.8;
+      heading -= fx * dt * (running ? STEER_RUN : STEER);
       if (Math.abs(fz) > 0.05) {
         move.set(Math.sin(heading) * Math.sign(fz), 0, Math.cos(heading) * Math.sign(fz));
         target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * speedBonus * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
@@ -443,20 +447,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         yaw += back * Math.min(1, dt * 4);
       }
     } else if (amount > 0.05) {
+      // Steering: while you go forward (walking or sprinting), left and right turn you gently,
+      // as much as you press, and the camera turns with you. Only sideways on its own steps sideways.
+      const steering = fz > 0.1 && !look;
+      if (steering) yaw -= fx * dt * (running ? STEER_RUN : STEER);
       const camFwd = v3.set(-Math.sin(yaw), 0, -Math.cos(yaw));
-      move.set(camFwd.x * fz - camFwd.z * fx, 0, camFwd.z * fz + camFwd.x * fx).normalize();
+      const side = steering ? fx * 0.25 : fx; // a slight lean into the turn instead of a sharp angle
+      move.set(camFwd.x * fz - camFwd.z * side, 0, camFwd.z * fz + camFwd.x * side).normalize();
       const want = Math.atan2(move.x, move.z);
       let diff = want - heading;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       heading += diff * Math.min(1, dt * TURN);
       // move the way you want to go, even while still turning to face it
       target = (running ? RUN : WALK) * speedBonus * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
-      // Steering: while you walk forward and lean left or right, the camera eases round behind you,
-      // so holding forward and tapping right curves you gently to the right
-      if (fz > 0.1 && Math.abs(fx) > 0.05 && !look) {
-        const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
-        yaw += back * Math.min(1, dt * 2.2);
-      }
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
