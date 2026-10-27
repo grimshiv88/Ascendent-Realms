@@ -101,11 +101,13 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const tag = plate(kind.name, level);
     tag.sprite.position.set(x, y + h + 0.5, z);
     scene.add(body, tag.sprite);
-    // a normal monster has less HP than a player of its level; a boss has far more
-    const maxHp = Math.round((10 + level * 7) * (extra.boss ? 6 : 1));
+    // a normal monster has less HP than a player of its level and needs 5 or more hits to beat even an
+    // unarmoured player of its level; a boss has far more HP and hits twice as hard
+    const maxHp = Math.round((8 + level * 3.5) * (extra.boss ? 6 : 1));
+    const atk = Math.round((8 + level * 0.6) * (extra.boss ? 2 : 1));
     const m = {
       kind, kindId, level, body, tag, x, z, y, heading: Math.random() * 6.28, hp: maxHp, maxHp,
-      atk: 4 + level * 3, def: 1 + level, speed: kind.speed, radius: Math.max(0.4, h * 0.3), height: h,
+      atk, def: 1 + level, speed: kind.speed, radius: Math.max(0.4, h * 0.3), height: h,
       state: 'wander', timer: 0, attackCd: 0, angry: kind.aggressive, hurt: 0, dead: 0, ...extra,
     };
     list.push(m);
@@ -242,6 +244,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         if (m.timer <= 0) { m.timer = 2 + Math.random() * 4; m.walking = Math.random() < 0.6; m.heading += (Math.random() - 0.5) * 2.5; }
         if (m.walking) speed = m.speed * 0.45;
       }
+      // frost slows a monster to half speed for a while
+      if (m.slow > 0) { m.slow -= dt; speed *= 0.5; }
       if (speed > 0) {
         const nx = m.x + Math.sin(m.heading) * speed * dt;
         const nz = m.z + Math.cos(m.heading) * speed * dt;
@@ -258,9 +262,10 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     }
   }
 
-  // The living monster in front of (x, z) facing `heading`, within `reach` metres
-  function target(x, z, heading, reach) {
-    let best = null, bestD = Infinity;
+  // The living monsters in front of (x, z) facing `heading`, within `reach` metres and `arc` radians
+  // either side, nearest first
+  function targets(x, z, heading, reach, arc = 1.0) {
+    const out = [];
     for (const m of list) {
       if (m.dead) continue;
       const dx = m.x - x, dz = m.z - z;
@@ -268,11 +273,12 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       if (d > reach) continue;
       let ang = Math.atan2(dx, dz) - heading;
       ang = Math.atan2(Math.sin(ang), Math.cos(ang));
-      if (Math.abs(ang) > 1.0 && d > 0.6) continue;
-      if (d < bestD) { bestD = d; best = m; }
+      if (Math.abs(ang) > arc && d > 0.6) continue;
+      out.push([d, m]);
     }
-    return best;
+    return out.sort((a, b) => a[0] - b[0]).map(([, m]) => m);
   }
+  const target = (x, z, heading, reach, arc) => targets(x, z, heading, reach, arc)[0] || null;
 
   // Hit a monster. Returns its drops and rewards if it was defeated.
   function hit(m, dmg) {
@@ -293,7 +299,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   }
 
   return {
-    update, target, hit,
+    update, target, targets, hit,
     calm() { for (const m of list) { m.angry = false; m.state = 'wander'; m.timer = 4; } },
     clear() { for (const m of [...list]) remove(m); },
     get list() { return list; },

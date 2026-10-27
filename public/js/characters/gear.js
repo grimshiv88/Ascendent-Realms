@@ -151,6 +151,20 @@ export function weaponModel(item, plus = 0) {
       g.add(axeHead(0.68, 0.32, metal('steel', plus), { double: true }));
       g.add(mesh(new THREE.ConeGeometry(0.02, 0.1, 6), metal('steel'), (o) => { o.rotation.x = Math.PI / 2; o.position.z = 0.85; }));
       break;
+    case 'iron_spear':
+      g.add(haft(1.7, 0.017, metal('wood'), -0.55), grip(0.18, 0.019));
+      // a leaf-shaped head, flat like a blade
+      g.add(mesh(new THREE.OctahedronGeometry(0.06, 0), metal('iron', plus), (o) => { o.position.z = 1.24; o.scale.set(0.7, 0.18, 2.6); }));
+      g.add(mesh(new THREE.CylinderGeometry(0.02, 0.024, 0.08, 8), metal('dark'), (o) => { o.rotation.x = Math.PI / 2; o.position.z = 1.12; }));
+      break;
+    case 'steel_glaive': {
+      g.add(haft(1.8, 0.019, metal('darkwood'), -0.6), grip(0.2, 0.021));
+      const head = blade(0.5, 0.075, metal('steel', plus), { curve: 0.07, taper: 0.6, tip: 0.25, single: true });
+      head.position.z += 1.2;
+      g.add(head);
+      g.add(mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.09, 8), metal('steel'), (o) => { o.rotation.x = Math.PI / 2; o.position.z = 1.18; }));
+      break;
+    }
     case 'iron_mace':
       g.add(haft(0.6, 0.018, metal('dark')), grip(0.15, 0.02));
       g.add(mesh(new THREE.SphereGeometry(0.05, 16, 12), metal('iron', plus), (o) => { o.position.z = 0.48; }));

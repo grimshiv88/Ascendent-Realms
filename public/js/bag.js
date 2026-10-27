@@ -1,22 +1,30 @@
 // The Bag (inventory with your character and equipment), the Shop and the Blacksmith's merging.
 // They share one window with the Status Window, with tabs along the top.
-import { ITEMS, SHOP, SLOTS, isGear, slotOf, upgraded } from './data/items.mjs';
+import { ITEMS, SHOP, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds } from './data/items.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const keyOf = (e) => e.uid || e.id;
 // An item picture: the rendered model fills in later (see icons.js); the emoji shows until then
 const pic = (id, plus = 0, cls = 'bag-icon') => `<img class="item-pic" data-icon="${id}" data-plus="${plus}" alt=""><span class="${cls}">${ITEMS[id]?.icon || '?'}</span>`;
-const nameOf = (e) => `${ITEMS[e.id]?.name || e.id}${e.plus ? ` +${e.plus}` : ''}`;
+const nameOf = (e) => `${ITEMS[e.id] ? evolvedName(ITEMS[e.id], e.plus || 0) : e.id}${e.plus ? ` +${e.plus}` : ''}`;
+// A weapon's rank as a coloured tag
+const rankTag = (it, plus = 0) => { const r = RANKS[rankOf(it, plus)]; return `<span class="rank-tag" style="--rank:${r.color}">${r.name}</span>`; };
 
 export function tabsHtml(active) {
   const tab = (id, label, key) => `<button type="button" class="sw-tab" data-open="${id}" aria-pressed="${active === id}">${label}${key ? ` <kbd>${key}</kbd>` : ''}</button>`;
-  return `<div class="sw-tabs">${tab('status', 'Status', 'C')}${tab('bag', 'Bag', 'I')}${tab('shop', 'Shop', 'B')}${tab('quests', 'Quests', 'Q')}${tab('smith', 'Blacksmith')}</div>`;
+  return `<div class="sw-tabs">${tab('status', 'Status', 'C')}${tab('bag', 'Bag', 'I')}${tab('shop', 'Shop', 'B')}${tab('quests', 'Quests', 'Q')}${tab('smith', 'Blacksmith')}${tab('potions', 'Potion-Maker')}</div>`;
 }
 
 function describe(it, plus = 0) {
-  if (it.kind === 'weapon') return `${it.magic ? 'MATK' : 'ATK'} +${upgraded(it.power, plus)} · ${it.speed}s per swing${it.chop >= 4 ? ' · fells even great trees' : it.chop >= 3 ? ' · fells big trees' : it.chop >= 1.5 ? ' · chops young trees fast' : ''}`;
+  if (it.kind === 'weapon') {
+    const fx = effectText(it, plus);
+    const next = [3, 6, 9].find((n) => n > plus);
+    return `${rankTag(it, plus)} ${it.magic ? 'MATK' : 'ATK'} +${upgraded(it.power, plus)} · ${it.speed}s per swing · ${reachText(it)}${it.chop >= 4 ? ' · fells even great trees' : it.chop >= 3 ? ' · fells big trees' : it.chop >= 1.5 ? ' · chops young trees fast' : ''}${fx ? `<br>${fx}` : ''}${next ? `<br><span class="faint">Evolves at +${next}</span>` : ''}`;
+  }
+  if (it.kind === 'coating') return `${EFFECTS[it.coat].icon} Coats a weapon for ${it.hits} hits (Blacksmith)`;
   if (it.kind === 'armour') return `${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
-  if (it.kind === 'food') return [it.heal && `Restores ${it.heal} HP`, it.sp && (it.sp > 999 ? 'Fills SP' : `Restores ${it.sp} SP`), it.boost && `+${it.boost.sp} max SP for ${it.boost.minutes} min`].filter(Boolean).join(' · ');
+  if (it.kind === 'food') return [it.heal && (it.heal > 999 ? 'Fills HP' : `Restores ${it.heal} HP`), it.sp && (it.sp > 999 ? 'Fills SP' : `Restores ${it.sp} SP`), it.boost && `+${it.boost.sp} max SP for ${it.boost.minutes} min`,
+    it.buff && `+${it.buff.pct}% ${it.buff.stat === 'speed' ? 'speed' : it.buff.stat.toUpperCase()} for ${it.buff.minutes} min`, it.rest && (it.rest >= 100 ? 'Clears Fatigue' : `-${it.rest} Fatigue`)].filter(Boolean).join(' · ');
   if (it.id === 'torch') return 'Lights the night and keeps monsters away';
   if (it.id === 'tent') return 'Sleep anywhere and clear your Fatigue';
   return 'Material';
@@ -25,7 +33,8 @@ function describe(it, plus = 0) {
 function slotButton(e, game, selected) {
   const it = ITEMS[e.id] || { name: e.id, icon: '?' };
   const on = game.isEquipped(e);
-  return `<button type="button" class="bag-slot${on ? ' equipped' : ''}" data-item="${keyOf(e)}" aria-pressed="${selected === keyOf(e)}" title="${esc(nameOf(e))}">
+  const ranked = it.kind === 'weapon' && rankOf(it, e.plus || 0) > 0;
+  return `<button type="button" class="bag-slot${on ? ' equipped' : ''}${ranked ? ' ranked' : ''}"${ranked ? ` style="--rank:${RANKS[rankOf(it, e.plus || 0)].color}"` : ''} data-item="${keyOf(e)}" aria-pressed="${selected === keyOf(e)}" title="${esc(nameOf(e))}">
     ${pic(e.id, e.plus)}${e.n > 1 ? `<span class="bag-n">${e.n}</span>` : ''}${e.plus ? `<span class="bag-plus">+${e.plus}</span>` : ''}${on ? '<span class="bag-eq">E</span>' : ''}</button>`;
 }
 
@@ -56,7 +65,7 @@ export function renderBag(el, game, selected) {
     if (e.id === 'tent') actions.push(`<button type="button" class="gold-button small" data-tent>Pitch here (P)</button>`);
     if (sel.kind === 'food') actions.push(`<button type="button" class="gold-button small" data-use="${keyOf(e)}">Use</button>`);
     actions.push(`<button type="button" class="link-button" data-drop="${keyOf(e)}">Drop one</button>`);
-    details = `<div class="bag-detail"><span class="bag-big">${pic(e.id, e.plus, '')}</span><div><h3>${esc(nameOf(e))}</h3><p>${esc(sel.text)}</p><p class="bag-stat">${describe(sel, e.plus)}</p><div class="bag-actions">${actions.join('')}</div></div></div>`;
+    details = `<div class="bag-detail"><span class="bag-big">${pic(e.id, e.plus, '')}</span><div><h3>${esc(nameOf(e))}</h3><p>${esc(sel.text)}</p><p class="bag-stat">${describe(sel, e.plus)}${e.coat ? `<br>${EFFECTS[e.coat.id].icon} Coated with ${EFFECTS[e.coat.id].name}: ${e.coat.hits} hits left` : ''}</p><div class="bag-actions">${actions.join('')}</div></div></div>`;
   }
   const crafts = game.recipes.map((r) => {
     const it = ITEMS[r.makes];
@@ -122,6 +131,7 @@ export function renderShop(el, game, message = '') {
       ${group('Weapons', 'weapon')}
       ${group('Armour', 'armour')}
       ${group('Potions and food', 'food')}
+      ${group('Coatings for weapons', 'coating')}
       ${group('Tools', 'material')}
       <h3 class="sys-sub">Sell <small>for less than the shop price</small></h3>
       ${sell}
@@ -134,6 +144,7 @@ export function renderSmith(el, game, pick = [], message = '') {
   const gear = c.inventory.filter((e) => isGear(ITEMS[e.id]));
   const [a, b] = pick.map((k) => game.entry(k));
   const result = a && b ? game.mergePreview(keyOf(a), keyOf(b)) : null;
+  const cost = a ? game.mergeCost(keyOf(a)) : null;
   const can = game.canMerge();
   const list = gear.length ? gear.map((e) => {
     const it = ITEMS[e.id];
@@ -147,18 +158,66 @@ export function renderSmith(el, game, pick = [], message = '') {
   if (a && b) {
     summary = result == null
       ? '<p class="shop-msg">These two are different kinds. Merge weapons with weapons, or armour for the same body part.</p>'
-      : `<p class="smith-result">${esc(nameOf(a))} becomes <b>${esc(ITEMS[a.id].name)} +${result}</b>. ${esc(nameOf(b))} is used up.</p>
-         <button type="button" class="gold-button small" data-merge ${can ? '' : 'disabled'}>Merge</button>`;
+      : `<p class="smith-result">${esc(nameOf(a))} becomes <b>${esc(evolvedName(ITEMS[a.id], result))} +${result}</b>. ${esc(nameOf(b))} is used up.</p>
+         <p class="bag-hint">Cost: <b>${cost.coins} G</b>${cost.needs.map(([id, n]) => ` + <b>${n} ${esc(ITEMS[id].name)}</b> (you have ${game.count(id)})`).join('')}</p>
+         <button type="button" class="gold-button small" data-merge ${can && game.canPay(cost) ? '' : 'disabled'}>${game.canPay(cost) ? 'Merge' : 'Not enough to pay'}</button>`;
   }
+  // Coatings: brush a potion onto your weapon
+  const w = game.gearIn('weapon');
+  const coatings = c.inventory.filter((e) => ITEMS[e.id]?.kind === 'coating');
+  const coatHtml = !w ? '<p class="bag-hint">Equip a weapon to coat it.</p>'
+    : coatings.length ? coatings.map((e) => { const it = ITEMS[e.id]; return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}</b><small>You have ${e.n} · ${esc(EFFECTS[it.coat].text)} on each of the next ${it.hits} hits</small></span>
+      <button type="button" class="gold-button small" data-coat="${e.id}" ${can ? '' : 'disabled'}>Coat ${esc(nameOf(w.entry))}</button></div>`; }).join('')
+    : '<p class="bag-hint">Buy a Poison Potion, Fire Oil or Frost Oil in the shop (or have a Potion-Maker brew one) to coat your weapon.</p>';
   el.innerHTML = `
     <div class="status-window bag-window" role="dialog" aria-label="Blacksmith">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       ${tabsHtml('smith')}
       <h2>Blacksmith</h2>
       <p class="bag-top">${can ? '<span>As a Blacksmith you can merge gear of the same kind to make it stronger.</span>' : '<span><b>Only the Blacksmith class can merge.</b> You can still see how it works here.</span>'}</p>
-      <p class="bag-hint">Same category (two weapons, or two helmets): +1. Same type too (a sword and a sword): +1 and the second item's upgrades carry over. Each + is 12% stronger, up to +10.</p>
+      <p class="bag-hint">Same category (two weapons, or two helmets): +1. Same type too (a sword and a sword): +1 and the second item's upgrades carry over. Each + is 12% stronger, up to +10.
+        Weapons evolve at +3, +6 and +9: they climb a rank and gain (or strengthen) a special effect. Each merge costs more coins and monster parts than the last, and higher ranks cost more.</p>
       <p class="shop-msg" role="status">${esc(message)}</p>
       ${summary}
       <div class="smith-list">${list}</div>
+      <h3 class="bag-sub">Coat your weapon</h3>
+      ${w?.coat ? `<p class="bag-hint">${EFFECTS[w.coat.id].icon} ${esc(nameOf(w.entry))} is coated with ${EFFECTS[w.coat.id].name}: ${w.coat.hits} hits left. A new coating replaces it.</p>` : ''}
+      ${coatHtml}
+    </div>`;
+}
+
+// The Potion-Maker: a Businessman hires one for a while and orders potions for less than the shop asks
+export function renderPotions(el, game, message = '') {
+  const c = game.character;
+  const hired = game.makerHired();
+  const pm = c.potionMaker;
+  const minsLeft = hired ? Math.ceil((pm.until - Date.now()) / 60000) : 0;
+  const top = !game.canHire()
+    ? '<span><b>Only a Businessman can hire a Potion-Maker.</b> You can still see what they brew.</span>'
+    : hired ? `<span>Your Potion-Maker works for you for <b>${minsLeft} more min</b>.</span><button type="button" class="gold-button small" data-hire>Pay ${POTION_MAKER.fee} G for ${POTION_MAKER.minutes} min more</button>`
+      : `<span>Hire a Potion-Maker for <b>${POTION_MAKER.fee} G</b> for ${POTION_MAKER.minutes} minutes. They follow you and brew what you ask.</span><button type="button" class="gold-button small" data-hire ${c.coins < POTION_MAKER.fee ? 'disabled' : ''}>Hire</button>`;
+  const queue = pm?.queue?.length ? pm.queue.map((q) => {
+    const left = Math.max(0, Math.ceil((q.ready - Date.now()) / 1000));
+    return `<div class="shop-row"><span class="bag-icon">${ITEMS[q.id].icon}</span><span class="shop-name"><b>${esc(ITEMS[q.id].name)}</b><small>${left ? `Ready in ${left}s` : 'Ready: make room in your bag'}</small></span></div>`;
+  }).join('') : '<p class="bag-hint">Nothing brewing.</p>';
+  const list = BREWS.map((id) => {
+    const it = ITEMS[id];
+    const price = brewCost(id);
+    const ok = hired && c.coins >= price && (pm.queue.length < POTION_MAKER.queue);
+    return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}</b><small>${describe(it)} · ${brewSeconds(id)}s to brew${it.brewOnly ? ' · <b>not sold in shops</b>' : ` · shop price ${it.price} G`}</small></span>
+      <button type="button" class="gold-button small" data-brew="${id}" ${ok ? '' : 'disabled'}>Brew · ${price} G</button></div>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="status-window bag-window" role="dialog" aria-label="Potion-Maker">
+      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      ${tabsHtml('potions')}
+      <h2>Potion-Maker</h2>
+      <p class="bag-top">${top}</p>
+      <p class="bag-top"><span>Coins: <b>${c.coins} G</b></span></p>
+      <p class="shop-msg" role="status">${esc(message)}</p>
+      <h3 class="bag-sub">Brewing <small>(up to ${POTION_MAKER.queue} at a time; finished potions go into your bag)</small></h3>
+      ${queue}
+      <h3 class="bag-sub">Ask for a potion</h3>
+      ${list}
     </div>`;
 }

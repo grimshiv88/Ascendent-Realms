@@ -7,7 +7,7 @@ import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
 import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
-import { renderBag, renderShop, renderSmith, tabsHtml } from './bag.js';
+import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml } from './bag.js';
 import { renderQuests } from './quests.js';
 import { renderLand } from './landui.js';
 import { makeStage } from './characters/stage.js';
@@ -136,6 +136,7 @@ function startGame(character) {
     onEvent(type, data) {
       if (type === 'level') { world?.say(`Level ${data}!`, 'exp'); showArea(`Level ${data}! New Stat Points and a purse of coins.`); }
       if (type === 'bag-full') world?.say('Your bag is full', 'hurt');
+      if (type === 'evolved') { world?.say('Your weapon evolved!', 'exp'); showArea(`Your weapon evolved into the ${data.name}!`); }
       if (type === 'upgrade') showArea(data.evolution ? `Level ${data.level}! A new skill to choose (K).` : `Level ${data.level} upgrade! Every stat +2, and a new skill to choose (K).`);
     },
   });
@@ -167,6 +168,14 @@ function startGame(character) {
     trySkill(b.dataset.skill);
   });
   setInterval(() => updateSkillBar(skillBar, game, cooling), 200);
+  // the Potion-Maker's brewing: finished potions go into the bag
+  let hadHelper = false; // the first tick brings back a Potion-Maker still hired from last time
+  setInterval(() => {
+    const got = game.collectBrews();
+    if (got.length) world?.say(`Brewed: ${got.join(', ')}`, 'exp');
+    if (hadHelper !== game.makerHired()) { hadHelper = game.makerHired(); world?.refreshHelper?.(); if (!hadHelper) showArea('Your Potion-Maker\'s time is up. Hire them again from the Potion-Maker tab.'); }
+    if (overlay.dataset.panel === 'potions' && !overlay.classList.contains('hidden')) drawPanel();
+  }, 1000);
   // choosing a key for a skill: the next key pressed is the one
   window.addEventListener('keydown', (e) => {
     if (!ui.binding) return;
@@ -233,6 +242,7 @@ function startGame(character) {
     else if (name === 'bag') { renderBag(overlay, game, ui.selected); preview.mount(overlay.querySelector('[data-preview]')); }
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
+    else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })));
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '');
@@ -327,7 +337,8 @@ function startGame(character) {
   $('attack-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.attack(); });
 
   const SHOP_SAYS = { ok: 'Bought. It is in your bag.', locked: 'You need a higher level for that.', coins: 'Not enough coins.', full: 'Your bag is full.' };
-  const SMITH_SAYS = { ok: 'Merged! The item is stronger.', class: 'Only a Blacksmith can merge.', pick: 'Pick two items.', kind: 'Those two are different kinds.', max: 'That item is already at its strongest.' };
+  const BREW_SAYS = { ok: 'Your Potion-Maker gets to work.', hire: 'Hire a Potion-Maker first.', class: 'Only a Businessman can hire a Potion-Maker.', coins: 'Not enough coins.', busy: 'They are already brewing as much as they can.', pick: '' };
+  const SMITH_SAYS = { ok: 'Merged! The item is stronger.', evolved: 'Merged, and the weapon evolved! It climbed a rank.', coins: 'Not enough coins to pay for the merge.', parts: 'You need more monster parts for this merge.', class: 'Only a Blacksmith can merge.', pick: 'Pick two items.', kind: 'Those two are different kinds.', max: 'That item is already at its strongest.' };
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay || e.target.closest('[data-close]')) { closePanel(); return; }
     const t = (attr) => e.target.closest(`[${attr}]`)?.getAttribute(attr);
@@ -372,9 +383,9 @@ function startGame(character) {
     if ((v = t('data-buy')) != null) { ui.shopMsg = SHOP_SAYS[game.buy(v)]; drawPanel(); return; }
     if ((v = t('data-sell')) != null || (v = t('data-sell-all')) != null) {
       const all = t('data-sell-all') != null;
-      const e2 = game.entry(v);
-      const got = game.sell(v, all ? e2?.n : 1);
-      ui.shopMsg = got ? `Sold ${all ? `${e2.n} ` : ''}for ${got} coins.` : '';
+      const n = all ? game.entry(v)?.n : 1;
+      const got = game.sell(v, n);
+      ui.shopMsg = got ? `Sold ${all ? `${n} ` : ''}for ${got} coins.` : '';
       if (got) world?.say(`+${got} G`, 'exp');
       drawPanel(); return;
     }
@@ -386,9 +397,21 @@ function startGame(character) {
     if (t('data-merge') != null) {
       const r = game.merge(...ui.pick);
       ui.smithMsg = SMITH_SAYS[r];
-      if (r === 'ok') ui.pick = [ui.pick[0]];
-      drawPanel();
+      if (r === 'ok' || r === 'evolved') ui.pick = [ui.pick[0]];
+      drawPanel(); return;
     }
+    if ((v = t('data-coat')) != null) {
+      const r = game.coat(game.gearIn('weapon')?.entry.uid, v);
+      ui.smithMsg = r === 'ok' ? 'Your weapon is coated.' : r === 'class' ? 'Only a Blacksmith can coat weapons.' : 'Equip a weapon first.';
+      drawPanel(); return;
+    }
+    if (t('data-hire') != null) {
+      const r = game.hireMaker();
+      ui.potionMsg = r === 'ok' ? 'The Potion-Maker joins you.' : BREW_SAYS[r];
+      world?.refreshHelper?.();
+      drawPanel(); return;
+    }
+    if ((v = t('data-brew')) != null) { ui.potionMsg = BREW_SAYS[game.brew(v)]; drawPanel(); return; }
   });
 
   world = startWorld($('world'), character, {

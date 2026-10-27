@@ -1,6 +1,6 @@
 // The in-game HUD and the Status Window (laid out like Mohammed's black-and-gold design).
 import {
-  RACES, CLASSES, ADVANCEMENTS, KEY_LEVELS, derivedStats, expToNext, rankFor,
+  RACES, CLASSES, ADVANCEMENTS, KEY_LEVELS, derivedStats, expToNext, rankFor, TRAINED,
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
 import { gameTime, clockText } from './data/clock.mjs';
@@ -58,6 +58,9 @@ const nextUpgrade = (level) => { let l = (Math.floor(level / UPGRADE_EVERY) + 1)
 export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.level)) {
   const placed = Object.values(pending).reduce((a, b) => a + b, 0);
   const left = c.unspentPoints - placed;
+  const addBtn = (k) => (c.unspentPoints ? ` <button type="button" class="sw-plus" data-add="${k}" aria-label="Add a point" ${left > 0 ? '' : 'disabled'}>+</button>` : '');
+  // combat stats can take points directly too; pending ones show what they would add
+  const trained = (k, value) => `${value}${pending[k] ? ` <b class="sw-pending">+${pending[k] * TRAINED[k]}</b>` : ''}${addBtn(k)}`;
   const stat = (k) => `${c.stats[k]}${pending[k] ? ` <b class="sw-pending">+${pending[k]}</b>` : ''}${c.unspentPoints ? ` <button type="button" class="sw-plus" data-add="${k}" aria-label="Add a point" ${left > 0 ? '' : 'disabled'}>+</button>` : ''}`;
   const race = RACES[c.race];
   const plus = (k) => (d.bonus?.[k] ? ` <small class="sw-gear">(+${d.bonus[k]} gear)</small>` : '');
@@ -88,7 +91,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
       </div>
       <hr>
       <div class="sw-grid">
-        <dl>${row('HP', `${Math.round(c.hp ?? d.hp)} / ${d.hp}`)}</dl>
+        <dl>${row('HP', trained('hp', `${Math.round(c.hp ?? d.hp)} / ${d.hp}`))}</dl>
         <dl>${row('SP', `${Math.round(c.sp ?? d.sp)} / ${d.sp}`)}</dl>
       </div>
       <hr>
@@ -106,8 +109,8 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
       </div>
       <hr>
       <div class="sw-grid">
-        <dl>${row('ATK', d.atk + plus('atk'))}${row('DEF', d.def + plus('def'))}</dl>
-        <dl>${row('MATK', d.matk + plus('matk'))}${row('MDEF', d.mdef + plus('mdef'))}</dl>
+        <dl>${row('ATK', trained('atk', d.atk + plus('atk')))}${row('DEF', trained('def', d.def + plus('def')))}</dl>
+        <dl>${row('MATK', trained('matk', d.matk + plus('matk')))}${row('MDEF', trained('mdef', d.mdef + plus('mdef')))}</dl>
       </div>
       <hr>
       <dl>
@@ -115,7 +118,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
         ${row('Elements', c.elements.join(', '))}
         ${row('Skills', c.skills.length ? c.skills.map((id) => esc(SKILLS[id]?.name || id)).join(', ') : 'None yet')}${c.skillPicks ? ` <button type="button" class="hud-points" data-open="skills">Choose a new skill (K)</button>` : ''}
       </dl>
-      <p class="sw-points">Unspent points: <b>${left}</b></p>
+      <p class="sw-points">Unspent points: <b>${left}</b>${c.unspentPoints ? ` <small>A point in a main stat grows several things at once; a point straight into ATK or MATK gives +${TRAINED.atk}, DEF or MDEF +${TRAINED.def}, HP +${TRAINED.hp}.</small>` : ''}</p>
       ${placed ? `<p class="sw-confirm">Points can't be taken back once confirmed.
         <button type="button" class="gold-button small" data-confirm-points>Confirm</button>
         <button type="button" class="link-button" data-reset-points>Undo</button></p>` : ''}

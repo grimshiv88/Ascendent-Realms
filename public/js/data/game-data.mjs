@@ -89,8 +89,10 @@ export const UNIQUE_SKILLS = [
 export const SECOND_ELEMENT_CHANCE = { default: 0.2, mage: 0.35 };
 
 // Calculated stats (rulebook: Stats → Calculated stats)
-export function derivedStats(s, level = 1) {
-  return {
+// Stat Points can also go straight into a combat stat: each point gives this much
+export const TRAINED = { atk: 3, def: 2, matk: 3, mdef: 2, hp: 6 };
+export function derivedStats(s, level = 1, t = {}) {
+  const d = {
     // kept low at the start so even goblins are a real fight; grows with Stamina, Strength and level
     hp: Math.round(20 + s.sta * 3 + s.str * 0.5 + level * 4),
     sp: Math.round(10 + s.int * 2 + level),
@@ -99,6 +101,8 @@ export function derivedStats(s, level = 1) {
     def: Math.round(s.sta * 0.8 + s.str * 0.2),
     mdef: Math.round(s.int + s.sta * 0.5),
   };
+  for (const k of Object.keys(TRAINED)) d[k] += (t[k] || 0) * TRAINED[k];
+  return d;
 }
 
 export function startingStats(raceId, classId) {

@@ -12,6 +12,7 @@ import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOU
 import { createPlots } from './plots.js';
 import { gameTime } from '../data/clock.mjs';
 import { RACES } from '../data/game-data.mjs';
+import { ITEMS, weaponReach, weaponEffect, EFFECTS } from '../data/items.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -99,7 +100,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let area = '';
   let lastArea = -10;
 
-  const speedBonus = 1 + Math.min(character.stats.agi * 0.003, 0.6);
+  const agiSpeed = 1 + Math.min(character.stats.agi * 0.003, 0.6);
   const bodyH = avatar.userData.height;
   const bodyR = Math.max(0.25, Math.min(bodyH * 0.18, 0.9));
 
@@ -291,6 +292,34 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }, 3500);
   }
 
+  // ---------- the Potion-Maker a Businessman hires: walks a few steps behind you ----------
+  let helper = null;
+  function refreshHelper() {
+    const want = !!game?.makerHired();
+    if (want === !!helper) return;
+    if (helper) { scene.remove(helper.body); helper = null; return; }
+    const body = buildCharacter({ race: 'elf', form: 'humanoid', look: { hair: '#c8c8c8' } });
+    wearGear(body, { body: { ...ITEMS.mage_robe, look: { color: '#3d6b3a', robe: true } }, head: { ...ITEMS.mage_hat, look: { color: '#2e4f2c', hat: true } } });
+    helper = { body, x: pos.x - Math.sin(heading) * 2.5, z: pos.z - Math.cos(heading) * 2.5, heading };
+    scene.add(body);
+  }
+  function moveHelper(dt, t) {
+    if (!helper) return;
+    // keep about 2.5 m behind and to one side
+    const tx = pos.x - Math.sin(heading) * 2.2 + Math.cos(heading) * 1.2, tz = pos.z - Math.cos(heading) * 2.2 - Math.sin(heading) * 1.2;
+    const dx = tx - helper.x, dz = tz - helper.z, d = Math.hypot(dx, dz);
+    let speed = 0;
+    if (d > 40) { helper.x = tx; helper.z = tz; }
+    else if (d > 0.4) {
+      speed = Math.min(d * 2.5, RUN * 1.2);
+      helper.x += (dx / d) * speed * dt; helper.z += (dz / d) * speed * dt;
+      helper.heading = Math.atan2(dx, dz);
+    } else helper.heading = heading;
+    helper.body.position.set(helper.x, heightAt(helper.x, helper.z), helper.z);
+    helper.body.rotation.y = helper.heading;
+    animateCharacter(helper.body, t, speed / WALK * 1.6);
+  }
+
   // ---------- attacking ----------
   let attackT = -1;      // time since the swing started, or -1
   let swingDone = false;
@@ -305,7 +334,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   // Skills that raise ATK or DEF for a while
   const buffs = { atk: { pct: 0, until: 0 }, def: { pct: 0, until: 0 } };
-  const buffed = (stat) => (clock.elapsedTime < buffs[stat].until ? 1 + buffs[stat].pct / 100 : 1);
+  // skill buffs and potion buffs add together
+  const buffed = (stat) => 1 + ((clock.elapsedTime < buffs[stat].until ? buffs[stat].pct : 0) + (game?.boostPct(stat) || 0)) / 100;
 
   // Hit a monster with your weapon (or fists); `mult` and `magic` come from skills
   function damageMonster(m, mult = 1, magic = null) {
@@ -318,7 +348,38 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (crit) dmg *= 1.6;
     dmg = Math.max(1, Math.round(dmg));
     floatText(`${dmg}${crit ? '!' : ''}`, new THREE.Vector3(m.x, m.y + m.height + 0.2, m.z), crit ? 'crit' : 'dmg');
-    const reward = creatures.hit(m, dmg);
+    // the weapon's own effect, and a coating's, if it has one
+    if (w && !magic) {
+      const own = weaponEffect(w, w.plus);
+      if (own && Math.random() < own.chance) applyEffect(m, own.id, dmg, own.power);
+      if (w.coat) { applyEffect(m, w.coat.id, dmg, 1); game.useCoat(); }
+    }
+    finishHit(m, creatures.hit(m, dmg));
+  }
+  // Poison, burn and bleed hurt each second; frost slows; drain heals you
+  function applyEffect(m, id, dmg, power) {
+    const fx = EFFECTS[id];
+    if (fx.heal) { game.heal(Math.max(1, Math.round(dmg * fx.heal * power))); return; }
+    if (fx.slow) { m.slow = fx.secs * power; return; }
+    m.dots ||= {};
+    m.dots[id] = { dps: Math.max(1, Math.round(dmg * fx.dot * power)), left: fx.secs, tick: 1 };
+  }
+  function tickEffects(dt) {
+    for (const m of creatures.list) {
+      if (m.dead || !m.dots) continue;
+      for (const [id, d] of Object.entries(m.dots)) {
+        d.tick -= dt; d.left -= dt;
+        if (d.tick <= 0) {
+          d.tick += 1;
+          floatText(`${d.dps}`, new THREE.Vector3(m.x, m.y + m.height + 0.2, m.z), id === 'poison' ? 'exp' : 'hurt');
+          finishHit(m, creatures.hit(m, d.dps));
+          if (m.dead || m.hp <= 0) break;
+        }
+        if (d.left <= 0) delete m.dots[id];
+      }
+    }
+  }
+  function finishHit(m, reward) {
     if (reward) {
       // monsters far below your level teach you little
       const gap = game.character.level - m.level;
@@ -336,7 +397,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!game || dead || resting()) return 'busy';
     const c = game.character;
     if (c.sp < sk.sp) return 'sp';
-    const reachNear = bodyR + 1.8 * Math.max(0.8, bodyH / 1.8);
+    const reachNear = bodyR + Math.max(1.8, weaponReach(game.weapon()).reach) * Math.max(0.8, bodyH / 1.8);
     if (sk.type === 'strike' || sk.type === 'bolt') {
       const m = creatures.target(pos.x, pos.z, heading, sk.type === 'bolt' ? sk.reach : reachNear + 0.4);
       if (!m) return 'none';
@@ -369,10 +430,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   function resolveSwing() {
     const w = game?.weapon();
-    const reach = bodyR + (w ? (w.type === 'dagger' ? 1.1 : w.type === 'staff' ? 1.8 : 1.6) : 0.9) * Math.max(0.8, bodyH / 1.8);
-    // monsters first
-    const m = creatures.target(pos.x, pos.z, heading, reach);
-    if (m) { damageMonster(m); return; }
+    const r = weaponReach(w);
+    const reach = bodyR + r.reach * Math.max(0.8, bodyH / 1.8);
+    // monsters first: a long or wide weapon can catch more than one
+    const foes = creatures.targets(pos.x, pos.z, heading, reach, r.arc).slice(0, r.hits);
+    if (foes.length) { foes.forEach((m, i) => damageMonster(m, r.sharp * (i ? 0.7 : 1))); return; }
     // then bushes and small trees in front of you
     const fx = pos.x + Math.sin(heading) * reach * 0.6, fz = pos.z + Math.cos(heading) * reach * 0.6;
     let best = null, bestD = Infinity;
@@ -577,7 +639,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (Math.abs(fz) > 0.05) {
         const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
         move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
-        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * speedBonus * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
+        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
       }
       if (!look) {
         const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
@@ -597,7 +659,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       heading += diff * Math.min(1, dt * TURN);
       // move the way you want to go, even while still turning to face it
-      target = (running ? RUN : WALK) * speedBonus * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
+      target = (running ? RUN : WALK) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
@@ -626,6 +688,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const rig = avatar.userData.rig;
     rig.root.position.z = 0;
     animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 1.6);
+    moveHelper(dt, t);
 
     // Attacks
     cooldown = Math.max(0, cooldown - dt);
@@ -684,6 +747,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     plots.update(pos.x, pos.z);
     land.animate(t);
     creatures.update(dt, t);
+    tickEffects(dt);
     if (t - lastArea > 0.5) {
       lastArea = t;
       updateSites(pos.x, pos.z);
@@ -742,6 +806,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     useSkill,
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
+    refreshHelper,
     sleep: toggleSleep,
     placeTorch,
     pitchTent,

@@ -2,6 +2,7 @@
 const db = require('./db');
 const { newCharacter } = require('../public/js/data/game-data.mjs');
 const { SKILLS } = require('../public/js/data/skills.mjs');
+const { ITEMS, EFFECTS } = require('../public/js/data/items.mjs');
 
 function load(accountId) {
   const row = db.prepare('SELECT data FROM characters WHERE account_id = ?').get(accountId);
@@ -44,6 +45,12 @@ function saveProgress(accountId, p) {
     if (v === null) return { error: `Bad value for stat ${k}.` };
     stats[k] = v;
   }
+  const trained = {};
+  for (const k of ['atk', 'def', 'matk', 'mdef', 'hp']) {
+    const v = int(p.trained?.[k] ?? 0, 0, 1e6);
+    if (v === null) return { error: `Bad value for ${k}.` };
+    trained[k] = v;
+  }
   if (!Array.isArray(p.inventory) || p.inventory.length > 60) return { error: 'Bad inventory.' };
   const inventory = [];
   for (const s of p.inventory) {
@@ -57,6 +64,11 @@ function saveProgress(accountId, p) {
       if (int(s.plus, 0, 10) === null) return { error: 'Bad inventory item.' };
       item.plus = s.plus;
     }
+    // a coating a Blacksmith put on a weapon: its effect and the hits left
+    if (s.coat !== undefined) {
+      if (!EFFECTS[s.coat?.id] || int(s.coat?.hits, 1, 100) === null) return { error: 'Bad inventory item.' };
+      item.coat = { id: s.coat.id, hits: s.coat.hits };
+    }
     inventory.push(item);
   }
   const equipped = {};
@@ -65,8 +77,15 @@ function saveProgress(accountId, p) {
     equipped[slot] = typeof v === 'string' && inventory.some((s) => s.uid === v) ? v : null;
   }
   const boosts = Array.isArray(p.boosts)
-    ? p.boosts.slice(0, 10).filter((b) => int(b?.sp, 0, 1e6) !== null && int(b?.until, 0, 1e15) !== null).map((b) => ({ sp: b.sp, until: b.until }))
+    ? p.boosts.slice(0, 10).filter((b) => int(b?.until, 0, 1e15) !== null
+      && (b.stat === undefined ? int(b?.sp, 0, 1e6) !== null : ['atk', 'def', 'speed'].includes(b.stat) && int(b.pct, 0, 200) !== null))
+      .map((b) => (b.stat ? { stat: b.stat, pct: b.pct, until: b.until } : { sp: b.sp, until: b.until }))
     : [];
+  // a Potion-Maker hired by a Businessman, and the potions brewing
+  const pm = p.potionMaker;
+  const potionMaker = pm && int(pm.until, 0, 1e15) !== null
+    ? { until: pm.until, queue: (Array.isArray(pm.queue) ? pm.queue.slice(0, 5) : []).filter((q) => ITEMS[q?.id] && int(q.ready, 0, 1e15) !== null).map((q) => ({ id: q.id, ready: q.ready })) }
+    : null;
   // Quests are kept as plain data: only known types, small numbers and short text
   const str = (v, n) => (typeof v === 'string' && v.length <= n ? v : null);
   const quests = [];
@@ -97,7 +116,7 @@ function saveProgress(accountId, p) {
   const t = p.tent;
   const tent = t && Number.isFinite(t.x) && Number.isFinite(t.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6
     ? { x: t.x, z: t.z, heading: Number.isFinite(t.heading) ? t.heading : 0 } : null;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, torches, skills, skillBar, skillPicks, tent });
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, torches, skills, skillBar, skillPicks, tent, potionMaker, trained });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };

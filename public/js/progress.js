@@ -1,7 +1,7 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
 import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
-import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult } from './data/items.mjs';
+import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds } from './data/items.mjs';
 import { fillBoard, progressOf } from './quests.js';
 import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, RESERVED_KEYS, skillOffers } from './data/skills.mjs';
 
@@ -15,6 +15,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.torches ||= [];
   c.tent ??= null; // where your tent is pitched
   c.fatigue ??= 0;
+  c.trained = { atk: 0, def: 0, matk: 0, mdef: 0, hp: 0, ...(c.trained || {}) }; // Stat Points put straight into ATK, DEF, MATK, MDEF or HP
+  c.potionMaker ??= null; // { until, queue: [{ id, ready }] } while a Businessman has one hired
   // Skills: learned ones, the ones ready on keys (the rest are kept in storage), and choices still to make
   c.skills = (c.skills || []).filter((id) => SKILLS[id]);
   c.skillBar = (c.skillBar || []).filter((b) => c.skills.includes(b?.id));
@@ -31,7 +33,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const entry = (key) => c.inventory.find((s) => s.uid === key) || c.inventory.find((s) => !s.uid && s.id === key);
   const gearIn = (slot) => {
     const e = c.equipped[slot] && c.inventory.find((s) => s.uid === c.equipped[slot]);
-    return e ? { ...ITEMS[e.id], entry: e, plus: e.plus || 0 } : null;
+    return e ? { ...ITEMS[e.id], entry: e, plus: e.plus || 0, coat: e.coat || null } : null;
   };
 
   // Bonuses from what you wear, and from boosters still running
@@ -45,11 +47,11 @@ export function createProgress(c, { save, onChange, onEvent }) {
     }
     const now = Date.now();
     c.boosts = c.boosts.filter((x) => x.until > now);
-    for (const x of c.boosts) b.sp += x.sp || 0;
+    for (const x of c.boosts) if (!x.stat) b.sp += x.sp || 0;
     return b;
   }
   function stats() {
-    const d = derivedStats(c.stats, c.level);
+    const d = derivedStats(c.stats, c.level, c.trained);
     const b = bonus();
     return { ...d, sp: d.sp + b.sp, atk: d.atk + b.atk, matk: d.matk + b.matk, def: d.def + b.def, mdef: d.mdef + b.mdef, bonus: b, base: d };
   }
@@ -66,7 +68,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     quests: c.quests, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent,
+    skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained,
   });
 
   // worn gear doesn't take up room in the bag
@@ -133,6 +135,12 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (it?.kind !== 'food') return;
       removeItem(key, 1);
       if (it.boost) c.boosts.push({ sp: it.boost.sp, until: Date.now() + it.boost.minutes * 60000 });
+      if (it.buff) {
+        // the same kind of potion doesn't stack: drinking another starts the time again
+        c.boosts = c.boosts.filter((x) => x.stat !== it.buff.stat);
+        c.boosts.push({ stat: it.buff.stat, pct: it.buff.pct, until: Date.now() + it.buff.minutes * 60000 });
+      }
+      if (it.rest) c.fatigue = Math.max(0, c.fatigue - it.rest);
       if (it.heal) c.hp = Math.min(stats().hp, c.hp + it.heal);
       if (it.sp) c.sp = Math.min(stats().sp, c.sp + it.sp);
       changed('hp');
@@ -169,8 +177,17 @@ export function createProgress(c, { save, onChange, onEvent }) {
     },
     recipes: RECIPES,
 
-    // Blacksmiths merge two pieces of the same kind: the first gets stronger, the second is used up
+    // A potion's strength still running: % more ATK, DEF or speed
+    boostPct(stat) {
+      const now = Date.now();
+      return c.boosts.reduce((n, x) => (x.stat === stat && x.until > now ? n + x.pct : n), 0);
+    },
+
+    // Blacksmiths merge two pieces of the same kind: the first gets stronger, the second is used up.
+    // Every merge costs coins (and monster parts from Uncommon up), more for higher ranks and upgrades.
     canMerge: () => c.cls === 'blacksmith',
+    mergeCost: (key) => { const a = entry(key); return a ? mergeCost(ITEMS[a.id], a.plus || 0) : null; },
+    canPay: (cost) => c.coins >= cost.coins && cost.needs.every(([id, n]) => count(id) >= n),
     mergePreview(aKey, bKey) {
       const a = entry(aKey), b = entry(bKey);
       if (!a || !b || a === b) return null;
@@ -183,10 +200,75 @@ export function createProgress(c, { save, onChange, onEvent }) {
       const plus = mergeResult(a, b);
       if (plus == null) return 'kind';
       if (plus === (a.plus || 0)) return 'max';
+      const cost = mergeCost(ITEMS[a.id], a.plus || 0);
+      if (c.coins < cost.coins) return 'coins';
+      if (!cost.needs.every(([id, n]) => count(id) >= n)) return 'parts';
+      c.coins -= cost.coins;
+      for (const [id, n] of cost.needs) removeItem(id, n);
+      const before = evolveStage(a.plus || 0);
       a.plus = plus;
       removeItem(b.uid, 1);
       changed('gear');
+      if (ITEMS[a.id].kind === 'weapon' && evolveStage(plus) > before) {
+        onEvent?.('evolved', { name: evolvedName(ITEMS[a.id], plus) });
+        return 'evolved';
+      }
       return 'ok';
+    },
+    // Blacksmiths can brush a coating (Poison Potion, Fire Oil, Frost Oil) onto a weapon
+    coat(weaponKey, coatId) {
+      if (c.cls !== 'blacksmith') return 'class';
+      const w = entry(weaponKey), it = ITEMS[coatId];
+      if (!w || ITEMS[w.id].kind !== 'weapon' || it?.kind !== 'coating' || !count(coatId)) return 'pick';
+      removeItem(coatId, 1);
+      w.coat = { id: it.coat, hits: it.hits };
+      changed('gear');
+      return 'ok';
+    },
+    // one hit used from the coating on your weapon
+    useCoat() {
+      const w = gearIn('weapon')?.entry;
+      if (!w?.coat) return;
+      w.coat.hits -= 1;
+      if (w.coat.hits <= 0) delete w.coat;
+      changed('bag');
+    },
+
+    // The Potion-Maker: only a Businessman can hire one
+    canHire: () => c.cls === 'businessman',
+    makerHired: () => !!c.potionMaker && c.potionMaker.until > Date.now(),
+    hireMaker() {
+      if (c.cls !== 'businessman') return 'class';
+      if (c.coins < POTION_MAKER.fee) return 'coins';
+      c.coins -= POTION_MAKER.fee;
+      const from = Math.max(Date.now(), c.potionMaker?.until || 0);
+      c.potionMaker = { until: from + POTION_MAKER.minutes * 60000, queue: c.potionMaker?.queue || [] };
+      changed('coins');
+      return 'ok';
+    },
+    brew(id) {
+      const pm = c.potionMaker;
+      if (!pm || pm.until <= Date.now()) return 'hire';
+      if (!BREWS.includes(id)) return 'pick';
+      if (pm.queue.length >= POTION_MAKER.queue) return 'busy';
+      const cost = brewCost(id);
+      if (c.coins < cost) return 'coins';
+      c.coins -= cost;
+      // each potion starts when the one before it is done
+      const start = Math.max(Date.now(), pm.queue.at(-1)?.ready || 0);
+      pm.queue.push({ id, ready: start + brewSeconds(id) * 1000 });
+      changed('coins');
+      return 'ok';
+    },
+    // potions that are ready go into the bag (if there's room); returns their names
+    collectBrews() {
+      const pm = c.potionMaker;
+      if (!pm?.queue.length) return [];
+      const got = [];
+      const fits = (id) => c.inventory.some((e) => e.id === id) || used() < BAG_SLOTS;
+      while (pm.queue.length && pm.queue[0].ready <= Date.now() && fits(pm.queue[0].id) && addItem(pm.queue[0].id, 1)) got.push(ITEMS[pm.queue.shift().id].name);
+      if (got.length) changed('bag');
+      return got;
     },
 
     heal(n) {
@@ -237,7 +319,10 @@ export function createProgress(c, { save, onChange, onEvent }) {
     spendPoints(add) {
       const total = Object.values(add).reduce((a, b) => a + b, 0);
       if (total <= 0 || total > c.unspentPoints) return;
-      for (const [k, v] of Object.entries(add)) if (v > 0 && k in c.stats) c.stats[k] += v;
+      for (const [k, v] of Object.entries(add)) {
+        if (v > 0 && k in c.stats) c.stats[k] += v;
+        else if (v > 0 && k in c.trained) c.trained[k] += v;
+      }
       c.unspentPoints -= total;
       changed('stats');
     },
