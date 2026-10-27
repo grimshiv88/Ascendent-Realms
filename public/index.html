@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ascendent Realms</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="flash"></div>
+
+  <main id="ui">
+    <h1 id="title" class="hidden">
+      <span class="title-line">Ascendent</span>
+      <span class="title-line">Realms</span>
+    </h1>
+
+    <!-- Choose: Sign Up or Sign In -->
+    <section id="choose" class="panel hidden" aria-labelledby="choose-heading">
+      <h2 id="choose-heading">Choose</h2>
+      <div class="choices">
+        <button class="gold-button" data-go="signup">Sign Up</button>
+        <button class="gold-button" data-go="signin">Sign In</button>
+      </div>
+    </section>
+
+    <section id="signup" class="panel hidden" aria-labelledby="signup-heading">
+      <h2 id="signup-heading">Sign Up</h2>
+      <form id="signup-form" novalidate>
+        <label>Email<input name="email" type="email" autocomplete="email" required></label>
+        <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+        <label>Character username<input name="username" autocomplete="username" maxlength="16" required></label>
+        <p class="hint">3 to 16 letters, numbers or underscores. This is the name others will see.</p>
+        <p class="error" role="alert"></p>
+        <button class="gold-button" type="submit">Sign Up</button>
+        <button class="link-button" type="button" data-go="choose">Back</button>
+      </form>
+    </section>
+
+    <section id="signin" class="panel hidden" aria-labelledby="signin-heading">
+      <h2 id="signin-heading">Sign In</h2>
+      <form id="signin-form" novalidate>
+        <label>Email<input name="email" type="email" autocomplete="email" required></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+        <p class="error" role="alert"></p>
+        <button class="gold-button" type="submit">Sign In</button>
+        <button class="link-button" type="button" data-go="choose">Back</button>
+      </form>
+    </section>
+
+    <!-- Shown after the clouds clear. Character creation and the world come in the next steps. -->
+    <section id="arrival" class="panel hidden" aria-live="polite">
+      <h2 id="arrival-heading"></h2>
+      <p id="arrival-text"></p>
+      <button class="link-button" type="button" id="signout">Sign out</button>
+    </section>
+  </main>
+
+  <div id="clouds" aria-hidden="true">
+    <div class="cloud-bank left"></div>
+    <div class="cloud-bank right"></div>
+    <p id="loading">Loading the realm…</p>
+  </div>
+
+  <p id="preview-note" class="hidden">Preview mode: accounts are saved only in this browser.</p>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
