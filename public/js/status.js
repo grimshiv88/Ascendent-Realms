@@ -3,6 +3,7 @@ import {
   RACES, CLASSES, ADVANCEMENTS, derivedStats, expToNext, rankFor,
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
+import { gameTime, clockText } from './data/clock.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -17,8 +18,10 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
   el.innerHTML = `
     <div class="hud-card">
       <p class="hud-name">${esc(c.name)} <span>LVL ${c.level} · ${rankFor(c.level)}</span></p>
+      <p class="hud-clock">${(() => { const t = gameTime(); return `${t.night ? '🌙' : '☀️'} ${clockText(t)}${t.night ? ' · Night: stay near light' : ''}`; })()}</p>
       <div class="hud-bar hp" title="HP"><span style="width:${(hp / d.hp) * 100}%"></span><b>HP ${hp} / ${d.hp}</b></div>
       <div class="hud-bar sp" title="SP"><span style="width:${((c.sp ?? d.sp) / d.sp) * 100}%"></span><b>SP ${Math.round(c.sp ?? d.sp)} / ${d.sp}</b></div>
+      <div class="hud-bar fatigue" title="Fatigue: sleep (Z) by a fire or torch before it fills"><span style="width:${Math.min(100, c.fatigue || 0)}%"></span><b>FATIGUE ${Math.round(c.fatigue || 0)} / 100</b></div>
       <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
     </div>
@@ -32,6 +35,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
         <button type="button" data-open="shop">Shop <kbd>B</kbd></button>
         <button type="button" data-open="quests">Quests <kbd>Q</kbd></button>
         <button type="button" data-open="map">Map <kbd>M</kbd></button>
+        <button type="button" data-open="land">Buy land <kbd>L</kbd></button>
         <button type="button" data-open="help">Controls <kbd>H</kbd></button>
         <button type="button" data-open="settings">Settings <kbd>O</kbd></button>
       </div>
@@ -85,7 +89,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
         <dl>
           ${row('Stamina', stat('sta'))}
           ${row('Intelligence', stat('int'))}
-          ${row('Fatigue', `${c.fatigue} / 100`)}
+          ${row('Fatigue', `${Math.round(c.fatigue || 0)} / 100`)}
         </dl>
       </div>
       <hr>
@@ -118,6 +122,9 @@ export function renderSettings(el, settings) {
         ${opt('free', 'Free camera', 'You turn the camera yourself (drag the mouse, or drag on the right of the screen). Your character walks the way you push, relative to the camera.')}
         ${opt('follow', 'Follow your body', 'The camera stays behind your character. Left and right turn your body, forward walks the way you face.')}
       </div>
+      <h3 class="bag-sub">Account</h3>
+      <p class="bag-hint">This browser keeps you signed in. Sign out on shared computers.</p>
+      <button type="button" class="link-button" data-signout>Sign out</button>
     </div>`;
 }
 
@@ -134,7 +141,10 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Status</dt><dd>C</dd></div>
       <div class="sw-row"><dt>Bag and shop</dt><dd>I and B</dd></div>
       <div class="sw-row"><dt>Quests</dt><dd>Q</dd></div>
+      <div class="sw-row"><dt>Sleep</dt><dd>Z, by a campfire or a torch (lowers Fatigue)</dd></div>
+      <div class="sw-row"><dt>Place a torch</dt><dd>T (buy torches in the shop; they keep monsters away at night)</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
+      <div class="sw-row"><dt>Land</dt><dd>L shows the grid of plots; tap a square to buy it or manage it</dd></div>
       <div class="sw-row"><dt>Settings</dt><dd>O (a free camera, or one that follows your body)</dd></div>
       <div class="sw-row"><dt>Swim</dt><dd>Walk into deep water</dd></div>
       <div class="sw-row"><dt>Touch</dt><dd>The stick on the left moves in any direction; drag on the right to turn the camera</dd></div>

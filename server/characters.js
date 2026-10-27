@@ -34,6 +34,7 @@ function saveProgress(accountId, p) {
   const fields = {
     level: int(p.level, 1, 10000), exp: int(p.exp, 0, 1e12), coins: int(p.coins, 0, 1e12), hp: int(p.hp, 0, 1e9), sp: int(p.sp, 0, 1e9),
     unspentPoints: int(p.unspentPoints, 0, 1e6), uniquePoints: int(p.uniquePoints, 0, 1e6),
+    fatigue: int(p.fatigue ?? 0, 0, 100), savedAt: int(p.savedAt ?? 0, 0, 1e15),
   };
   for (const [k, v] of Object.entries(fields)) if (v === null) return { error: `Bad value for ${k}.` };
   const stats = {};
@@ -83,10 +84,18 @@ function saveProgress(accountId, p) {
     if (flat.includes('null')) continue;
     quests.push(clean);
   }
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests });
+  const torches = (Array.isArray(p.torches) ? p.torches.slice(0, 10) : [])
+    .filter((t) => Number.isFinite(t?.x) && Number.isFinite(t?.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6)
+    .map((t) => ({ x: t.x, z: t.z }));
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, torches });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };
 }
 
-module.exports = { create, load, saveLocation, saveProgress };
+function store(accountId, character) {
+  db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
+    .run(JSON.stringify(character), accountId);
+}
+
+module.exports = { create, load, store, saveLocation, saveProgress };

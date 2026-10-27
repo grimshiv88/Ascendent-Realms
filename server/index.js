@@ -3,6 +3,7 @@ const path = require('node:path');
 const express = require('express');
 const auth = require('./auth');
 const characters = require('./characters');
+const land = require('./land');
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -10,7 +11,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const bearer = (req) => (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/api/health', (req, res) => res.json({ ok: true, now: Date.now() }));
 
 app.post('/api/signup', (req, res) => {
   const result = auth.signUp(req.body || {});
@@ -49,6 +50,15 @@ app.post('/api/character/progress', requireAccount, (req, res) => {
   const result = characters.saveProgress(req.account.id, req.body || {});
   res.status(result.error ? 400 : 200).json(result);
 });
+
+// Land: everyone's plots, buying one, choosing its purpose, and clearing it
+app.get('/api/land', requireAccount, (req, res) => res.json(land.list(req.account.id)));
+for (const [route, fn] of [['buy', land.buy], ['purpose', land.setPurpose], ['prepare', land.prepare]]) {
+  app.post(`/api/land/${route}`, requireAccount, (req, res) => {
+    const result = fn(req.account.id, req.body || {});
+    res.status(result.error ? 400 : 200).json(result);
+  });
+}
 
 app.post('/api/signout', (req, res) => {
   auth.signOut(bearer(req));

@@ -1,7 +1,7 @@
 // Trees, rocks, reeds and grass for each terrain tile, chosen by region. Every model is one
 // merged mesh with its colours baked in, drawn many times at once (instancing).
 import * as THREE from 'three';
-import { sample, placesWithPositions } from '../data/world-layout.mjs';
+import { sample, placesWithPositions, isPrepared } from '../data/world-layout.mjs';
 
 // ---------- building the models ----------
 
@@ -243,7 +243,7 @@ export function scenery() {
         const x = cx * size + (i + rand()) * cell;
         const z = cz * size + (j + rand()) * cell;
         const r = rand();
-        if (nearPlace(x, z)) continue;
+        if (nearPlace(x, z) || isPrepared(x, z)) continue;
         sample(x, z, s);
         const flora = FLORA[s.region];
         if (!flora) continue;

@@ -35,7 +35,7 @@ export function makeQuest(c, here) {
     return { type, kind, need, have: 0, title: `Hunt: ${KINDS[kind].name}`, text: `Defeat ${need} ${KINDS[kind].name}s around ${regionName(region)}.`, reward: rewardFor(c, need / 3) };
   }
   if (type === 'gather') {
-    const options = GATHER.filter(([id]) => !GATHER_REGION[id] || GATHER_REGION[id] === region || Math.random() < 0.15);
+    const options = GATHER.filter(([id]) => !GATHER_REGION[id] || GATHER_REGION[id] === region);
     const [item, lo, hi] = pick(options);
     const need = between(lo, hi);
     return { type, item, need, have: 0, title: `Gather: ${ITEMS[item].name}`, text: `Bring ${need} ${ITEMS[item].name}. They are taken from your bag when you claim the reward.`, reward: rewardFor(c, 0.6 + need / 8) };

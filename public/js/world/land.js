@@ -463,8 +463,21 @@ export function createLand(scene) {
     return BREAKABLE[entry.kind];
   }
 
+  // The ground changed around (x, z) (a plot was levelled): drop those tiles so they are rebuilt
+  function refreshAt(x, z, r = 30) {
+    for (const [k, t] of tiles) {
+      const x0 = t.cx * CHUNK, z0 = t.cz * CHUNK;
+      if (x + r < x0 || x - r > x0 + CHUNK || z + r < z0 || z - r > z0 + CHUNK) continue;
+      setVeg(t, false, false);
+      root.remove(t.mesh);
+      t.mesh.geometry.dispose();
+      tiles.delete(k);
+    }
+  }
+
   return {
     update,
+    refreshAt,
     colliders,
     breakThing,
     animate(t) {

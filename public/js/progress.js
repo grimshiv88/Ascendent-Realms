@@ -11,6 +11,10 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.inventory ||= [];
   c.equipped = { ...Object.fromEntries(SLOTS.map(([s]) => [s, null])), ...(c.equipped || {}) };
   c.boosts ||= [];
+  c.torches ||= [];
+  c.fatigue ??= 0;
+  // time away counts as rest: fatigue falls 2 points per real minute you were gone
+  if (c.savedAt) c.fatigue = Math.max(0, c.fatigue - ((Date.now() - c.savedAt) / 60000) * 2);
   // Gear doesn't stack: each piece has its own id so it can be equipped and upgraded
   for (const s of c.inventory) if (isGear(ITEMS[s.id]) && !s.uid) s.uid = uid();
   // older saves stored the equipped weapon by item id
@@ -55,7 +59,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    quests: c.quests,
+    quests: c.quests, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
   });
 
   // worn gear doesn't take up room in the bag
@@ -254,6 +258,18 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (ready.length) changed('quests');
       return ready;
     },
-    saveNow() { clearTimeout(saveTimer); save?.(snapshot()); },
+    // Something changed that only the HUD shows (fatigue ticking)
+    touch(what) { changed(what); },
+    // Torches: take one from the bag and stand it in the ground (up to 10 burn at once)
+    placeTorch(x, z) {
+      if (c.torches.length >= 10) return 'max';
+      if (!removeItem('torch', 1)) return 'none';
+      c.torches.push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 });
+      changed('torches');
+      return 'ok';
+    },
+    saveNow() { clearTimeout(saveTimer); return save?.(snapshot()); },
+    // the server's count after it charged you (for land)
+    setCoins(n) { c.coins = n; changed('coins'); },
   };
 }

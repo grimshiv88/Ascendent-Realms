@@ -10,7 +10,7 @@ function skyMaterial(sunDir) {
     uniforms: {
       top: { value: new THREE.Color('#3f74b8') },
       mid: { value: new THREE.Color('#8fb4da') },
-      horizon: { value: HORIZON },
+      horizon: { value: HORIZON.clone() },
       ground: { value: new THREE.Color('#8a9688') },
       sun: { value: sunDir.clone().normalize() },
     },
@@ -54,7 +54,21 @@ export function createSky(scene, renderer, sunDir) {
   scene.environment = env;
   pmrem.dispose();
 
+  // Day and night: blend the sky from its day colours to a starless deep blue, move the sun glow
+  const DAY = { top: new THREE.Color('#3f74b8'), mid: new THREE.Color('#8fb4da'), horizon: HORIZON.clone(), ground: new THREE.Color('#8a9688') };
+  const NIGHT = { top: new THREE.Color('#03060f'), mid: new THREE.Color('#0b1428'), horizon: new THREE.Color('#1a2438'), ground: new THREE.Color('#0a0d12') };
+  const DUSK = new THREE.Color('#e08a5a');
+  function setTime(daylight, sun) {
+    const u = dome.material.uniforms;
+    for (const k of ['top', 'mid', 'ground']) u[k].value.copy(NIGHT[k]).lerp(DAY[k], daylight);
+    // a warm horizon at dawn and dusk
+    u.horizon.value.copy(NIGHT.horizon).lerp(DAY.horizon, daylight).lerp(DUSK, Math.max(0, 0.45 - Math.abs(daylight - 0.4)) * 0.9);
+    u.sun.value.copy(sun).normalize();
+    return u.horizon.value;
+  }
+
   return {
+    setTime,
     follow(camera) { dome.position.copy(camera.position); },
     dispose() { env.dispose(); dome.geometry.dispose(); dome.material.dispose(); },
   };

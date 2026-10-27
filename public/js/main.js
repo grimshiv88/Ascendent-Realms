@@ -10,6 +10,7 @@ import { renderHud, renderStatus, renderSettings, toggleMenu, HELP_HTML } from '
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, tabsHtml } from './bag.js';
 import { renderQuests } from './quests.js';
+import { renderLand } from './landui.js';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
@@ -59,6 +60,15 @@ document.querySelectorAll('[data-go]').forEach((el) => {
 
 api.isPreviewMode().then((on) => $('preview-note').classList.toggle('hidden', !on));
 
+// Stay signed in: if this browser remembers an account, offer to go straight back in
+api.resume().then((r) => {
+  if (!r?.account) return;
+  $('welcome-name').textContent = r.account.character?.name || r.account.username;
+  $('welcome-back').classList.remove('hidden');
+  $('continue-btn').addEventListener('click', () => enterRealm(r));
+  $('signout-btn').addEventListener('click', async () => { await api.signOut(); $('welcome-back').classList.add('hidden'); });
+});
+
 // Clouds roll in from both sides, the next screen loads behind them, then they roll away.
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function cloudTransition(loadNext) {
@@ -107,7 +117,7 @@ const SWORD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4l-9.5 9
 function startGame(character) {
   $('game').classList.remove('hidden');
   const overlay = $('overlay');
-  const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '' };
+  const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '', plot: null, landChoice: 'house', landMsg: '', landBusy: false };
   let hudQueued = false;
 
   const game = createProgress(character, {
@@ -116,13 +126,40 @@ function startGame(character) {
       // HP ticks often while resting, so the HUD redraws at most once a frame
       if (!hudQueued) { hudQueued = true; requestAnimationFrame(() => { hudQueued = false; drawHud(); }); }
       if (what === 'gear') world?.refreshGear();
-      if (what !== 'hp' && !overlay.classList.contains('hidden')) drawPanel();
+      if (what !== 'hp' && what !== 'fatigue' && !overlay.classList.contains('hidden')) drawPanel();
     },
     onEvent(type, data) {
       if (type === 'level') { world?.say(`Level ${data}!`, 'exp'); showArea(`Level ${data}! New Stat Points and a purse of coins.`); }
       if (type === 'bag-full') world?.say('Your bag is full', 'hurt');
     },
   });
+
+  // Land: L shows the grid of plots around you; tap one to see it in the Land window
+  function toggleLand() {
+    const on = !world.landMode;
+    world.setLandMode(on);
+    if (on) {
+      api.landList().then((r) => world.setLands(r.plots || [])).catch(() => {});
+      showArea('Land: tap a square to see it. Green is for sale, gold is yours. Press L to leave.');
+    } else {
+      showArea('Left the land grid.');
+    }
+  }
+  async function landAction(call, okText) {
+    ui.landBusy = true; drawPanel();
+    try {
+      await game.saveNow(); // so the server charges from your latest coins
+      const r = await call();
+      game.setCoins(r.coins);
+      world.setLands(r.plots);
+      ui.plot = world.selectPlot({ ix: ui.plot.ix, iz: ui.plot.iz });
+      ui.landMsg = okText;
+    } catch (err) {
+      ui.landMsg = err.message;
+    }
+    ui.landBusy = false;
+    drawPanel();
+  }
 
   const here = () => world?.position() || { x: character.location?.x || 0, z: character.location?.z || 0 };
   const questReady = (title) => { showArea(`${title}: done! Open Quests (Q) to claim the reward.`); world?.say('Quest ready', 'exp'); };
@@ -145,6 +182,7 @@ function startGame(character) {
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'map') renderMap(overlay, world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })));
     else if (name === 'settings') renderSettings(overlay, settings);
+    else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy });
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();
     if (name === 'bag' || name === 'shop') fillIcons(overlay);
@@ -197,7 +235,7 @@ function startGame(character) {
   $('hud').addEventListener('click', (e) => {
     if (e.target.closest('[data-menu]')) { toggleMenu(); drawHud(); return; }
     const b = e.target.closest('[data-open]');
-    if (b) { toggleMenu(false); drawHud(); openPanel(b.dataset.open); }
+    if (b) { toggleMenu(false); drawHud(); if (b.dataset.open === 'land') toggleLand(); else openPanel(b.dataset.open); }
   });
   $('attack-btn').classList.remove('hidden');
   $('attack-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.attack(); });
@@ -216,6 +254,12 @@ function startGame(character) {
       if (r) { ui.questMsg = `Quest complete: +${r.exp} EXP, +${r.coins} G${r.item ? `, ${r.item.replace(/_/g, ' ')}` : ''}.`; world?.say('Quest complete!', 'exp'); }
       drawPanel(); return;
     }
+    if ((v = t('data-land-pick')) != null) { ui.landChoice = v; ui.landMsg = ''; drawPanel(); return; }
+    if (t('data-land-buy') != null) { landAction(() => api.landBuy(ui.plot.ix, ui.plot.iz, ui.landChoice), 'The land is yours!'); return; }
+    if (t('data-land-change') != null) { landAction(() => api.landPurpose(ui.plot.ix, ui.plot.iz, ui.landChoice), 'Purpose changed.'); return; }
+    if (t('data-land-prepare') != null) { landAction(() => api.landPrepare(ui.plot.ix, ui.plot.iz), 'Cleared and levelled. Ready to build on.'); return; }
+    if (t('data-signout') != null) { game.saveNow(); world?.stop(); api.signOut().then(() => location.reload()); return; }
+    if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if (t('data-confirm-points') != null) { game.spendPoints(ui.pending); ui.pending = {}; drawPanel(); return; }
@@ -244,9 +288,19 @@ function startGame(character) {
     game,
     view: { camera: settings.camera },
     onArea: (name) => showArea(name),
+    onPlot(info) {
+      ui.plot = info;
+      ui.landMsg = '';
+      ui.landChoice = info.owned?.purpose || 'house';
+      overlay.dataset.panel = 'land';
+      drawPanel();
+      overlay.classList.remove('hidden');
+    },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       if (type === 'kill') for (const title of game.questKill(data.kind)) questReady(title);
+      if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
+      if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
       if (type === 'defeated') showArea(`Defeated by a ${data.by}. You wake up back home.`);
     },
     onKey(e) {
@@ -257,10 +311,13 @@ function startGame(character) {
       if (e.code === 'KeyH') openPanel('help');
       if (e.code === 'KeyM') openPanel('map');
       if (e.code === 'KeyO') openPanel('settings');
+      if (e.code === 'KeyL') toggleLand();
       if (e.code === 'Escape') closePanel();
     },
   });
   window.addEventListener('pagehide', () => game.saveNow());
+  // Everyone's land: posts on owned plots, and levelled ground
+  api.landList().then((r) => world.setLands(r.plots || [])).catch(() => {});
   // Explore quests finish when you reach the place
   game.fillQuests(here());
   setInterval(() => {

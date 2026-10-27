@@ -165,6 +165,12 @@ function foodModel(it) {
     case 'berries':
       for (let i = 0; i < 9; i++) g.add(m(new THREE.SphereGeometry(0.08, 14, 10), std('#3a3a8a', 0, 0.35), (o) => { o.position.set(Math.cos(i * 2.4) * (0.05 + i * 0.012), (i % 3) * 0.06, Math.sin(i * 2.4) * (0.05 + i * 0.012)); }));
       break;
+    case 'torch':
+      g.add(m(new THREE.CylinderGeometry(0.04, 0.05, 0.8, 8), std('#5a3a22', 0, 0.9)));
+      g.add(m(new THREE.CylinderGeometry(0.07, 0.06, 0.14, 10), std('#3a2a1a', 0, 0.9), (o) => { o.position.y = 0.4; }));
+      g.add(m(new THREE.ConeGeometry(0.09, 0.3, 10), std('#ffb347', 0, 0.3, { emissive: '#ff7a1a', emissiveIntensity: 2.5 }), (o) => { o.position.y = 0.6; }));
+      g.rotation.z = -0.4;
+      break;
     default: return null;
   }
   return g;
@@ -181,7 +187,7 @@ function modelFor(it, plus) {
     return pivot;
   }
   if (it.kind === 'armour') return armourModel(it);
-  if (it.kind === 'food') return foodModel(it);
+  if (it.kind === 'food' || it.id === 'torch') return foodModel(it);
   return null;
 }
 

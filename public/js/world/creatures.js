@@ -47,7 +47,7 @@ function plate(name, level) {
   return { sprite, draw };
 }
 
-export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave }) {
+export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false }) {
   const list = [];
   const tmp = {};
   let spawnTimer = 0;
@@ -90,8 +90,10 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave })
     const p = getPlayer();
     spawnTimer -= dt;
     const alive = list.filter((m) => !m.dead);
-    if (spawnTimer <= 0 && alive.length < MAX_NEAR && !p.dead) {
-      spawnTimer = 1.5;
+    // night brings more monsters, and every one of them hunts
+    const night = isNight();
+    if (spawnTimer <= 0 && alive.length < (night ? MAX_NEAR + 4 : MAX_NEAR) && !p.dead) {
+      spawnTimer = night ? 1 : 1.5;
       spawn(p.x, p.z);
     }
     for (const m of [...list]) {
@@ -108,7 +110,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave })
         continue;
       }
       let speed = 0;
-      const chase = m.angry && !p.dead && dist < (m.state === 'chase' ? 30 : 16);
+      // a torch or a campfire keeps you hidden at night; by day only angry monsters come for you
+      const chase = (m.angry || night) && !p.dead && !(p.safe && !m.hurtBy) && dist < (m.state === 'chase' ? 30 : night ? 24 : 16);
       if (chase) {
         m.state = 'chase';
         m.heading = Math.atan2(dx, dz);
@@ -163,6 +166,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave })
     m.hp = Math.max(0, m.hp - dmg);
     m.hurt = 0.25;
     m.angry = true;
+    m.hurtBy = true; // it fights back even near a fire
     m.tag.draw(m.hp / m.maxHp);
     if (m.hp > 0) return null;
     m.dead = 0.001;

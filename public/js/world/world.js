@@ -8,7 +8,9 @@ import { createCreatures } from './creatures.js';
 import { BREAKABLE } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
-import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS } from '../data/world-layout.mjs';
+import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT } from '../data/world-layout.mjs';
+import { createPlots } from './plots.js';
+import { gameTime } from '../data/clock.mjs';
 import { RACES } from '../data/game-data.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
@@ -18,7 +20,7 @@ const TURN = 9;     // how quickly you turn to face where you're going
 
 // `game` is the progress object (HP, bag, gear). `onEvent(type, data)` reports kills, pickups,
 // defeat and level-ups to the page.
-export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, view } = {}) {
+export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, view } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // sharper costs a lot of speed on iPads
   renderer.shadowMap.enabled = true;
@@ -34,7 +36,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // Light: warm afternoon sun, sky fill, and a sun shadow that follows the player
   const sunDir = new THREE.Vector3(60, 90, 40).normalize();
   const sky = createSky(scene, renderer, sunDir);
-  scene.add(new THREE.HemisphereLight('#dfeaff', '#4a5a30', 0.8));
+  const hemi = new THREE.HemisphereLight('#dfeaff', '#4a5a30', 0.8);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight('#fff0d0', 2.8);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -64,6 +67,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
   const insideCave = (x, z) => sites.some((s) => s.built?.inside?.(x, z));
+
+  // Land plots: the buying grid and owned land
+  const plots = createPlots(scene);
+  let prepared = new Set();
 
   // Your character, wearing your gear
   let avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look });
@@ -116,11 +123,94 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   const say = (text, kind = 'note') => floatText(text, pos.clone().add(new THREE.Vector3(0, bodyH + 0.4, 0)), kind);
 
+  // ---------- day and night ----------
+  // One real hour is a day. The sun crosses the sky; at night a dim moon lights the land.
+  let night = false, daylight = 1;
+  const SUN_COLOR = new THREE.Color('#fff0d0'), MOON_COLOR = new THREE.Color('#7f98d8');
+  const lightDir = new THREE.Vector3();
+  function applyTime() {
+    const gt = gameTime();
+    night = gt.night;
+    daylight = gt.daylight;
+    const a = ((gt.hour - 6) / 24) * Math.PI * 2; // sunrise at 6, noon overhead
+    sunDir.set(Math.cos(a), Math.sin(a), 0.35).normalize();
+    // the shadow-casting light is the sun by day and the moon (opposite the sun) by night
+    lightDir.copy(sunDir.y > 0 ? sunDir : sunDir.clone().negate());
+    lightDir.y = Math.max(lightDir.y, 0.25);
+    lightDir.normalize();
+    sun.color.copy(MOON_COLOR).lerp(SUN_COLOR, daylight);
+    sun.intensity = 0.35 + daylight * 2.45;
+    hemi.intensity = 0.18 + daylight * 0.62;
+    renderer.toneMappingExposure = 0.6 + daylight * 0.4;
+    scene.fog.color.copy(sky.setTime(daylight, sunDir));
+    lantern.intensity = (1 - daylight) * 6;
+  }
+  // a soft glow around you at night, so you can still see your feet
+  const lantern = new THREE.PointLight('#ffcf8a', 0, 14, 1.6);
+  scene.add(lantern);
+
+  // Torches you place light the area and keep monsters away at night
+  const torchGroup = new THREE.Group();
+  scene.add(torchGroup);
+  const torchWood = new THREE.MeshStandardMaterial({ color: '#5a3a22', roughness: 0.9 });
+  const torchFlame = new THREE.MeshStandardMaterial({ color: '#ffb347', emissive: '#ff8a1a', emissiveIntensity: 3 });
+  const torchLights = [];
+  function drawTorches() {
+    for (const o of [...torchGroup.children]) torchGroup.remove(o);
+    torchLights.length = 0;
+    for (const tch of game?.character.torches || []) {
+      const y = heightAt(tch.x, tch.z);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 1.5, 6), torchWood);
+      post.position.set(tch.x, y + 0.75, tch.z);
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.35, 8), torchFlame);
+      flame.position.set(tch.x, y + 1.62, tch.z);
+      torchGroup.add(post, flame);
+      torchLights.push({ x: tch.x, z: tch.z, y: y + 1.7, flame });
+    }
+  }
+  // only the nearest few torches get a real light, to keep the frame rate up
+  const torchLamps = [0, 1, 2, 3].map(() => { const l = new THREE.PointLight('#ff9a3a', 0, 16, 1.5); scene.add(l); return l; });
+  function lightTorches(t) {
+    const near = torchLights.map((tl) => ({ tl, d: Math.hypot(tl.x - pos.x, tl.z - pos.z) })).sort((a, b) => a.d - b.d);
+    torchLamps.forEach((l, i) => {
+      const n = near[i];
+      if (!n || n.d > 120) { l.intensity = 0; return; }
+      l.position.set(n.tl.x, n.tl.y, n.tl.z);
+      l.intensity = (1.2 - daylight * 0.8) * (8 + Math.sin(t * 13 + i) * 1.2);
+    });
+    for (const tl of torchLights) tl.flame.scale.y = 1 + Math.sin(t * 11 + tl.x) * 0.15;
+  }
+  const TORCH_SAFE = 12, FIRE_SAFE = 35;
+  // Somewhere monsters won't come at night: beside a torch, or by a waystone's campfire
+  function isSafe(x, z) {
+    if (torchLights.some((tl) => Math.hypot(tl.x - x, tl.z - z) < TORCH_SAFE)) return true;
+    return placesWithPositions().some((p) => !p.cave && Math.hypot(p.x - x, p.z - z) < FIRE_SAFE);
+  }
+
+  // Sleeping (Z, only somewhere safe) and collapsing from exhaustion
+  let sleeping = false, collapsed = 0, fatigueAcc = 0, warnedTired = false, lastTime = -1;
+  const resting = () => sleeping || collapsed > 0;
+  function toggleSleep() {
+    if (!game || dead) return;
+    if (sleeping) { sleeping = false; say('You wake up', 'note'); return; }
+    if (!isSafe(pos.x, pos.z)) { say('Too dangerous to sleep here. Find a fire, or place a torch (T)', 'hurt'); return; }
+    sleeping = true;
+    say('You lie down to sleep… (move to wake)', 'note');
+  }
+  function placeTorch() {
+    if (!game || dead) return;
+    const r = game.placeTorch(pos.x + Math.sin(heading) * 1.2, pos.z + Math.cos(heading) * 1.2);
+    say(r === 'ok' ? 'Torch placed' : r === 'none' ? 'You have no torches. The shop sells them.' : 'You can only keep 10 torches lit', r === 'ok' ? 'note' : 'hurt');
+    if (r === 'ok') drawTorches();
+  }
+  drawTorches();
+
   // ---------- monsters ----------
   let dead = false;
   let lastHurt = -99;
   const creatures = createCreatures(scene, {
-    getPlayer: () => ({ x: pos.x, z: pos.z, radius: bodyR, dead }),
+    getPlayer: () => ({ x: pos.x, z: pos.z, radius: bodyR, dead, safe: isSafe(pos.x, pos.z) }),
+    isNight: () => night,
     isInsideCave: insideCave,
     onHitPlayer(m) {
       if (!game || dead) return;
@@ -218,6 +308,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (e.target.closest && e.target.closest('input, textarea')) return;
     keys.add(e.code);
     if (e.code === 'KeyF') attack();
+    if (e.code === 'KeyZ') toggleSleep();
+    if (e.code === 'KeyT') placeTorch();
     onKey?.(e);
   };
   const up = (e) => keys.delete(e.code);
@@ -262,8 +354,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const release = (e) => {
     if (e.pointerId === stick.id) { stick.id = null; stick.x = 0; stick.y = 0; stickEl.classList.add('hidden'); }
     if (look && e.pointerId === look.id) {
-      // a quick click without dragging is an attack
-      if (look.mouse && e.type === 'pointerup' && Math.hypot(e.clientX - look.sx, e.clientY - look.sy) < 6 && performance.now() - look.t < 350) attack();
+      // a quick click without dragging is an attack, or picks a plot while the land grid is showing
+      const tap = e.type === 'pointerup' && Math.hypot(e.clientX - look.sx, e.clientY - look.sy) < 8 && performance.now() - look.t < 350;
+      if (tap && plots.on) {
+        const r = canvas.getBoundingClientRect();
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+        const at = plots.pick(ray.ray);
+        if (at) onPlot?.(plots.select(at));
+      } else if (tap && look.mouse) attack();
       look = null;
     }
   };
@@ -321,7 +420,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
     // Movement relative to the camera, in any direction
     let fx = 0, fz = 0;
-    if (!dead) {
+    if (!dead && !resting()) {
       if (keys.has('KeyW') || keys.has('ArrowUp')) fz += 1;
       if (keys.has('KeyS') || keys.has('ArrowDown')) fz -= 1;
       if (keys.has('KeyA') || keys.has('ArrowLeft')) fx -= 1;
@@ -375,7 +474,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
     avatar.position.copy(pos);
     avatar.rotation.y = heading;
-    avatar.rotation.z = dead ? Math.min(Math.PI / 2, (avatar.rotation.z || 0) + dt * 3) : 0;
+    avatar.rotation.z = dead || resting() ? Math.min(Math.PI / 2, (avatar.rotation.z || 0) + dt * 3) : 0;
     const rig = avatar.userData.rig;
     rig.root.position.z = 0;
     animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 1.6);
@@ -391,6 +490,33 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (k >= 1) attackT = -1;
     }
     if (keys.has('KeyF') && cooldown <= 0 && attackT < 0) attack();
+
+    // Fatigue: it builds while you're awake (faster when running) and falls while you sleep.
+    // At 100 you collapse where you stand, and monsters may find you.
+    if (game && !dead) {
+      const c = game.character;
+      fatigueAcc += dt;
+      if (fatigueAcc > 1) {
+        const step = fatigueAcc;
+        fatigueAcc = 0;
+        if (sleeping) {
+          c.fatigue = Math.max(0, c.fatigue - step * 1.6);
+          game.heal(game.stats().hp * 0.03 * step);
+          if (c.fatigue <= 0) { sleeping = false; say('You wake up rested', 'exp'); }
+        } else if (collapsed > 0) {
+          collapsed -= step;
+          c.fatigue = Math.max(0, c.fatigue - step * 0.6);
+          if (collapsed <= 0) say('You get back on your feet', 'note');
+        } else {
+          c.fatigue = Math.min(100, c.fatigue + step * (100 / 5400) * (running && speedNow > WALK ? 2.5 : 1) * (night ? 1.3 : 1));
+          if (c.fatigue >= 100) { collapsed = 25; say('Exhausted! You collapse', 'hurt'); onEvent?.('collapsed'); }
+          else if (c.fatigue >= 85 && !warnedTired) { warnedTired = true; onEvent?.('tired'); }
+          if (c.fatigue < 80) warnedTired = false;
+        }
+        game.touch('fatigue');
+      }
+      if (sleeping && (keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') || Math.hypot(stick.x, stick.y) > 0.3)) { sleeping = false; say('You wake up', 'note'); }
+    }
 
     // Rest heals you when nothing has hit you for a while
     if (game && !dead) {
@@ -408,6 +534,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
     // Stream the land, places and monsters
     land.update(pos.x, pos.z);
+    plots.update(pos.x, pos.z);
     land.animate(t);
     creatures.update(dt, t);
     if (t - lastArea > 0.5) {
@@ -433,7 +560,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     camera.position.lerp(cam, Math.min(1, dt * 10));
     camera.lookAt(focus);
 
-    sun.position.copy(pos).addScaledVector(sunDir, 120);
+    if (t - lastTime > 0.5) { lastTime = t; applyTime(); }
+    lantern.position.set(pos.x, pos.y + bodyH + 1, pos.z);
+    lightTorches(t);
+    sun.position.copy(pos).addScaledVector(lightDir, 120);
     sun.target.position.copy(pos);
     for (const s of sites) s.built?.update?.(t);
     sky.follow(camera);
@@ -464,7 +594,25 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     attack,
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
+    sleep: toggleSleep,
+    placeTorch,
+    get resting() { return sleeping ? 'sleeping' : collapsed > 0 ? 'collapsed' : null; },
     say,
+    // Land: show or hide the buying grid, and take everyone's plots from the server
+    setLandMode(v) { plots.setMode(v); },
+    get landMode() { return plots.on; },
+    selectPlot(p) { return plots.select(p); },
+    setLands(list) {
+      const before = new Set(prepared);
+      prepared = new Set(list.filter((p) => Number.isFinite(p.flat)).map((p) => `${p.ix},${p.iz}`));
+      setPreparedPlots(list);
+      for (const k of prepared) {
+        if (before.has(k)) continue;
+        const [ix, iz] = k.split(',').map(Number);
+        land.refreshAt((ix + 0.5) * PLOT, (iz + 0.5) * PLOT);
+      }
+      plots.setLands(list);
+    },
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     stop() {
       saveNow();
@@ -473,6 +621,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       land.dispose();
       sky.dispose();
       floatLayer.remove();
+      plots.dispose();
       stickEl.remove();
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);

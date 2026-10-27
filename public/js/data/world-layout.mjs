@@ -331,6 +331,25 @@ export function sample(x, z, out = {}, withLakes = true) {
     }
   }
 
+  // land that players have bought and prepared is level, with a short slope around its edge
+  if (PREPARED.size) {
+    let best = Infinity, flat = 0;
+    for (let ix = Math.floor((x - PLOT_RAMP) / PLOT); ix <= Math.floor((x + PLOT_RAMP) / PLOT); ix++) {
+      for (let iz = Math.floor((z - PLOT_RAMP) / PLOT); iz <= Math.floor((z + PLOT_RAMP) / PLOT); iz++) {
+        const f = PREPARED.get(`${ix},${iz}`);
+        if (f === undefined) continue;
+        const dx = Math.max(ix * PLOT - x, 0, x - (ix + 1) * PLOT);
+        const dz = Math.max(iz * PLOT - z, 0, z - (iz + 1) * PLOT);
+        const d = Math.hypot(dx, dz);
+        if (d < best) { best = d; flat = f; }
+      }
+    }
+    if (best < PLOT_RAMP) {
+      h = lerp(flat, h, smoothstep(best, 0, PLOT_RAMP));
+      if (best === 0) forest = 0;
+    }
+  }
+
   out.h = h;
   out.water = water;
   out.region = region;
@@ -351,6 +370,18 @@ function placeBaseHeight(p) {
   PLACE_POS.push(...saved);
   return Math.max(sum / 5, 2.5);
 }
+
+// ---------- land plots ----------
+// The land is divided into square plots that players can buy. Prepared plots are cleared and levelled.
+export const PLOT = 20;
+const PLOT_RAMP = 6;
+const PREPARED = new Map(); // "ix,iz" -> level height
+export const plotOf = (x, z) => ({ ix: Math.floor(x / PLOT), iz: Math.floor(z / PLOT) });
+export function setPreparedPlots(plots) {
+  PREPARED.clear();
+  for (const p of plots) if (Number.isFinite(p.flat)) PREPARED.set(`${p.ix},${p.iz}`, p.flat);
+}
+export const isPrepared = (x, z) => PREPARED.has(`${Math.floor(x / PLOT)},${Math.floor(z / PLOT)}`);
 
 export function heightAt(x, z) {
   return sample(x, z, _tmp).h;
