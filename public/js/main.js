@@ -198,11 +198,13 @@ function startGame(character) {
   }
   const openPanel = (name) => {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
+    world?.releaseMouse();
     overlay.dataset.panel = name;
     ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = '';
     if (name === 'rankings') {
       ui.top = null;
-      Promise.resolve(game.saveNow()).catch(() => {}).then(() => api.topPlayers()).then((r) => { ui.top = r.players; }).catch(() => { ui.top = []; })
+      game.saveNow();
+      api.topPlayers().then((r) => { ui.top = r.players; }).catch(() => { ui.top = []; })
         .then(() => { if (overlay.dataset.panel === 'rankings') drawPanel(); });
     }
     drawPanel();
@@ -336,6 +338,8 @@ function startGame(character) {
       drawPanel();
       overlay.classList.remove('hidden');
     },
+    // the player pressed Esc while the mouse was captured
+    onMouseFreed: () => { if (overlay.classList.contains('hidden')) openPanel('settings'); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       if (type === 'kill') for (const title of game.questKill(data.kind)) questReady(title);
@@ -355,7 +359,8 @@ function startGame(character) {
       if (e.code === 'KeyO') openPanel('settings');
       if (e.code === 'KeyR') openPanel('rankings');
       if (e.code === 'KeyL') toggleLand();
-      if (e.code === 'Escape') closePanel();
+      // Esc opens the options; Esc again (or on any window) closes it
+      if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('settings'); else closePanel(); }
     },
   });
   window.addEventListener('pagehide', () => game.saveNow());

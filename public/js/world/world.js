@@ -22,7 +22,7 @@ const STEER_RUN = 0.9;
 
 // `game` is the progress object (HP, bag, gear). `onEvent(type, data)` reports kills, pickups,
 // defeat and level-ups to the page.
-export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, view } = {}) {
+export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onMouseFreed, view } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // sharper costs a lot of speed on iPads
   renderer.shadowMap.enabled = true;
@@ -329,7 +329,27 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   stickEl.innerHTML = '<span></span>';
   canvas.parentElement.appendChild(stickEl);
   const STICK_R = 55;
+  // Desktop mouse: the first click captures the mouse, then moving it turns your view (and the way
+  // you walk) and clicking swings your weapon. Esc lets the mouse go again.
+  const locked = () => document.pointerLockElement === canvas;
+  let letGo = false; // the game released the mouse itself (a window opened), not the player's Esc
+  let noLock = false; // some pages can't capture the mouse: then you drag to look, as before
+  document.addEventListener('pointerlockerror', () => { noLock = true; });
+  document.addEventListener('pointerlockchange', () => {
+    if (!locked() && !letGo) onMouseFreed?.();
+    letGo = false;
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!locked()) return;
+    yaw -= e.movementX * 0.0025;
+    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018, -0.15, 1.2);
+  });
   canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && locked()) { if (e.button === 0) attack(); return; }
+    if (e.pointerType === 'mouse' && e.button === 0 && !plots.on && !noLock && canvas.requestPointerLock) {
+      try { const r = canvas.requestPointerLock(); r?.catch?.(() => { noLock = true; }); } catch { noLock = true; }
+      if (!noLock) return;
+    }
     if (e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45) {
       stick.id = e.pointerId; stick.x0 = e.clientX; stick.y0 = e.clientY; stick.x = 0; stick.y = 0;
       stickEl.style.left = `${e.clientX}px`;
@@ -640,6 +660,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
       plots.setLands(list);
     },
+    // let the mouse go (a window is opening)
+    releaseMouse() { if (locked()) { letGo = true; document.exitPointerLock(); } },
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     stop() {
       saveNow();
