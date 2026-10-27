@@ -98,7 +98,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const body = buildCharacter({ race: kind.body.race, form: kind.body.form, stage: kind.body.stage || 0, look: { ...(kind.body.look || {}), size: kind.body.size || 1 } });
     body.position.set(x, y, z);
     const h = body.userData.height;
-    const tag = plate(kind.name, level);
+    const tag = plate(extra.title || kind.name, level);
     tag.sprite.position.set(x, y + h + 0.5, z);
     scene.add(body, tag.sprite);
     // a normal monster has less HP than a player of its level and needs 5 or more hits to beat even an
@@ -201,7 +201,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     for (const m of [...list]) {
       const dx = p.x - m.x, dz = p.z - m.z;
       const dist = Math.hypot(dx, dz);
-      if (dist > DESPAWN) { remove(m); continue; }
+      if (dist > DESPAWN && !m.keep) { remove(m); continue; }
       if (m.dead) {
         // sink into the ground and fade away
         m.dead += dt;
@@ -238,6 +238,10 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
           m.lunge = 0.3;
           onHitPlayer(m);
         }
+      } else if (!stalk && m.guard) {
+        // guards hold their post, watching the way in
+        m.state = 'wander';
+        m.heading = m.guard.heading;
       } else if (!stalk) {
         m.state = 'wander';
         m.timer -= dt;
@@ -302,6 +306,14 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     update, target, targets, hit,
     calm() { for (const m of list) { m.angry = false; m.state = 'wander'; m.timer = 4; } },
     clear() { for (const m of [...list]) remove(m); },
+    // put a monster somewhere on purpose (cave guards, cave dwellers, bosses)
+    spawnAt(kindId, level, x, z, extra = {}) {
+      const s = sample(x, z, tmp);
+      const m = make(kindId, Math.max(1, level), x, s.h, z, extra);
+      if (extra.boss) { m.body.scale.multiplyScalar(1.45); m.height *= 1.45; m.radius *= 1.45; }
+      return m;
+    },
+    removeWhere(fn) { for (const m of [...list]) if (fn(m)) remove(m); },
     get list() { return list; },
   };
 }

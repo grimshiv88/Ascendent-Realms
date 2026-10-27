@@ -70,6 +70,7 @@ export function createSky(scene, renderer, sunDir) {
   return {
     setTime,
     follow(camera) { dome.position.copy(camera.position); },
+    setVisible(v) { dome.visible = v; },
     dispose() { env.dispose(); dome.geometry.dispose(); dome.material.dispose(); },
   };
 }

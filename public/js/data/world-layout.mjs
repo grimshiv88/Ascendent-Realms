@@ -195,7 +195,18 @@ export const SEA_LEVEL = 0;
 
 // Everything about one point of the world: ground height, which region, and what grows there.
 // `out` is reused to avoid creating objects in hot loops.
+// The caves underground are laid out far past the map's edge (see depths.mjs); while one is loaded,
+// it answers for the ground out there
+export const DEPTHS_X = 300000;
+let underground = null;
+export function setUnderground(fn) { underground = fn; }
+
 export function sample(x, z, out = {}, withLakes = true) {
+  if (x > DEPTHS_X) {
+    if (underground) return underground(x, z, out);
+    out.h = -1e5; out.water = -1e4; out.region = null; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0;
+    return out;
+  }
   const px = ORIGIN_PX.x + x / METRES_PER_PX;
   const py = ORIGIN_PX.y + z / METRES_PER_PX;
 

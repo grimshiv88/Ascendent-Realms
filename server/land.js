@@ -1,8 +1,9 @@
 // Land plots: who owns which square of the Heartland, what it is for, and whether it has been levelled.
 const db = require('./db');
 const characters = require('./characters');
-const { PURPOSES, MAX_PLOTS, PURPOSE_FEE, whyNot, plotPrice, prepareCost, levelHeight } = require('../public/js/data/land.mjs');
+const { PURPOSES, PURPOSE_FEE, whyNot, plotPrice, prepareCost, levelHeight } = require('../public/js/data/land.mjs');
 const { setPreparedPlots } = require('../public/js/data/world-layout.mjs');
+const { caveById, cavePrice } = require('../public/js/data/depths.mjs');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS lands (
@@ -49,8 +50,6 @@ function buy(accountId, body) {
   if (db.prepare('SELECT 1 FROM lands WHERE ix = ? AND iz = ?').get(at.ix, at.iz)) return { error: 'Someone already owns this plot.' };
   const why = whyNot(at.ix, at.iz);
   if (why) return { error: why };
-  const count = db.prepare('SELECT COUNT(*) AS n FROM lands WHERE account_id = ?').get(accountId).n;
-  if (count >= MAX_PLOTS) return { error: `You can own up to ${MAX_PLOTS} plots for now.` };
   const paid = spend(accountId, plotPrice(at.ix, at.iz));
   if (paid.error) return paid;
   db.prepare('INSERT INTO lands (ix, iz, account_id, owner, purpose) VALUES (?, ?, ?, ?, ?)').run(at.ix, at.iz, accountId, paid.character.name, body.purpose);
@@ -80,4 +79,27 @@ function prepare(accountId, body) {
   return { ok: true, coins: paid.coins, ...list(accountId) };
 }
 
-module.exports = { list, buy, setPurpose, prepare };
+// Caves: once you've beaten a cave's boss you can buy the cave itself. One owner per cave.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cave_owners (
+    cave       TEXT PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    owner      TEXT NOT NULL,
+    bought_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+function caves(accountId) {
+  return { caves: db.prepare('SELECT cave, owner, account_id FROM cave_owners').all().map((r) => ({ cave: r.cave, owner: r.owner, mine: r.account_id === accountId })) };
+}
+function buyCave(accountId, body) {
+  const cave = caveById(String(body.cave || ''));
+  if (!cave) return { error: 'There is no such cave.' };
+  if (db.prepare('SELECT 1 FROM cave_owners WHERE cave = ?').get(cave.id)) return { error: 'Someone already owns this cave.' };
+  if (!characters.load(accountId)?.caves?.[cave.id]) return { error: 'Beat the boss in its depths first.' };
+  const paid = spend(accountId, cavePrice(cave));
+  if (paid.error) return paid;
+  db.prepare('INSERT INTO cave_owners (cave, account_id, owner) VALUES (?, ?, ?)').run(cave.id, accountId, paid.character.name);
+  return { ok: true, coins: paid.coins, ...caves(accountId) };
+}
+
+module.exports = { list, buy, setPurpose, prepare, caves, buyCave };

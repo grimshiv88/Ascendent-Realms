@@ -67,6 +67,12 @@ for (const [route, fn] of [['buy', land.buy], ['purpose', land.setPurpose], ['pr
   });
 }
 
+app.get('/api/caves', requireAccount, (req, res) => res.json(land.caves(req.account.id)));
+app.post('/api/caves/buy', requireAccount, (req, res) => {
+  const result = land.buyCave(req.account.id, req.body || {});
+  res.status(result.error ? 400 : 200).json(result);
+});
+
 // The admin board (admin.html): only for accounts listed in ADMIN_EMAILS
 function requireAdmin(req, res, next) {
   req.account = auth.accountRow(bearer(req));

@@ -13,7 +13,8 @@ let menuOpen = false;
 export const toggleMenu = (open = !menuOpen) => { menuOpen = open; };
 
 // `d` is the stats including gear; without it the base stats are shown
-export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
+// `cave` is the cave you're standing in up top, if any
+export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null) {
   const hp = Math.round(c.hp ?? d.hp);
   const need = expToNext(c.level, c.race);
   el.innerHTML = `
@@ -26,6 +27,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level)) {
       <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
       ${c.skillPicks ? `<button type="button" class="hud-points" data-open="skills">A new skill to choose (K)</button>` : ''}
+      ${cave ? `<button type="button" class="hud-points" data-open="cave">${esc(cave.name)}: about this cave</button>` : ''}
     </div>
     <div class="hud-menu">
       <button type="button" class="menu-btn" data-menu aria-label="Menu" aria-expanded="${menuOpen}">
@@ -189,6 +191,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Sleep</dt><dd>Z, inside your tent, by a campfire or by a torch (lowers Fatigue; fastest in a tent)</dd></div>
       <div class="sw-row"><dt>Tent</dt><dd>P pitches your tent in front of you (buy one in the shop, or craft it from 8 logs). Press P beside it to pack it up</dd></div>
       <div class="sw-row"><dt>Torches</dt><dd>T places one (buy them in the shop; they keep monsters away at night). Press T beside one to pick it back up</dd></div>
+      <div class="sw-row"><dt>Caves</dt><dd>Walk into the dark shaft at the back of a cave to go down. Underground, T lights a torch in your hand. Swing at glowing veins to mine ore, break nests, beat the boss for its chest, then buy the cave. The shaft of daylight takes you back up</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
       <div class="sw-row"><dt>Land</dt><dd>L shows the grid of plots; tap a square to buy it or manage it</dd></div>
       <div class="sw-row"><dt>Top players</dt><dd>R</dd></div>

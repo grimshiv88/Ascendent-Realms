@@ -1,4 +1,5 @@
 // Caves: a rocky dome you can walk into through one opening, lit by glowing crystals.
+// At the back a shaft leads down into the cave's depths (see depths.js).
 import * as THREE from 'three';
 
 const R = 14;        // inner radius in metres
@@ -58,6 +59,21 @@ export function buildCave(place) {
   glow.position.set(3, 4, 0);
   g.add(glow);
 
+  // the way down: a dark shaft ringed with rocks at the back of the dome
+  const shaft = new THREE.Group();
+  shaft.add(new THREE.Mesh(new THREE.CircleGeometry(1.8, 24), new THREE.MeshBasicMaterial({ color: '#030303' })));
+  shaft.children[0].rotation.x = -Math.PI / 2;
+  shaft.children[0].position.y = 0.32;
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const b = new THREE.Mesh(boulder, rockMat);
+    b.scale.setScalar(0.45 + (i % 3) * 0.12);
+    b.position.set(Math.cos(a) * 2.1, 0.3, Math.sin(a) * 2.1);
+    shaft.add(b);
+  }
+  shaft.position.set(R * 0.5, 0, 0);
+  g.add(shaft);
+
   // walls you can't walk through, with a gap at the entrance
   g.updateMatrixWorld(true);
   const solid = [];
@@ -68,5 +84,16 @@ export function buildCave(place) {
     v.set(-Math.cos(a) * (R + 0.6), 0, Math.sin(a) * (R + 0.6)).applyMatrix4(g.matrixWorld);
     solid.push({ x: v.x, z: v.z, r: 1.4, kind: 'wall', height: 9 });
   }
-  return { group: g, solid, inside: (x, z) => Math.hypot(x - place.x, z - place.z) < R };
+  const hole = new THREE.Vector3(R * 0.5, 0, 0).applyMatrix4(g.matrixWorld);
+  // guards stand just outside the opening, facing out
+  const guardSpots = [-3, 0, 3].map((side) => {
+    const p = new THREE.Vector3(-R - 5, 0, side).applyMatrix4(g.matrixWorld);
+    return { x: p.x, z: p.z, heading: place.facing };
+  });
+  // just inside the entrance: where you come back up
+  const mouth = new THREE.Vector3(-R * 0.4, 0, 0).applyMatrix4(g.matrixWorld);
+  return {
+    group: g, solid, inside: (x, z) => Math.hypot(x - place.x, z - place.z) < R,
+    hole: { x: hole.x, z: hole.z }, guardSpots, mouth: { x: mouth.x, z: mouth.z, heading: place.facing },
+  };
 }

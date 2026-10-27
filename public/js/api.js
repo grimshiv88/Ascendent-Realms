@@ -69,7 +69,7 @@ async function cloudStart() {
     if (!window.claude?.use) return;
     const db = await Promise.race([window.claude.use('db'), new Promise((r) => setTimeout(() => r(null), 8000))]);
     if (!db) return;
-    const [accSnap, landSnap] = await Promise.all([db.collection('accounts').get(), db.doc('world/lands').get()]);
+    const [accSnap, landSnap, caveSnap] = await Promise.all([db.collection('accounts').get(), db.doc('world/lands').get(), db.doc('world/caves').get()]);
     cloud = db;
     const local = preview.accounts();
     const merged = new Map(local.map((a) => [cloudKey(a.email), a]));
@@ -92,6 +92,11 @@ async function cloudStart() {
     for (const p of previewLand.all()) if (!plots.some((q) => q.ix === p.ix && q.iz === p.iz)) plots.push(p);
     storage.set('ar.preview.lands', JSON.stringify(plots));
     if (plots.length !== remotePlots.length) await db.doc('world/lands').set({ plots }).catch(() => {});
+    const remoteCaves = caveSnap.exists ? caveSnap.data().caves || [] : [];
+    const caves = [...remoteCaves];
+    for (const c of previewCaves.all()) if (!caves.some((q) => q.cave === c.cave)) caves.push(c);
+    storage.set('ar.preview.caves', JSON.stringify(caves));
+    if (caves.length !== remoteCaves.length) await db.doc('world/caves').set({ caves }).catch(() => {});
   } catch (e) {
     console.warn('Cloud saves are off for this visit', e?.code || e);
     cloud = null;
@@ -278,6 +283,36 @@ const previewLand = {
   },
 };
 
+// ---------- caves you can buy once their boss is beaten ----------
+const previewCaves = {
+  all() { try { return JSON.parse(storage.get('ar.preview.caves')) || []; } catch { return []; } },
+  save(list) { storage.set('ar.preview.caves', JSON.stringify(list)); cloudPush('world/caves', { caves: list }); },
+};
+const caveView = (list, name) => list.map((c) => ({ cave: c.cave, owner: c.owner, mine: c.owner === name }));
+export async function caveList() {
+  if (await isPreviewMode()) return updatePreviewAccount((acc) => ({ ok: true, caves: caveView(previewCaves.all(), acc.character.name) }));
+  return request('api/caves');
+}
+export async function caveBuy(id) {
+  if (await isPreviewMode()) {
+    const R = await import('./data/depths.mjs');
+    return updatePreviewAccount((acc) => {
+      const list = previewCaves.all();
+      const cave = R.caveById(id);
+      if (!cave) throw new Error('There is no such cave.');
+      if (list.some((c) => c.cave === id)) throw new Error('Someone already owns this cave.');
+      if (!acc.character.caves?.[id]) throw new Error('Beat the boss in its depths first.');
+      const price = R.cavePrice(cave);
+      if (acc.character.coins < price) throw new Error(`You need ${price} coins.`);
+      acc.character.coins -= price;
+      list.push({ cave: id, owner: acc.character.name });
+      previewCaves.save(list);
+      return { ok: true, coins: acc.character.coins, caves: caveView(list, acc.character.name) };
+    });
+  }
+  return request('api/caves/buy', { method: 'POST', body: { cave: id } });
+}
+
 export async function landList() {
   if (await isPreviewMode()) return previewLand.run(() => {});
   return request('api/land');
@@ -289,7 +324,6 @@ export async function landBuy(ix, iz, purpose) {
       if (plots.some((p) => p.ix === ix && p.iz === iz)) throw new Error('Someone already owns this plot.');
       const why = R.whyNot(ix, iz);
       if (why) throw new Error(why);
-      if (plots.filter((p) => p.owner === acc.character.name).length >= R.MAX_PLOTS) throw new Error(`You can own up to ${R.MAX_PLOTS} plots for now.`);
       spend(R.plotPrice(ix, iz));
       plots.push({ ix, iz, owner: acc.character.name, purpose, flat: null });
     });

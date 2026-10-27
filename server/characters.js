@@ -81,6 +81,11 @@ function saveProgress(accountId, p) {
       && (b.stat === undefined ? int(b?.sp, 0, 1e6) !== null : ['atk', 'def', 'speed'].includes(b.stat) && int(b.pct, 0, 200) !== null))
       .map((b) => (b.stat ? { stat: b.stat, pct: b.pct, until: b.until } : { sp: b.sp, until: b.until }))
     : [];
+  // caves whose boss you beat, and when
+  const caves = {};
+  for (const [id, at] of Object.entries(p.caves && typeof p.caves === 'object' ? p.caves : {}).slice(0, 200)) {
+    if (/^cave\d{1,4}$/.test(id) && int(at, 0, 1e15) !== null) caves[id] = at;
+  }
   // a Potion-Maker hired by a Businessman, and the potions brewing
   const pm = p.potionMaker;
   const potionMaker = pm && int(pm.until, 0, 1e15) !== null
@@ -116,7 +121,7 @@ function saveProgress(accountId, p) {
   const t = p.tent;
   const tent = t && Number.isFinite(t.x) && Number.isFinite(t.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6
     ? { x: t.x, z: t.z, heading: Number.isFinite(t.heading) ? t.heading : 0 } : null;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, torches, skills, skillBar, skillPicks, tent, potionMaker, trained });
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, torches, skills, skillBar, skillPicks, tent, potionMaker, trained, caves });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };

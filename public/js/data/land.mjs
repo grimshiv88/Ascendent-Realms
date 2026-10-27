@@ -3,7 +3,6 @@
 import { PLOT, sample, placesWithPositions } from './world-layout.mjs';
 
 export { PLOT };
-export const MAX_PLOTS = 10;
 export const PURPOSE_FEE = 50; // to change what a plot is for
 
 export const PURPOSES = {

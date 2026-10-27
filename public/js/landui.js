@@ -1,6 +1,8 @@
 // The Land window: shows the plot you picked on the grid (press L), and lets you buy it,
 // choose what it is for, and clear and level it.
 import { PURPOSES, PURPOSE_FEE, plotPrice, prepareCost, PLOT } from './data/land.mjs';
+import { THEMES, SIZES, cavePrice } from './data/depths.mjs';
+import { ITEMS } from './data/items.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
@@ -40,5 +42,30 @@ export function renderLand(el, plot, game, { choice = 'house', message = '', bus
       <p class="sys-top">Plot ${plot.ix}, ${plot.iz} <span>·</span> ${PLOT} × ${PLOT} m</p>
       <p class="sys-msg${/need|not|already|can't|cannot|only|too/i.test(message) ? ' bad' : ''}" role="status">${esc(message)}</p>
       ${body}
+    </div>`;
+}
+
+// The Cave window: the cave you're standing in, what's down there, and buying it once its boss is beaten
+export function renderCave(el, cave, game, { owner = null, mine = false, message = '', busy = false } = {}) {
+  const c = game.character;
+  const t = THEMES[cave.theme];
+  const price = cavePrice(cave);
+  const beaten = game.caveCleared(cave.id);
+  let action;
+  if (mine) action = '<p class="sys-top">✓ <b>This cave is yours.</b> It shows in gold on your map.</p>';
+  else if (owner) action = `<p class="sys-top">Owned by <b>${esc(owner)}</b></p>`;
+  else if (!beaten) action = '<p class="sys-hint">Beat the boss in its deepest chamber, and this cave can be yours.</p>';
+  else action = `<p class="sys-top">You beat its boss. For sale: <b>${price} G</b> <span>·</span> You have <b>${c.coins} G</b></p>
+    <div class="land-actions"><button type="button" class="sys-button" data-cave-buy="${cave.id}" ${busy || c.coins < price ? 'disabled' : ''}>${c.coins < price ? 'Not enough coins' : `Buy this cave for ${price} G`}</button></div>`;
+  el.innerHTML = `
+    <div class="system-window" role="dialog" aria-label="Cave">
+      <button type="button" class="sys-close" data-close aria-label="Close">×</button>
+      <div class="sys-title"><span class="sys-bang">!</span><h2>${esc(cave.name)}</h2></div>
+      <p class="sys-top">${SIZES[cave.size].name} cave <span>·</span> ${SIZES[cave.size].chambers} chambers deep <span>·</span> Boss: <b>${game.bossHome(cave.id) ? 'waiting below' : 'beaten (back within a day)'}</b></p>
+      <p class="sys-hint">Walk into the dark shaft at the back to go down. It's pitch black below: light a torch in your hand with T. Swing at ore veins to mine them, break nests before they fill the cave with monsters, and the boss's chest holds treasure chosen for your class.</p>
+      <h3 class="sys-sub">Found down here</h3>
+      <p class="sys-hint">${t.ores.map(([id]) => `${ITEMS[id].icon} ${esc(ITEMS[id].name)}`).join(' · ')}</p>
+      <p class="sys-msg${/need|first|owns/i.test(message) ? ' bad' : ''}" role="status">${esc(message)}</p>
+      ${action}
     </div>`;
 }

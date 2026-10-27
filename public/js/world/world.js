@@ -4,11 +4,13 @@ import { createLand } from './land.js';
 import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
 import { buildCave } from './caves.js';
-import { createCreatures } from './creatures.js';
+import { createCreatures, KINDS } from './creatures.js';
+import { buildDepths } from './depths.js';
+import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
-import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT } from '../data/world-layout.mjs';
+import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime } from '../data/clock.mjs';
 import { RACES } from '../data/game-data.mjs';
@@ -62,14 +64,27 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         s.built = s.place.cave ? buildCave(s.place) : buildSpawn(s.place);
         scene.add(s.built.group);
         if (s.built.solid) colliders.add(s.built.solid);
+        if (s.place.cave) postGuards(s);
       } else if (d > 1400 && s.built) {
         scene.remove(s.built.group);
         if (s.built.solid) colliders.remove(s.built.solid);
+        if (s.place.cave) creatures?.removeWhere((m) => m.site === s.place.id);
         s.built = null;
       }
     }
   }
   const insideCave = (x, z) => sites.some((s) => s.built?.inside?.(x, z));
+  // Goblin dens keep guards at the door while their boss is home
+  function postGuards(s) {
+    const cave = caveById(s.place.id);
+    const kind = cave && THEMES[cave.theme].guards;
+    if (!kind || !creatures || !game?.bossHome(cave.id)) return;
+    const lvl = game.character.level;
+    s.built.guardSpots.forEach((g, i) => {
+      if (i === 2 && Math.random() < 0.5) return;
+      creatures.spawnAt(kind, lvl + Math.round(Math.random() * 2 - 1), g.x, g.z, { guard: { heading: g.heading }, keep: true, site: s.place.id, angry: true, title: `${KINDS[kind].name} Guard` });
+    });
+  }
 
   // Land plots: the buying grid and owned land
   const plots = createPlots(scene);
@@ -84,6 +99,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let heading = loc.heading ?? Math.PI;
   let velY = 0;
   let airborne = false;
+  let creatures = null; // made below; caves built before then get their guards later
   updateSites(pos.x, pos.z);
   land.update(pos.x, pos.z, Infinity); // build the land around you before the clouds part
 
@@ -98,6 +114,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   pos.y = groundAt(pos.x, pos.z);
   let area = '';
+  let atCave = null; // the cave you're standing in up top
   let lastArea = -10;
 
   const agiSpeed = 1 + Math.min(character.stats.agi * 0.003, 0.6);
@@ -147,6 +164,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     renderer.toneMappingExposure = 0.6 + daylight * 0.4;
     scene.fog.color.copy(sky.setTime(daylight, sunDir));
     lantern.intensity = (1 - daylight) * 6;
+    if (depth) applyDark();
   }
   // a soft glow around you at night, so you can still see your feet
   const lantern = new THREE.PointLight('#ffcf8a', 0, 14, 1.6);
@@ -247,6 +265,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   function placeTorch() {
     if (!game || dead) return;
+    // underground, T lights a torch in your hand (or puts it out)
+    if (depth) { setHolding(!holding); return; }
     // standing by one of your torches, T picks it back up
     const took = game.takeTorch(pos.x, pos.z);
     if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
@@ -259,7 +279,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // ---------- monsters ----------
   let dead = false;
   let lastHurt = -99;
-  const creatures = createCreatures(scene, {
+  creatures = createCreatures(scene, {
     getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, moving: speedNow > 1 }),
     isNight: () => night,
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
@@ -273,6 +293,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (game.damage(dmg)) defeated(m);
     },
   });
+
+  for (const s of sites) if (s.built && s.place.cave) postGuards(s); // caves built before the monsters existed
 
   function defeated(m) {
     dead = true;
@@ -290,6 +312,162 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       dead = false;
       onEvent?.('respawned');
     }, 3500);
+  }
+
+  // ---------- the depths below each cave ----------
+  let depth = null; // { cave, built, back, leftExit } while you're underground
+  let holding = false; // a lit torch in your hand
+  const skyEnv = scene.environment;
+  const heldTorch = (() => {
+    const g = new THREE.Group();
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.55, 6), torchWood);
+    stick.position.y = 0.15;
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.22, 8), torchFlame);
+    flame.position.y = 0.52;
+    // the light itself rides just above your shoulder, so it lights you as well as the way ahead
+    const light = new THREE.PointLight('#ffa040', 0, 24, 1.3);
+    g.add(stick, flame);
+    g.visible = false;
+    return { g, flame, light };
+  })();
+  function attachTorch() {
+    const hand = avatar.userData.rig.arms?.[1]?.hand;
+    heldTorch.g.removeFromParent();
+    if (hand) {
+      // held in the left hand like a weapon, flame forward and up
+      heldTorch.g.scale.setScalar(Math.max(0.6, bodyH / 1.8));
+      heldTorch.g.rotation.set(Math.PI / 2 - 0.5, 0, 0);
+      heldTorch.g.position.set(0, -bodyH * 0.04, 0);
+      hand.add(heldTorch.g);
+    } else {
+      heldTorch.g.position.set(bodyR * 0.8, bodyH * 0.9, 0);
+      avatar.add(heldTorch.g);
+    }
+  }
+  attachTorch();
+  heldTorch.light.position.set(0, bodyH * 1.15, bodyR * 0.8);
+  avatar.add(heldTorch.light);
+  function setHolding(v) {
+    if (v && !game?.count('torch')) { say('You have no torch. The shop sells them.', 'hurt'); return; }
+    holding = v;
+    heldTorch.g.visible = v;
+    heldTorch.light.intensity = v ? 22 : 0;
+    say(v ? 'Torch lit' : 'Torch put out', 'note');
+  }
+  // the dark: no sun, no sky, black fog; only torches, crystals and a faint glow around you
+  function applyDark() {
+    sun.intensity = 0;
+    hemi.intensity = 0.03;
+    renderer.toneMappingExposure = 1.1;
+    scene.fog.color.set('#000000');
+    scene.fog.density = 0.05;
+    scene.environment = null;
+    scene.background = new THREE.Color('#000000');
+    lantern.intensity = 0.35;
+    sky.setVisible(false);
+  }
+  function enterDepths(site) {
+    const cave = caveById(site.place.id);
+    if (!cave || !game) return;
+    const built = buildDepths(cave);
+    setUnderground(built.sample);
+    scene.add(built.group);
+    colliders.add(built.solid);
+    creatures.clear();
+    depth = { cave, built, back: site.built.mouth, leftExit: false };
+    pos.set(built.start.x, built.floorAt(built.start.x, built.start.z), built.start.z);
+    heading = built.start.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0;
+    const lvl = game.character.level;
+    const T = built.theme;
+    for (const n of built.nests) { n.hp = n.maxHp = Math.round(30 + lvl * 8); }
+    built.layout.chambers.forEach((c, i) => {
+      if (i === 0) return;
+      const spots = (k) => { const a = Math.random() * Math.PI * 2, r = c.r * (0.3 + Math.random() * 0.4); return [c.x + Math.cos(a) * r, c.z + Math.sin(a) * r]; };
+      if (c.boss) {
+        if (!game.bossHome(cave.id)) { built.openChest(); return; }
+        const boss = creatures.spawnAt(T.boss, lvl + 3, c.x, c.z, { boss: true, keep: true, depth: true, angry: true, title: `${KINDS[T.boss].name} Boss` });
+        boss.onDeath = () => {
+          built.unlockChest();
+          game.clearCave(cave.id);
+          say('The boss is beaten! Its chest is open to you', 'exp');
+          onEvent?.('cave-boss', { name: cave.name });
+        };
+        for (let k = 0; k < 2; k++) creatures.spawnAt(T.kinds[0], lvl, ...spots(k), { keep: true, depth: true });
+        return;
+      }
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) creatures.spawnAt(T.kinds[Math.floor(Math.random() * T.kinds.length)], lvl + Math.round(Math.random() * 3 - 2), ...spots(k), { keep: true, depth: true });
+    });
+    applyDark();
+    say(holding ? `${cave.name}` : 'Pitch dark. Light a torch (T)', holding ? 'note' : 'hurt');
+    onEvent?.('depths', { cave });
+  }
+  function leaveDepths() {
+    const { built, back } = depth;
+    creatures.removeWhere((m) => m.depth);
+    colliders.remove(built.solid);
+    scene.remove(built.group);
+    built.dispose();
+    setUnderground(null);
+    depth = null;
+    pos.set(back.x, heightAt(back.x, back.z), back.z);
+    heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0;
+    scene.fog.density = 0.00024;
+    scene.environment = skyEnv;
+    scene.background = null;
+    sky.setVisible(true);
+    applyTime();
+    say('Back in the daylight', 'note');
+    onEvent?.('surface');
+  }
+  // nests send out another monster now and then, while you're near and it still stands
+  function tickNests(dt) {
+    for (const n of depth.built.nests) {
+      if (n.hp <= 0) continue;
+      n.timer -= dt;
+      if (n.timer > 0) continue;
+      n.timer = 16;
+      if (Math.hypot(pos.x - n.x, pos.z - n.z) > 35) continue;
+      if (creatures.list.filter((m) => m.nest === n && !m.dead).length >= 3) continue;
+      const m = creatures.spawnAt(depth.built.theme.nest, (game?.character.level || 1) - 1, n.x + 1.5, n.z + 1.5, { keep: true, depth: true, nest: n, angry: true });
+      m.state = 'chase';
+    }
+  }
+  function mineVein(e) {
+    const w = game?.weapon();
+    e.hits -= w?.type === 'axe' || w?.type === 'mace' ? 2 : 1; // heavy heads break rock faster
+    floatText('⛏', new THREE.Vector3(e.x, e.mesh.position.y + 1, e.z), 'dmg');
+    if (e.hits > 0) return;
+    const n = 1 + Math.floor(Math.random() * 3);
+    if (!game.addItem(e.ore, n)) return;
+    say(`+${n} ${ITEMS[e.ore].name}`, 'exp');
+    colliders.remove([e]);
+    depth.built.removeSolid(e);
+  }
+  function hitNest(e) {
+    const s = game.stats();
+    const dmg = Math.max(1, Math.round((game.weapon()?.magic ? s.matk : s.atk) * buffed('atk') * (0.9 + Math.random() * 0.2)));
+    e.hp -= dmg;
+    floatText(`${dmg}`, new THREE.Vector3(e.x, e.mesh.position.y + 1.2, e.z), 'dmg');
+    if (e.hp > 0) return;
+    const lvl = game.character.level;
+    const exp = Math.round(5 + lvl * 2), coins = Math.round(15 + lvl * 4);
+    game.gainExp(exp); game.gainCoins(coins);
+    floatText(`+${exp} EXP`, new THREE.Vector3(e.x, e.mesh.position.y + 1.8, e.z), 'exp');
+    say(`Nest destroyed! +${coins} G`, 'exp');
+    colliders.remove([e]);
+    depth.built.removeSolid(e);
+  }
+  function openChest(e) {
+    if (e.open) { say('The chest is empty', 'note'); return; }
+    if (!e.unlocked) { say('Locked tight. Beat the boss to open it', 'hurt'); return; }
+    const c = game.character;
+    const loot = chestLoot(depth.cave, c.cls, c.level);
+    for (const [id, n] of loot.items) game.addItem(id, n);
+    game.gainCoins(loot.coins);
+    depth.built.openChest();
+    say(`+${loot.coins} G and treasure!`, 'exp');
+    onEvent?.('chest', { coins: loot.coins, items: loot.items.map(([id, n]) => `${n > 1 ? `${n} ` : ''}${ITEMS[id].name}`) });
   }
 
   // ---------- the Potion-Maker a Businessman hires: walks a few steps behind you ----------
@@ -381,6 +559,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   function finishHit(m, reward) {
     if (reward) {
+      m.onDeath?.();
       // monsters far below your level teach you little
       const gap = game.character.level - m.level;
       reward.exp = Math.max(1, Math.round(reward.exp * (gap <= 3 ? 1 : Math.max(0.1, 1 - (gap - 3) * 0.15))));
@@ -443,6 +622,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (d < bestD && d < reach) { best = e; bestD = d; }
     }
     if (!best) return;
+    if (best.kind === 'vein') { mineVein(best); return; }
+    if (best.kind === 'nest') { hitNest(best); return; }
+    if (best.kind === 'chest') { openChest(best); return; }
     const info = BREAKABLE[best.kind];
     if (!info) {
       say(best.kind === 'rock' ? 'Too hard to break' : best.kind === 'wall' ? 'Solid rock' : 'Too big to break by hand');
@@ -663,11 +845,22 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
+      const px = pos.x, pz = pos.z;
       pos.x += move.x * speedNow * dt;
       pos.z += move.z * speedNow * dt;
       colliders.push(pos, bodyR);
-      pos.x = THREE.MathUtils.clamp(pos.x, B.minX + 50, B.maxX - 50);
-      pos.z = THREE.MathUtils.clamp(pos.z, B.minZ + 50, B.maxZ - 50);
+      if (depth) {
+        // the cave walls: slide along them instead of walking in
+        const open = (x, z) => depth.built.shape(x, z).d < -bodyR * 0.6;
+        if (!open(pos.x, pos.z)) {
+          if (open(pos.x, pz)) pos.z = pz;
+          else if (open(px, pos.z)) pos.x = px;
+          else { pos.x = px; pos.z = pz; }
+        }
+      } else {
+        pos.x = THREE.MathUtils.clamp(pos.x, B.minX + 50, B.maxX - 50);
+        pos.z = THREE.MathUtils.clamp(pos.z, B.minZ + 50, B.maxZ - 50);
+      }
     }
 
     // Ground, jumping, the shrine platforms, and swimming in deep water
@@ -743,16 +936,39 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
 
     // Stream the land, places and monsters
-    land.update(pos.x, pos.z);
-    plots.update(pos.x, pos.z);
+    if (!depth) {
+      land.update(pos.x, pos.z);
+      plots.update(pos.x, pos.z);
+    }
     land.animate(t);
     creatures.update(dt, t);
     tickEffects(dt);
+    if (depth) {
+      tickNests(dt);
+      depth.built.update(t);
+      // the shaft of daylight in the first chamber takes you back up
+      const d = Math.hypot(pos.x - depth.built.exit.x, pos.z - depth.built.exit.z);
+      if (d > 4) depth.leftExit = true;
+      else if (depth.leftExit && d < 1.4 && !dead) leaveDepths();
+    } else {
+      // the shaft at the back of a cave leads down
+      for (const s of sites) {
+        if (s.built?.hole && !dead && Math.hypot(pos.x - s.built.hole.x, pos.z - s.built.hole.z) < 1.6) { enterDepths(s); break; }
+      }
+    }
+    if (holding) heldTorch.light.intensity = 20 + Math.sin(t * 13) * 2 + Math.sin(t * 7.3) * 1.5;
     if (t - lastArea > 0.5) {
       lastArea = t;
-      updateSites(pos.x, pos.z);
-      const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
-      const here = insideCave(pos.x, pos.z) ? 'A dark cave' : near ? `${regionName(near.place.region)} · ${near.place.name}` : regionName(sample(pos.x, pos.z, tmpS).region);
+      let here;
+      if (depth) here = `${depth.cave.name} · ${Math.max(0, Math.round(-pos.y))} m down`;
+      else {
+        updateSites(pos.x, pos.z);
+        const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
+        const caveHere = sites.find((s) => s.built?.inside?.(pos.x, pos.z));
+        here = caveHere ? caveById(caveHere.place.id)?.name || 'A cave' : near ? `${regionName(near.place.region)} · ${near.place.name}` : regionName(sample(pos.x, pos.z, tmpS).region);
+        const nowCave = caveHere?.place.id || null;
+        if (nowCave !== atCave) { atCave = nowCave; onEvent?.('cave', atCave ? caveById(atCave) : null); }
+      }
       if (here !== area) { area = here; onArea?.(area, { x: pos.x, z: pos.z }); }
     }
 
@@ -762,12 +978,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     let want = dist;
     for (let d = 1; d < dist; d += 0.75) {
       const px = focus.x + dir.x * d, py = focus.y + dir.y * d, pz = focus.z + dir.z * d;
-      const hit = colliders.near(px, pz, 0.6).some((e) => e.r > 0 && py - (e.y ?? groundAt(e.x, e.z)) < (e.height || 8) && Math.hypot(px - e.x, pz - e.z) < Math.min(e.r * (e.kind === 'wall' ? 1.2 : 4), 3.5));
+      const hit = (depth && depth.built.shape(px, pz).d > -0.4) || colliders.near(px, pz, 0.6).some((e) => e.r > 0 && py - (e.y ?? groundAt(e.x, e.z)) < (e.height || 8) && Math.hypot(px - e.x, pz - e.z) < Math.min(e.r * (e.kind === 'wall' ? 1.2 : 4), 3.5));
       if (hit) { want = Math.max(1.2, d - 0.6); break; }
     }
     camDist += (want - camDist) * Math.min(1, dt * (want < camDist ? 14 : 3));
     const cam = focus.clone().addScaledVector(dir, camDist);
     cam.y = Math.max(cam.y, heightAt(cam.x, cam.z) + 0.5, water + 0.3);
+    if (depth) cam.y = Math.min(cam.y, depth.built.roofAt(cam.x, cam.z) - 0.5);
     camera.position.lerp(cam, Math.min(1, dt * 10));
     camera.lookAt(focus);
 
@@ -793,11 +1010,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
     if (t - lastSave > 10 && onSaveLocation && !dead) {
       lastSave = t;
-      onSaveLocation({ x: pos.x, y: pos.y, z: pos.z, heading });
+      onSaveLocation(here());
     }
   });
 
-  const saveNow = () => onSaveLocation?.({ x: pos.x, y: pos.y, z: pos.z, heading });
+  // where you are, for saving: underground counts as the cave's mouth
+  const here = () => (depth ? { x: depth.back.x, y: heightAt(depth.back.x, depth.back.z), z: depth.back.z, heading: depth.back.heading } : { x: pos.x, y: pos.y, z: pos.z, heading });
+  const saveNow = () => onSaveLocation?.(here());
   window.addEventListener('pagehide', saveNow);
 
   return {
@@ -806,6 +1025,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     useSkill,
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
+    holdTorch() { setHolding(!holding); },
+    get holding() { return holding; },
+    get underground() { return !!depth; },
     refreshHelper,
     sleep: toggleSleep,
     placeTorch,

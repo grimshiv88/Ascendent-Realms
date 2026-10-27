@@ -2,7 +2,7 @@
 // Zoom in far enough and the map shows the real ground at its true size.
 import { drawWorldMap } from './world/mapdraw.js';
 import { createTerrainPainter } from './world/terrainmap.js';
-import { toMap, toWorld, METRES_PER_PX, placesWithPositions } from './data/world-layout.mjs';
+import { toMap, toWorld, METRES_PER_PX, placesWithPositions, PLOT } from './data/world-layout.mjs';
 
 const W = 1600, H = 1000;          // the map canvas, in map pixels at zoom 1
 const MAX_ZOOM = 640;              // at the closest, the window is about 250 m across
@@ -52,8 +52,10 @@ function niceMetres(maxM) {
 }
 const distText = (m) => (m >= 1000 ? `${m / 1000} km` : `${m} m`);
 
-// `getPlayer()` gives {x, z, heading}; `marks` are quest places [{x, z, label}]
-export function renderMap(el, getPlayer, marks = []) {
+// `getPlayer()` gives {x, z, heading}; `marks` are quest places [{x, z, label}];
+// `mine` is your territory: { plots: [{ix, iz}], caves: [{x, z, name}], others: plots of other owners };
+// `pick(x, z)`, when given (the land grid is open), is called when you tap a spot to buy land there
+export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: [] }, pick = null) {
   el.innerHTML = `
     <div class="status-window map-window" role="dialog" aria-label="World map">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
@@ -67,7 +69,7 @@ export function renderMap(el, getPlayer, marks = []) {
           <button type="button" data-zoom="0" aria-label="Show the whole map">⤢</button>
         </div>
       </div>
-      <p class="map-note">Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground.</p>
+      <p class="map-note">Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pick ? '<b>Land grid is open: zoom in and tap a square to buy it.</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
     </div>`;
   // the painted map, drawn once at twice the size so it stays sharp when zoomed a little
   const full = document.createElement('canvas');
@@ -133,6 +135,42 @@ export function renderMap(el, getPlayer, marks = []) {
       ctx.restore();
     }
 
+    // the land grid, once squares are big enough to tap; other people's land in red
+    ctx.save();
+    const plotPx = (PLOT / METRES_PER_PX) * view.zoom;
+    if (pick && plotPx >= 8) {
+      const a = toWorld(vx0, vy0), b = toWorld(vx0 + sw, vy0 + sh);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let ix = Math.floor(a.x / PLOT); ix <= Math.ceil(b.x / PLOT); ix++) { const [x] = toCanvas(toMap(ix * PLOT, 0).x, 0); ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+      for (let iz = Math.floor(a.z / PLOT); iz <= Math.ceil(b.z / PLOT); iz++) { const [, y] = toCanvas(0, toMap(0, iz * PLOT).y); ctx.moveTo(0, y); ctx.lineTo(W, y); }
+      ctx.stroke();
+    }
+    for (const p of mine.others || []) {
+      const a = toMap(p.ix * PLOT, p.iz * PLOT), b = toMap((p.ix + 1) * PLOT, (p.iz + 1) * PLOT);
+      const [x0, y0] = toCanvas(a.x, a.y), [x1, y1] = toCanvas(b.x, b.y);
+      if (x1 - x0 < 2) continue;
+      ctx.fillStyle = 'rgba(200, 60, 50, 0.45)'; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    }
+    // your territory, in gold: land plots (never smaller than a dot) and the caves you own
+    for (const p of mine.plots) {
+      const a = toMap(p.ix * PLOT, p.iz * PLOT), b = toMap((p.ix + 1) * PLOT, (p.iz + 1) * PLOT);
+      const [x0, y0] = toCanvas(a.x, a.y), [x1, y1] = toCanvas(b.x, b.y);
+      const w = Math.max(6, x1 - x0), h = Math.max(6, y1 - y0);
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      ctx.fillStyle = 'rgba(232, 178, 40, 0.55)'; ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 2;
+      ctx.fillRect(cx - w / 2, cy - h / 2, w, h); ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+    }
+    ctx.font = '600 14px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
+    for (const c of mine.caves) {
+      const q = toMap(c.x, c.z);
+      const [x, y] = toCanvas(q.x, q.y);
+      ctx.fillStyle = '#ffd76a'; ctx.strokeStyle = '#3a2a08'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - 9, y + 6); ctx.lineTo(x, y - 9); ctx.lineTo(x + 9, y + 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)'; ctx.strokeText(c.name, x, y - 14);
+      ctx.fillStyle = '#ffd76a'; ctx.fillText(c.name, x, y - 14);
+    }
+    ctx.restore();
     for (const m of marks) { const q = toMap(m.x, m.z); diamond(ctx, ...toCanvas(q.x, q.y), m.label); }
     if (me) drawMe(ctx, ...toCanvas(me.x, me.y), p.heading, 11, t);
 
@@ -166,7 +204,8 @@ export function renderMap(el, getPlayer, marks = []) {
   cv.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, ...pointer(e)); }, { passive: false });
   const touches = new Map();
   let pinch = 0;
-  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); touches.set(e.pointerId, pointer(e)); });
+  let tap = null; // where a press started, to tell a tap from a drag
+  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); touches.set(e.pointerId, pointer(e)); tap = touches.size === 1 ? pointer(e) : null; });
   cv.addEventListener('pointermove', (e) => {
     if (!touches.has(e.pointerId)) return;
     const [x, y] = pointer(e);
@@ -183,7 +222,19 @@ export function renderMap(el, getPlayer, marks = []) {
       view.cy -= (y - oy) / view.zoom;
     }
   });
-  const lift = (e) => { touches.delete(e.pointerId); pinch = 0; saveView(); };
+  const lift = (e) => {
+    // a tap on the map with the land grid open picks the plot there
+    if (pick && tap && e.type === 'pointerup' && touches.size === 1) {
+      const [x, y] = pointer(e);
+      if (Math.hypot(x - tap[0], y - tap[1]) < 6) {
+        const w = toWorld(view.cx + (x - W / 2) / view.zoom, view.cy + (y - H / 2) / view.zoom);
+        if ((PLOT / METRES_PER_PX) * view.zoom >= 8) pick(w.x, w.z);
+        else zoomAt(4, x, y); // too small to tap a square: zoom in on it first
+      }
+    }
+    tap = null;
+    touches.delete(e.pointerId); pinch = 0; saveView();
+  };
   cv.addEventListener('pointerup', lift);
   cv.addEventListener('pointercancel', lift);
   el.querySelector('.map-zoom').addEventListener('click', (e) => {

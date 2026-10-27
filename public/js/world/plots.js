@@ -83,23 +83,33 @@ export function createPlots(scene) {
     scene.add(pickMesh);
   }
 
-  // Wooden posts with a coloured flag at the corners of owned plots near you
+  // Wooden posts with a coloured flag at the outer corners of each owner's land near you: where
+  // a territory's border turns, not along straight edges or inside it
   function buildPosts(cx, cz) {
     for (const o of [...posts.children]) { posts.remove(o); o.geometry?.dispose(); }
     const wood = new THREE.MeshStandardMaterial({ color: '#6b4a2e', roughness: 0.9 });
     const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.4, 6);
     const flagGeo = new THREE.PlaneGeometry(0.5, 0.32);
+    const mats = new Map();
+    const done = new Set();
     for (const p of lands.values()) {
       if (Math.abs(p.ix - cx) > 25 || Math.abs(p.iz - cz) > 25) continue;
-      const flagMat = new THREE.MeshStandardMaterial({ color: PURPOSES[p.purpose]?.color || '#999', side: THREE.DoubleSide, roughness: 0.8 });
-      for (const [fx, fz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
-        const x = (p.ix + fx) * PLOT + (fx ? -0.4 : 0.4), z = (p.iz + fz) * PLOT + (fz ? -0.4 : 0.4);
-        const y = heightAt(x, z);
+      for (const [vx, vz] of [[p.ix, p.iz], [p.ix + 1, p.iz], [p.ix, p.iz + 1], [p.ix + 1, p.iz + 1]]) {
+        const k = `${vx},${vz},${p.owner}`;
+        if (done.has(k)) continue;
+        done.add(k);
+        // the four plots around this corner point: which belong to the same owner?
+        const same = [[vx - 1, vz - 1], [vx, vz - 1], [vx - 1, vz], [vx, vz]].map(([i, j]) => lands.get(key(i, j))?.owner === p.owner);
+        const n = same.filter(Boolean).length;
+        const straight = n === 2 && (same[0] === same[1] || same[0] === same[2]);
+        if (n === 4 || straight) continue;
+        const x = vx * PLOT, z = vz * PLOT, y = heightAt(x, z);
+        if (!mats.has(p.purpose)) mats.set(p.purpose, new THREE.MeshStandardMaterial({ color: PURPOSES[p.purpose]?.color || '#999', side: THREE.DoubleSide, roughness: 0.8 }));
         const post = new THREE.Mesh(postGeo, wood);
         post.position.set(x, y + 0.7, z);
         post.castShadow = true;
         posts.add(post);
-        const flag = new THREE.Mesh(flagGeo, flagMat);
+        const flag = new THREE.Mesh(flagGeo, mats.get(p.purpose));
         flag.position.set(x + 0.27, y + 1.22, z);
         posts.add(flag);
       }

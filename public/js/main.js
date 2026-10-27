@@ -9,7 +9,9 @@ import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, HE
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml } from './bag.js';
 import { renderQuests } from './quests.js';
-import { renderLand } from './landui.js';
+import { renderLand, renderCave } from './landui.js';
+import { caveById } from './data/depths.mjs';
+import { PLOT } from './data/land.mjs';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
@@ -189,12 +191,15 @@ function startGame(character) {
   }, true);
 
   // Land: L shows the grid of plots around you; tap one to see it in the Land window
+  // everyone's plots go to the world; yours are kept for the map
+  function setLands(list) { ui.myPlots = list.filter((p) => p.mine); ui.otherPlots = list.filter((p) => !p.mine); world.setLands(list); }
+  const loadCaves = () => api.caveList().then((r) => { ui.caves = r.caves || []; }).catch(() => {});
   function toggleLand() {
     const on = !world.landMode;
     world.setLandMode(on);
     if (on) {
-      api.landList().then((r) => world.setLands(r.plots || [])).catch(() => {});
-      showArea('Land: tap a square to see it. Green is for sale, gold is yours. Press L to leave.');
+      api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
+      showArea('Land: tap a square to see it, or open the Map (M) to buy from afar. Green is for sale, gold is yours. Press L to leave.');
     } else {
       showArea('Left the land grid.');
     }
@@ -205,7 +210,7 @@ function startGame(character) {
       await game.saveNow(); // so the server charges from your latest coins
       const r = await call();
       game.setCoins(r.coins);
-      world.setLands(r.plots);
+      setLands(r.plots);
       ui.plot = world.selectPlot({ ix: ui.plot.ix, iz: ui.plot.iz });
       ui.landMsg = okText;
     } catch (err) {
@@ -219,7 +224,7 @@ function startGame(character) {
   const questReady = (title) => { showArea(`${title}: done! Open Quests (Q) to claim the reward.`); world?.say('Quest ready', 'exp'); };
 
   function drawHud() {
-    renderHud($('hud'), character, game.stats());
+    renderHud($('hud'), character, game.stats(), ui.atCave);
     const btn = $('attack-btn');
     const armed = !!game.weapon();
     btn.innerHTML = armed ? SWORD : FIST;
@@ -244,10 +249,22 @@ function startGame(character) {
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
-    else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })));
+    else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })),
+      { plots: ui.myPlots || [], others: ui.otherPlots || [], caves: (ui.caves || []).filter((q) => q.mine).map((q) => { const cv = caveById(q.cave); return cv && { x: cv.place.x, z: cv.place.z, name: cv.name }; }).filter(Boolean) },
+      world?.landMode ? (x, z) => {
+        // tapping a square on the map opens it in the Land window, to buy it from afar
+        ui.plot = world.selectPlot({ ix: Math.floor(x / PLOT), iz: Math.floor(z / PLOT) });
+        ui.landMsg = ''; ui.landChoice = ui.plot.owned?.purpose || 'house';
+        overlay.dataset.panel = 'land';
+        drawPanel();
+      } : null);
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '');
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'rankings') renderRankings(overlay, ui.top, character.name);
+    else if (name === 'cave' && ui.atCave) {
+      const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
+      renderCave(overlay, ui.atCave, game, { owner: own?.owner, mine: own?.mine, message: ui.caveMsg || '', busy: ui.caveBusy });
+    }
     else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy });
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();
@@ -370,6 +387,21 @@ function startGame(character) {
     if ((v = t('data-store')) != null) { game.storeSkill(v); ui.skillMsg = `${SKILLS[v].name} stored.`; drawPanel(); return; }
     if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }
     if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
+    if (t('data-hold-torch') != null) { closePanel(); world?.holdTorch(); return; }
+    if ((v = t('data-cave-buy')) != null) {
+      ui.caveBusy = true; drawPanel();
+      (async () => {
+        try {
+          await game.saveNow(); // so the server sees your latest coins and the beaten boss
+          const r = await api.caveBuy(v);
+          game.setCoins(r.coins);
+          ui.caves = r.caves;
+          ui.caveMsg = 'The cave is yours! It shows in gold on your map.';
+        } catch (err) { ui.caveMsg = err.message; }
+        ui.caveBusy = false; drawPanel();
+      })();
+      return;
+    }
     if (t('data-tent') != null) { closePanel(); world?.pitchTent(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
@@ -431,6 +463,17 @@ function startGame(character) {
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       if (type === 'kill') for (const title of game.questKill(data.kind)) questReady(title);
+      if (type === 'depths') $('minimap').classList.add('hidden'); // no map underground
+      if (type === 'depths') showArea(`${data.cave.name}: ${{ small: 'a small cave', medium: 'a winding cave', deep: 'a deep cave' }[data.cave.size]}. ${world?.holding ? '' : 'Pitch dark: light a torch (T). '}Mine glowing ore veins, break nests, and find the boss at the bottom.`);
+      if (type === 'surface') { ui.atCave = null; drawHud(); $('minimap').classList.remove('hidden'); }
+      if (type === 'cave') {
+        ui.atCave = data; ui.caveMsg = '';
+        drawHud();
+        const own = data && (ui.caves || []).find((q) => q.cave === data.id);
+        if (data && game.caveCleared(data.id) && !own) showArea(`You beat this cave's boss: you can buy ${data.name} (tap its name under your bars).`);
+      }
+      if (type === 'cave-boss') showArea(`You beat the boss of the ${data.name}! Open its chest, and the cave can now be bought up top.`);
+      if (type === 'chest') showArea(`The chest held ${data.coins} G, ${data.items.join(', ')}.`);
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
       if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
@@ -454,7 +497,8 @@ function startGame(character) {
   });
   window.addEventListener('pagehide', () => game.saveNow());
   // Everyone's land: posts on owned plots, and levelled ground
-  api.landList().then((r) => world.setLands(r.plots || [])).catch(() => {});
+  api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
+  loadCaves();
   // Explore quests finish when you reach the place
   game.fillQuests(here());
   setInterval(() => {

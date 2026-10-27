@@ -25,7 +25,8 @@ function describe(it, plus = 0) {
   if (it.kind === 'armour') return `${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
   if (it.kind === 'food') return [it.heal && (it.heal > 999 ? 'Fills HP' : `Restores ${it.heal} HP`), it.sp && (it.sp > 999 ? 'Fills SP' : `Restores ${it.sp} SP`), it.boost && `+${it.boost.sp} max SP for ${it.boost.minutes} min`,
     it.buff && `+${it.buff.pct}% ${it.buff.stat === 'speed' ? 'speed' : it.buff.stat.toUpperCase()} for ${it.buff.minutes} min`, it.rest && (it.rest >= 100 ? 'Clears Fatigue' : `-${it.rest} Fatigue`)].filter(Boolean).join(' · ');
-  if (it.id === 'torch') return 'Lights the night and keeps monsters away';
+  if (it.id === 'torch') return 'Hold it in the dark caves (T), or stand it in the ground; it keeps monsters away';
+  if (it.rank != null) return `${rankTag(it)} Mined in the caves`;
   if (it.id === 'tent') return 'Sleep anywhere and clear your Fatigue';
   return 'Material';
 }
@@ -61,7 +62,7 @@ export function renderBag(el, game, selected) {
   if (sel) {
     const actions = [];
     if (isGear(sel)) actions.push(`<button type="button" class="gold-button small" data-equip="${keyOf(e)}">${game.isEquipped(e) ? 'Take off' : 'Equip'}</button>`);
-    if (e.id === 'torch') actions.push(`<button type="button" class="gold-button small" data-torch>Place here (T)</button>`);
+    if (e.id === 'torch') actions.push(`<button type="button" class="gold-button small" data-hold-torch>Hold / put out</button>`, `<button type="button" class="gold-button small" data-torch>Place here (T)</button>`);
     if (e.id === 'tent') actions.push(`<button type="button" class="gold-button small" data-tent>Pitch here (P)</button>`);
     if (sel.kind === 'food') actions.push(`<button type="button" class="gold-button small" data-use="${keyOf(e)}">Use</button>`);
     actions.push(`<button type="button" class="link-button" data-drop="${keyOf(e)}">Drop one</button>`);

@@ -3,6 +3,7 @@
 import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
 import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds } from './data/items.mjs';
 import { fillBoard, progressOf } from './quests.js';
+import { BOSS_RETURNS_MS } from './data/depths.mjs';
 import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, RESERVED_KEYS, skillOffers } from './data/skills.mjs';
 
 const BAG_SLOTS = 30;
@@ -16,6 +17,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.tent ??= null; // where your tent is pitched
   c.fatigue ??= 0;
   c.trained = { atk: 0, def: 0, matk: 0, mdef: 0, hp: 0, ...(c.trained || {}) }; // Stat Points put straight into ATK, DEF, MATK, MDEF or HP
+  c.caves ??= {}; // cave id -> when you last beat its boss
   c.potionMaker ??= null; // { until, queue: [{ id, ready }] } while a Businessman has one hired
   // Skills: learned ones, the ones ready on keys (the rest are kept in storage), and choices still to make
   c.skills = (c.skills || []).filter((id) => SKILLS[id]);
@@ -68,7 +70,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     quests: c.quests, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained,
+    skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves,
   });
 
   // worn gear doesn't take up room in the bag
@@ -233,6 +235,11 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (w.coat.hits <= 0) delete w.coat;
       changed('bag');
     },
+
+    // Caves: when you last beat each one's boss. A boss comes home a day later.
+    bossHome: (id) => !(c.caves[id] > Date.now() - BOSS_RETURNS_MS),
+    caveCleared: (id) => !!c.caves[id],
+    clearCave(id) { c.caves[id] = Date.now(); changed('caves'); },
 
     // The Potion-Maker: only a Businessman can hire one
     canHire: () => c.cls === 'businessman',
