@@ -4,6 +4,7 @@ import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.m
 import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds } from './data/items.mjs';
 import { fillBoard, progressOf } from './quests.js';
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
+import { portalById, portalFee } from './data/portals.mjs';
 import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, RESERVED_KEYS, skillOffers } from './data/skills.mjs';
 
 const BAG_SLOTS = 30;
@@ -244,6 +245,17 @@ export function createProgress(c, { save, onChange, onEvent }) {
     // The Potion-Maker: only a Businessman can hire one
     canHire: () => c.cls === 'businessman',
     makerHired: () => !!c.potionMaker && c.potionMaker.until > Date.now(),
+    // Pay a portal's fee to go to another portal on the same continent
+    usePortal(fromId, toId) {
+      const from = portalById(fromId), to = portalById(toId);
+      if (!from || !to || from === to) return 'pick';
+      if (from.region !== to.region) return 'sea';
+      const fee = portalFee(from, to);
+      if (c.coins < fee) return 'coins';
+      c.coins -= fee;
+      changed('coins');
+      return 'ok';
+    },
     hireMaker() {
       if (c.cls !== 'businessman') return 'class';
       if (c.coins < POTION_MAKER.fee) return 'coins';

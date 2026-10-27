@@ -5,12 +5,13 @@ import { paintCloudBanks } from './clouds.js';
 import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
-import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, HELP_HTML } from './status.js';
+import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml } from './bag.js';
 import { renderQuests } from './quests.js';
 import { renderLand, renderCave } from './landui.js';
 import { caveById } from './data/depths.mjs';
+import { portalFee, portalKm } from './data/portals.mjs';
 import { PLOT } from './data/land.mjs';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
@@ -224,7 +225,7 @@ function startGame(character) {
   const questReady = (title) => { showArea(`${title}: done! Open Quests (Q) to claim the reward.`); world?.say('Quest ready', 'exp'); };
 
   function drawHud() {
-    renderHud($('hud'), character, game.stats(), ui.atCave);
+    renderHud($('hud'), character, game.stats(), ui.atCave, world?.atPortal);
     const btn = $('attack-btn');
     const armed = !!game.weapon();
     btn.innerHTML = armed ? SWORD : FIST;
@@ -260,6 +261,11 @@ function startGame(character) {
       } : null);
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '');
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
+    else if (name === 'options') renderOptions(overlay);
+    else if (name === 'portal' && world?.atPortal) {
+      ui.trip = { from: world.atPortal, to: null, onPick: showTrip };
+      renderMap(overlay, () => world?.position(), [], { plots: ui.myPlots || [], caves: [] }, null, ui.trip);
+    }
     else if (name === 'rankings') renderRankings(overlay, ui.top, character.name);
     else if (name === 'cave' && ui.atCave) {
       const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
@@ -328,7 +334,7 @@ function startGame(character) {
     if (e.target.closest('[data-signout]')) { logOut(); return; }
     if (e.target.closest('[data-switch]')) { logOut(true); return; }
     const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act) { toggleMenu(false); drawHud(); if (act === 'sleep') world?.sleep(); if (act === 'tent') world?.pitchTent(); return; }
+    if (act) { toggleMenu(false); drawHud(); runAct(act); return; }
     if (b) { toggleMenu(false); drawHud(); if (b.dataset.open === 'land') toggleLand(); else openPanel(b.dataset.open); }
   });
   async function logOut(switchAccount = false) {
@@ -356,11 +362,49 @@ function startGame(character) {
   const SHOP_SAYS = { ok: 'Bought. It is in your bag.', locked: 'You need a higher level for that.', coins: 'Not enough coins.', full: 'Your bag is full.' };
   const BREW_SAYS = { ok: 'Your Potion-Maker gets to work.', hire: 'Hire a Potion-Maker first.', class: 'Only a Businessman can hire a Potion-Maker.', coins: 'Not enough coins.', busy: 'They are already brewing as much as they can.', pick: '' };
   const SMITH_SAYS = { ok: 'Merged! The item is stronger.', evolved: 'Merged, and the weapon evolved! It climbed a rank.', coins: 'Not enough coins to pay for the merge.', parts: 'You need more monster parts for this merge.', class: 'Only a Blacksmith can merge.', pick: 'Pick two items.', kind: 'Those two are different kinds.', max: 'That item is already at its strongest.' };
+  // Portals: after picking where to go on the portal's map, the fee shows before you pay
+  function showTrip(to, message = '') {
+    const box = overlay.querySelector('.portal-pick');
+    if (!box) return;
+    const fee = portalFee(ui.trip.from, to);
+    box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away</p>
+      <p>Fee: <b>${fee} G</b> <small>(you have ${character.coins} G)</small></p>
+      ${message ? `<p class="error">${message}</p>` : ''}
+      <button type="button" class="gold-button" data-portal-go="${to.id}" ${character.coins < fee ? 'disabled' : ''}>Pay ${fee} G and travel</button>`;
+  }
+  function openPortal() {
+    if (world?.underground) { showArea('There are no portals underground.'); return; }
+    if (!world?.atPortal) { showArea('Stand on a portal stone to use it. The map (M) shows them as purple rings.'); return; }
+    openPanel('portal');
+  }
+
+  function openBuilder() { showArea('Builder View is coming soon.'); }
+  // actions the menu and the Options window can run, like their keys do
+  function runAct(act) {
+    if (act === 'sleep') world?.sleep();
+    if (act === 'tent') world?.pitchTent();
+    if (act === 'torch') world?.placeTorch();
+    if (act === 'land') toggleLand();
+    if (act === 'builder') openBuilder();
+    if (act === 'portal') openPortal();
+  }
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay || e.target.closest('[data-close]')) { closePanel(); return; }
     const t = (attr) => e.target.closest(`[${attr}]`)?.getAttribute(attr);
     let v;
-    if ((v = t('data-open')) != null) { overlay.dataset.panel = ''; openPanel(v); return; }
+    if ((v = t('data-act')) != null && overlay.dataset.panel === 'options') { closePanel(); runAct(v); return; }
+    if ((v = t('data-open')) != null) { overlay.dataset.panel = ''; if (v === 'portal') { closePanel(); openPortal(); } else openPanel(v); return; }
+    if ((v = t('data-portal-go')) != null) {
+      const to = ui.trip?.to;
+      const r = to ? game.usePortal(ui.trip.from.id, v) : 'pick';
+      if (r === 'ok') {
+        closePanel();
+        world.teleport(to.x, to.z);
+        showArea(`The portal hums and you step out at ${to.name}.`);
+        drawHud();
+      } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : 'That portal is across the sea.');
+      return;
+    }
     if ((v = t('data-quest-accept')) != null) { game.questAccept(Number(v)); ui.questMsg = 'Quest accepted.'; drawPanel(); return; }
     if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here()); ui.questMsg = 'Quest given up. A new one has appeared.'; drawPanel(); return; }
     if ((v = t('data-quest-claim')) != null) {
@@ -474,6 +518,8 @@ function startGame(character) {
       }
       if (type === 'cave-boss') showArea(`You beat the boss of the ${data.name}! Open its chest, and the cave can now be bought up top.`);
       if (type === 'chest') showArea(`The chest held ${data.coins} G, ${data.items.join(', ')}.`);
+      if (type === 'portal') drawHud();
+      if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
       if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
@@ -489,10 +535,11 @@ function startGame(character) {
       if (e.code === 'KeyO') openPanel('settings');
       if (e.code === 'KeyR') openPanel('rankings');
       if (e.code === 'KeyK') openPanel('skills');
+      if (e.code === 'KeyG') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); }
       if (e.code === 'KeyL') toggleLand();
       // Esc opens the options; Esc again (or on any window) closes it
-      if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('settings'); else closePanel(); }
+      if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }
     },
   });
   window.addEventListener('pagehide', () => game.saveNow());

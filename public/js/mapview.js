@@ -3,6 +3,9 @@
 import { drawWorldMap } from './world/mapdraw.js';
 import { createTerrainPainter } from './world/terrainmap.js';
 import { toMap, toWorld, METRES_PER_PX, placesWithPositions, PLOT } from './data/world-layout.mjs';
+import { allPortals, portalsFrom } from './data/portals.mjs';
+
+const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
 const W = 1600, H = 1000;          // the map canvas, in map pixels at zoom 1
 const MAX_ZOOM = 640;              // at the closest, the window is about 250 m across
@@ -54,12 +57,27 @@ const distText = (m) => (m >= 1000 ? `${m / 1000} km` : `${m} m`);
 
 // `getPlayer()` gives {x, z, heading}; `marks` are quest places [{x, z, label}];
 // `mine` is your territory: { plots: [{ix, iz}], caves: [{x, z, name}], others: plots of other owners };
-// `pick(x, z)`, when given (the land grid is open), is called when you tap a spot to buy land there
-export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: [] }, pick = null) {
+// `pick(x, z)`, when given (the land grid is open), is called when you tap a spot to buy land there;
+// `travel`, when given ({ from, to, onPick }), turns the map into a portal's: tap a portal on this
+// continent to choose it
+export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: [] }, pick = null, travel = null) {
+  const portals = allPortals();
+  const reachable = travel ? portalsFrom(travel.from) : [];
+  if (travel) {
+    // open on the whole continent
+    const pts = [travel.from, ...reachable].map((q) => toMap(q.x, q.z));
+    const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    view.follow = false;
+    view.cx = (x0 + x1) / 2; view.cy = (y0 + y1) / 2;
+    view.zoom = Math.max(1, Math.min(3, Math.min(W / (x1 - x0 + 160), H / (y1 - y0 + 160))));
+    saveView();
+  }
   el.innerHTML = `
-    <div class="status-window map-window" role="dialog" aria-label="World map">
+    <div class="status-window map-window" role="dialog" aria-label="${travel ? 'Portal' : 'World map'}">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>World Map</h2>
+      <h2>${travel ? `${esc(travel.from.name)}: where to?` : 'World Map'}</h2>
+      ${travel ? `<div class="portal-pick" aria-live="polite"><p>Tap a glowing portal on this continent to see the fee. Portals can't cross the sea to another continent.</p></div>` : ''}
       <div class="map-frame">
         <canvas width="${W}" height="${H}" aria-label="World map with your position"></canvas>
         <div class="map-zoom">
@@ -69,7 +87,7 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
           <button type="button" data-zoom="0" aria-label="Show the whole map">⤢</button>
         </div>
       </div>
-      <p class="map-note">Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pick ? '<b>Land grid is open: zoom in and tap a square to buy it.</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
+      <p class="map-note">${travel ? '' : 'Purple rings are portals. '}Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pick ? '<b>Land grid is open: zoom in and tap a square to buy it.</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
     </div>`;
   // the painted map, drawn once at twice the size so it stays sharp when zoomed a little
   const full = document.createElement('canvas');
@@ -171,6 +189,26 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
       ctx.fillStyle = '#ffd76a'; ctx.fillText(c.name, x, y - 14);
     }
     ctx.restore();
+    // portals: on a portal's map, the ones you can go to glow and carry their names
+    ctx.save();
+    ctx.font = '600 13px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
+    for (const pt of portals) {
+      const q = toMap(pt.x, pt.z);
+      const [x, y] = toCanvas(q.x, q.y);
+      if (x < -60 || y < -30 || x > W + 60 || y > H + 30) continue;
+      const open = !travel || reachable.includes(pt), here = travel && pt === travel.from, chosen = travel && pt === travel.to;
+      if (travel && !open && !here) { ctx.globalAlpha = 0.25; }
+      ctx.strokeStyle = chosen ? '#fff' : here ? '#ffd76a' : '#b98cff'; ctx.lineWidth = chosen || here ? 3.5 : 2.5;
+      ctx.fillStyle = 'rgba(60, 20, 120, 0.6)';
+      ctx.beginPath(); ctx.arc(x, y, travel ? 7 : 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if ((travel && (open || here)) || view.zoom >= 4) {
+        const label = here ? 'You are here' : pt.name.replace(/ Portal$/, '');
+        ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(label, x, y - 11);
+        ctx.fillStyle = chosen ? '#fff' : here ? '#ffd76a' : '#e2d2ff'; ctx.fillText(label, x, y - 11);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
     for (const m of marks) { const q = toMap(m.x, m.z); diamond(ctx, ...toCanvas(q.x, q.y), m.label); }
     if (me) drawMe(ctx, ...toCanvas(me.x, me.y), p.heading, 11, t);
 
@@ -223,6 +261,15 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
     }
   });
   const lift = (e) => {
+    // on a portal's map, a tap picks the nearest portal you can go to
+    if (travel && tap && e.type === 'pointerup' && touches.size === 1) {
+      const [x, y] = pointer(e);
+      if (Math.hypot(x - tap[0], y - tap[1]) < 6) {
+        let best = null, bd = 26;
+        for (const pt of reachable) { const q = toMap(pt.x, pt.z); const [px, py] = toCanvas(q.x, q.y); const d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = pt; } }
+        if (best) { travel.to = best; travel.onPick(best); }
+      }
+    }
     // a tap on the map with the land grid open picks the plot there
     if (pick && tap && e.type === 'pointerup' && touches.size === 1) {
       const [x, y] = pointer(e);

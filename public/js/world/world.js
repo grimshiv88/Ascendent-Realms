@@ -6,6 +6,8 @@ import { buildSpawn } from './spawn.js';
 import { buildCave } from './caves.js';
 import { createCreatures, KINDS } from './creatures.js';
 import { buildDepths } from './depths.js';
+import { buildPortal } from './portal.js';
+import { allPortals, nearestPortal } from '../data/portals.mjs';
 import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
@@ -57,7 +59,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   // Waystone shrines (the spawn and each homeland) and caves, built when you come near
   const sites = placesWithPositions().map((p) => ({ place: p, built: null }));
+  // Portal stones, built when you come near
+  const portals = allPortals().map((p) => ({ p, built: null }));
+  let atPortal = null;
+  function updatePortals(x, z) {
+    for (const q of portals) {
+      const d = Math.hypot(x - q.p.x, z - q.p.z);
+      if (d < 900 && !q.built) { q.built = buildPortal(q.p); scene.add(q.built.group); }
+      else if (d > 1200 && q.built) { scene.remove(q.built.group); q.built = null; }
+    }
+  }
   function updateSites(x, z) {
+    updatePortals(x, z);
     for (const s of sites) {
       const d = Math.hypot(x - s.place.x, z - s.place.z);
       if (d < 1000 && !s.built) {
@@ -956,6 +969,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (s.built?.hole && !dead && Math.hypot(pos.x - s.built.hole.x, pos.z - s.built.hole.z) < 1.6) { enterDepths(s); break; }
       }
     }
+    for (const q of portals) q.built?.update(t);
     if (holding) heldTorch.light.intensity = 20 + Math.sin(t * 13) * 2 + Math.sin(t * 7.3) * 1.5;
     if (t - lastArea > 0.5) {
       lastArea = t;
@@ -968,6 +982,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         here = caveHere ? caveById(caveHere.place.id)?.name || 'A cave' : near ? `${regionName(near.place.region)} · ${near.place.name}` : regionName(sample(pos.x, pos.z, tmpS).region);
         const nowCave = caveHere?.place.id || null;
         if (nowCave !== atCave) { atCave = nowCave; onEvent?.('cave', atCave ? caveById(atCave) : null); }
+        const nowPortal = nearestPortal(pos.x, pos.z);
+        if (nowPortal !== atPortal) { atPortal = nowPortal; onEvent?.('portal', atPortal); }
       }
       if (here !== area) { area = here; onArea?.(area, { x: pos.x, z: pos.z }); }
     }
@@ -1019,8 +1035,24 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const saveNow = () => onSaveLocation?.(here());
   window.addEventListener('pagehide', saveNow);
 
+  // Step out of a portal somewhere else (a few metres in front of its stones)
+  function teleport(x, z) {
+    if (depth || dead) return false;
+    if (sleeping) toggleSleep();
+    pos.set(x, 0, z + 5);
+    updateSites(pos.x, pos.z);
+    land.update(pos.x, pos.z, Infinity);
+    pos.y = groundAt(pos.x, pos.z);
+    velY = 0;
+    atPortal = nearestPortal(pos.x, pos.z, 6);
+    saveNow();
+    return true;
+  }
+
   return {
     position: () => ({ x: pos.x, z: pos.z, heading }),
+    teleport,
+    get atPortal() { return atPortal; },
     attack,
     useSkill,
     // Redraw your gear after equipping or taking something off

@@ -14,7 +14,7 @@ export const toggleMenu = (open = !menuOpen) => { menuOpen = open; };
 
 // `d` is the stats including gear; without it the base stats are shown
 // `cave` is the cave you're standing in up top, if any
-export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null) {
+export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null, portal = null) {
   const hp = Math.round(c.hp ?? d.hp);
   const need = expToNext(c.level, c.race);
   el.innerHTML = `
@@ -27,6 +27,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
       <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
       ${c.skillPicks ? `<button type="button" class="hud-points" data-open="skills">A new skill to choose (K)</button>` : ''}
+      ${portal ? `<button type="button" class="hud-points portal" data-act="portal">${esc(portal.name)}: travel (G)</button>` : ''}
       ${cave ? `<button type="button" class="hud-points" data-open="cave">${esc(cave.name)}: about this cave</button>` : ''}
     </div>
     <div class="hud-menu">
@@ -36,17 +37,9 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
       <div class="hud-buttons${menuOpen ? '' : ' hidden'}">
         <button type="button" data-open="status">Status <kbd>C</kbd></button>
         <button type="button" data-open="bag">Bag <kbd>I</kbd></button>
-        <button type="button" data-open="shop">Shop <kbd>B</kbd></button>
-        <button type="button" data-open="quests">Quests <kbd>Q</kbd></button>
-        <button type="button" data-open="skills">Skills <kbd>K</kbd></button>
         <button type="button" data-open="map">Map <kbd>M</kbd></button>
-        <button type="button" data-open="land">Buy land <kbd>L</kbd></button>
-        <button type="button" data-act="sleep">Sleep / wake <kbd>Z</kbd></button>
-        <button type="button" data-act="tent">Pitch / pack tent <kbd>P</kbd></button>
-        <button type="button" data-open="help">Controls <kbd>H</kbd></button>
-        <button type="button" data-open="rankings">Top players <kbd>R</kbd></button>
-        <button type="button" data-open="settings">Settings <kbd>O</kbd></button>
-        <button type="button" data-switch>Switch account</button>
+        <button type="button" data-open="quests">Quests <kbd>Q</kbd></button>
+        <button type="button" data-open="options">Options <kbd>Esc</kbd></button>
         <button type="button" data-signout>Log out</button>
       </div>
     </div>
@@ -172,6 +165,37 @@ export function renderRankings(el, players, me) {
     </div>`;
 }
 
+// Every window and action in the game, with the key that opens it; tap one to open it now
+const OPTIONS = [
+  ['Status', 'C', 'status', 'Your level, stats and Stat Points'],
+  ['Bag', 'I', 'bag', 'Your items, and what you have on'],
+  ['Shop', 'B', 'shop', 'Buy and sell'],
+  ['Quests', 'Q', 'quests', 'Take on quests and claim rewards'],
+  ['Skills', 'K', 'skills', 'Choose skills and change their keys'],
+  ['World map', 'M', 'map', 'Where you are, your land and caves'],
+  ['Portals', 'G', 'act:portal', 'Travel to another portal on this continent (beside a portal stone)'],
+  ['Land', 'L', 'act:land', 'Show the grid of plots to buy land'],
+  ['Builder View', 'V', 'act:builder', 'Build on the land you own'],
+  ['Sleep / wake', 'Z', 'act:sleep', 'By a fire, a torch or in your tent'],
+  ['Pitch / pack tent', 'P', 'act:tent', 'Pitch your tent in front of you'],
+  ['Torch', 'T', 'act:torch', 'Place a torch, or pick one back up'],
+  ['Top players', 'R', 'rankings', 'The highest-level characters'],
+  ['Settings', 'O', 'settings', 'Camera, password and accounts'],
+  ['Controls', 'H', 'help', 'How to move, fight and more'],
+];
+export function renderOptions(el) {
+  el.innerHTML = `
+    <div class="status-window options-window" role="dialog" aria-label="Options">
+      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      <h2>Options</h2>
+      <p class="bag-hint">Press a key to open a window from anywhere, or tap it here.</p>
+      <div class="options-grid">
+        ${OPTIONS.map(([label, key, go, what]) => `<button type="button" class="option-btn" ${go.startsWith('act:') ? `data-act="${go.slice(4)}"` : `data-open="${go}"`}><kbd>${key}</kbd><b>${label}</b><small>${what}</small></button>`).join('')}
+        <button type="button" class="option-btn" data-switch><kbd>&nbsp;</kbd><b>Switch account</b><small>Sign in as someone else</small></button>
+      </div>
+    </div>`;
+}
+
 export const HELP_HTML = `
   <div class="status-window help-window" role="dialog" aria-label="Controls">
     <button type="button" class="sw-close" data-close aria-label="Close">×</button>
@@ -183,7 +207,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Camera</dt><dd>Click the game once, then move the mouse to look around and steer; scroll to zoom</dd></div>
       <div class="sw-row"><dt>Attack / punch</dt><dd>Click, or F (touch: the fist button)</dd></div>
       <div class="sw-row"><dt>Trees</dt><dd>Young and dead trees, bushes: by hand. Pines: an axe and 15 STR (or 40 STR). Oaks: an axe and 22 STR (or 50). Swamp and fae trees: an axe and 28 to 32 STR. Great trees: a War Axe and 60 STR. Hitting a tree also tells you what it needs.</dd></div>
-      <div class="sw-row"><dt>Options</dt><dd>Esc (also frees the mouse)</dd></div>
+      <div class="sw-row"><dt>Options</dt><dd>Esc shows every window and its key (also frees the mouse)</dd></div>
       <div class="sw-row"><dt>Status</dt><dd>C</dd></div>
       <div class="sw-row"><dt>Bag and shop</dt><dd>I and B</dd></div>
       <div class="sw-row"><dt>Quests</dt><dd>Q</dd></div>
@@ -193,6 +217,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Torches</dt><dd>T places one (buy them in the shop; they keep monsters away at night). Press T beside one to pick it back up</dd></div>
       <div class="sw-row"><dt>Caves</dt><dd>Walk into the dark shaft at the back of a cave to go down. Underground, T lights a torch in your hand. Swing at glowing veins to mine ore, break nests, beat the boss for its chest, then buy the cave. The shaft of daylight takes you back up</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
+      <div class="sw-row"><dt>Portals</dt><dd>Stand on a portal stone (purple rings on the map) and press G. Pick where to go on the map, see the fee, then pay. Portals only reach other portals on the same continent</dd></div>
       <div class="sw-row"><dt>Land</dt><dd>L shows the grid of plots; tap a square to buy it or manage it</dd></div>
       <div class="sw-row"><dt>Top players</dt><dd>R</dd></div>
       <div class="sw-row"><dt>Settings</dt><dd>O (a free camera, or one that follows your body)</dd></div>
