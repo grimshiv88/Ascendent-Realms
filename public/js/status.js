@@ -111,7 +111,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
 }
 
 // Player settings, kept in this browser
-export function renderSettings(el, settings, accounts = null) {
+export function renderSettings(el, settings, accounts = null, cloud = false) {
   const opt = (value, title, text) => `<button type="button" class="setting-opt" data-camera="${value}" aria-pressed="${settings.camera === value}"><b>${title}</b><span>${text}</span></button>`;
   el.innerHTML = `
     <div class="status-window settings-window" role="dialog" aria-label="Settings">
@@ -125,8 +125,8 @@ export function renderSettings(el, settings, accounts = null) {
       <h3 class="bag-sub">Account</h3>
       <p class="bag-hint">This browser keeps you signed in. Sign out on shared computers.</p>
       <button type="button" class="link-button" data-signout>Sign out</button>
-      ${accounts ? `<h3 class="bag-sub">Accounts on this device</h3>
-      <p class="bag-hint">In the preview, accounts are kept in this browser only. Passwords are stored scrambled, so they can't be shown.</p>
+      ${accounts ? `<h3 class="bag-sub">Saved accounts</h3>
+      <p class="bag-hint">${cloud ? 'Saved privately online, so they follow you to any device you open the game on.' : 'Kept in this browser only.'} Passwords are stored scrambled, so they can't be shown.</p>
       <ul class="device-accounts">${accounts.map((a) => `<li><b>${esc(a.username)}</b> <small>${esc(a.email)}</small><br>${a.character ? `${esc(a.character.name)} · ${esc(RACES[a.character.race]?.name || a.character.race)} ${esc(CLASSES[a.character.cls]?.name || a.character.cls)} · Lv ${a.character.level} · ${a.character.coins} coins` : 'No character yet'}</li>`).join('') || '<li>None</li>'}</ul>` : ''}
     </div>`;
 }

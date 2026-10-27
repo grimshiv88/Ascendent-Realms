@@ -180,7 +180,7 @@ function startGame(character) {
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })));
-    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts());
+    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves());
     else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy });
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();

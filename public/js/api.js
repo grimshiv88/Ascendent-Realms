@@ -21,10 +21,80 @@ async function request(path, { method = 'GET', body } = {}) {
   return data;
 }
 
-// Preview mode: the same rules as the server, stored in localStorage.
+// ---------- private cloud saves ----------
+// Inside the private preview page, accounts, characters and land are also kept in the page's own
+// database, so they survive on any device the owner opens the game on. This browser keeps a copy
+// and the database is brought up to date a few seconds after each change.
+let cloud = null;
+const cloudKey = (email) => email.toLowerCase().replace(/[^a-z0-9_.@+~:-]/g, '_');
+const pushTimers = new Map();
+const pushing = new Map();
+const waiting = new Map(); // path -> latest body not yet sent
+function cloudPush(path, body) {
+  if (!cloud) return;
+  waiting.set(path, JSON.parse(JSON.stringify(body)));
+  clearTimeout(pushTimers.get(path));
+  pushTimers.set(path, setTimeout(() => send(path), 2500));
+}
+async function send(path) {
+  clearTimeout(pushTimers.get(path));
+  // one write at a time to each document
+  await pushing.get(path);
+  const body = waiting.get(path);
+  if (!body) return;
+  waiting.delete(path);
+  const p = cloud.doc(path).set(body).catch((e) => console.warn('Cloud save failed', e?.code || e));
+  pushing.set(path, p);
+}
+// send everything at once when the page is being closed or hidden
+const flush = () => { for (const path of [...waiting.keys()]) send(path); };
+addEventListener('pagehide', flush);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+// the newer copy of an account wins (characters carry savedAt; a new character beats none)
+const stamp = (a) => a?.updatedAt || a?.character?.savedAt || 0;
+async function cloudStart() {
+  try {
+    if (!window.claude?.use) return;
+    const db = await Promise.race([window.claude.use('db'), new Promise((r) => setTimeout(() => r(null), 8000))]);
+    if (!db) return;
+    const [accSnap, landSnap] = await Promise.all([db.collection('accounts').get(), db.doc('world/lands').get()]);
+    cloud = db;
+    const local = preview.accounts();
+    const merged = new Map(local.map((a) => [cloudKey(a.email), a]));
+    for (const d of accSnap.docs) {
+      const remote = d.data();
+      const mine = merged.get(d.id);
+      if (!mine || stamp(remote) > stamp(mine) || (remote.character && !mine.character)) merged.set(d.id, remote);
+    }
+    const list = [...merged.values()];
+    storage.set('ar.preview.accounts', JSON.stringify(list));
+    // accounts only on this device (made before the cloud) are copied up
+    const remoteIds = new Set(accSnap.docs.map((d) => d.id));
+    for (const a of list) {
+      const k = cloudKey(a.email);
+      const remote = accSnap.docs.find((d) => d.id === k)?.data();
+      if (!remoteIds.has(k) || stamp(a) > stamp(remote)) await db.doc(`accounts/${k}`).set(JSON.parse(JSON.stringify(a))).catch(() => {});
+    }
+    const remotePlots = landSnap.exists ? landSnap.data().plots || [] : [];
+    const plots = [...remotePlots];
+    for (const p of previewLand.all()) if (!plots.some((q) => q.ix === p.ix && q.iz === p.iz)) plots.push(p);
+    storage.set('ar.preview.lands', JSON.stringify(plots));
+    if (plots.length !== remotePlots.length) await db.doc('world/lands').set({ plots }).catch(() => {});
+  } catch (e) {
+    console.warn('Cloud saves are off for this visit', e?.code || e);
+    cloud = null;
+  }
+}
+export const cloudSaves = () => !!cloud;
+
+// Preview mode: the same rules as the server, stored in localStorage (and the cloud, when there is one).
 const preview = {
   accounts() { try { return JSON.parse(storage.get('ar.preview.accounts')) || []; } catch { return []; } },
-  save(list) { storage.set('ar.preview.accounts', JSON.stringify(list)); },
+  save(list, changed) {
+    if (changed) changed.updatedAt = Date.now();
+    storage.set('ar.preview.accounts', JSON.stringify(list));
+    if (changed) cloudPush(`accounts/${cloudKey(changed.email)}`, changed);
+  },
   async signUp({ email, password, username }) {
     email = email.trim(); username = username.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please enter a valid email address.');
@@ -34,8 +104,9 @@ const preview = {
     if (list.some((a) => a.email.toLowerCase() === email.toLowerCase())) throw new Error('An account with this email already exists. Try signing in.');
     if (list.some((a) => a.username.toLowerCase() === username.toLowerCase())) throw new Error('That username is taken. Please choose another.');
     const digest = await sha256(password);
-    list.push({ email, username, digest, character: null });
-    this.save(list);
+    const acc = { email, username, digest, character: null };
+    list.push(acc);
+    this.save(list, acc);
     storage.set(TOKEN_KEY, `preview:${email}`);
     return { account: { email, username, character: null }, isNew: true };
   },
@@ -55,7 +126,7 @@ function updatePreviewAccount(change) {
   const acc = list.find((a) => a.email === email);
   if (!acc) throw new Error('Please sign in again.');
   const result = change(acc);
-  preview.save(list);
+  preview.save(list, acc);
   return result;
 }
 
@@ -65,8 +136,9 @@ async function sha256(text) {
 }
 
 let previewMode = null;
-export async function isPreviewMode() {
-  if (previewMode === null) {
+let modeCheck = null;
+export function isPreviewMode() {
+  modeCheck ??= (async () => {
     try {
       const res = await fetch('api/health');
       const data = res.ok ? await res.json() : {};
@@ -75,8 +147,10 @@ export async function isPreviewMode() {
     } catch {
       previewMode = true;
     }
-  }
-  return previewMode;
+    if (previewMode) await cloudStart();
+    return previewMode;
+  })();
+  return modeCheck;
 }
 
 // Preview mode only: the accounts saved in this browser (without their scrambled passwords)
@@ -159,7 +233,7 @@ export async function saveProgress(progress) {
 // In preview mode the plots live in this browser; the rules are the same shared ones as the server's.
 const previewLand = {
   all() { try { return JSON.parse(storage.get('ar.preview.lands')) || []; } catch { return []; } },
-  save(list) { storage.set('ar.preview.lands', JSON.stringify(list)); },
+  save(list) { storage.set('ar.preview.lands', JSON.stringify(list)); cloudPush('world/lands', { plots: list }); },
   async run(fn) {
     const rules = await import('./data/land.mjs');
     return updatePreviewAccount((acc) => {
