@@ -84,6 +84,7 @@ function wireForm(formId, action) {
     try {
       const result = await action(Object.fromEntries(new FormData(form)));
       form.reset();
+      form.querySelectorAll('.reveal[aria-pressed="true"]').forEach((b) => b.click());
       await enterRealm(result);
     } catch (err) {
       error.textContent = err.message;
@@ -93,7 +94,22 @@ function wireForm(formId, action) {
   });
 }
 
-wireForm('signup-form', api.signUp);
+// Eye buttons show or hide the password while typing
+document.querySelectorAll('.reveal').forEach((btn) => {
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const input = btn.previousElementSibling;
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    btn.setAttribute('aria-pressed', String(!showing));
+    btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  });
+});
+
+wireForm('signup-form', ({ confirm, ...fields }) => {
+  if (fields.password !== confirm) throw new Error('The two passwords don\'t match.');
+  return api.signUp(fields);
+});
 wireForm('signin-form', api.signIn);
 
 $('signout').addEventListener('click', () =>
