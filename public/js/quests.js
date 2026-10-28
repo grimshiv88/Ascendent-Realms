@@ -18,7 +18,7 @@ function rewardFor(c, effort) {
   // effort 1 is a quick job; a level's worth of EXP takes several quests
   const need = expToNext(c.level, c.race);
   const exp = Math.max(3, Math.round(need * (0.12 + Math.random() * 0.1) * effort));
-  const coins = Math.round((8 + c.level * 4) * effort * (0.8 + Math.random() * 0.4));
+  const coins = Math.round((5 + c.level * 3) * effort * (0.8 + Math.random() * 0.4));
   const item = Math.random() < 0.3 ? pick(c.level >= 5 ? ['potion', 'herb', 'sp_potion', 'bread'] : ['herb', 'bread', 'bread']) : null;
   return { exp, coins, ...(item ? { item } : {}) };
 }

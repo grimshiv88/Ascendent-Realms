@@ -1,7 +1,8 @@
 // The in-game HUD and the Status Window (laid out like Mohammed's black-and-gold design).
 import { CASTLES, castleOf, KING_RETURNS_MS } from './data/kings.mjs';
+import { CONTROLS, codeFor, keyName } from './data/controls.mjs';
 import {
-  RACES, CLASSES, ADVANCEMENTS, KEY_LEVELS, derivedStats, expToNext, rankFor,
+  RACES, CLASSES, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor,
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
 import { PRIVACY, privacyOf } from './data/social.mjs';
@@ -28,7 +29,6 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
       <div class="hud-bar fatigue" title="Fatigue: sleep (Z) by a fire or torch before it fills"><span style="width:${Math.min(100, c.fatigue || 0)}%"></span><b>FATIGUE ${Math.round(c.fatigue || 0)} / 100</b></div>
       <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
-      ${c.skillPicks ? `<button type="button" class="hud-points" data-open="skills">A new skill to choose (K)</button>` : ''}
       ${portal ? `<button type="button" class="hud-points portal" data-act="portal">${esc(portal.name)}: travel (G)</button>` : ''}
       ${cave ? `<button type="button" class="hud-points" data-open="cave">${esc(cave.name)}: about this cave</button>` : ''}
     </div>
@@ -72,7 +72,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
       <div class="sw-grid">
         <dl>
           ${row('Name', esc(c.name))}
-          ${row('Race', `${race.name}${isMonster ? ` <small>(${c.form === 'humanoid' ? 'humanoid form' : 'monster form'})</small>` : ''}`)}
+          ${row('Race', `${race.name}${c.stage > 0 && EVOLUTIONS[c.race]?.[c.stage] ? ` (${esc(EVOLUTIONS[c.race][c.stage])})` : ''}${isMonster ? ` <small>(${c.form === 'humanoid' ? 'humanoid form' : 'monster form'})</small>` : ''}`)}
           ${row('Class', className)}
           ${row('EXP', `${c.exp} / ${need}`)}
           ${row('Coins', c.coins)}
@@ -112,7 +112,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
       <dl>
         ${row('Titles', c.titles.length ? c.titles.map(esc).join(', ') : 'None yet')}
         ${row('Elements', c.elements.join(', '))}
-        ${row('Skills', c.skills.length ? c.skills.map((id) => esc(SKILLS[id]?.name || id)).join(', ') : 'None yet')}${c.skillPicks ? ` <button type="button" class="hud-points" data-open="skills">Choose a new skill (K)</button>` : ''}
+        ${row('Skills', c.skills.length ? c.skills.map((id) => esc(SKILLS[id]?.name || id)).join(', ') : 'None yet')}
       </dl>
       <p class="sw-points">Unspent points: <b>${left}</b>${c.unspentPoints ? ' <small>Put points into Strength, Agility, Dex, Stamina or Intelligence. HP, SP, ATK, MATK, DEF and MDEF grow with them.</small>' : ''}</p>
       <hr>
@@ -128,7 +128,10 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
 }
 
 // Player settings, kept in this browser
-export function renderSettings(el, settings, accounts = null, cloud = false, passwordMsg = '') {
+export function renderSettings(el, settings, accounts = null, cloud = false, passwordMsg = '', keys = {}) {
+  const groups = [...new Set(CONTROLS.map((x) => x[3]))];
+  const controls = groups.map((g) => `<h4 class="ctl-group">${g}</h4><div class="ctl-list">${CONTROLS.filter((x) => x[3] === g).map(([id, name]) => `
+    <div class="ctl-row"><span>${esc(name)}</span><button type="button" class="sk-key${keys.binding === id ? ' waiting' : ''}" data-control="${id}" aria-label="Change the key for ${esc(name)}">${keys.binding === id ? 'Press a key…' : esc(keyName(codeFor(id)))}</button></div>`).join('')}</div>`).join('');
   const opt = (value, title, text) => `<button type="button" class="setting-opt" data-camera="${value}" aria-pressed="${settings.camera === value}"><b>${title}</b><span>${text}</span></button>`;
   el.innerHTML = `
     <div class="status-window settings-window" role="dialog" aria-label="Settings">
@@ -139,6 +142,11 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
         ${opt('free', 'Free camera', 'You turn the camera yourself (drag the mouse, or drag on the right of the screen). Your character walks the way you push, relative to the camera.')}
         ${opt('follow', 'Follow your body', 'The camera stays behind your character. Left and right turn your body, forward walks the way you face.')}
       </div>
+      <h3 class="bag-sub">Controls</h3>
+      <p class="bag-hint">Click an action, then press the key you want for it. If another action had that key, they swap. The arrow keys always move you and Esc always opens the options.</p>
+      <p class="shop-msg" role="status">${esc(keys.message || '')}</p>
+      ${controls}
+      <button type="button" class="link-button" data-controls-reset>Put every key back to how it started</button>
       <h3 class="bag-sub">Account</h3>
       <form class="pw-change" data-password>
         <label>New password <input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
@@ -184,30 +192,30 @@ export function renderRankings(el, players, me, courts = []) {
 
 // Every window and action in the game, with the key that opens it; tap one to open it now
 const OPTIONS = [
-  ['Status', 'C', 'status', 'Your level, stats and Stat Points'],
-  ['Bag', 'I', 'bag', 'Your items, and what you have on'],
-  ['Shop', 'B', 'shop', 'Buy and sell'],
-  ['Quests', 'Q', 'quests', 'Take on quests and claim rewards'],
-  ['Skills', 'K', 'skills', 'Choose skills and change their keys'],
-  ['World map', 'M', 'map', 'Where you are, your land and caves'],
-  ['Portals', 'G', 'act:portal', 'Travel to another portal on this continent (beside a portal stone)'],
-  ['Land', 'L', 'act:land', 'Show the grid of plots to buy land'],
-  ['Builder View', 'V', 'act:builder', 'Build on the land you own'],
-  ['Sleep / wake', 'Z', 'act:sleep', 'By a fire, a torch or in your tent'],
-  ['Pitch / pack tent', 'P', 'act:tent', 'Pitch your tent in front of you'],
-  ['Torch', 'T', 'act:torch', 'Place a torch, or pick one back up'],
-  ['Top players', 'R', 'rankings', 'The highest-level characters'],
-  ['Settings', 'O', 'settings', 'Camera, password and accounts'],
-  ['Controls', 'H', 'help', 'How to move, fight and more'],
+  ['Status', 'status', 'status', 'Your level, stats and Stat Points'],
+  ['Bag', 'bag', 'bag', 'Your items, and what you have on'],
+  ['Shop', 'shop', 'shop', 'Buy and sell'],
+  ['Quests', 'quests', 'quests', 'Take on quests and claim rewards'],
+  ['Skills', 'skills', 'skills', 'Your skills and their keys'],
+  ['World map', 'map', 'map', 'Where you are, your land and caves'],
+  ['Portals', 'portal', 'act:portal', 'Travel to another portal on this continent (beside a portal stone)'],
+  ['Land', 'land', 'act:land', 'Show the grid of plots to buy land'],
+  ['Builder View', 'builder', 'act:builder', 'Build on the land you own'],
+  ['Sleep / wake', 'sleep', 'act:sleep', 'By a fire, a torch or in your tent'],
+  ['Pitch / pack tent', 'tent', 'act:tent', 'Pitch your tent in front of you'],
+  ['Torch', 'torch', 'act:torch', 'Place a torch, or pick one back up'],
+  ['Top players', 'rankings', 'rankings', 'The highest-level characters'],
+  ['Settings', 'settings', 'settings', 'Camera, keys, password and accounts'],
+  ['Controls', 'help', 'help', 'How to move, fight and more'],
 ];
 export function renderOptions(el) {
   el.innerHTML = `
     <div class="status-window options-window" role="dialog" aria-label="Options">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       <h2>Options</h2>
-      <p class="bag-hint">Press a key to open a window from anywhere, or tap it here.</p>
+      <p class="bag-hint">Press a key to open a window from anywhere, or tap it here. You can change any key in Settings.</p>
       <div class="options-grid">
-        ${OPTIONS.map(([label, key, go, what]) => `<button type="button" class="option-btn" ${go.startsWith('act:') ? `data-act="${go.slice(4)}"` : `data-open="${go}"`}><kbd>${key}</kbd><b>${label}</b><small>${what}</small></button>`).join('')}
+        ${OPTIONS.map(([label, action, go, what]) => `<button type="button" class="option-btn" ${go.startsWith('act:') ? `data-act="${go.slice(4)}"` : `data-open="${go}"`}><kbd>${esc(keyName(codeFor(action)))}</kbd><b>${label}</b><small>${what}</small></button>`).join('')}
         <button type="button" class="option-btn" data-switch><kbd>&nbsp;</kbd><b>Switch account</b><small>Sign in as someone else</small></button>
       </div>
     </div>`;
@@ -217,6 +225,7 @@ export const HELP_HTML = `
   <div class="status-window help-window" role="dialog" aria-label="Controls">
     <button type="button" class="sw-close" data-close aria-label="Close">×</button>
     <h2>Controls</h2>
+    <p class="bag-hint">These are the keys the game starts with. Change any of them in Settings (O) → Controls.</p>
     <dl>
       <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys. Hold W and press A or D to curve gently left or right, even while sprinting. S turns you round to face behind you</dd></div>
       <div class="sw-row"><dt>Run</dt><dd>Hold Shift</dd></div>

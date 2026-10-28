@@ -4,7 +4,9 @@ import { createLand } from './land.js';
 import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
 import { buildCave } from './caves.js';
-import { createCreatures, KINDS } from './creatures.js';
+import { createCreatures, KINDS, monsterHit } from './creatures.js';
+import { createSkillFx } from './skillfx.js';
+import { codeFor, actionFor } from '../data/controls.mjs';
 import { buildDepths } from './depths.js';
 import { buildPortal } from './portal.js';
 import { buildPieces, pieceColliders, storeyY } from './buildings.js';
@@ -18,7 +20,7 @@ import { wearGear } from '../characters/gear.js';
 import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime } from '../data/clock.mjs';
-import { RACES } from '../data/game-data.mjs';
+import { RACES, restCap } from '../data/game-data.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS } from '../data/items.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
@@ -346,6 +348,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // ---------- monsters ----------
   let dead = false;
   let lastHurt = -99;
+  const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
     getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, moving: speedNow > 1 }),
     isNight: () => night,
@@ -354,7 +357,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     onHitPlayer(m) {
       if (!game || dead) return;
       const s = game.stats();
-      const dmg = Math.max(1, Math.round(m.atk * (0.85 + Math.random() * 0.3) - s.def * buffed('def') * 0.4));
+      const dmg = monsterHit(m.atk, m.level, s.def * buffed('def'));
       lastHurt = clock.elapsedTime;
       floatText(`-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
       if (game.damage(dmg)) defeated(m);
@@ -648,19 +651,28 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const c = game.character;
     if (c.sp < sk.sp) return 'sp';
     const reachNear = bodyR + Math.max(1.8, weaponReach(game.weapon()).reach) * Math.max(0.8, bodyH / 1.8);
+    const look = { p: pos.clone(), h: bodyH, heading };
     if (sk.type === 'strike' || sk.type === 'bolt') {
+      // with nobody in reach the skill still goes off, into the air in front of you
       const m = creatures.target(pos.x, pos.z, heading, sk.type === 'bolt' ? sk.reach : reachNear + 0.4);
-      if (!m) return 'none';
-      damageMonster(m, sk.mult, sk.magic || null);
+      if (m) {
+        look.to = { x: m.x, y: m.y, z: m.z, h: m.height };
+        damageMonster(m, sk.mult, sk.magic || null);
+      } else {
+        const d = sk.type === 'bolt' ? sk.reach : reachNear;
+        const x = pos.x + Math.sin(heading) * d, z = pos.z + Math.cos(heading) * d;
+        look.to = { x, y: sk.type === 'bolt' ? heightAt(x, z) : pos.y, z, h: bodyH };
+      }
     } else if (sk.type === 'sweep') {
       const near = creatures.list.filter((m) => !m.dead && Math.hypot(m.x - pos.x, m.z - pos.z) - m.radius < sk.radius);
-      if (!near.length) return 'none';
       for (const m of near) damageMonster(m, sk.mult, sk.magic || null);
     } else if (sk.type === 'dash') {
       // rush forward, stopping at the first foe in the way
+      look.path = [];
       for (let d = 0; d < sk.dist; d += 0.4) {
         pos.x += Math.sin(heading) * 0.4; pos.z += Math.cos(heading) * 0.4;
         colliders.push(pos, bodyR);
+        look.path.push(new THREE.Vector3(pos.x, heightAt(pos.x, pos.z) + bodyH * 0.5, pos.z));
         const m = creatures.target(pos.x, pos.z, heading, reachNear);
         if (m) { damageMonster(m, sk.mult); break; }
       }
@@ -674,6 +686,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     c.sp = Math.max(0, c.sp - sk.sp);
     game.touch('sp');
     if (sk.type !== 'heal' && sk.type !== 'buff') { attackT = 0; swingDone = true; } // swing for show
+    skillFx.play(sk, look);
     say(sk.name, 'exp');
     return 'ok';
   }
@@ -725,15 +738,28 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const down = (e) => {
     if (e.target.closest && e.target.closest('input, textarea')) return;
     keys.add(e.code);
-    if (e.code === 'KeyF') attack();
-    if (e.code === 'KeyZ') toggleSleep();
-    if (e.code === 'KeyT') placeTorch();
-    if (e.code === 'KeyP') pitchTent();
+    const act = actionFor(e.code);
+    if (act === 'attack') attack();
+    if (act === 'sleep') toggleSleep();
+    if (act === 'torch') placeTorch();
+    if (act === 'tent') pitchTent();
     onKey?.(e);
   };
   const up = (e) => keys.delete(e.code);
+  const held = (action) => keys.has(codeFor(action));
+  // Let go of every key and the touch stick. A key let go while the game wasn't listening (Esc,
+  // another window or tab, a chat box) never sends its keyup, and you'd keep walking.
+  const letGoKeys = () => {
+    keys.clear();
+    if (stick.id !== null || stick.x || stick.y) { stick.id = null; stick.x = 0; stick.y = 0; stickEl.classList.add('hidden'); }
+  };
+  const hidden = () => { if (document.hidden) letGoKeys(); };
+  const focusIn = (e) => { if (e.target.closest?.('input, textarea, select')) letGoKeys(); };
   window.addEventListener('keydown', down);
   window.addEventListener('keyup', up);
+  window.addEventListener('blur', letGoKeys);
+  document.addEventListener('visibilitychange', hidden);
+  document.addEventListener('focusin', focusIn);
 
   // Mouse: drag to turn the camera, click to attack. Touch: a stick appears where your left thumb
   // lands and moves you in any direction; dragging on the right turns the camera.
@@ -751,6 +777,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let noLock = false; // some pages can't capture the mouse: then you drag to look, as before
   document.addEventListener('pointerlockerror', () => { noLock = true; });
   document.addEventListener('pointerlockchange', () => {
+    if (!locked()) letGoKeys();
     if (!locked() && !letGo) onMouseFreed?.();
     letGo = false;
   });
@@ -823,6 +850,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let backWas = false, aboutFace = false, turnLeft = 0, backYaw = 0, backHeading = 0;
   let lastSave = 0;
   let regenAcc = 0;
+  // healing by rest stops at a cap: eat, drink or use a potion or skill for the rest
+  let toldCap = false;
+  function restHeal(n, asleep) {
+    const max = game.stats().hp, c = game.character;
+    const cap = Math.floor(max * restCap(c.level, asleep));
+    if (c.hp >= cap) {
+      if (!toldCap && c.hp < max) { toldCap = true; say(`Rest only heals you to ${Math.round(restCap(c.level, asleep) * 100)}%. Eat or drink to heal more.`, 'note'); }
+      return;
+    }
+    toldCap = false;
+    game.heal(Math.min(n, cap - c.hp));
+  }
   const B = WORLD_BOUNDS;
   let swimming = false;
   const tmpS = {};
@@ -867,10 +906,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // Movement relative to the camera, in any direction
     let fx = 0, fz = 0;
     if (!dead && !resting()) {
-      if (keys.has('KeyW') || keys.has('ArrowUp')) fz += 1;
-      if (keys.has('KeyS') || keys.has('ArrowDown')) fz -= 1;
-      if (keys.has('KeyA') || keys.has('ArrowLeft')) fx -= 1;
-      if (keys.has('KeyD') || keys.has('ArrowRight')) fx += 1;
+      if (held('forward') || keys.has('ArrowUp')) fz += 1;
+      if (held('back') || keys.has('ArrowDown')) fz -= 1;
+      if (held('left') || keys.has('ArrowLeft')) fx -= 1;
+      if (held('right') || keys.has('ArrowRight')) fx += 1;
       fx += stick.x; fz -= stick.y;
     }
     const backNow = fz < -0.4 && Math.abs(fx) < 0.6;
@@ -884,7 +923,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     else { backYaw = yaw; backHeading = heading; } // once round, carry on from wherever you face
     if (aboutFace) fz = -fz;
-    const running = keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(stick.x, stick.y) > 0.9;
+    const running = held('run') || (codeFor('run') === 'ShiftLeft' && keys.has('ShiftRight')) || Math.hypot(stick.x, stick.y) > 0.9;
     const amount = Math.min(1, Math.hypot(fx, fz));
     let target = 0;
     if (cameraMode === 'follow') {
@@ -942,7 +981,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const floatAt = water - bodyH * 0.7;
     swimming = ground < floatAt;
     if (swimming) ground = floatAt;
-    if (keys.has('Space') && !airborne && !swimming && !dead) { velY = 4.2; airborne = true; }
+    if (held('jump') && !airborne && !swimming && !dead) { velY = 4.2; airborne = true; }
     velY -= 9.81 * dt;
     pos.y += velY * dt;
     if (pos.y <= ground) { pos.y = ground; velY = 0; airborne = false; }
@@ -966,7 +1005,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (!swingDone && k > 0.45) { swingDone = true; resolveSwing(); }
       if (k >= 1) attackT = -1;
     }
-    if (keys.has('KeyF') && cooldown <= 0 && attackT < 0) attack();
+    if (held('attack') && cooldown <= 0 && attackT < 0) attack();
 
     // Fatigue: it builds while you're awake (faster when running) and falls while you sleep.
     // At 100 you collapse where you stand, and monsters may find you.
@@ -978,7 +1017,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         fatigueAcc = 0;
         if (sleeping) {
           c.fatigue = Math.max(0, c.fatigue - step * (inTent ? 3 : 1.6));
-          game.heal(game.stats().hp * 0.03 * step);
+          restHeal(game.stats().hp * 0.03 * step, true);
           if (c.fatigue <= 0) { sleeping = false; say('You wake up rested', 'exp'); }
         } else if (collapsed > 0) {
           collapsed -= step;
@@ -992,7 +1031,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         }
         game.touch('fatigue');
       }
-      if (sleeping && (keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') || Math.hypot(stick.x, stick.y) > 0.3)) { sleeping = false; say('You wake up', 'note'); }
+      if (sleeping && (held('forward') || held('back') || held('left') || held('right') || Math.hypot(stick.x, stick.y) > 0.3)) { sleeping = false; say('You wake up', 'note'); }
     }
 
     // Rest heals you when nothing has hit you for a while
@@ -1004,7 +1043,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const c = game.character;
         // SP always comes back slowly (faster at rest); HP only when nothing has hit you for a while
         if (c.sp < s.sp) { c.sp = Math.min(s.sp, c.sp + s.sp * (t - lastHurt > 6 ? 0.03 : 0.012)); game.touch('sp'); }
-        if (t - lastHurt > 6 && c.hp < s.hp) game.heal(s.hp * 0.015);
+        if (t - lastHurt > 6 && c.hp < s.hp) restHeal(s.hp * 0.015, false);
       }
     }
 
@@ -1016,6 +1055,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     land.animate(t);
     creatures.update(dt, t);
     tickEffects(dt);
+    skillFx.update(dt);
     if (depth) {
       tickNests(dt);
       depth.built.update(t);
@@ -1184,12 +1224,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       showStructures(list);
     },
     // let the mouse go (a window is opening)
-    releaseMouse() { if (locked()) { letGo = true; document.exitPointerLock(); } },
+    releaseMouse() { letGoKeys(); if (locked()) { letGo = true; document.exitPointerLock(); } },
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     stop() {
       saveNow();
       renderer.setAnimationLoop(null);
       creatures.clear();
+      skillFx.clear();
       land.dispose();
       sky.dispose();
       floatLayer.remove();
@@ -1197,6 +1238,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       stickEl.remove();
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', letGoKeys);
+      document.removeEventListener('visibilitychange', hidden);
+      document.removeEventListener('focusin', focusIn);
       window.removeEventListener('resize', resize);
       window.removeEventListener('pagehide', saveNow);
       renderer.dispose();

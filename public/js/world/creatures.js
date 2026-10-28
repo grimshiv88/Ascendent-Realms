@@ -86,6 +86,19 @@ function plate(name, level) {
   return { sprite, draw };
 }
 
+// How much a monster's blow takes off you. Defence takes off a share of the hit (never all of it),
+// measured against the monster's level, so armour stays useful at every level without making
+// strong monsters harmless.
+export function monsterHit(atk, level, def) {
+  const k = 50 + 5 * level;
+  return Math.max(1, Math.round(atk * (0.85 + Math.random() * 0.3) * k / (k + Math.max(0, def))));
+}
+// EXP for a kill: a small fraction of a level, more for higher levels and for evolved monsters
+// (a Hobgoblin is worth more than a goblin of the same level)
+export function monsterExp(level, stage = 0) {
+  return Math.round((1 + 0.5 * level ** 1.3) * (1 + 0.15 * (stage || 0)));
+}
+
 export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush }) {
   const list = [];
   const tmp = {};
@@ -110,10 +123,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const tag = plate(extra.title || kind.name, level);
     tag.sprite.position.set(x, y + h + 0.5, z);
     scene.add(body, tag.sprite);
-    // a normal monster has less HP than a player of its level and needs 5 or more hits to beat even an
-    // unarmoured player of its level; a boss has far more HP and hits twice as hard
+    // a normal monster has less HP than a player of its level and hits harder as it levels, but still
+    // needs 5 or more hits to beat even the frailest unarmoured player of its level (see monsterHit);
+    // a boss has far more HP and hits twice as hard
     const maxHp = Math.round((8 + level * 3.5) * (extra.boss ? 6 : 1));
-    const atk = Math.round((8 + level * 0.6) * (extra.boss ? 2 : 1));
+    const atk = Math.round((7 + level * 0.75) * (extra.boss ? 2 : 1));
     const m = {
       kind, kindId, level, body, tag, x, z, y, heading: Math.random() * 6.28, hp: maxHp, maxHp,
       atk, def: 1 + level, speed: kind.speed, radius: Math.max(0.4, h * 0.3), height: h,
@@ -307,8 +321,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     for (const [id, chance, min, max] of m.kind.drops) {
       if (Math.random() < chance) drops.push([id, min + Math.floor(Math.random() * (max - min + 1))]);
     }
-    // a goblin is a small fraction of a level; tougher monsters are worth far more
-    return { exp: Math.round(1 + 0.6 * m.level ** 1.35), coins: 2 + m.level * 2 + Math.floor(Math.random() * (m.level + 2)), drops, name: m.kind.name, kind: m.kindId };
+    return { exp: monsterExp(m.level, m.kind.body.stage), coins: 1 + m.level + Math.floor(Math.random() * (m.level / 2 + 2)), drops, name: m.kind.name, kind: m.kindId };
   }
 
   return {

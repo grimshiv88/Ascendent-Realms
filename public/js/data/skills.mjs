@@ -41,7 +41,7 @@ const BY_CLASS = {
 };
 const GENERAL = ['power_strike', 'second_wind', 'battle_cry', 'iron_skin', 'whirlwind', 'charge'];
 
-// Every 10th level is an upgrade: a little stronger, and a new skill to choose
+// Every 10th level is an upgrade: a little stronger, and a new skill, given at random
 export const UPGRADE_EVERY = 10;
 export const UPGRADE_STATS = 2; // added to every stat
 export const SKILL_BAR = 6;     // skills you can have ready at once; the rest are kept in storage
@@ -51,19 +51,15 @@ export const RESERVED_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowD
   'KeyF', 'KeyZ', 'KeyT', 'KeyC', 'KeyI', 'KeyB', 'KeyQ', 'KeyH', 'KeyM', 'KeyO', 'KeyL', 'KeyR', 'KeyK', 'KeyP', 'KeyG', 'KeyV', 'Escape', 'Tab', 'Enter'];
 export const keyLabel = (code) => (code || '').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ');
 
-// Three skills to choose from (the same three until you pick), favouring your class
-export function skillOffers(c) {
+// A new skill, given at random (players don't choose). Your class's skills turn up most often and
+// the general ones next; stronger skills (the ones that cost more SP) are rarer.
+export function randomSkill(c, rnd = Math.random) {
   const known = new Set(c.skills || []);
-  const pool = [...new Set([...BY_CLASS[c.cls] || [], ...GENERAL, ...Object.keys(SKILLS)])].filter((id) => !known.has(id));
-  let seed = (c.level * 7 + known.size * 131 + [...(c.name || '')].reduce((a, ch) => a + ch.charCodeAt(0), 0)) >>> 0;
-  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  const classFirst = pool.filter((id) => BY_CLASS[c.cls]?.includes(id));
-  const rest = pool.filter((id) => !classFirst.includes(id));
-  const out = [];
-  for (const list of [classFirst, classFirst, rest]) {
-    const left = list.filter((id) => !out.includes(id));
-    if (left.length) out.push(left[Math.floor(rnd() * left.length)]);
-  }
-  for (const id of pool) if (out.length < 3 && !out.includes(id)) out.push(id);
-  return out;
+  const pool = Object.keys(SKILLS).filter((id) => !known.has(id));
+  if (!pool.length) return null;
+  const weight = (id) => (BY_CLASS[c.cls]?.includes(id) ? 4 : GENERAL.includes(id) ? 2 : 1) * 10 / Math.max(8, SKILLS[id].sp);
+  let r = rnd() * pool.reduce((a, id) => a + weight(id), 0);
+  for (const id of pool) if ((r -= weight(id)) <= 0) return id;
+  return pool[pool.length - 1];
 }
+

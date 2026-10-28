@@ -153,6 +153,27 @@ function greatTreeGeo() {
   }
   return merge(parts);
 }
+// Plain stand-ins for trees further away: the same shape and colours with far fewer faces
+function lowGeos() {
+  const leaf = '#4a6a2c';
+  const pine = (snowy) => merge([
+    { geo: new THREE.CylinderGeometry(0.2, 0.42, 7, 5), color: BARK, at: [0, 3.5, 0] },
+    { geo: new THREE.ConeGeometry(3.4, 8, 6), color: snowy ? '#c8d0d4' : '#2f4a2a', at: [0, 7, 0] },
+    { geo: new THREE.ConeGeometry(2.2, 6, 6), color: snowy ? '#e6ebef' : '#38552c', at: [0, 12.5, 0] },
+  ]);
+  const blobs = (trunk, list, color) => merge([trunk, ...list.map(([x, y, z, r]) => ({ geo: new THREE.IcosahedronGeometry(r, 0), color, at: [x, y, z], scale: [1, 0.85, 1] }))]);
+  return {
+    pine: pine(false), snowpine: pine(true),
+    oak: blobs({ geo: new THREE.CylinderGeometry(0.35, 0.65, 6, 5), color: BARK, at: [0, 3, 0] }, [[0, 8, 0, 3.4], [1.9, 7, 0.6, 2.5], [-1.8, 7.2, -0.6, 2.5]], leaf),
+    swamp: blobs({ geo: new THREE.CylinderGeometry(0.45, 1.0, 6, 5), color: '#3e3a2a', at: [0, 3, 0] }, [[0, 7.4, 0, 4.4]], '#4a5a2a'),
+    glow: blobs({ geo: new THREE.CylinderGeometry(0.2, 0.4, 7, 5), color: '#d8d2c0', at: [0, 3.5, 0] }, [[0, 8.5, 0, 2.8], [1.4, 7.4, 0.5, 2]], '#7fd0b0'),
+    great: blobs({ geo: new THREE.CylinderGeometry(1.6, 3.2, 26, 7), color: '#4a3a2a', at: [0, 13, 0] }, [[0, 34, 0, 9], [7, 29, 2, 7], [-6.5, 30, -2, 7], [1, 30, 7, 6.5]], '#3e5e28'),
+    young: merge([{ geo: new THREE.CylinderGeometry(0.07, 0.12, 2, 4), color: BARK, at: [0, 1, 0] }, { geo: new THREE.ConeGeometry(1.1, 3, 5), color: '#456a32', at: [0, 2.6, 0] }]),
+    bush: merge([{ geo: new THREE.IcosahedronGeometry(0.75, 0), color: '#3e5e2a', at: [0, 0.5, 0], scale: [1.1, 0.8, 1.1] }]),
+    cactus: merge([{ geo: new THREE.CylinderGeometry(0.32, 0.38, 4.3, 5), color: '#5a7a3a', at: [0, 2.15, 0] }, { geo: new THREE.CylinderGeometry(0.2, 0.22, 1.6, 4), color: '#5a7a3a', at: [0.75, 2.6, 0] }]),
+  };
+}
+
 function rockGeo() {
   return merge([{ geo: roughen(new THREE.IcosahedronGeometry(1, 1), 0.22, 5), color: '#ffffff' }]);
 }
@@ -160,7 +181,7 @@ function grassGeo() {
   const parts = [];
   for (let i = 0; i < 7; i++) {
     const a = i * 0.9;
-    parts.push({ geo: new THREE.ConeGeometry(0.03, 0.45 + (i % 3) * 0.12, 3), color: (v, c) => c.set('#4a6a28').lerp(new THREE.Color('#9ab85a'), Math.min(1, v.y / 0.5)), at: [Math.cos(a) * 0.1, 0.22, Math.sin(a) * 0.1], rot: [Math.sin(a) * 0.3, 0, Math.cos(a) * 0.3] });
+    parts.push({ geo: new THREE.ConeGeometry(0.03, 0.45 + (i % 3) * 0.12, 3, 1, true), color: (v, c) => c.set('#4a6a28').lerp(new THREE.Color('#9ab85a'), Math.min(1, v.y / 0.5)), at: [Math.cos(a) * 0.1, 0.22, Math.sin(a) * 0.1], rot: [Math.sin(a) * 0.3, 0, Math.cos(a) * 0.3] });
   }
   return merge(parts);
 }
@@ -200,6 +221,7 @@ export function breakNeeds(kind) {
   return `Needs ${n.chop >= 4 ? 'a War Axe' : 'an axe'} and ${n.str} STR (or ${n.bare} STR without one)`;
 }
 const ROCK_TINT = { heart: '#86817a', peaks: '#4a4440', warrens: '#a87a52', fae: '#8a9a90', mire: '#5e5a4a', frost: '#9aa0a8', sun: '#c09a68' };
+const NEAR_TREES = 110; // metres: trees closer than this are drawn in full and cast shadows
 const SOLID = { pine: 0.45, snowpine: 0.45, oak: 0.7, dead: 0.3, swamp: 0.9, glow: 0.4, cactus: 0.4, young: 0.15, great: 3.2, bush: 0.4 };
 
 function rng(seed) {
@@ -234,6 +256,7 @@ export function scenery() {
     glow: glowTreeGeo(), cactus: cactusGeo(), reeds: reedsGeo(), rock: rockGeo(),
     young: youngTreeGeo(), bush: bushGeo(), great: greatTreeGeo(),
   };
+  const low = lowGeos();
   const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
   const mats = {
     glow: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, emissive: '#2fa080', emissiveIntensity: 0.35 }),
@@ -271,14 +294,18 @@ export function scenery() {
           if (s.h < s.water + 0.6 && kind !== 'reeds') break;
           if (kind === 'great' && s.forest < 0.5) break;
           if (BREAKABLE[kind] && isBroken(spotKey(kind, x, z))) break;
-          (spots[kind] ||= []).push({ x, z, y: s.h, region: s.region });
+          (spots[`${kind}|${(i >= per / 2 ? 1 : 0) + (j >= per / 2 ? 2 : 0)}`] ||= []).push({ x, z, y: s.h, region: s.region });
           break;
         }
       }
     }
     const group = new THREE.Group();
     const meshes = [];
-    for (const [kind, list] of Object.entries(spots)) {
+    const pairs = []; // [full detail, plain stand-in] for each kind
+    // each kind is drawn per quarter of the tile, so the full-detail trees reach only so far
+    for (const [spot, list] of Object.entries(spots)) {
+      const [kind, q] = spot.split('|');
+      const box = { x0: cx * size + (q & 1) * size / 2, z0: cz * size + (q >> 1) * size / 2, s: size / 2 };
       const mesh = new THREE.InstancedMesh(geos[kind], mats[kind] || plain, list.length);
       list.forEach((p, i) => {
         const sc = kind === 'rock' ? 0.3 + rand() * rand() * 3 : 0.7 + rand() * 0.6;
@@ -307,9 +334,30 @@ export function scenery() {
       mesh.computeBoundingSphere();
       group.add(mesh);
       meshes.push(mesh);
+      // the stand-in shares the trees' places and colours, so a broken tree is gone from both
+      const lo = low[kind] && new THREE.InstancedMesh(low[kind], mats[kind] || plain, list.length);
+      if (lo) {
+        lo.instanceMatrix = mesh.instanceMatrix;
+        lo.instanceColor = mesh.instanceColor;
+        lo.boundingSphere = mesh.boundingSphere;
+        lo.visible = false;
+        group.add(lo);
+        meshes.push(lo);
+      }
+      pairs.push([mesh, lo, box]);
     }
     return {
       group, solid,
+      // trees near (x, z) show every leaf and cast shadows; further ones show the stand-ins
+      view(x, z) {
+        for (const [hi, lo, b] of pairs) {
+          const dx = Math.max(b.x0 - x, 0, x - b.x0 - b.s), dz = Math.max(b.z0 - z, 0, z - b.z0 - b.s);
+          const near = dx * dx + dz * dz < NEAR_TREES * NEAR_TREES;
+          if (hi.castShadow === near && (!lo || lo.visible !== near)) continue;
+          hi.castShadow = near;
+          if (lo) { hi.visible = near; lo.visible = !near; }
+        }
+      },
       dispose() { for (const m of meshes) m.dispose(); },
     };
   }

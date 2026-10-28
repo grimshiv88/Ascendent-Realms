@@ -5,10 +5,24 @@ import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, merge
 import { fillBoard, progressOf } from './quests.js';
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
 import { portalById, portalFee } from './data/portals.mjs';
-import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, RESERVED_KEYS, skillOffers } from './data/skills.mjs';
+import { actionFor, FIXED_KEYS } from './data/controls.mjs';
+import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, randomSkill } from './data/skills.mjs';
 
 const BAG_SLOTS = 30;
 const uid = () => `g${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+
+// Hand out one waiting skill at random, ready on the first free key if the bar has room
+function giveSkill(c) {
+  const id = randomSkill(c);
+  c.skillPicks = Math.max(0, c.skillPicks - 1);
+  if (!id) return null;
+  c.skills.push(id);
+  if (c.skillBar.length < SKILL_BAR) {
+    const key = DEFAULT_KEYS.find((k) => !c.skillBar.some((b) => b.key === k)) || null;
+    c.skillBar.push({ id, key });
+  }
+  return id;
+}
 
 export function createProgress(c, { save, onChange, onEvent }) {
   c.inventory ||= [];
@@ -24,6 +38,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.skills = (c.skills || []).filter((id) => SKILLS[id]);
   c.skillBar = (c.skillBar || []).filter((b) => c.skills.includes(b?.id));
   c.skillPicks ??= Math.max(0, Math.floor(c.level / UPGRADE_EVERY) - c.skills.length);
+  // skills are given, not chosen: any still waiting are handed out now
+  while (c.skillPicks > 0 && giveSkill(c));
   // time away counts as rest: fatigue falls 2 points per real minute you were gone
   if (c.savedAt) c.fatigue = Math.max(0, c.fatigue - ((Date.now() - c.savedAt) / 60000) * 2);
   // Gear doesn't stack: each piece has its own id so it can be equipped and upgraded
@@ -318,14 +334,15 @@ export function createProgress(c, { save, onChange, onEvent }) {
         // and a purse of coins
         const key = KEY_LEVELS.includes(c.level);
         c.unspentPoints += key ? 10 : 3;
-        c.coins += (key ? 5 : 1) * (20 + c.level * 10);
+        c.coins += (key ? 5 : 1) * (10 + c.level * 5);
         c.uniquePoints += key ? 5 : 1;
         c.stats[CLASSES[c.cls].main] += 1;
-        // every 10th level: a new skill to choose, and (between evolutions) a little more of every stat
+        // every 10th level: a new skill at random, and (between evolutions) a little more of every stat
         if (c.level % UPGRADE_EVERY === 0) {
           c.skillPicks += 1;
+          const got = giveSkill(c);
           if (!key) for (const k of Object.keys(c.stats)) c.stats[k] += UPGRADE_STATS;
-          onEvent?.('upgrade', { level: c.level, evolution: key });
+          onEvent?.('upgrade', { level: c.level, evolution: key, skill: got });
         }
         c.hp = stats().hp;
         c.sp = stats().sp;
@@ -378,15 +395,6 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return ready;
     },
     // ---------- skills ----------
-    skillOffers: () => (c.skillPicks > 0 ? skillOffers(c) : []),
-    learnSkill(id) {
-      if (c.skillPicks <= 0 || !skillOffers(c).includes(id)) return false;
-      c.skills.push(id);
-      c.skillPicks -= 1;
-      if (c.skillBar.length < SKILL_BAR) this.readySkill(id);
-      changed('skills');
-      return true;
-    },
     // put a stored skill on the bar, on the first free key
     readySkill(id) {
       if (!c.skills.includes(id) || c.skillBar.some((b) => b.id === id) || c.skillBar.length >= SKILL_BAR) return false;
@@ -398,7 +406,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     storeSkill(id) { c.skillBar = c.skillBar.filter((b) => b.id !== id); changed('skills'); },
     // any key the game doesn't already use; a key taken by another skill moves to this one
     setSkillKey(id, code) {
-      if (RESERVED_KEYS.includes(code)) return 'reserved';
+      if (FIXED_KEYS.includes(code) || actionFor(code)) return 'reserved';
       const b = c.skillBar.find((x) => x.id === id);
       if (!b) return 'none';
       for (const o of c.skillBar) if (o.key === code) o.key = null;

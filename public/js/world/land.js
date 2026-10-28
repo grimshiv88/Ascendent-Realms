@@ -392,6 +392,7 @@ export function createLand(scene) {
   function setVeg(t, want, wantGrass) {
     if (want && !t.veg) {
       t.veg = veg.forTile(t.cx, t.cz, CHUNK, (k) => broken.has(k));
+      t.veg.view(lastX, lastZ);
       root.add(t.veg.group);
       colliders.add(t.veg.solid);
     } else if (!want && t.veg) {
@@ -412,7 +413,10 @@ export function createLand(scene) {
 
   // Bring the land around (x, z) up to date. `budgetMs` limits the work per frame;
   // pass Infinity to build everything at once (used while the loading clouds are up).
+  let lastX = 0, lastZ = 0;
   function update(x, z, budgetMs = 6) {
+    lastX = x; lastZ = z;
+    for (const t of tiles.values()) t.veg?.view(x, z);
     if (!farCentre || Math.hypot(x - farCentre.x, z - farCentre.z) > FAR_RECENTRE) placeFar(x, z);
     // snap the water to whole ripple repeats so the ripples don't jump when it moves
     water.position.set(Math.round(x / 1400) * 1400, SEA_LEVEL, Math.round(z / 1400) * 1400);

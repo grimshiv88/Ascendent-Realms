@@ -105,6 +105,10 @@ export function derivedStats(s, level = 1, t = {}) {
   return d;
 }
 
+// Resting (standing still, or sleeping) only heals you up to a share of your HP; past that you need
+// food, drink, potions or a healing skill. Low levels rely on food most; the cap rises with level.
+export const restCap = (level, sleeping = false) => Math.min(sleeping ? 0.9 : 0.7, 0.35 + (level || 1) * 0.0035 + (sleeping ? 0.2 : 0));
+
 export function startingStats(raceId, classId) {
   const base = RACES[raceId].stats;
   const bonus = CLASSES[classId].bonus;
@@ -126,11 +130,11 @@ const roundNice = (x) => {
   return Math.round(x / m) * m;
 };
 function normalExp(level) {
-  return level < 20 ? 20 + 8 * (level - 1) : roundNice(400 * (level / 20) ** 1.8);
+  return level < 20 ? 30 + 18 * (level - 1) : roundNice(600 * (level / 20) ** 1.8);
 }
 export function expToNext(level, raceId) {
   let need = normalExp(level);
-  if (KEY_LEVELS.includes(level + 1)) need = level < 20 ? 400 : roundNice(2.5 * need);
+  if (KEY_LEVELS.includes(level + 1)) need = level < 20 ? 600 : roundNice(2.5 * need);
   return Math.round(need * (RACES[raceId]?.expMult || 1));
 }
 
@@ -203,7 +207,7 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
       // Player races start at the Central Forest spawn; monster races at their homeland's waystone.
       location: startLocation(race.home),
       hp: null, // current HP; null means full
-      inventory: (STARTER_ITEMS[classId] || []).map(([id, n]) => ({ id, n })),
+      inventory: [...(STARTER_ITEMS[classId] || []), ['bread', 3], ['water_flask', 3]].map(([id, n]) => ({ id, n })),
       equipped: { weapon: null },
       createdAt: new Date().toISOString(),
     },

@@ -33,7 +33,11 @@ export const ITEMS = {
   // food and potions
   torch: { name: 'Torch', icon: '🔥', kind: 'material', price: 12, text: 'Stand it in the ground with T; press T beside it to pick it back up. In the dark caves, T lights it in your hand instead. Its light keeps monsters away at night, and lets you sleep (Z) beside it.' },
   tent: { name: 'Tent', icon: '⛺', kind: 'material', price: 60, text: 'Pitch it anywhere (P, or from your bag) and sleep inside it (Z) to clear your Fatigue. Monsters leave you alone near it. Pack it up again when you move on.' },
+  water_flask: { name: 'Water Flask', icon: '🫗', kind: 'food', heal: 12, price: 2, text: 'A drink of clean water. Restores 12 HP.' },
+  apple: { name: 'Apple', icon: '🍎', kind: 'food', heal: 18, price: 3, text: 'Crisp and sweet. Restores 18 HP.' },
   bread: { name: 'Bread', icon: '🍞', kind: 'food', heal: 25, price: 6, text: 'Restores 25 HP.' },
+  roast_meat: { name: 'Roast Meat', icon: '🍖', kind: 'food', heal: 70, price: 20, text: 'A hearty meal. Restores 70 HP.' },
+  stew: { name: 'Hunter\'s Stew', icon: '🍲', kind: 'food', heal: 180, price: 55, text: 'Thick and filling. Restores 180 HP.' },
   herb: { name: 'Healing Herb', icon: '🌿', kind: 'food', heal: 50, price: 15, text: 'Restores 50 HP.' },
   potion: { name: 'Health Potion', icon: '🧪', kind: 'food', heal: 150, price: 45, text: 'Restores 150 HP.' },
   big_potion: { name: 'Greater Health Potion', icon: '⚗️', kind: 'food', heal: 500, price: 160, text: 'Restores 500 HP.' },
@@ -166,7 +170,7 @@ export function mergeCost(it, plus = 0) {
 // What the shop sells, and the level at which each item unlocks
 export const SHOP = [
   // potions and food
-  ['bread', 1], ['herb', 1], ['torch', 1], ['tent', 1], ['sp_potion', 2], ['calm_draught', 2], ['poison_potion', 3], ['potion', 5], ['sp_booster', 5],
+  ['water_flask', 1], ['apple', 1], ['bread', 1], ['herb', 1], ['roast_meat', 4], ['stew', 12], ['torch', 1], ['tent', 1], ['sp_potion', 2], ['calm_draught', 2], ['poison_potion', 3], ['potion', 5], ['sp_booster', 5],
   ['swift_potion', 5], ['strength_potion', 6], ['stone_potion', 6], ['fire_oil', 8], ['frost_oil', 8], ['big_potion', 20],
   // weapons
   ['wooden_club', 1], ['rusty_sword', 1], ['hand_axe', 3], ['iron_dagger', 3], ['oak_staff', 3], ['iron_sword', 5],

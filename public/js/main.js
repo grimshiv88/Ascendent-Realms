@@ -24,6 +24,7 @@ import { fillIcons } from './characters/icons.js';
 import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
 import { SKILLS } from './data/skills.mjs';
 import { createSocial } from './social.js';
+import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS } from './data/controls.mjs';
 
 paintCloudBanks();
 
@@ -147,7 +148,11 @@ function startGame(character) {
       if (type === 'level') { world?.say(`Level ${data}!`, 'exp'); showArea(`Level ${data}! New Stat Points and a purse of coins.`); }
       if (type === 'bag-full') world?.say('Your bag is full', 'hurt');
       if (type === 'evolved') { world?.say('Your weapon evolved!', 'exp'); showArea(`Your weapon evolved into the ${data.name}!`); }
-      if (type === 'upgrade') showArea(data.evolution ? `Level ${data.level}! A new skill to choose (K).` : `Level ${data.level} upgrade! Every stat +2, and a new skill to choose (K).`);
+      if (type === 'upgrade') {
+        const sk = data.skill ? ` You learned ${SKILLS[data.skill].icon} ${SKILLS[data.skill].name}!` : '';
+        showArea(data.evolution ? `Level ${data.level}!${sk}` : `Level ${data.level} upgrade! Every stat +2.${sk}`);
+        if (data.skill) { world?.say(`New skill: ${SKILLS[data.skill].name}`, 'exp'); drawSkillBar(); }
+      }
     },
   });
 
@@ -165,7 +170,7 @@ function startGame(character) {
   function trySkill(id) {
     const sk = SKILLS[id];
     if (!sk || !world) return;
-    if (cooling(id) > 0) { world.say(`${sk.name}: not ready yet`, 'hurt'); return; }
+    if (cooling(id) > 0) { world.say(`${sk.name}: ready in ${(cooling(id) * sk.cd).toFixed(1)}s`, 'hurt'); return; }
     const r = world.useSkill(sk);
     if (r === 'sp') world.say(`Not enough SP (${sk.name} needs ${sk.sp})`, 'hurt');
     else if (r === 'none') world.say('Nothing in reach', 'hurt');
@@ -177,7 +182,7 @@ function startGame(character) {
     e.preventDefault(); e.stopPropagation();
     trySkill(b.dataset.skill);
   });
-  setInterval(() => updateSkillBar(skillBar, game, cooling), 200);
+  setInterval(() => updateSkillBar(skillBar, game, cooling), 100);
   // the Potion-Maker's brewing: finished potions go into the bag
   let hadHelper = false; // the first tick brings back a Potion-Maker still hired from last time
   setInterval(() => {
@@ -188,6 +193,19 @@ function startGame(character) {
   }, 1000);
   // choosing a key for a skill: the next key pressed is the one
   window.addEventListener('keydown', (e) => {
+    // choosing a key for an action in Settings → Controls
+    if (ui.bindingControl) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      const id = ui.bindingControl;
+      ui.bindingControl = null;
+      const name = CONTROLS.find((x) => x[0] === id)[1];
+      if (e.code === 'Escape') ui.controlMsg = '';
+      else if (FIXED_KEYS.includes(e.code)) ui.controlMsg = `${e.key} can't be used. Pick another key.`;
+      else if (character.skillBar.some((b) => b.key === e.code)) ui.controlMsg = `${e.key.toUpperCase()} is on one of your skills. Change that skill's key first (Skills window).`;
+      else { setKey(id, e.code); ui.controlMsg = `${name} is now on ${e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key}.`; }
+      drawPanel();
+      return;
+    }
     if (!ui.binding) return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (e.code !== 'Escape') {
@@ -298,7 +316,7 @@ function startGame(character) {
         else if (info.owned && !info.owned.mine) ui.landMsg = `Owned by ${info.owned.owner}.`;
         updateMapBasket();
       } : null);
-    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '');
+    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '' });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'options') renderOptions(overlay);
     else if (name === 'portal' && world?.atPortal) {
@@ -512,7 +530,6 @@ function startGame(character) {
       btn.textContent = on ? 'Hide' : 'Show';
       return;
     }
-    if ((v = t('data-learn')) != null) { if (game.learnSkill(v)) ui.skillMsg = `You learned ${SKILLS[v].name}!`; drawPanel(); return; }
     if ((v = t('data-ready')) != null) { game.readySkill(v); ui.skillMsg = ''; drawPanel(); return; }
     if ((v = t('data-store')) != null) { game.storeSkill(v); ui.skillMsg = `${SKILLS[v].name} stored.`; drawPanel(); return; }
     if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }
@@ -533,6 +550,8 @@ function startGame(character) {
       return;
     }
     if (t('data-tent') != null) { closePanel(); world?.pitchTent(); return; }
+    if ((v = t('data-control')) != null) { ui.bindingControl = v; ui.controlMsg = ''; drawPanel(); return; }
+    if (e.target.closest('[data-controls-reset]')) { resetKeys(); ui.controlMsg = 'Every key is back to how it started.'; drawPanel(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if ((v = t('data-privacy')) != null) {
@@ -623,20 +642,14 @@ function startGame(character) {
       if (type === 'defeated') showArea(`Defeated by a ${data.by}. You wake up ${data.shrine ? 'at your Spawn Shrine' : 'back home'}.`);
     },
     onKey(e) {
-      if (e.code === 'KeyC') openPanel('status');
-      if (e.code === 'KeyI') openPanel('bag');
-      if (e.code === 'KeyB') openPanel('shop');
-      if (e.code === 'KeyQ') openPanel('quests');
-      if (e.code === 'KeyH') openPanel('help');
-      if (e.code === 'KeyM') openPanel('map');
-      if (e.code === 'KeyO') openPanel('settings');
-      if (e.code === 'KeyR') openPanel('rankings');
-      if (e.code === 'KeyK') openPanel('skills');
-      if (e.code === 'KeyV' && !ui.builder) openBuilder();
-      if (e.code === 'KeyG') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
+      const act = actionFor(e.code);
+      const open = { status: 'status', bag: 'bag', shop: 'shop', quests: 'quests', help: 'help', map: 'map', settings: 'settings', rankings: 'rankings', skills: 'skills' }[act];
+      if (open) openPanel(open);
+      if (act === 'builder' && !ui.builder) openBuilder();
+      if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); }
-      if (e.code === 'KeyL') toggleLand();
-      if (e.code === 'Enter') { e.preventDefault(); social?.focusChat(); }
+      if (act === 'land') toggleLand();
+      if (act === 'chat') { e.preventDefault(); social?.focusChat(); }
       // Esc opens the options; Esc again (or on any window) closes it
       if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }
     },

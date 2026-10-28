@@ -635,6 +635,7 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .sk-btn { position: relative; width: 56px; height: 56px; border-radius: 10px; border: 2px solid var(--gold-2); background: radial-gradient(circle at 40% 35%, #2a2414, #0d0905); color: #fff3cf; font-size: 1.6rem; cursor: pointer; overflow: hidden; touch-action: none; padding: 0; }
 .sk-btn kbd { position: absolute; right: 3px; bottom: 2px; font: 700 0.7rem 'Oswald', sans-serif; color: #f2b51e; text-shadow: 0 0 3px #000; }
 .sk-btn .sk-cool { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0, 0, 0, 0.65); pointer-events: none; }
+.sk-btn .sk-time { position: absolute; inset: 0; display: grid; place-items: center; font: 700 1.05rem 'Oswald', sans-serif; color: #fff; text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: none; }
 .sk-btn.no-sp { filter: grayscale(0.8) brightness(0.7); }
 @media (pointer: coarse) {
   #skill-bar { left: auto; right: 18px; bottom: 128px; transform: none; display: grid; grid-template-columns: repeat(2, 56px); direction: rtl; }
@@ -761,3 +762,9 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
   .so-chat { width: calc(100vw - 130px); }
   .so-log { height: 90px; }
 }
+
+/* Settings → Controls */
+.ctl-group { margin: 10px 0 4px; font: 600 0.8rem 'Oswald', sans-serif; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold-2); }
+.ctl-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 4px 14px; }
+.ctl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.ctl-row .sk-key { min-width: 76px; }
