@@ -22,9 +22,11 @@ const loaded = {};
 export function loadSculpts(base = 'models/') {
   return Promise.all(Object.keys(JOINTS).map(async (race) => {
     try {
-      const res = await fetch(`${base}${race}.bin`);
-      if (!res.ok) return;
-      loaded[race] = parse(await res.arrayBuffer());
+      let res = await fetch(`${base}${race}.bin`);
+      if (res.ok) { try { loaded[race] = parse(await res.arrayBuffer()); return; } catch { /* not a sculpt file */ } }
+      // the preview can only host text, so it carries the same file as base64
+      res = await fetch(`${base}${race}.b64.txt`);
+      if (res.ok) loaded[race] = parse(Uint8Array.from(atob((await res.text()).trim()), (c) => c.charCodeAt(0)).buffer);
     } catch { /* stay with the built-up body */ }
   }));
 }
