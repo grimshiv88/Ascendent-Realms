@@ -4,6 +4,7 @@
 // body clearly bigger and adds new parts. `growth` 0–1 is the small growth between evolutions.
 import * as THREE from 'three';
 import { APPEARANCE } from '../data/game-data.mjs';
+import { hasSculpt, sculptedRig } from './sculpt.js';
 import {
   sculptedHumanoid, goblinHead, pointedEars, hair, raggedSkirt, flap, belt, wraps, chestStrap,
   furMantle, toothNecklace, warPaint, spikedCrown,
@@ -309,7 +310,7 @@ function cape(rig, H, mats, color) {
   geo.computeVertexNormals();
   const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide, roughness: 0.8 }));
   // hang from the top of the back, behind the chest
-  m.position.set(0, H * 0.29 * 0.95 - H * 0.55 / 2, -H * 0.1);
+  m.position.set(0, H * 0.29 * 0.95 - H * 0.55 / 2, -(rig.backZ ?? H * 0.1));
   m.castShadow = true;
   rig.spine.add(m);
   return m;
@@ -317,8 +318,9 @@ function cape(rig, H, mats, color) {
 
 function shoulderPads(rig, H, mats) {
   for (const a of rig.arms) {
-    const pad = ellipsoid(H * 0.075, H * 0.045, H * 0.07, mats.metal);
-    pad.position.y = H * 0.02;
+    const k = rig.padScale || 1;
+    const pad = ellipsoid(H * 0.075 * k, H * 0.045 * k, H * 0.07 * k, mats.metal);
+    pad.position.set(a.side * H * 0.012 * (k - 1), H * 0.02 * k, 0);
     a.shoulder.parent.add(pad);
   }
 }
@@ -704,6 +706,20 @@ function scaleFor(race, form, stage, growth, sculpted) {
   return 1 + stage * 0.2 + growth * 0.06;
 }
 
+// The sculpted Dwarf's clothes get richer with each evolution
+const DWARF_CLOTHES = [
+  { tunic: '#3d5a44', sleeves: '#cdb98f', trousers: '#4a3a2a', belt: '#3a2818', metal: '#a8a08a' },
+  { tunic: '#2f4a6a', sleeves: '#d6c7a0', trousers: '#3e3428', belt: '#3a2818', metal: '#b8b0a0' },
+  { tunic: '#6a2222', sleeves: '#e0d4b0', trousers: '#3a2e24', belt: '#2e1e12', metal: '#c9a24a' },
+  { tunic: '#1e1e24', sleeves: '#7a2a2a', trousers: '#2a2420', belt: '#1a120c', metal: '#d9b44a' },
+  { tunic: '#4a2a6a', sleeves: '#e8dcc0', trousers: '#2a2230', belt: '#2a1a10', metal: '#e0c050' },
+  { tunic: '#e8e0cc', sleeves: '#c9a24a', trousers: '#3a3430', belt: '#5a3a1e', metal: '#ffd76a' },
+];
+function dwarfColors(m, stage) {
+  const c = DWARF_CLOTHES[Math.min(5, stage)];
+  return { skin: `#${m.skin.color.getHexString()}`, hair: `#${m.accent.color.getHexString()}`, boots: '#2a2018', leather: '#5a3a1e', eyes: '#111111', ...c };
+}
+
 const BUILDERS = {
   elf(m, stage) {
     const rig = humanoid({ height: 1.95, bulk: 0.88, legFrac: 0.5, headScale: 0.95, armFrac: 0.37 }, m);
@@ -711,7 +727,8 @@ const BUILDERS = {
     barkMarkings(rig, m, 1.95);
     return rig;
   },
-  dwarf(m) {
+  dwarf(m, stage) {
+    if (hasSculpt('dwarf')) return sculptedRig('dwarf', 1.35, dwarfColors(m, stage), m, stage);
     const rig = humanoid({ height: 1.35, bulk: 1.45, muscle: 0.55, legFrac: 0.38, headScale: 1.25, armFrac: 0.38, chestBroad: 1.15 }, m);
     headFeatures(rig, m, { ears: 'round', beard: true, brow: true, nose: 0.4, eyes: { size: 0.13, spacing: 0.38, height: 0.05 } });
     return rig;
@@ -959,7 +976,7 @@ export function buildCharacter({ race, form = 'monster', stage = 0, growth = 0, 
   rig.form = form;
   if (!rig.root.userData.height) rig.root.userData.height = bodyHeight(race, form);
   const baseHeight = rig.root.userData.height;
-  if (rig.arms && (PLAYER_RACES.includes(race) || rig.dressed)) dress(rig, race);
+  if (rig.arms && !rig.sculpt && (PLAYER_RACES.includes(race) || rig.dressed)) dress(rig, race);
   applyEvolution(rig, race, form, stage, mats);
   const size = scaleFor(race, form, stage, growth, !!rig.sculpted) * (look.size || 1);
   const wrapper = new THREE.Group();
@@ -986,7 +1003,7 @@ export function animateCharacter(character, t, speed = 0) {
     for (const arm of rig.arms) {
       const ph = arm.side > 0 ? Math.PI : 0;
       arm.shoulder.rotation.x = Math.sin(cycle + ph) * swing * 0.8;
-      arm.shoulder.rotation.z = arm.side * (0.12 + Math.sin(t * 1.5) * 0.02);
+      arm.shoulder.rotation.z = arm.side * (0.12 - (rig.armRest || 0) + Math.sin(t * 1.5) * 0.02);
     }
     rig.hips.position.y += 0; // keep height
     if (rig.spine) rig.spine.rotation.y = Math.sin(cycle) * swing * 0.1;

@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { RACES, EVOLUTIONS, EVOLUTION_LEVELS, ADVANCEMENTS } from './data/game-data.mjs';
 import { makeStage } from './characters/stage.js';
+import { loadSculpts } from './characters/sculpt.js';
+
+await loadSculpts();
 
 const canvas = document.getElementById('c');
 const { renderer, scene, camera, resize } = makeStage(canvas);
@@ -97,6 +100,6 @@ rebuild();
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const t = clock.getElapsedTime();
-  lineup.children.forEach((c) => animateCharacter(c, t, 0));
+  lineup.children.forEach((c) => animateCharacter(c, t, Number(params.get('speed')) || 0));
   renderer.render(scene, camera);
 });

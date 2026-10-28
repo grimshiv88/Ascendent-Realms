@@ -13,6 +13,9 @@ import { renderLand, renderCave } from './landui.js';
 import { caveById } from './data/depths.mjs';
 import { portalFee, portalKm } from './data/portals.mjs';
 import { openBuilder as openBuilderView } from './builder.js';
+import { loadSculpts } from './characters/sculpt.js';
+
+const sculptsReady = loadSculpts();
 import { PLOT } from './data/land.mjs';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
@@ -90,6 +93,7 @@ async function cloudTransition(loadNext) {
 // After signing in: character creation for a new account, otherwise straight into the world.
 function enterRealm({ account }) {
   return cloudTransition(async () => {
+    await sculptsReady; // the sculpted bodies, so characters are built from them
     intro.stop();
     $('scene').classList.add('hidden');
     $('ui').classList.add('hidden');
