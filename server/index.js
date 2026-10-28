@@ -8,6 +8,7 @@ const kings = require('./kings');
 const admin = require('./admin');
 const social = require('./social');
 const rooms = require('./rooms');
+const groups = require('./groups');
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -74,6 +75,11 @@ app.get('/api/kings', requireAccount, (req, res) => res.json(kings.list()));
 app.post('/api/kings/slain', requireAccount, (req, res) => {
   const result = kings.slain(req.account.id, req.body || {});
   res.status(result.error ? 400 : 200).json(result);
+});
+app.get('/api/groups', requireAccount, (req, res) => res.json(groups.list(req.account.id)));
+app.post('/api/groups', requireAccount, (req, res) => {
+  const r = groups.act(req.account.id, req.body || {});
+  res.status(r.error ? 400 : 200).json(r);
 });
 app.get('/api/rooms', requireAccount, (req, res) => res.json(rooms.list(req.account.id)));
 app.post('/api/rooms/rent', requireAccount, (req, res) => {

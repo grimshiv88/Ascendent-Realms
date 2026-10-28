@@ -25,10 +25,11 @@ import { fillIcons } from './characters/icons.js';
 import { SPELLS } from './data/spells.mjs';
 import { renderIdCard } from './idcard.js';
 import { renderRooms } from './roomsui.js';
+import { renderGroups } from './groupsui.js';
 import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
 import { SKILLS } from './data/skills.mjs';
 import { createSocial } from './social.js';
-import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS } from './data/controls.mjs';
+import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } from './data/controls.mjs';
 
 paintCloudBanks();
 
@@ -174,6 +175,19 @@ function startGame(character) {
     world?.setRooms(allowed);
     if (overlay.dataset.panel === 'rooms' && !overlay.classList.contains('hidden')) drawPanel();
   }
+  // parties and guilds: invites show up as a note on screen
+  let seenInvites = null;
+  function takeGroups(v) {
+    ui.groups = v;
+    const ids = new Set(v.invites.map((i) => i.id));
+    if (!seenInvites && v.invites.length) showArea(`You have ${v.invites.length === 1 ? 'an invite' : `${v.invites.length} invites`} waiting. Press ${keyName(codeFor('groups'))} to answer.`);
+    if (seenInvites) for (const i of v.invites) if (!seenInvites.has(i.id)) showArea(`${i.from} invites you to ${i.kind === 'party' ? 'their party' : `the guild ${i.label}`}. Press ${keyName(codeFor('groups'))} to answer.`);
+    seenInvites = ids;
+    if (overlay.dataset.panel === 'groups' && !overlay.classList.contains('hidden') && !ui.groupBusy) drawPanel();
+  }
+  function loadGroups() { api.groupsList().then(takeGroups).catch(() => {}); }
+  loadGroups();
+  setInterval(loadGroups, 20000);
   function loadRooms() { api.roomsList().then((r) => takeRentals(r.rentals)).catch(() => {}); }
   // while you're in the Guild Hall, keep up with who has which room (and when time runs out)
   setInterval(() => { if (world?.indoors?.kind === 'guild') loadRooms(); }, 15000);
@@ -324,6 +338,7 @@ function startGame(character) {
     else if (name === 'bag') { renderBag(overlay, game, ui.selected); preview.mount(overlay.querySelector('[data-preview]')); }
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
     else if (name === 'market' && ui.market) renderShop(overlay, game, ui.shopMsg, ui.market);
+    else if (name === 'groups') renderGroups(overlay, game, ui.groups, { message: ui.groupMsg, busy: ui.groupBusy });
     else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy });
     else if (name === 'gate') renderIdCard(overlay, game, { monster: ui.gate?.monster, courts: ui.courts || [] });
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
@@ -363,6 +378,7 @@ function startGame(character) {
     world?.releaseMouse();
     overlay.dataset.panel = name;
     ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.skillMsg = ''; ui.binding = null;
+    if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
     if (name === 'rankings') {
       ui.top = null;
       game.saveNow();
@@ -567,6 +583,28 @@ function startGame(character) {
       btn.textContent = on ? 'Hide' : 'Show';
       return;
     }
+    if (t('data-open-groups') != null) { ui.groupMsg = ''; loadGroups(); openPanel('groups'); return; }
+    if ((v = t('data-group')) != null) {
+      const btn = e.target.closest('[data-group]');
+      const kind = btn.dataset.kind;
+      const body = { action: v, kind, name: btn.dataset.name, id: Number(btn.dataset.id), accept: btn.dataset.accept === '1' };
+      if (v === 'invite') body.name = overlay.querySelector(`[data-group-name="${kind}"]`)?.value.trim();
+      if (v === 'found') body.name = overlay.querySelector('[data-guild-name]')?.value.trim();
+      if ((v === 'disband' || (v === 'leave' && kind === 'guild')) && !confirm(v === 'disband' ? `Really ${kind === 'party' ? 'break up the party' : 'disband the guild'}?` : 'Really leave the guild?')) return;
+      ui.groupBusy = true; drawPanel();
+      (async () => {
+        try {
+          if (v === 'found') await game.saveNow(); // so the server sees your latest coins
+          const r = await api.groupsAct(body);
+          if (r.coins !== undefined) game.setCoins(r.coins);
+          ui.groups = r;
+          ui.groupMsg = { invite: `Invite sent to ${body.name}.`, respond: body.accept ? 'Welcome aboard! Its chat is a new tab in the chat.' : 'Invite turned down.', leave: `You left the ${kind}.`, remove: `${body.name} was removed.`, lead: `${body.name} now leads.`, disband: kind === 'party' ? 'The party broke up.' : 'The guild is disbanded.', found: `You founded ${body.name}! You are its Guild Master.` }[v] || '';
+          social?.refresh();
+        } catch (err) { ui.groupMsg = err.message; }
+        ui.groupBusy = false; drawPanel();
+      })();
+      return;
+    }
     if (t('data-open-rooms') != null) { ui.roomMsg = ''; loadRooms(); openPanel('rooms'); return; }
     if ((v = t('data-room-pick')) != null) { ui.roomPick = v; ui.roomMsg = ''; drawPanel(); return; }
     if ((v = t('data-room-chat')) != null) { closePanel(); social?.openRoom(v); return; }
@@ -726,7 +764,7 @@ function startGame(character) {
     },
     onKey(e) {
       const act = actionFor(e.code);
-      const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', rankings: 'rankings', skills: 'skills' }[act];
+      const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', rankings: 'rankings', skills: 'skills', groups: 'groups' }[act];
       if (open) openPanel(open);
       if (act === 'builder' && !ui.builder) openBuilder();
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }

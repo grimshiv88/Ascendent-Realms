@@ -457,6 +457,8 @@ const previewSocial = {
       const rentals = new Map((d.rentals || []).map((r) => [r.id, r]));
       for (const r of remote.rentals || []) if (!rentals.has(r.id) || (r.t || 0) > (rentals.get(r.id).t || 0)) rentals.set(r.id, r);
       d.rentals = [...rentals.values()].filter((r) => r.until > Date.now() - 86400000);
+      // parties and guilds: the newest copy wins
+      if (remote.groups && (remote.groups.t || 0) > (d.groups?.t || 0)) d.groups = remote.groups;
       storage.set('ar.preview.social', JSON.stringify(d));
     } catch { /* stay with what this browser has */ }
   },
@@ -511,13 +513,12 @@ export async function socialPoll(after = 0) {
   if (await isPreviewMode()) {
     await previewSocial.sync();
     const me = previewMe(), d = previewSocial.load(), my = me.username.toLowerCase();
-    const R = await import('./data/interiors.mjs');
-    const myRooms = new Map((d.rentals || []).filter((r) => r.until > Date.now() && R.mayEnter(r, me.username)).map((r) => [r.id, `${R.roomById(r.room)?.name || 'Room'} (private)`]));
-    const mine = d.messages.filter((m) => (m.channel === 'room' ? myRooms.has(m.room) : m.channel === 'general' || m.to === my || m.from.toLowerCase() === my));
+    const extra = new Map((await previewChannels(d, me.username)).map((x) => [x.channel, x.label]));
+    const mine = d.messages.filter((m) => (m.channel === 'x' ? extra.has(m.key) : m.channel === 'general' || m.to === my || m.from.toLowerCase() === my));
     const list = after ? mine.filter((m) => m.n > after) : mine.slice(-40);
     return {
-      messages: list.map((m) => ({ id: m.n, channel: m.channel === 'room' ? myRooms.get(m.room) : m.channel === 'general' ? 'general' : (m.from.toLowerCase() === my ? previewSocial.find(m.to)?.username : m.from), from: m.from, mine: m.from.toLowerCase() === my, text: m.text, at: m.at })),
-      rooms: [...myRooms.values()],
+      messages: list.map((m) => ({ id: m.n, channel: m.channel === 'x' ? extra.get(m.key) : m.channel === 'general' ? 'general' : (m.from.toLowerCase() === my ? previewSocial.find(m.to)?.username : m.from), from: m.from, mine: m.from.toLowerCase() === my, text: m.text, at: m.at })),
+      rooms: [...extra.values()],
       ...previewSocial.lists(d, me.username),
     };
   }
@@ -566,16 +567,61 @@ export async function chatSend(text, to = null, after = 0) {
     const me = previewMe(), d = previewSocial.load();
     const clean = S.cleanText(text);
     if (!clean) throw new Error('Write something first.');
-    const R = await import('./data/interiors.mjs');
-    const room = to && (d.rentals || []).find((r) => r.until > Date.now() && R.mayEnter(r, me.username) && `${R.roomById(r.room)?.name || 'Room'} (private)` === to);
+    const room = to && (await previewChannels(d, me.username)).find((x) => x.label === to);
     if (to && !room && previewSocial.relation(d, me.username, to) !== 'friend') throw new Error('You can only send private messages to friends.');
     const n = (d.messages.at(-1)?.n || 0) + 1;
-    d.messages.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n, channel: room ? 'room' : to ? 'dm' : 'general', room: room ? room.id : undefined, to: to && !room ? to.toLowerCase() : null, from: me.username, text: clean, at: Date.now() });
+    d.messages.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n, channel: room ? 'x' : to ? 'dm' : 'general', key: room ? room.channel : undefined, to: to && !room ? to.toLowerCase() : null, from: me.username, text: clean, at: Date.now() });
     previewSocial.save(d);
     return { ok: true, ...(await socialPoll(after)) };
   }
   return request('api/chat', { method: 'POST', body: { text, to, after } });
 }
+// the private chats besides friends: meeting rooms you may be in, your party and your guild
+async function previewChannels(d, name) {
+  const [R, G] = await Promise.all([import('./data/interiors.mjs'), import('./data/groups.mjs')]);
+  const rooms = (d.rentals || []).filter((r) => r.until > Date.now() && R.mayEnter(r, name)).map((r) => ({ channel: `room:${r.id}`, label: `${R.roomById(r.room)?.name || 'Room'} (private)` }));
+  return [...rooms, ...G.groupChannels(d.groups || G.emptyGroups(), name)];
+}
+
+// ---------- parties and guilds ----------
+async function previewGroupsView(d, name) {
+  const G = await import('./data/groups.mjs');
+  const info = (n) => { const c = previewSocial.find(n)?.character; return c ? { level: c.level, cls: c.cls } : null; };
+  return G.view(d.groups || G.emptyGroups(), name, info);
+}
+export async function groupsList() {
+  if (await isPreviewMode()) {
+    await previewSocial.sync();
+    return previewGroupsView(previewSocial.load(), previewMe().username);
+  }
+  return request('api/groups');
+}
+// body: { action, kind, name, id, accept } (see data/groups.mjs)
+export async function groupsAct(body) {
+  if (await isPreviewMode()) {
+    const G = await import('./data/groups.mjs');
+    const me = previewMe(), d = previewSocial.load();
+    d.groups ||= G.emptyGroups();
+    const kind = body.kind === 'guild' ? 'guild' : 'party';
+    let r, coins;
+    if (body.action === 'invite') r = G.invite(d.groups, me.username, kind, previewSocial.find(body.name)?.username || null);
+    else if (body.action === 'respond') r = G.respond(d.groups, me.username, body.id, body.accept === true);
+    else if (body.action === 'leave') r = G.leave(d.groups, me.username, kind);
+    else if (['remove', 'lead', 'disband'].includes(body.action)) r = G.manage(d.groups, me.username, kind, body.action, body.name);
+    else if (body.action === 'found') {
+      const c = me.character;
+      if (!c || c.coins < G.GUILD_FEE) throw new Error(`Founding a guild costs ${G.GUILD_FEE} coins.`);
+      r = G.found(d.groups, me.username, body.name, c.level || 1);
+      if (r.ok) coins = updatePreviewAccount((acc) => { acc.character.coins -= G.GUILD_FEE; return acc.character.coins; });
+    } else r = { error: 'Do what?' };
+    if (r.error) throw new Error(r.error);
+    d.groups.t = Date.now();
+    previewSocial.save(d);
+    return { ok: true, ...(coins !== undefined ? { coins } : {}), ...(await previewGroupsView(d, me.username)) };
+  }
+  return request('api/groups', { method: 'POST', body });
+}
+
 // ---------- meeting rooms in the Main Guild Hall ----------
 function roomView(rentals, name) {
   return import('./data/interiors.mjs').then((R) => ({

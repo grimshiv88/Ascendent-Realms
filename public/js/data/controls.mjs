@@ -26,6 +26,7 @@ export const CONTROLS = [
   ['smith', 'Blacksmith', 'KeyN', 'Windows'],
   ['quests', 'Quests', 'KeyQ', 'Windows'],
   ['skills', 'Skills', 'KeyK', 'Windows'],
+  ['groups', 'Party and guild', 'KeyY', 'Windows'],
   ['map', 'World map', 'KeyM', 'Windows'],
   ['rankings', 'Top players', 'KeyR', 'Windows'],
   ['settings', 'Settings', 'KeyO', 'Windows'],

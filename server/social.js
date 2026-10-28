@@ -5,6 +5,9 @@ const db = require('./db');
 const characters = require('./characters');
 const S = require('../public/js/data/social.mjs');
 const rooms = require('./rooms');
+const groups = require('./groups');
+// the private chats you're in besides friends: meeting rooms, your party and your guild
+const extraChannels = (me) => [...rooms.channels(me), ...groups.channels(me)];
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS friends (
@@ -114,7 +117,7 @@ function poll(me, after) {
   lastSeen.set(me, Date.now());
   after = Math.max(0, Number(after) || 0);
   // the rooms you're in have their own private chats
-  const rc = rooms.channels(me);
+  const rc = extraChannels(me);
   const roomLabel = new Map(rc.map((r) => [r.channel, r.label]));
   const inRooms = rc.length ? ` OR channel IN (${rc.map(() => '?').join(',')})` : '';
   const args = [`dm:${me}:%`, `dm:%:${me}`, ...rc.map((r) => r.channel)];
@@ -140,7 +143,7 @@ function send(me, body) {
   const now = Date.now();
   if (now - (lastSent.get(me) || 0) < S.SEND_GAP_MS) return { error: 'Slow down a little.' };
   let channel = 'general';
-  const room = body.to && rooms.channels(me).find((r) => r.label === body.to);
+  const room = body.to && extraChannels(me).find((r) => r.label === body.to);
   if (room) channel = room.channel;
   else if (body.to) {
     const row = byName(body.to);

@@ -94,7 +94,7 @@ export function createSocial(host, { onError } = {}) {
     const list = tabs.get(active) || [];
     log.innerHTML = list.length
       ? list.map((m) => `<p class="${m.mine ? 'me' : ''}"><time>${time(m.at)}</time> <b data-player="${esc(m.from)}">${esc(m.from)}</b> ${esc(cleanText(m.text))}</p>`).join('')
-      : `<p class="so-empty">${active === 'general' ? 'Say hello to everyone in the realm.' : roomTabs.has(active) ? 'Only the people let into this room can read this chat.' : `Your private chat with ${esc(active)}.`}</p>`;
+      : `<p class="so-empty">${active === 'general' ? 'Say hello to everyone in the realm.' : roomTabs.has(active) ? 'Only the people in it can read this chat.' : `Your private chat with ${esc(active)}.`}</p>`;
     log.scrollTop = log.scrollHeight;
     input.placeholder = active === 'general' ? 'Press Enter to chat…' : `Message ${active}…`;
   }

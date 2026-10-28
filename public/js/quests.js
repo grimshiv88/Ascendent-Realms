@@ -189,7 +189,8 @@ export function renderGuild(el, game, message = '') {
       <h3 class="sys-sub">Meeting rooms</h3>
       <p class="sys-hint">Upstairs are rooms for parties and guild masters, rented by the hour, with their own private chat.</p>
       <button type="button" class="gold-button small" data-open-rooms>See the meeting rooms</button>
-      <h3 class="sys-sub">Parties</h3>
-      <p class="sys-hint">Players will be able to invite you to their parties here. Parties are coming in a later update.</p>
+      <h3 class="sys-sub">Parties and guilds</h3>
+      <p class="sys-hint">Start a party, answer invites, or found a guild of your own here.</p>
+      <button type="button" class="gold-button small" data-open-groups>Party and guild</button>
     </div>`;
 }
