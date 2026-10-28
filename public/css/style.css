@@ -690,7 +690,10 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .bv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 8px; margin-bottom: 6px; }
 .bv-level b { display: inline-block; min-width: 1.4em; text-align: center; color: #ffe08a; }
 .bv-plan { font-size: 0.9rem; }
-.bv-cards { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.bv-strip { display: flex; align-items: stretch; gap: 6px; }
+.bv-scroll { flex: 0 0 32px; font: 1.6rem 'Cinzel', serif; color: #ffe08a; background: rgba(40, 30, 12, 0.7); border: 1px solid var(--gold-3); border-radius: 6px; cursor: pointer; }
+.bv-scroll:hover { background: var(--gold-3); color: #1a1206; }
+.bv-cards { flex: 1; min-width: 0; display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-behavior: smooth; }
 .bv-card { flex: 0 0 168px; display: grid; gap: 2px; text-align: left; background: rgba(40, 30, 12, 0.6); border: 1px solid var(--gold-3); border-radius: 6px; padding: 8px 10px; color: var(--ink); cursor: pointer; }
 .bv-card.on { border-color: #ffe08a; box-shadow: 0 0 0 2px rgba(255, 224, 138, 0.35); }
 .bv-card:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -784,3 +787,11 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 /* what an item is (and so what it merges with) */
 .cat-tag { display: inline-block; padding: 0 5px; margin-right: 3px; border: 1px solid rgba(242, 181, 30, 0.5); border-radius: 4px; color: #f2c95e; font: 600 0.72rem 'Oswald', sans-serif; letter-spacing: 0.03em; }
 .shop-row.locked { opacity: 0.55; }
+
+.bag-sub2 { margin: 10px 0 4px; font: 0.95rem 'Cinzel', serif; color: #ffe08a; border-bottom: 1px solid rgba(201, 162, 39, 0.3); }
+.forge-btns { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+.forged-tag { font: italic 0.75rem Georgia, serif; color: #e8b25a; font-weight: normal; }
+.class-guide { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 8px 0 12px; padding: 10px 12px; border: 1px solid rgba(201, 162, 39, 0.4); border-radius: 6px; background: rgba(40, 30, 12, 0.35); }
+.class-guide h4 { margin: 0 0 4px; font: 0.95rem 'Cinzel', serif; color: #ffe08a; }
+.class-guide ul { margin: 0; padding-left: 18px; font-size: 0.88rem; line-height: 1.4; }
+.sw-guide { margin: 8px 0; } .sw-guide summary { cursor: pointer; color: #ffe08a; font: 0.95rem 'Cinzel', serif; }

@@ -22,6 +22,7 @@ export const CONTROLS = [
   ['status', 'Status', 'KeyC', 'Windows'],
   ['bag', 'Bag', 'KeyI', 'Windows'],
   ['shop', 'Shop', 'KeyB', 'Windows'],
+  ['smith', 'Blacksmith', 'KeyN', 'Windows'],
   ['quests', 'Quests', 'KeyQ', 'Windows'],
   ['skills', 'Skills', 'KeyK', 'Windows'],
   ['map', 'World map', 'KeyM', 'Windows'],

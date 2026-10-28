@@ -1,6 +1,6 @@
 // The Bag (inventory with your character and equipment), the Shop and the Blacksmith's merging.
 // They share one window with the Status Window, with tabs along the top.
-import { ITEMS, SHOP, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds, brewHerbs, categoryOf, forgeCost } from './data/items.mjs';
+import { ITEMS, SHOP, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds, brewHerbs, categoryOf, forgeCost, forgeOres, FORGE, FORGE_RANK_LEVEL, MARKETS, marketStock } from './data/items.mjs';
 import { codeFor, keyName } from './data/controls.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -32,7 +32,7 @@ function describeGear(it, plus = 0) {
     return `${rankTag(it, plus)} ${it.magic ? 'MATK' : 'ATK'} +${upgraded(it.power, plus)} · ${it.speed}s per swing · ${reachText(it)}${it.chop >= 4 ? ' · fells even great trees' : it.chop >= 3 ? ' · fells big trees' : it.chop >= 1.5 ? ' · chops young trees fast' : ''}${fx ? `<br>${fx}` : ''}${next ? `<br><span class="faint">Evolves at +${next}</span>` : ''}`;
   }
   if (it.kind === 'coating') return `${EFFECTS[it.coat].icon} Coats a weapon for ${it.hits} hits (Blacksmith)`;
-  if (it.kind === 'armour') return `${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
+  if (it.kind === 'armour') return `${rankTag(it, plus)} ${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
   if (it.kind === 'food') return [it.heal && (it.heal > 999 ? 'Fills HP' : `Restores ${it.heal} HP`), it.sp && (it.sp > 999 ? 'Fills SP' : `Restores ${it.sp} SP`), it.boost && `+${it.boost.sp} max SP for ${it.boost.minutes} min`,
     it.buff && `+${it.buff.pct}% ${it.buff.stat === 'speed' ? 'speed' : it.buff.stat.toUpperCase()} for ${it.buff.minutes} min`, it.rest && (it.rest >= 100 ? 'Clears Fatigue' : `-${it.rest} Fatigue`)].filter(Boolean).join(' · ');
   if (it.id === 'torch') return 'Hold it in the dark caves (T), or stand it in the ground; it keeps monsters away';
@@ -109,10 +109,12 @@ export function renderBag(el, game, selected) {
 
 // The shop, styled like a Solo Leveling system window. It only shows what your level can buy;
 // more appears as you level up.
-export function renderShop(el, game, message = '') {
+export function renderShop(el, game, message = '', market = null) {
   const c = game.character;
-  const open = SHOP.filter(([, lvl]) => c.level >= lvl);
-  const next = SHOP.filter(([, lvl]) => c.level < lvl).reduce((m, [, lvl]) => Math.min(m, lvl), Infinity);
+  const mk = market && MARKETS[market];
+  // a spawn-point market sells its own speciality stock (and unlocks it a few levels early)
+  const open = mk ? marketStock(market, c.level).map((id) => [id, 0]) : SHOP.filter(([, lvl]) => c.level >= lvl);
+  const next = mk ? Infinity : SHOP.filter(([, lvl]) => c.level < lvl).reduce((m, [, lvl]) => Math.min(m, lvl), Infinity);
   const group = (title, kind) => {
     const cards = open.filter(([id]) => ITEMS[id].kind === kind).map(([id]) => {
       const it = ITEMS[id];
@@ -133,10 +135,11 @@ export function renderShop(el, game, message = '') {
   }).join('') : '<p class="sys-hint">Nothing to sell yet. Gather wood and berries, or defeat monsters for their drops. Take gear off before selling it.</p>';
   const bad = /not|need|full/i.test(message);
   el.innerHTML = `
-    <div class="system-window" role="dialog" aria-label="Shop">
+    <div class="system-window" role="dialog" aria-label="${mk ? esc(mk.name) : 'Shop'}">
       <button type="button" class="sys-close" data-close aria-label="Close">×</button>
-      ${tabsHtml('shop')}
-      <div class="sys-title"><span class="sys-bang">!</span><h2>Shop</h2></div>
+      ${mk ? '' : tabsHtml('shop')}
+      <div class="sys-title"><span class="sys-bang">!</span><h2>${mk ? esc(mk.name) : 'Shop'}</h2></div>
+      ${mk ? `<p class="sys-hint">${esc(mk.text)}</p>` : ''}
       <p class="sys-top">Coins <b>${c.coins} G</b> <span>·</span> Level <b>${c.level}</b>${next < Infinity ? ` <span>·</span> New items at level <b>${next}</b>` : ''}</p>
       <p class="sys-msg${bad ? ' bad' : ''}" role="status">${esc(message)}</p>
       ${group('Weapons', 'weapon')}
@@ -181,13 +184,27 @@ export function renderSmith(el, game, pick = [], message = '') {
     + (coatings.length ? coatings.map((e) => { const it = ITEMS[e.id]; return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}</b><small>You have ${e.n} · ${esc(EFFECTS[it.coat].text)} on each of the next ${it.hits} hits</small></span>
       <button type="button" class="gold-button small" data-coat="${e.id}" ${can && w ? '' : 'disabled'}>${w ? `Coat ${esc(nameOf(w.entry))}` : 'Equip a weapon'}</button></div>`; }).join('')
     : '<p class="bag-hint">No coatings. Buy a Poison Potion, Fire Oil or Frost Oil in the shop (or ask a Potion Maker) to coat your weapon.</p>');
-  // Forging: everything the smith's level allows, from ore and coins
-  const forge = SHOP.filter(([id]) => isGear(ITEMS[id])).map(([id, lvl]) => {
-    const it = ITEMS[id], fc = forgeCost(it), ready = c.level >= lvl;
-    const pay = ready && c.coins >= fc.coins && fc.needs.every(([n, k]) => game.count(n) >= k);
-    return `<div class="shop-row${ready ? '' : ' locked'}"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}</b><small>${describe(it)}<br>${ready ? `${fc.coins} G${fc.needs.map(([n, k]) => ` + ${k} ${esc(ITEMS[n].name)} (you have ${game.count(n)})`).join('')}` : `From level ${lvl}`}</small></span>
-      <button type="button" class="gold-button small" data-forge="${id}" ${can && pay ? '' : 'disabled'}>Forge</button></div>`;
-  }).join('');
+  // Forging: only what the smith's level allows. Each rank opens at a class advancement, and a
+  // better metal than the rank needs gives a stronger piece (+1 or +2).
+  const forgeRow = ([id]) => {
+    const it = ITEMS[id];
+    const opts = forgeOres(it).map((ore) => forgeCost(it, ore)).filter((fc, i) => i === 0 || game.count(fc.ore) >= fc.needs[0][1]);
+    const btns = opts.map((fc) => {
+      const pay = c.coins >= fc.coins && fc.needs.every(([n, k]) => game.count(n) >= k);
+      return `<button type="button" class="gold-button small" data-forge="${id}" data-ore="${fc.ore}" ${can && pay ? '' : 'disabled'}
+        title="${fc.needs.map(([n, k]) => `${k} ${ITEMS[n].name} (you have ${game.count(n)})`).join(', ')}">${fc.bonus ? `+${fc.bonus} with ${esc(ITEMS[fc.ore].name)}` : 'Forge'} · ${fc.coins} G</button>`;
+    }).join('');
+    const base = opts[0];
+    return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}${it.forged ? ' <em class="forged-tag">· forged only</em>' : ''}</b><small>${describe(it)}<br>Needs ${base.needs.map(([n, k]) => `${k} ${esc(ITEMS[n].name)} (you have ${game.count(n)})`).join(' + ')}</small></span>
+      <span class="forge-btns">${btns}</span></div>`;
+  };
+  const forgeable = FORGE.filter(([, lvl]) => c.level >= lvl);
+  const forgeWeapons = forgeable.filter(([id]) => ITEMS[id].kind === 'weapon').map(forgeRow).join('');
+  const forgeItems = forgeable.filter(([id]) => ITEMS[id].kind !== 'weapon').map(forgeRow).join('');
+  const myRank = FORGE_RANK_LEVEL.filter((l) => c.level >= l).length - 1;
+  const nextRank = FORGE_RANK_LEVEL[myRank + 1];
+  const nextPiece = FORGE.find(([, lvl]) => lvl > c.level);
+  const forgeNote = `You forge up to <b>${RANKS[Math.max(0, myRank)].name}</b>.${nextRank < Infinity ? ` ${RANKS[myRank + 1].name} pieces unlock at level ${nextRank}.` : ''}${nextPiece ? ` Next new piece at level ${nextPiece[1]}.` : ''} Mythic weapons can't be forged: only the Kings hold them.`;
   el.innerHTML = `
     <div class="status-window bag-window smith-window" role="dialog" aria-label="Blacksmith">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
@@ -204,7 +221,11 @@ export function renderSmith(el, game, pick = [], message = '') {
       <h3 class="bag-sub">Current Coats</h3>
       ${coatHtml}
       <h3 class="bag-sub">Can Build <small>(forge from ore and coins; better and higher-ranked pieces cost more)</small></h3>
-      <div class="smith-list">${forge}</div>
+      <p class="bag-hint">${forgeNote} A better metal than a piece needs makes it stronger (+1 or +2).</p>
+      <h4 class="bag-sub2">Weapons</h4>
+      <div class="smith-list">${forgeWeapons || '<p class="bag-hint">No weapons you can forge yet.</p>'}</div>
+      <h4 class="bag-sub2">Items <small>(armour and shields)</small></h4>
+      <div class="smith-list">${forgeItems || '<p class="bag-hint">No items you can forge yet.</p>'}</div>
     </div>`;
 }
 

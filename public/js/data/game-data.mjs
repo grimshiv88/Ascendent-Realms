@@ -1,5 +1,5 @@
 // Game rules shared by the browser and the server. Numbers come from the rulebook.
-import { homePlace, toWorld } from './world-layout.mjs';
+import { homePlace, toWorld, PLACES } from './world-layout.mjs';
 import { STARTER_ITEMS } from './items.mjs';
 
 export const MAIN_STATS = ['str', 'agi', 'dex', 'sta', 'int'];
@@ -44,6 +44,30 @@ export const CLASSES = {
   builder:     { name: 'Builder',     bonus: { str: 4, sta: 4, int: 2 }, main: 'sta', blurb: 'Builds 30% faster with 20% less material.' },
   potion_maker: { name: 'Potion Maker', bonus: { int: 5, dex: 3, sta: 2 }, main: 'int', blurb: 'Brews potions and elixirs from herbs for far less than the shop asks. The only class with a Potion-Maker\'s kit.' },
   farmer:      { name: 'Farmer',      bonus: { sta: 6, str: 4 },         main: 'sta', blurb: 'Grows crops and raises animals. Food made removes 50% more Fatigue.' },
+};
+
+// What each class can do and what to aim for: shown when you pick a class, and in Status.
+export const CLASS_GUIDE = {
+  mage: { can: ['Cast spells in your elements with a staff (attack from a distance)', 'Spells cost 10% less SP', 'Learn new skills as you level'],
+    goals: ['Clear caves other classes can\'t reach', 'Protect farmers and builders from monsters', 'Rise through the six Mage ranks and become the Mage King'] },
+  swordsman: { can: ['Hit harder with swords (+10% ATK)', 'Fight at the front, up close', 'Merge and evolve your sword with a Blacksmith'],
+    goals: ['Hunt the strongest monsters and their bosses', 'Take on quests and guild work for coins', 'Rise through the six ranks and become the Swordsman King'] },
+  tank: { can: ['Draw monsters onto yourself (taunt)', '+15% DEF with a shield', 'Take hits that would beat other classes'],
+    goals: ['Lead groups into caves and boss fights', 'Guard spawn points, roads and towns', 'Rise through the six ranks and become the Tank King'] },
+  assassin: { can: ['Move unseen (stealth)', '+20% critical damage from behind', 'Strike fast with daggers'],
+    goals: ['Take down lone strong monsters and bounties', 'Scout caves and far lands for others', 'Rise through the six ranks and become the Assassin King'] },
+  healer: { can: ['Heal yourself and others (20% stronger heals)', 'Keep a group alive through long fights', 'Use Light magic with a staff'],
+    goals: ['Be the one every cave group needs', 'Keep the front line standing in boss and King fights', 'Rise through the six ranks and become the Healer King'] },
+  blacksmith: { can: ['Forge weapons and armour from ore and coins (Blacksmith window, N)', 'Merge two items into a stronger one, and coat weapons', 'Use better metal to make stronger pieces; unlock a new rank at levels 20, 50, 100 and 200'],
+    goals: ['Arm the fighters: they depend on your weapons and armour', 'Reach Epic, then Legendary forging', 'Open a shop and become the Blacksmith King'] },
+  businessman: { can: ['Sell to shops for far more (70% of the price, not 40%)', 'Own trading buildings and shops', 'Buy caves and post quests for them'],
+    goals: ['Build a trading empire across the continents', 'Hire others through quests and guild work', 'Become the Businessman King'] },
+  builder: { can: ['Build houses, shops and roads 30% faster with 20% less material', 'Raise ready buildings for far less than others pay', 'Clear and level land cheaply'],
+    goals: ['Build homes and shops for other players', 'Build towns, roads and one day a castle for a nation', 'Become the Builder King'] },
+  potion_maker: { can: ['Brew potions and elixirs from herbs (Potion-Maker window)', 'Make elixirs no shop sells', 'Make coatings that poison, burn or freeze'],
+    goals: ['Keep every fighter supplied with potions', 'Brew the rare elixirs only you can make', 'Become the Potion Maker King'] },
+  farmer: { can: ['Grow crops and raise animals', 'Make food that removes 50% more Fatigue', 'Gather herbs and plants for Potion Makers'],
+    goals: ['Feed the realm: every class needs food to heal and rest', 'Own a big farm with fields and animals', 'Become the Farmer King'] },
 };
 
 // Shown only in the designer gallery. Players never see the next form's name.
@@ -206,10 +230,10 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
       elements: rollElements(raceId, classId),
       uniqueSkill: { ...pick(UNIQUE_SKILLS), sealsOpen: 0 },
       skills: [],
-      // Player races start at the Central Forest spawn; monster races at their homeland's waystone.
+      // A new character starts at a random safe zone (waystone) on their home continent
       location: startLocation(race.home),
       hp: null, // current HP; null means full
-      inventory: [...(STARTER_ITEMS[classId] || []), ['bread', 3], ['water_flask', 3]].map(([id, n]) => ({ id, n })),
+      inventory: [...(STARTER_ITEMS[classId] || []), ['bread', 3], ['water_flask', 3], ['herbal_tea', 2]].map(([id, n]) => ({ id, n })),
       equipped: { weapon: null },
       createdAt: new Date().toISOString(),
     },
@@ -217,7 +241,9 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
 }
 
 function startLocation(homeName) {
-  const place = homePlace(homeName);
+  const home = homePlace(homeName);
+  const choices = PLACES.filter((p) => p.region === home.region);
+  const place = choices[Math.floor(Math.random() * choices.length)] || home;
   const { x, z } = toWorld(place.px, place.py);
   return { area: place.name, x, y: 0, z: z + 6, heading: Math.PI };
 }

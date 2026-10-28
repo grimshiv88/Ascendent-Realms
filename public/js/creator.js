@@ -1,5 +1,6 @@
 // Character creation: Player or Monster → race → class → look, with a live 3D preview.
 import * as THREE from 'three';
+import { classGuide } from './status.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { makeStage } from './characters/stage.js';
 import {
@@ -144,6 +145,7 @@ export function openCreator(root, { username, onCreate }) {
         <h2>Choose your class</h2>
         <div class="chip-row">${Object.entries(CLASSES).map(([id, c]) => `<button type="button" class="chip" data-cls="${id}" aria-pressed="${id === choice.cls}">${c.name}</button>`).join('')}</div>
         <p class="blurb">${choice.cls ? CLASSES[choice.cls].blurb : 'Your class adds 10 bonus points and decides your class quests.'}</p>
+        ${choice.cls ? classGuide(choice.cls) : ''}
         ${statBars(stats, choice.cls ? CLASSES[choice.cls].bonus : {})}
         <dl class="derived">${[['HP', d.hp], ['SP', d.sp], ['ATK', d.atk], ['MATK', d.matk], ['DEF', d.def], ['MDEF', d.mdef]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
@@ -211,3 +213,4 @@ export function openCreator(root, { username, onCreate }) {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+

@@ -2,7 +2,7 @@
 import { CASTLES, castleOf, KING_RETURNS_MS } from './data/kings.mjs';
 import { CONTROLS, codeFor, keyName } from './data/controls.mjs';
 import {
-  RACES, CLASSES, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor,
+  RACES, CLASSES, CLASS_GUIDE, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor,
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
 import { PRIVACY, privacyOf } from './data/social.mjs';
@@ -85,6 +85,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('Next upgrade', `Lv ${nextUpgrade(c.level)} <small>(stronger, + a new skill)</small>`)}
         </dl>
       </div>
+      <details class="sw-guide"><summary>Your class: what you can do and your goals</summary>${classGuide(c.cls)}</details>
       <hr>
       <div class="sw-grid">
         <dl>${row('HP', trained('hp', `${Math.round(c.hp ?? d.hp)} / ${d.hp}`))}</dl>
@@ -232,7 +233,7 @@ export const HELP_HTML = `
     <h2>Controls</h2>
     <p class="bag-hint">These are the keys the game starts with. Change any of them in Settings (O) → Controls.</p>
     <dl>
-      <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys. Hold W and press A or D to curve gently left or right, even while sprinting. S turns you round to face behind you</dd></div>
+      <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys. Hold W and press A or D to curve gently left or right, even while sprinting. S turns you round to face behind you. Tap W (or ↑) twice quickly to keep walking on your own; tap W or S to stop</dd></div>
       <div class="sw-row"><dt>Run</dt><dd>Hold Shift</dd></div>
       <div class="sw-row"><dt>Jump</dt><dd>Space</dd></div>
       <div class="sw-row"><dt>Camera</dt><dd>Click the game once, then move the mouse to look around and steer; scroll to zoom</dd></div>
@@ -257,3 +258,11 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Touch</dt><dd>The stick on the left moves in any direction; drag on the right to turn the camera</dd></div>
     </dl>
   </div>`;
+
+// What a class can do, and what to aim for
+export function classGuide(cls) {
+  const g = CLASS_GUIDE[cls];
+  if (!g) return '';
+  return `<div class="class-guide"><div><h4>What you can do</h4><ul>${g.can.map((t) => `<li>${t}</li>`).join('')}</ul></div>
+    <div><h4>Your goals</h4><ul>${g.goals.map((t) => `<li>${t}</li>`).join('')}</ul></div></div>`;
+}

@@ -8,7 +8,7 @@ import { renderMap, createMinimap } from './mapview.js';
 import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass } from './bag.js';
-import { ITEMS } from './data/items.mjs';
+import { ITEMS, forgeCost } from './data/items.mjs';
 import { renderQuests } from './quests.js';
 import { renderLand, renderCave } from './landui.js';
 import { caveById } from './data/depths.mjs';
@@ -302,6 +302,7 @@ function startGame(character) {
     if (name === 'status') renderStatus(overlay, character, ui.pending, game.stats());
     else if (name === 'bag') { renderBag(overlay, game, ui.selected); preview.mount(overlay.querySelector('[data-preview]')); }
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
+    else if (name === 'market' && ui.market) renderShop(overlay, game, ui.shopMsg, ui.market);
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
@@ -331,7 +332,7 @@ function startGame(character) {
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();
     if (name === 'map') updateMapBasket();
-    if (name === 'bag' || name === 'shop') fillIcons(overlay);
+    if (name === 'bag' || name === 'shop' || name === 'market') fillIcons(overlay);
   }
   const openPanel = (name) => {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
@@ -490,8 +491,8 @@ function startGame(character) {
       } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : 'That portal is across the sea.');
       return;
     }
-    if ((v = t('data-quest-accept')) != null) { game.questAccept(Number(v)); ui.questMsg = 'Quest accepted.'; drawPanel(); return; }
-    if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here()); ui.questMsg = 'Quest given up. A new one has appeared.'; drawPanel(); return; }
+    if ((v = t('data-quest-accept')) != null) { const r = game.questAccept(Number(v)); ui.questMsg = r === 'ok' ? 'Quest accepted.' : r === 'limit' ? 'You have taken on 3 quests today. Come back tomorrow (a day of the realm is one real hour).' : ''; drawPanel(); return; }
+    if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here()); ui.questMsg = 'Quest given up. A new quest is posted every 20 minutes.'; drawPanel(); return; }
     if ((v = t('data-quest-claim')) != null) {
       const r = game.questClaim(Number(v), here());
       if (r) { ui.questMsg = `Quest complete: +${r.exp} EXP, +${r.coins} G${r.item ? `, ${r.item.replace(/_/g, ' ')}` : ''}.`; world?.say('Quest complete!', 'exp'); }
@@ -569,7 +570,7 @@ function startGame(character) {
     if ((v = t('data-drop')) != null) { game.removeItem(v, 1); if (!game.entry(v)) ui.selected = null; return; }
     if ((v = t('data-craft')) != null) { game.craft(game.recipes.find((r) => r.makes === v)); return; }
     if ((v = t('data-item')) != null) { ui.selected = ui.selected === v ? null : v; drawPanel(); return; }
-    if ((v = t('data-buy')) != null) { ui.shopMsg = SHOP_SAYS[game.buy(v)]; drawPanel(); return; }
+    if ((v = t('data-buy')) != null) { ui.shopMsg = SHOP_SAYS[game.buy(v, overlay.dataset.panel === 'market' ? ui.market : null)]; drawPanel(); return; }
     if ((v = t('data-sell')) != null || (v = t('data-sell-all')) != null) {
       const all = t('data-sell-all') != null;
       const n = all ? game.entry(v)?.n : 1;
@@ -589,7 +590,13 @@ function startGame(character) {
       if (r === 'ok' || r === 'evolved') ui.pick = [ui.pick[0]];
       drawPanel(); return;
     }
-    if ((v = t('data-forge')) != null) { const r = game.forge(v); ui.smithMsg = r === 'ok' ? `Forged a ${ITEMS[v].name}! It is in your bag.` : FORGE_SAYS[r]; drawPanel(); return; }
+    if ((v = t('data-forge')) != null) {
+      const ore = t('data-ore') || null;
+      const r = game.forge(v, ore);
+      const bonus = r === 'ok' ? forgeCost(ITEMS[v], ore).bonus : 0;
+      ui.smithMsg = r === 'ok' ? `Forged a ${ITEMS[v].name}${bonus ? ` +${bonus}` : ''}! It is in your bag.` : FORGE_SAYS[r];
+      drawPanel(); return;
+    }
     if ((v = t('data-coat')) != null) {
       const r = game.coat(game.gearIn('weapon')?.entry.uid, v);
       ui.smithMsg = r === 'ok' ? 'Your weapon is coated.' : r === 'class' ? 'Only a Blacksmith can coat weapons.' : 'Equip a weapon first.';
@@ -609,10 +616,11 @@ function startGame(character) {
       overlay.classList.remove('hidden');
     },
     // the player pressed Esc while the mouse was captured
+    windowOpen: () => !overlay.classList.contains('hidden') || !!social?.typing,
     onMouseFreed: () => { if (overlay.classList.contains('hidden')) openPanel('settings'); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
-      if (type === 'kill') for (const title of game.questKill(data.kind)) questReady(title);
+      if (type === 'kill') for (const title of game.questKill(data.kind, data.level)) questReady(title);
       if (type === 'depths') $('minimap').classList.add('hidden'); // no map underground
       if (type === 'depths') showArea(`${data.cave.name}: ${{ small: 'a small cave', medium: 'a winding cave', deep: 'a deep cave' }[data.cave.size]}. ${world?.holding ? '' : 'Pitch dark: light a torch (T). '}Mine glowing ore veins, break nests, and find the boss at the bottom.`);
       if (type === 'surface') { ui.atCave = null; drawHud(); $('minimap').classList.remove('hidden'); }
@@ -630,6 +638,7 @@ function startGame(character) {
           showArea(r.crowned ? `You beat the King in a fight and take the crown: you are the ${data.title}!` : `${data.name} has fallen. You take the EXP and loot; the strongest Overlord will take the throne.`);
         }).catch(() => {});
       }
+      if (type === 'market') { ui.market = data; openPanel('market'); }
       if (type === 'chest') showArea(`The chest held ${data.coins} G, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();
       if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
@@ -640,13 +649,13 @@ function startGame(character) {
     },
     onKey(e) {
       const act = actionFor(e.code);
-      const open = { status: 'status', bag: 'bag', shop: 'shop', quests: 'quests', help: 'help', map: 'map', settings: 'settings', rankings: 'rankings', skills: 'skills' }[act];
+      const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', rankings: 'rankings', skills: 'skills' }[act];
       if (open) openPanel(open);
       if (act === 'builder' && !ui.builder) openBuilder();
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); }
       if (act === 'land') toggleLand();
-      if (act === 'chat') { e.preventDefault(); social?.focusChat(); }
+      if (act === 'chat') { e.preventDefault(); world?.releaseMouse(); social?.focusChat(); }
       // Esc opens the options; Esc again (or on any window) closes it
       if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }
     },
@@ -664,6 +673,12 @@ function startGame(character) {
     const p = world?.position();
     if (p) for (const title of game.questVisit(p.x, p.z)) questReady(title);
   }, 1500);
+  // a new quest is posted on the board every 20 minutes
+  setInterval(() => {
+    const before = (character.quests || []).length;
+    game.fillQuests(here());
+    if ((character.quests || []).length > before) { showArea('A new quest was posted on the board (Q).'); if (overlay.dataset.panel === 'quests' && !overlay.classList.contains('hidden')) drawPanel(); }
+  }, 10000);
   drawSkillBar();
   // the minimap in the corner follows you; tap it for the world map
   createMinimap($('minimap'), () => world?.position(), () => openPanel('map'));

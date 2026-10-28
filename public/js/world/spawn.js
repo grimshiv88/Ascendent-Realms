@@ -1,7 +1,8 @@
 // A waystone shrine: a ring of standing stones around a glowing crystal, with a campfire and signpost.
 // The spawn point in the Central Forest is one; every homeland has its own.
 import * as THREE from 'three';
-import { heightAt } from '../data/world-layout.mjs';
+import { heightAt, SAFE_R } from '../data/world-layout.mjs';
+import { MARKETS } from '../data/items.mjs';
 
 export function buildSpawn(place = { x: 0, z: 0, name: 'Central Forest' }) {
   const g = new THREE.Group();
@@ -123,8 +124,58 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central Forest' }) {
   post.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   g.add(post);
 
+  // The safe zone's edge: a ring of lantern posts. Monsters never cross it.
+  const lanternMat = new THREE.MeshStandardMaterial({ color: '#ffe2a0', emissive: '#ffb84a', emissiveIntensity: 1.4 });
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2, x = Math.cos(a) * SAFE_R, z = Math.sin(a) * SAFE_R;
+    const lp = new THREE.Group();
+    lp.position.set(x, heightAt(cx + x, cz + z) - baseY, z);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.8, 6), wood);
+    pole.position.y = 0.9;
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 0.22), lanternMat);
+    lamp.position.y = 1.9;
+    lp.add(pole, lamp);
+    g.add(lp);
+  }
+
+  // The game's market for this place: a stall with an awning, inside the safe zone
+  const market = MARKETS[place.id];
+  let marketAt = null;
+  if (market) {
+    const mx = 14, mz = 8;
+    const stall = new THREE.Group();
+    stall.position.set(mx, heightAt(cx + mx, cz + mz) - baseY, mz);
+    stall.rotation.y = -Math.PI / 2 + Math.atan2(mx, mz) + Math.PI; // facing the shrine
+    const table = new THREE.Mesh(new THREE.BoxGeometry(3, 0.9, 1.2), wood);
+    table.position.y = 0.45;
+    const cloth = new THREE.MeshStandardMaterial({ color: '#a8322a', roughness: 0.9, side: THREE.DoubleSide });
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.08, 1.8), cloth);
+    roof.position.set(0, 2.5, -0.1);
+    roof.rotation.x = 0.18;
+    stall.add(table, roof);
+    for (const [x, z] of [[-1.6, -0.8], [1.6, -0.8], [-1.6, 0.6], [1.6, 0.6]]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.5, 6), wood);
+      leg.position.set(x, 1.25, z);
+      stall.add(leg);
+    }
+    // goods on the table
+    const goods = ['#d8a040', '#6a9a3a', '#4a7ad0', '#c04040'];
+    goods.forEach((col, i) => {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.4), new THREE.MeshStandardMaterial({ color: col, roughness: 0.8 }));
+      box.position.set(-1.1 + i * 0.72, 1.05, 0);
+      stall.add(box);
+    });
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.6), new THREE.MeshBasicMaterial({ map: textTexture(market.name), transparent: true, side: THREE.DoubleSide }));
+    label.position.set(0, 2.15, 0.55);
+    stall.add(label);
+    stall.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    g.add(stall);
+    marketAt = { id: place.id, x: cx + mx, z: cz + mz };
+  }
+
   return {
     group: g,
+    market: marketAt,
     update(t) {
       crystal.rotation.y = t * 0.6;
       crystal.position.y = 2.6 + Math.sin(t * 1.3) * 0.15;

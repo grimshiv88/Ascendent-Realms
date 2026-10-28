@@ -1,7 +1,8 @@
-// Land plots in the world: the buying grid (press L), the chosen plot, and corner posts on owned land.
+// Land plots in the world: the buying grid (press L), the chosen plot, and a coloured line round owned land.
 import * as THREE from 'three';
-import { PLOT, heightAt } from '../data/world-layout.mjs';
-import { whyNot, isRiver, PURPOSES, NEIGHBOURS } from '../data/land.mjs';
+import { PLOT, heightAt, surfaceAt } from '../data/world-layout.mjs';
+import { whyNot, isRiver, NEIGHBOURS } from '../data/land.mjs';
+import { COUNTRY_PLOTS } from '../data/building.mjs';
 
 const GRID_R = 7;       // plots shown in each direction around you
 const STEP = 2.5;       // the grid lines follow the ground every few metres
@@ -102,37 +103,43 @@ export function createPlots(scene) {
     }
   }
 
-  // Wooden posts with a coloured flag at the outer corners of each owner's land near you: where
-  // a territory's border turns, not along straight edges or inside it
+  // A bright line along the outer border of each owner's land near you, following the ground:
+  // gold round your own land, red round other people's, grey round a nation (a ruler's country).
+  const lineMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
+  const BORDER = { mine: new THREE.Color('#ffc83a'), other: new THREE.Color('#e0353a'), nation: new THREE.Color('#9aa0a8') };
+  const LINE_H = 0.45, LINE_STEP = 2.5;
   function buildPosts(cx, cz) {
     for (const o of [...posts.children]) { posts.remove(o); o.geometry?.dispose(); }
-    const wood = new THREE.MeshStandardMaterial({ color: '#6b4a2e', roughness: 0.9 });
-    const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.4, 6);
-    const flagGeo = new THREE.PlaneGeometry(0.5, 0.32);
-    const mats = new Map();
-    const done = new Set();
+    const owned = new Map();
+    for (const p of lands.values()) owned.set(p.owner, (owned.get(p.owner) || 0) + 1);
+    const pos = [], col = [];
     for (const p of lands.values()) {
       if (Math.abs(p.ix - cx) > 25 || Math.abs(p.iz - cz) > 25) continue;
-      for (const [vx, vz] of [[p.ix, p.iz], [p.ix + 1, p.iz], [p.ix, p.iz + 1], [p.ix + 1, p.iz + 1]]) {
-        const k = `${vx},${vz},${p.owner}`;
-        if (done.has(k)) continue;
-        done.add(k);
-        // the four plots around this corner point: which belong to the same owner?
-        const same = [[vx - 1, vz - 1], [vx, vz - 1], [vx - 1, vz], [vx, vz]].map(([i, j]) => lands.get(key(i, j))?.owner === p.owner);
-        const n = same.filter(Boolean).length;
-        const straight = n === 2 && (same[0] === same[1] || same[0] === same[2]);
-        if (n === 4 || straight) continue;
-        const x = vx * PLOT, z = vz * PLOT, y = heightAt(x, z);
-        if (!mats.has(p.purpose)) mats.set(p.purpose, new THREE.MeshStandardMaterial({ color: PURPOSES[p.purpose]?.color || '#999', side: THREE.DoubleSide, roughness: 0.8 }));
-        const post = new THREE.Mesh(postGeo, wood);
-        post.position.set(x, y + 0.7, z);
-        post.castShadow = true;
-        posts.add(post);
-        const flag = new THREE.Mesh(flagGeo, mats.get(p.purpose));
-        flag.position.set(x + 0.27, y + 1.22, z);
-        posts.add(flag);
+      const c = p.mine ? BORDER.mine : owned.get(p.owner) >= COUNTRY_PLOTS ? BORDER.nation : BORDER.other;
+      const x0 = p.ix * PLOT, z0 = p.iz * PLOT;
+      // each side whose neighbour belongs to someone else is part of the border
+      for (const [dx, dz, ax, az, bx, bz] of [[0, -1, 0, 0, 1, 0], [0, 1, 0, 1, 1, 1], [-1, 0, 0, 0, 0, 1], [1, 0, 1, 0, 1, 1]]) {
+        if (lands.get(key(p.ix + dx, p.iz + dz))?.owner === p.owner) continue;
+        // pulled a little inside the plot so two neighbours' lines don't fight
+        const ix = -dx * 0.12, iz = -dz * 0.12;
+        const n = Math.round(PLOT / LINE_STEP);
+        for (let i = 0; i < n; i++) {
+          const t0 = i / n, t1 = (i + 1) / n;
+          const xa = x0 + (ax + (bx - ax) * t0) * PLOT + ix, za = z0 + (az + (bz - az) * t0) * PLOT + iz;
+          const xb = x0 + (ax + (bx - ax) * t1) * PLOT + ix, zb = z0 + (az + (bz - az) * t1) * PLOT + iz;
+          const ya = surfaceAt(xa, za) + 0.02, yb = surfaceAt(xb, zb) + 0.02;
+          pos.push(xa, ya, za, xb, yb, zb, xb, yb + LINE_H, zb, xa, ya, za, xb, yb + LINE_H, zb, xa, ya + LINE_H, za);
+          for (let k = 0; k < 6; k++) col.push(c.r, c.g, c.b);
+        }
       }
     }
+    if (!pos.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const mesh = new THREE.Mesh(geo, lineMat);
+    mesh.renderOrder = 2;
+    posts.add(mesh);
   }
 
   return {

@@ -444,6 +444,13 @@ export function placesWithPositions() {
   return PLACE_POS;
 }
 
+// Safe zones: the ground around every waystone, where players spawn and monsters can't go
+export const SAFE_R = 60;
+export function safeZoneAt(x, z) {
+  for (const p of placesWithPositions()) if (!p.cave && (p.x - x) ** 2 + (p.z - z) ** 2 < SAFE_R * SAFE_R) return p;
+  return null;
+}
+
 export function lakesWithLevels() {
   for (const L of LAKE_POS) if (L.level === undefined) L.level = lakeLevel(L);
   return LAKE_POS;

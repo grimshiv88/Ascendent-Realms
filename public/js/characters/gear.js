@@ -1,5 +1,6 @@
 // Draws equipped weapons and armour on a character built by model.js.
 import * as THREE from 'three';
+import { ITEMS } from '../data/items.mjs';
 
 const cache = new Map();
 function mat(color, metal, props) {
@@ -106,7 +107,8 @@ function axeHead(z, size, m, { double = false, beard = 0.4 } = {}) {
 // A weapon model in the hand's space: the grip at the fist, the business end pointing forward (+z).
 export function weaponModel(item, plus = 0) {
   const g = new THREE.Group();
-  const id = item.id || item.entry?.id;
+  const own = item.id || item.entry?.id;
+  const id = item.model || ITEMS[own]?.model || own;
   switch (id) {
     case 'wooden_club': {
       const pts = [];

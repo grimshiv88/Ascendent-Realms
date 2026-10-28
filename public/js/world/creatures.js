@@ -1,7 +1,8 @@
 // Wild monsters that roam the land around you. Each region has its own kinds and levels.
 import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
-import { sample, toWorld, PLACES } from '../data/world-layout.mjs';
+import { sample, toWorld, PLACES, safeZoneAt } from '../data/world-layout.mjs';
+import { EVOLUTIONS } from '../data/game-data.mjs';
 
 // [name, body to build, level range, aggressive?, speed m/s, drops [item, chance, min, max]]
 export const KINDS = {
@@ -115,9 +116,24 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     return kinds ? { id: pickOne(kinds) } : null;
   }
 
+  // Once you've evolved, the monsters around you have mostly evolved as far as you: a goblin becomes
+  // the goblin of your stage (a Hobgoblin, a Chieftain…), and other monsters take their race's
+  // evolved form and name. A few stay one stage behind.
+  function evolveFor(kindId, p) {
+    const want = Math.max(0, (p.stage || 0) - (Math.random() < 0.3 ? 1 : 0));
+    const kind = KINDS[kindId];
+    if (!want || kind.royal || kindId.startsWith('king_') || kindId.startsWith('overlord_') || kindId.startsWith('guard_')) return { id: kindId };
+    const g = GOBLIN_LINE.indexOf(kindId);
+    if (g >= 0) return { id: GOBLIN_LINE[Math.min(GOBLIN_LINE.length - 1, Math.max(g, want))] };
+    if (want <= (kind.body.stage || 0)) return { id: kindId };
+    const names = EVOLUTIONS[kind.body.race];
+    return { id: kindId, stage: want, title: names?.[want] ? `Wild ${names[want]}` : kind.name };
+  }
+
   function make(kindId, level, x, y, z, extra = {}) {
     const kind = KINDS[kindId];
-    const body = buildCharacter({ race: kind.body.race, form: kind.body.form, stage: kind.body.stage || 0, look: { ...(kind.body.look || {}), size: kind.body.size || 1 } });
+    const stage = extra.stage ?? kind.body.stage ?? 0;
+    const body = buildCharacter({ race: kind.body.race, form: kind.body.form, stage, look: { ...(kind.body.look || {}), size: kind.body.size || 1 } });
     body.position.set(x, y, z);
     const h = body.userData.height;
     const tag = plate(extra.title || kind.name, level);
@@ -129,7 +145,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const maxHp = Math.round((8 + level * 3.5) * (extra.boss ? 6 : 1));
     const atk = Math.round((7 + level * 0.75) * (extra.boss ? 2 : 1));
     const m = {
-      kind, kindId, level, body, tag, x, z, y, heading: Math.random() * 6.28, hp: maxHp, maxHp,
+      kind, kindId, level, stage, body, tag, x, z, y, heading: Math.random() * 6.28, hp: maxHp, maxHp,
       atk, def: 1 + level, speed: kind.speed, radius: Math.max(0.4, h * 0.3), height: h,
       state: 'wander', timer: 0, attackCd: 0, angry: kind.aggressive, hurt: 0, dead: 0, ...extra,
     };
@@ -141,7 +157,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   function spot(px, pz, d, a = Math.random() * Math.PI * 2) {
     const x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d;
     const s = sample(x, z, tmp);
-    if (s.h < s.water + 0.4) return null;
+    if (s.h < s.water + 0.4 || safeZoneAt(x, z)) return null; // never in the water or a safe zone
     return { x, z, y: s.h, region: s.region, s: { ...s } };
   }
 
@@ -149,15 +165,16 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     for (let tries = 0; tries < 6; tries++) {
       const at = spot(p.x, p.z, SPAWN_MIN + Math.random() * (SPAWN_MAX - SPAWN_MIN));
       if (!at) continue;
-      const pick = kindFor(at.s, at.x, at.z);
-      if (!pick) continue;
+      const found = kindFor(at.s, at.x, at.z);
+      if (!found) continue;
+      const pick = evolveFor(found.id, p);
       const kind = KINDS[pick.id];
       // goblins roam in small packs
       const n = Math.round(rand(...(kind.pack || [1, 1])));
       for (let i = 0; i < n; i++) {
         const q = i ? spot(at.x, at.z, rand(2, 5)) : at;
         if (!q) continue;
-        make(pick.id, levelFor(kind, p.level), q.x, q.y, q.z);
+        make(pick.id, levelFor(kind, p.level), q.x, q.y, q.z, pick.stage ? { stage: pick.stage, title: pick.title } : {});
       }
       return;
     }
@@ -177,7 +194,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const pack = ++packs;
     const n = Math.round(rand(3, 5));
     for (let i = 0; i < n; i++) {
-      const id = i === 0 ? lead : pickOne(kinds);
+      const id = evolveFor(i === 0 ? lead : pickOne(kinds), p).id;
       const q = i ? spot(at.x, at.z, rand(3, 7), Math.random() * 6.28) : at;
       if (!q) continue;
       const m = make(id, levelFor(KINDS[id], p.level), q.x, q.y, q.z, { state: 'lurk', pack });
@@ -277,7 +294,9 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         const nx = m.x + Math.sin(m.heading) * speed * dt;
         const nz = m.z + Math.cos(m.heading) * speed * dt;
         const s = sample(nx, nz, tmp);
-        if (s.h > s.water + 0.2 && !(isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z))) { m.x = nx; m.z = nz; m.y = s.h; } else m.heading += Math.PI * 0.7;
+        // monsters stay out of the water, caves they weren't in, and the safe zones round the waystones
+        const blocked = s.h <= s.water + 0.2 || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z)) || (!m.kind.royal && safeZoneAt(nx, nz) && !safeZoneAt(m.x, m.z));
+        if (!blocked) { m.x = nx; m.z = nz; m.y = s.h; } else m.heading += Math.PI * 0.7;
       }
       m.hurt = Math.max(0, m.hurt - dt);
       m.lunge = Math.max(0, (m.lunge || 0) - dt);
@@ -321,7 +340,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     for (const [id, chance, min, max] of m.kind.drops) {
       if (Math.random() < chance) drops.push([id, min + Math.floor(Math.random() * (max - min + 1))]);
     }
-    return { exp: monsterExp(m.level, m.kind.body.stage), coins: 1 + m.level + Math.floor(Math.random() * (m.level / 2 + 2)), drops, name: m.kind.name, kind: m.kindId };
+    return { exp: monsterExp(m.level, m.stage), coins: 1 + m.level + Math.floor(Math.random() * (m.level / 2 + 2)), drops, name: m.title || m.kind.name, kind: m.kindId, level: m.level };
   }
 
   return {

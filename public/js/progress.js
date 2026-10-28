@@ -1,8 +1,9 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
 import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
-import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost } from './data/items.mjs';
-import { fillBoard, progressOf } from './quests.js';
+import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, marketStock } from './data/items.mjs';
+import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY } from './quests.js';
+import { gameTime } from './data/clock.mjs';
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
 import { portalById, portalFee } from './data/portals.mjs';
 import { actionFor, FIXED_KEYS } from './data/controls.mjs';
@@ -86,7 +87,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    quests: c.quests, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
+    quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
     skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves,
   });
 
@@ -166,10 +167,11 @@ export function createProgress(c, { save, onChange, onEvent }) {
     },
 
     // Shop: buying needs the level and the coins; selling pays less than the shop asks
-    buy(id) {
+    // buy from the ordinary shop, or from a market (by its id) when standing at one
+    buy(id, market = null) {
       const unlock = SHOP.find(([sid]) => sid === id)?.[1] ?? Infinity;
       const it = ITEMS[id];
-      if (c.level < unlock) return 'locked';
+      if (market ? !marketStock(market, c.level).includes(id) : c.level < unlock) return 'locked';
       if (c.coins < it.price) return 'coins';
       if (!addItem(id, 1)) return 'full';
       c.coins -= it.price;
@@ -234,20 +236,21 @@ export function createProgress(c, { save, onChange, onEvent }) {
       }
       return 'ok';
     },
-    // Blacksmiths forge weapons and armour from ore and coins
-    forge(id) {
+    // Blacksmiths forge weapons and armour from ore and coins. Each rank unlocks at a class
+    // advancement; a better metal than the rank needs makes the piece +1 or +2 stronger.
+    forge(id, ore = null) {
       if (c.cls !== 'blacksmith') return 'class';
       const it = ITEMS[id];
-      const row = SHOP.find(([sid]) => sid === id);
-      if (!it || !isGear(it) || !row) return 'pick';
-      if (c.level < row[1]) return 'level';
-      const cost = forgeCost(it);
+      if (!it || !isGear(it) || forgeLevel(id) === Infinity) return 'pick';
+      if (c.level < forgeLevel(id)) return 'level';
+      const cost = forgeCost(it, ore);
+      if (!cost) return 'pick';
       if (c.coins < cost.coins) return 'coins';
       if (!cost.needs.every(([n, k]) => count(n) >= k)) return 'parts';
       if (used() >= BAG_SLOTS) return 'full';
       c.coins -= cost.coins;
       for (const [n, k] of cost.needs) removeItem(n, k);
-      addItem(id, 1);
+      addItem(id, 1, cost.bonus);
       changed('gear');
       return 'ok';
     },
@@ -373,8 +376,17 @@ export function createProgress(c, { save, onChange, onEvent }) {
       changed('stats');
     },
     // Quests. `here` is where you stand, so new quests fit the area.
-    fillQuests(here) { const before = (c.quests || []).length; fillBoard(c, here); if (c.quests.length !== before) changed('quests'); },
-    questAccept(i) { if (c.quests[i]) { c.quests[i].accepted = true; changed('quests'); } },
+    fillQuests(here) { const before = (c.quests || []).length, next = c.questNext; fillBoard(c, here); if (c.quests.length !== before || c.questNext !== next) changed('quests'); },
+    // returns 'ok', or 'limit' when today's quests are used up
+    questAccept(i) {
+      const q = c.quests[i];
+      if (!q || q.accepted) return 'pick';
+      if (questsToday(c) >= QUESTS_PER_DAY) return 'limit';
+      c.questDay = { day: gameTime().day, n: questsToday(c) + 1 };
+      q.accepted = true;
+      changed('quests');
+      return 'ok';
+    },
     questDrop(i, here) { c.quests.splice(i, 1); fillBoard(c, here); changed('quests'); },
     // Returns the reward if the quest was finished
     questClaim(i, here) {
@@ -389,12 +401,13 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return q.reward;
     },
     // Called when you defeat a monster or move: returns titles of quests that just became complete
-    questKill(kind) {
+    questKill(kind, level = 0) {
       const ready = [];
+      const counts = (q) => q.accepted && ((q.type === 'hunt' && q.kind === kind) || (q.type === 'slay' && level >= q.min));
       for (const q of c.quests || []) {
-        if (q.accepted && q.type === 'hunt' && q.kind === kind && q.have < q.need) { q.have += 1; if (q.have >= q.need) ready.push(q.title); }
+        if (counts(q) && q.have < q.need) { q.have += 1; if (q.have >= q.need) ready.push(q.title); }
       }
-      if (ready.length || (c.quests || []).some((q) => q.accepted && q.type === 'hunt' && q.kind === kind)) changed('quests');
+      if (ready.length || (c.quests || []).some(counts)) changed('quests');
       return ready;
     },
     questVisit(x, z) {

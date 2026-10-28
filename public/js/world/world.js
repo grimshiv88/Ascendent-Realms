@@ -17,11 +17,11 @@ import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
-import { heightAt, surfaceAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground } from '../data/world-layout.mjs';
+import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime } from '../data/clock.mjs';
 import { RACES, restCap } from '../data/game-data.mjs';
-import { ITEMS, weaponReach, weaponEffect, EFFECTS } from '../data/items.mjs';
+import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS } from '../data/items.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -32,7 +32,7 @@ const STEER_RUN = 0.9;
 
 // `game` is the progress object (HP, bag, gear). `onEvent(type, data)` reports kills, pickups,
 // defeat and level-ups to the page.
-export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onMouseFreed, view } = {}) {
+export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onMouseFreed, windowOpen, view } = {}) {
   allCastles(); // levels the ground under the Monster Kings' castles before any land is built
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // sharper costs a lot of speed on iPads
@@ -274,7 +274,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     });
     for (const tl of torchLights) tl.flame.scale.y = 1 + Math.sin(t * 11 + tl.x) * 0.15;
   }
-  const TORCH_SAFE = 12, FIRE_SAFE = 35;
+  const TORCH_SAFE = 12;
   // Your tent: a canvas ridge tent on two poles
   const tentGroup = new THREE.Group();
   scene.add(tentGroup);
@@ -320,7 +320,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function isSafe(x, z) {
     if (nearTent(x, z, TENT_SAFE)) return true;
     if (torchLights.some((tl) => Math.hypot(tl.x - x, tl.z - z) < TORCH_SAFE)) return true;
-    return placesWithPositions().some((p) => !p.cave && Math.hypot(p.x - x, p.z - z) < FIRE_SAFE);
+    return !!safeZoneAt(x, z);
   }
 
   // Sleeping (Z, only somewhere safe) and collapsing from exhaustion
@@ -354,7 +354,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let lastHurt = -99;
   const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
-    getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, moving: speedNow > 1 }),
+    getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1 }),
     isNight: () => night,
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
     isInsideCave: insideCave,
@@ -548,6 +548,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
 
   // The use key (E): open a chest, pick up a torch or pack up your tent, whichever is closest at hand
+  let inZone = null, atStall = null;
   function interact() {
     if (!game || dead) return;
     const chest = colliders.near(pos.x, pos.z, 3).find((e) => e.kind === 'chest' && Math.hypot(e.x - pos.x, e.z - pos.z) - e.r < 1.6);
@@ -556,6 +557,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const took = game.takeTorch(pos.x, pos.z);
       if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
       if (nearTent(pos.x, pos.z, TENT_IN + 1)) { pitchTent(); return; }
+      const stall = sites.find((s) => s.built?.market && Math.hypot(s.built.market.x - pos.x, s.built.market.z - pos.z) < 5);
+      if (stall) { onEvent?.('market', stall.built.market.id); return; }
     }
     say('Nothing here to open or pick up', 'note');
   }
@@ -767,10 +770,20 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   // ---------- input ----------
   const keys = new Set();
+  // Auto-walk: tap forward (W or ↑) twice quickly and you keep walking on your own; tap forward
+  // or back again to stop
+  let autoWalk = false, lastForward = 0;
   const down = (e) => {
     if (e.target.closest && e.target.closest('input, textarea')) return;
     keys.add(e.code);
     const act = actionFor(e.code);
+    if (!e.repeat && (act === 'forward' || e.code === 'ArrowUp')) {
+      const now = performance.now();
+      if (autoWalk) { autoWalk = false; lastForward = 0; say('Auto-walk off', 'note'); }
+      else if (now - lastForward < 320) { autoWalk = true; lastForward = 0; say('Auto-walk on: tap forward or back to stop', 'note'); }
+      else lastForward = now;
+    }
+    if (!e.repeat && autoWalk && (act === 'back' || e.code === 'ArrowDown')) { autoWalk = false; say('Auto-walk off', 'note'); }
     if (act === 'attack') attack();
     if (act === 'sleep') toggleSleep();
     if (act === 'torch') placeTorch();
@@ -814,13 +827,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     letGo = false;
   });
   document.addEventListener('mousemove', (e) => {
-    if (!locked()) return;
+    if (!locked() || windowOpen?.()) return;
     yaw -= e.movementX * 0.0025;
     pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018, -0.15, 1.2);
   });
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && locked()) { if (e.button === 0) attack(); return; }
-    if (e.pointerType === 'mouse' && e.button === 0 && !plots.on && !noLock && !freeMouse && canvas.requestPointerLock) {
+    if (e.pointerType === 'mouse' && e.button === 0 && !plots.on && !noLock && !freeMouse && !windowOpen?.() && canvas.requestPointerLock) {
       try { const r = canvas.requestPointerLock(); r?.catch?.(() => { noLock = true; }); } catch { noLock = true; }
       if (!noLock) return;
     }
@@ -953,11 +966,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (paused) { clock.getDelta(); return; }
     const dt = Math.min(clock.getDelta(), 0.1); // a slow frame still moves you the full distance
     const t = clock.elapsedTime;
+    // a window or the chat is open: the mouse is always free to use it, even while you keep walking
+    if (locked() && windowOpen?.()) { letGo = true; document.exitPointerLock(); }
 
     // Movement relative to the camera, in any direction
     let fx = 0, fz = 0;
+    if (dead || sleeping) autoWalk = false;
     if (!dead && !resting()) {
-      if (held('forward') || keys.has('ArrowUp')) fz += 1;
+      if (held('forward') || keys.has('ArrowUp') || autoWalk) fz += 1;
       if (held('back') || keys.has('ArrowDown')) fz -= 1;
       if (held('left') || keys.has('ArrowLeft')) fx -= 1;
       if (held('right') || keys.has('ArrowRight')) fx += 1;
@@ -1114,7 +1130,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const s = game.stats();
         const c = game.character;
         // SP always comes back slowly (faster at rest); HP only when nothing has hit you for a while
-        if (c.sp < s.sp) { c.sp = Math.min(s.sp, c.sp + s.sp * (t - lastHurt > 6 ? 0.03 : 0.012)); game.touch('sp'); }
+        // SP comes back by itself only up to the same cap as HP; drinks and potions do the rest
+        const spCap = Math.floor(s.sp * restCap(c.level, sleeping));
+        if (c.sp < spCap) { c.sp = Math.min(spCap, c.sp + s.sp * (t - lastHurt > 6 ? 0.03 : 0.012)); game.touch('sp'); }
         if (t - lastHurt > 6 && c.hp < s.hp) restHeal(s.hp * 0.015, false);
       }
     }
@@ -1156,6 +1174,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (nowCave !== atCave) { atCave = nowCave; onEvent?.('cave', atCave ? caveById(atCave) : null); }
         const nowPortal = nearestPortal(pos.x, pos.z);
         if (nowPortal !== atPortal) { atPortal = nowPortal; onEvent?.('portal', atPortal); }
+        const zone = safeZoneAt(pos.x, pos.z);
+        if ((zone?.id || null) !== inZone) { inZone = zone?.id || null; if (zone) say(`Safe zone: monsters can't come in here`, 'note'); }
+        const stall = sites.find((s) => s.built?.market && Math.hypot(s.built.market.x - pos.x, s.built.market.z - pos.z) < 5)?.built.market.id || null;
+        if (stall !== atStall) { atStall = stall; if (stall) say(`Press ${keyName(codeFor('interact'))} to shop at the ${MARKETS[stall].name}`, 'note'); }
       }
       if (here !== area) { area = here; onArea?.(area, { x: pos.x, z: pos.z }); }
     }

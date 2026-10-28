@@ -5,7 +5,7 @@ import { codeFor } from './data/controls.mjs';
 import { heightAt, PLOT } from './data/world-layout.mjs';
 import {
   CELL, STOREY, MAX_LEVEL, PIECES, BUILDINGS, COUNTRY_PLOTS, homePlot, pieceKey, placeBuilding, buildingSize,
-  piecesCost, buildingCost, hireMinutes, applyBuild, READY_MARKUP,
+  piecesCost, removeCost, buildingCost, hireMinutes, applyBuild, READY_MARKUP,
 } from './data/building.mjs';
 import { buildPieces, storeyY } from './world/buildings.js';
 
@@ -36,12 +36,20 @@ export function openBuilder(host, opts) {
           <button type="button" data-tab="remove" role="tab">Remove</button>
         </div>
         <div class="bv-tools"></div>
-        <div class="bv-cards"></div>
+        <div class="bv-strip">
+          <button type="button" class="bv-scroll" data-scroll="-1" aria-label="Scroll left">‹</button>
+          <div class="bv-cards"></div>
+          <button type="button" class="bv-scroll" data-scroll="1" aria-label="Scroll right">›</button>
+        </div>
       </div>
     </div>`;
   const root = host.querySelector('.builder');
   const canvas = root.querySelector('canvas');
   const $ = (s) => root.querySelector(s);
+  // the list of buildings and pieces is wider than the screen: arrows and the mouse wheel move it sideways
+  const cards = $('.bv-cards');
+  for (const b of root.querySelectorAll('[data-scroll]')) b.addEventListener('click', () => cards.scrollBy({ left: Number(b.dataset.scroll) * cards.clientWidth * 0.8, behavior: 'smooth' }));
+  cards.addEventListener('wheel', (e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { cards.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
 
   // ---------- the scene ----------
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -156,11 +164,12 @@ export function openBuilder(host, opts) {
     $('.bv-coins').textContent = `${opts.coins().toLocaleString()} G`;
     for (const b of root.querySelectorAll('[data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
     const builder = opts.cls === 'builder';
-    const planCost = piecesCost(plan, opts.cls);
+    const downCost = removeCost(builtPieces().filter((q) => removing.has(pieceKey(q))), opts.cls);
+    const planCost = piecesCost(plan, opts.cls) + downCost;
     $('.bv-tools').innerHTML = `
       ${tab !== 'ready' ? `<span class="bv-level">Storey <button type="button" data-bv="down" aria-label="Down a storey" ${level ? '' : 'disabled'}>−</button> <b>${level + 1}</b> <button type="button" data-bv="up" aria-label="Up a storey" ${level < MAX_LEVEL ? '' : 'disabled'}>+</button></span>` : ''}
       ${tab !== 'remove' ? `<button type="button" data-bv="turn">Turn <kbd>R</kbd></button>` : ''}
-      ${plan.length || removing.size ? `<span class="bv-plan">Plan: ${plan.length ? `${plan.length} piece${plan.length === 1 ? '' : 's'} · <b>${planCost.toLocaleString()} G</b>` : ''}${removing.size ? ` ${removing.size} to remove (free)` : ''}</span>
+      ${plan.length || removing.size ? `<span class="bv-plan">Plan: ${plan.length ? `${plan.length} piece${plan.length === 1 ? '' : 's'} · <b>${(planCost - downCost).toLocaleString()} G</b>` : ''}${removing.size ? ` ${removing.size} to remove (${downCost.toLocaleString()} G)` : ''}${plan.length && removing.size ? ` · total <b>${planCost.toLocaleString()} G</b>` : ''}</span>
         <button type="button" class="gold-button" data-bv="build" ${busy || planCost > opts.coins() ? 'disabled' : ''}>Build</button>
         <button type="button" data-bv="clear">Clear plan</button>` : ''}`;
     if (offer) {
@@ -190,7 +199,7 @@ export function openBuilder(host, opts) {
       $('.bv-cards').innerHTML = PIECE_ORDER.map((id) => `<button type="button" class="bv-card${piece === id ? ' on' : ''}" data-piece="${id}">
           <b>${PIECES[id].name}</b><span>${Math.round(PIECES[id].price * (builder ? 0.6 : 1))} G</span><small>${PIECES[id].text}</small></button>`).join('');
     } else {
-      $('.bv-cards').innerHTML = '<p class="bv-hint">Tap a piece you built to mark it for removal (tap again to keep it), then press Build. Pieces holding others up can only come down with them.</p>';
+      $('.bv-cards').innerHTML = '<p class="bv-hint">Tap a piece you built to mark it for removal (tap again to keep it), then press Build. Taking pieces down costs about a third of their build price. Pieces holding others up can only come down with them.</p>';
     }
   }
 

@@ -187,6 +187,9 @@ export const buildingSize = (type, r = 0) => { const [w, d] = BUILDINGS[type].si
 const piecesPrice = (pieces) => pieces.reduce((a, p) => a + PIECES[p.t].price, 0);
 // Building piece by piece in the Builder View
 export const piecesCost = (pieces, cls) => Math.round(piecesPrice(pieces) * (cls === 'builder' ? BUILDER_SHARE : 1));
+// Taking pieces down costs too: about a third of what they cost to build (at least 1 G each)
+export const REMOVE_SHARE = 0.3;
+export const removeCost = (pieces, cls) => pieces.length ? Math.max(pieces.length, Math.round(piecesCost(pieces, cls) * REMOVE_SHARE)) : 0;
 
 // A ready-made building costs very different amounts depending on who puts it up:
 //  - 'hire': post a quest for a builder; they take a while, but it's the fair price
@@ -227,6 +230,7 @@ export function applyBuild(plots, body, cls, now) {
   }
   const remove = new Set(Array.isArray(body?.remove) ? body.remove.map(String) : []);
   const kept = current.filter((p) => !remove.has(pieceKey(p)));
+  cost += removeCost(current.filter((p) => remove.has(pieceKey(p))), cls);
   const taken = new Set(kept.map(pieceKey));
   for (const p of add) {
     if (taken.has(pieceKey(p))) return { error: b ? 'Something is already built there. Clear the space first.' : 'Something is already built in that spot.' };
