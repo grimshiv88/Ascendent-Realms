@@ -23,7 +23,7 @@ export const SKILLS = {
   hearty_meal: { name: 'Hearty Meal', icon: '🍖', type: 'heal', pct: 30, sp: 12, cd: 30, text: 'Eat well: restore 30% of your HP.' },
   coin_toss: { name: 'Gold Shot', icon: '🪙', type: 'bolt', mult: 1.5, reach: 14, sp: 8, cd: 4, text: 'Fling a weighted coin at a foe up to 14 m away.' },
   haggle: { name: 'Bribe the Odds', icon: '💰', type: 'buff', stat: 'atk', pct: 25, secs: 20, sp: 12, cd: 30, text: '+25% ATK for 20 seconds.' },
-  quick_wall: { name: 'Quick Wall', icon: '🧱', type: 'buff', stat: 'def', pct: 60, secs: 10, sp: 16, cd: 30, text: 'Throw up cover: +60% DEF for 10 seconds.' },
+  quick_wall: { name: 'Quick Wall', icon: '🏗️', type: 'buff', stat: 'def', pct: 60, secs: 10, sp: 16, cd: 30, text: 'Throw up cover: +60% DEF for 10 seconds.' },
 };
 for (const [id, s] of Object.entries(SKILLS)) s.id = id;
 
