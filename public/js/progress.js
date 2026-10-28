@@ -104,7 +104,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, form: c.form, guildCard: c.guildCard || null,
+    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0,
   });
 
   // worn gear doesn't take up room in the bag
@@ -577,6 +577,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
       changed('torches');
       return 'ok';
     },
+    // real time spent playing, shown on the ID card
+    addPlayTime(ms) { c.playMs = (c.playMs || 0) + ms; },
     // The Hunter's Guild Card: ask for one at the Guild Hall counter (paying the fee), then lay a
     // hand on the crystal in the Assessment Room to have it read and ranked
     requestCard() {

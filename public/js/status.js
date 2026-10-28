@@ -5,6 +5,7 @@ import {
   RACES, CLASSES, CLASS_GUIDE, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor, mayChangeForm, FORM_SWITCH_LEVEL,
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
+import { lifeRows } from './idcard.js';
 import { PRIVACY, privacyOf } from './data/social.mjs';
 import { gameTime, clockText } from './data/clock.mjs';
 import { SKILLS, UPGRADE_EVERY } from './data/skills.mjs';
@@ -112,6 +113,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('Unique', `<span class="sw-unique" title="${esc(c.uniqueSkill.text)} Sealed: ${esc(c.uniqueSkill.sealed)}">${esc(c.uniqueSkill.name)}</span> <small>(${5 - c.uniqueSkill.sealsOpen} seals)</small>`)}
           ${row(isMonster ? 'Next evolution' : 'Next advancement', `??? <small>at Lv ${KEY_LEVELS.find((k) => k > c.level) ?? '—'}</small>`)}
           ${row('Next upgrade', `Lv ${nextUpgrade(c.level)} <small>(stronger, + a new skill)</small>`)}
+          ${lifeRows(c).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
         </dl>
       </div>
       <details class="sw-guide"><summary>Your class: what you can do and your goals</summary>${classGuide(c.cls)}</details>

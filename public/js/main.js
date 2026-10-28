@@ -36,7 +36,7 @@ import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } 
 paintCloudBanks();
 
 const $ = (id) => document.getElementById(id);
-const panels = ['choose', 'signup', 'signin'];
+const panels = ['choose', 'signup', 'signin', 'story'];
 
 function show(panelId) {
   for (const id of panels) $(id).classList.toggle('hidden', id !== panelId);
@@ -895,6 +895,8 @@ function startGame(character) {
   }, 10000);
   drawSkillBar();
   bindHud($('hud'), drawHud);
+  // real time played, for the ID card: counted while the game is open and showing
+  setInterval(() => { if (!document.hidden) game.addPlayTime(60000); }, 60000);
   // death is final, so warn when HP runs low
   let warnedAt = 0;
   setInterval(() => {

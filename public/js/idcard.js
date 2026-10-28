@@ -4,6 +4,7 @@ import { RACES, CLASSES, ADVANCEMENTS, rankFor } from './data/game-data.mjs';
 import { CASTLES } from './data/kings.mjs';
 import { characterPortrait } from './characters/icons.js';
 import { CARD_RANKS, rankIndex } from './data/guildcard.mjs';
+import { now, DAY_MS } from './data/clock.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -13,6 +14,17 @@ export function titleOf(c, courts = [], nation = null) {
   if (court) return CASTLES[court.race]?.title || 'King';
   if (nation) return `Emperor of ${nation}`;
   return rankFor(c.level);
+}
+
+// When the character joined (real date), how long they have played (real hours), and how many days
+// of the realm have passed since then
+export function lifeRows(c) {
+  const joined = c.createdAt ? new Date(c.createdAt) : null;
+  const hours = Math.floor((c.playMs || 0) / 3600000), mins = Math.floor(((c.playMs || 0) % 3600000) / 60000);
+  const days = joined ? Math.max(0, Math.floor((now() - joined.getTime()) / DAY_MS)) : 0;
+  return `${joined ? `<div><dt>Joined</dt><dd>${joined.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</dd></div>` : ''}
+    <div><dt>Played</dt><dd>${hours ? `${hours} h ` : ''}${mins} min</dd></div>
+    ${joined ? `<div><dt>Days in the realm</dt><dd>${days}</dd></div>` : ''}`;
 }
 
 let photo = { key: '', url: null };
@@ -34,6 +46,7 @@ export function renderIdCard(el, game, { monster = false, courts = [], nation = 
           <div><dt>Level</dt><dd>${c.level}</dd></div>
           <div><dt>Title</dt><dd>${esc(titleOf(c, courts, nation))}</dd></div>
           <div><dt>Class</dt><dd>${esc(cls)}</dd></div>
+          ${lifeRows(c)}
         </dl>
       </div>
       <p class="shop-msg" role="status">${esc(message)}</p>

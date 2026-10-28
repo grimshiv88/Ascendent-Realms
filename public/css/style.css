@@ -869,3 +869,4 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .assess-stats div { padding: 6px; text-align: center; background: #0d0a05; border: 1px solid #4a3608; border-radius: 4px; }
 .assess-stats dt { font: 600 0.7rem 'Oswald', sans-serif; color: #b9ab8a; letter-spacing: 0.08em; }
 .assess-stats dd { margin: 0; font: 700 1.1rem 'Cinzel', serif; color: #fff3cf; }
+.story-link { display: block; margin: 12px auto 0; }

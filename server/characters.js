@@ -158,6 +158,9 @@ function saveProgress(accountId, p) {
   const t = p.tent;
   const tent = t && Number.isFinite(t.x) && Number.isFinite(t.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6
     ? { x: t.x, z: t.z, heading: Number.isFinite(t.heading) ? t.heading : 0 } : null;
+  // real time played (it only ever grows)
+  const playMs = int(Math.round(Number(p.playMs) || 0), 0, 1e13);
+  if (playMs !== null && playMs >= (character.playMs || 0)) character.playMs = playMs;
   // the Hunter's Guild Card: asked for (pending) or read by the crystal (with a rank)
   const gc = p.guildCard;
   if (gc && typeof gc === 'object') {
