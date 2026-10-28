@@ -329,17 +329,21 @@ export async function landList() {
   return request('api/land');
 }
 
-export async function landBuy(ix, iz, purpose) {
+// Buy several plots at once ([{ix, iz}]); `at` is where you stand (the server checks its own copy)
+export async function landBuy(list, purpose, at) {
   if (await isPreviewMode()) {
     return previewLand.run((plots, acc, spend, R) => {
-      if (plots.some((p) => p.ix === ix && p.iz === iz)) throw new Error('Someone already owns this plot.');
-      const why = R.whyNot(ix, iz);
-      if (why) throw new Error(why);
-      spend(R.plotPrice(ix, iz));
-      plots.push({ ix, iz, owner: acc.character.name, purpose, flat: null });
+      const check = R.checkPurchase(list, {
+        owned: new Set(plots.map((p) => `${p.ix},${p.iz}`)),
+        mine: new Set(plots.filter((p) => p.owner === acc.character.name).map((p) => `${p.ix},${p.iz}`)),
+        at,
+      });
+      if (check.error) throw new Error(check.error);
+      spend(check.total);
+      for (const p of list) plots.push({ ix: p.ix, iz: p.iz, owner: acc.character.name, purpose, flat: null });
     });
   }
-  return request('api/land/buy', { method: 'POST', body: { ix, iz, purpose } });
+  return request('api/land/buy', { method: 'POST', body: { plots: list, purpose } });
 }
 
 export async function landPurpose(ix, iz, purpose) {

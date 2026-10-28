@@ -21,7 +21,9 @@ export const PIECES = {
   pillar: { name: 'Pillar', on: 'corner', price: 15, text: 'Holds up floors and roofs without a whole wall.' },
   stairs: { name: 'Stairs', on: 'cell', price: 60, text: 'Up to the next storey. Needs a floor under it.' },
   roof: { name: 'Roof', on: 'cell', price: 45, text: 'Sits on top of the walls of its storey. Add more storeys and roof them again.' },
+  spawn: { name: 'Spawn Shrine', on: 'cell', price: 800, text: 'When you fall, you wake up here instead of back home. One per player. Stands on a foundation or floor.' },
 };
+export const MAX_SPAWNS = 1;
 // Builders get a better price on everything they build themselves
 export const BUILDER_SHARE = 0.6;
 
@@ -35,7 +37,7 @@ export function homePlot(p, ok) {
   return null;
 }
 // one piece per slot: floors and foundations share a cell's floor, the three walls share an edge
-const slotOf = (p) => (PIECES[p.t].on === 'edge' ? `e${p.e}` : p.t === 'foundation' || p.t === 'floor' ? 'f' : p.t === 'roof' ? 'r' : p.t === 'stairs' ? 's' : 'c');
+const slotOf = (p) => (PIECES[p.t].on === 'edge' ? `e${p.e}` : p.t === 'foundation' || p.t === 'floor' ? 'f' : p.t === 'roof' ? 'r' : p.t === 'stairs' ? 's' : p.t === 'spawn' ? 'p' : 'c');
 export const pieceKey = (p) => `${slotOf(p)}:${p.x},${p.z},${p.l}`;
 
 // Is this a well-formed piece? (types, whole numbers, levels in range)
@@ -81,6 +83,7 @@ export function unsupported(pieces, ground) {
       case 'pillar':
         return [[x, z], [x - 1, z], [x, z - 1], [x - 1, z - 1]].some(([a, b]) => has(floorAt(a, b, l))) || has(`c:${x},${z},${l - 1}`);
       case 'stairs': return has(floorAt(x, z, l)) || has(`s:${x},${z},${l - 1}`);
+      case 'spawn': return has(floorAt(x, z, l));
       case 'roof':
         return edgeKeys(x, z, l).some(has) || cornerKeys(x, z, l).some(has) || near(x, z).some(([a, b]) => has(`r:${a},${b},${l}`));
       default: return false;
@@ -154,6 +157,7 @@ export const BUILDINGS = {
   barn: { name: 'Barn', size: [4, 5], pieces: () => box(4, 5, 2, { doors: [[1, 5], [2, 5]], windows: false }), text: 'Tall and wide, for animals and crops.' },
   tower: { name: 'Watchtower', size: [2, 2], pieces: () => box(2, 2, 4), text: 'Four storeys to see far across your land.' },
   manor: { name: 'Manor', size: [5, 5], pieces: () => box(5, 5, 3, { doors: [[2, 5]] }), text: 'Three grand storeys.' },
+  shrine: { name: 'Spawn Shrine', size: [1, 1], pieces: () => [{ t: 'foundation', x: 0, z: 0, l: 0 }, { t: 'spawn', x: 0, z: 0, l: 0 }], text: 'Wake up here when you fall, instead of back home. Only one.' },
   castle: { name: 'Castle', size: [10, 10], ruler: true, pieces: castle, text: 'Walls, towers and a keep. Only for rulers of a country.' },
 };
 
@@ -230,6 +234,7 @@ export function applyBuild(plots, body, cls, now) {
   }
   const next = [...kept, ...add];
   if (next.length > MAX_PIECES) return { error: `That's more than ${MAX_PIECES} pieces.` };
+  if (next.filter((p) => p.t === 'spawn').length > MAX_SPAWNS) return { error: 'You can have only one Spawn Shrine. Take the old one down first.' };
   const homes = new Map();
   for (const p of add) {
     const h = homePlot(p, ground);

@@ -1,13 +1,14 @@
 // The Land window: shows the plot you picked on the grid (press L), and lets you buy it,
 // choose what it is for, and clear and level it.
-import { PURPOSES, PURPOSE_FEE, plotPrice, prepareCost, PLOT } from './data/land.mjs';
+import { PURPOSES, PURPOSE_FEE, prepareCost, PLOT, REACH } from './data/land.mjs';
 import { THEMES, SIZES, cavePrice } from './data/depths.mjs';
 import { ITEMS } from './data/items.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-// `plot` is { ix, iz, owned, why }; `choice` is the purpose picked on the cards
-export function renderLand(el, plot, game, { choice = 'house', message = '', busy = false } = {}) {
+// `plot` is { ix, iz, owned, why, river } (the one last tapped); `choice` is the purpose picked on the
+// cards; `basket` the plots chosen to buy together [{ix, iz, price}]
+export function renderLand(el, plot, game, { choice = 'house', message = '', busy = false, basket = [] } = {}) {
   const c = game.character;
   const owned = plot.owned;
   const mine = owned?.mine;
@@ -15,13 +16,19 @@ export function renderLand(el, plot, game, { choice = 'house', message = '', bus
       <button type="button" class="land-purpose" data-land-pick="${id}" aria-pressed="${choice === id}" style="--pc:${p.color}">
         <b>${p.name}${current === id ? ' <small>(now)</small>' : ''}</b><span>${esc(p.text)}</span></button>`).join('')}</div>`;
   let body;
-  if (!owned && plot.why) {
+  const total = basket.reduce((a, p) => a + p.price, 0);
+  if (!owned && basket.length) {
+    const n = basket.length;
+    body = `<p class="sys-top">Chosen: <b>${n} plot${n === 1 ? '' : 's'}</b> <span>·</span> Total <b>${total} G</b> <span>·</span> You have <b>${c.coins} G</b></p>
+      <div class="land-basket">${basket.map((p) => `<button type="button" class="land-chip" data-land-unpick="${p.ix},${p.iz}" title="Take it out">${p.ix}, ${p.iz} <small>${p.price} G</small> ×</button>`).join('')}</div>
+      <p class="sys-hint">Tap more squares on the grid, or on the Map (M), to add them; tap one again to take it out. Blue river squares can be bought beside your land, or beside land you choose with them. You can buy up to ${REACH} m from where you stand.</p>
+      <h3 class="sys-sub">What will this land be for?</h3>${purposeCards(null)}
+      <div class="land-actions"><button type="button" class="sys-button" data-land-buy ${busy || c.coins < total ? 'disabled' : ''}>${c.coins < total ? 'Not enough coins' : `Buy ${n === 1 ? 'it' : `all ${n}`} as ${PURPOSES[choice].name} for ${total} G`}</button>
+        <button type="button" class="sys-button ghost" data-land-clear ${busy ? 'disabled' : ''}>Clear</button></div>`;
+  } else if (!owned && plot.why) {
     body = `<p class="sys-msg bad">${esc(plot.why)}</p><p class="sys-hint">Green squares on the grid can be bought. Grey ones can't; red ones belong to someone else; gold ones are yours.</p>`;
   } else if (!owned) {
-    const price = plotPrice(plot.ix, plot.iz);
-    body = `<p class="sys-top">For sale: <b>${price} G</b> <span>·</span> You have <b>${c.coins} G</b></p>
-      <h3 class="sys-sub">What will this land be for?</h3>${purposeCards(null)}
-      <div class="land-actions"><button type="button" class="sys-button" data-land-buy ${busy || c.coins < price ? 'disabled' : ''}>${c.coins < price ? 'Not enough coins' : `Buy as ${PURPOSES[choice].name} for ${price} G`}</button></div>`;
+    body = `<p class="sys-hint">Tap squares on the grid, or on the Map (M), to choose land to buy. You can buy up to ${REACH} m from where you stand.</p>`;
   } else if (!mine) {
     body = `<p class="sys-top">Owned by <b>${esc(owned.owner)}</b> <span>·</span> ${PURPOSES[owned.purpose]?.name || 'Land'}</p>`;
   } else {
@@ -35,6 +42,7 @@ export function renderLand(el, plot, game, { choice = 'house', message = '', bus
       <h3 class="sys-sub">Change what it is for <small>${PURPOSE_FEE} G</small></h3>${purposeCards(owned.purpose)}
       <div class="land-actions"><button type="button" class="sys-button ghost" data-land-change ${busy || choice === owned.purpose || c.coins < PURPOSE_FEE ? 'disabled' : ''}>Change to ${PURPOSES[choice].name}</button></div>`;
   }
+  if (mine && basket.length) body += `<p class="sys-hint">${basket.length} plot${basket.length === 1 ? '' : 's'} chosen to buy (${total} G). <button type="button" class="sys-button ghost" data-land-open-basket>Show them</button></p>`;
   el.innerHTML = `
     <div class="system-window land-window" role="dialog" aria-label="Land">
       <button type="button" class="sys-close" data-close aria-label="Close">×</button>

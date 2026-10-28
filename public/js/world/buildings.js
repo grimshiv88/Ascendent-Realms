@@ -16,6 +16,7 @@ export const MATS = {
   keep: mat('#9a958a', { roughness: 0.95 }),
   keepTrim: mat('#6f6a60', { roughness: 0.95 }),
   slate: mat('#4a4f5a'),
+  crystal: new THREE.MeshStandardMaterial({ color: '#7fd8ff', emissive: '#3fb0ff', emissiveIntensity: 1.2, roughness: 0.2, transparent: true, opacity: 0.9 }),
 };
 const STONE = { plaster: MATS.keep, timber: MATS.keepTrim, roof: MATS.slate, floor: MATS.keepTrim };
 const unit = new THREE.BoxGeometry(1, 1, 1);
@@ -80,9 +81,21 @@ function drawPiece(g, p, y0, look, stone) {
       g.add(c);
       break;
     }
+    case 'spawn': {
+      // a stone plinth with a glowing crystal floating over it: where you wake up when you fall
+      const cx = X + CELL / 2, cz = Z + CELL / 2;
+      block(g, m('stone'), cx, y0 + 0.2, cz, 1.6, 0.4, 1.6);
+      block(g, m('stone'), cx, y0 + 0.75, cz, 0.7, 0.7, 0.7);
+      const c = new THREE.Mesh(gem, look || MATS.crystal);
+      c.position.set(cx, y0 + 1.75, cz);
+      c.scale.set(0.35, 0.6, 0.35);
+      g.add(c);
+      break;
+    }
     default:
   }
 }
+const gem = new THREE.OctahedronGeometry(1, 0);
 
 // The floor height of storey `l` on a plot whose levelled ground is at `flat`
 export const storeyY = (flat, l) => flat + SLAB + l * STOREY;

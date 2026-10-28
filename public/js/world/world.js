@@ -7,10 +7,10 @@ import { buildCave } from './caves.js';
 import { createCreatures, KINDS } from './creatures.js';
 import { buildDepths } from './depths.js';
 import { buildPortal } from './portal.js';
-import { buildPieces, pieceColliders } from './buildings.js';
+import { buildPieces, pieceColliders, storeyY } from './buildings.js';
 import { allPortals, nearestPortal } from '../data/portals.mjs';
 import { allCastles, KING_RETURNS_MS } from '../data/kings.mjs';
-import { placeBuilding } from '../data/building.mjs';
+import { placeBuilding, CELL } from '../data/building.mjs';
 import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
@@ -365,15 +365,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   function defeated(m) {
     dead = true;
-    onEvent?.('defeated', { by: m.kind.name });
+    onEvent?.('defeated', { by: m.kind.name, shrine: !!myShrine() });
     setTimeout(() => {
-      // wake up at your home waystone
-      const home = homePlace(RACES[character.race].home);
-      const hp = placesWithPositions().find((p) => p.id === home.id);
-      pos.set(hp.x, 0, hp.z + 6);
+      // wake up at your Spawn Shrine if you've built one, or else at your home waystone
+      const shrine = myShrine();
+      if (shrine) pos.set(shrine.x, 0, shrine.z);
+      else {
+        const home = homePlace(RACES[character.race].home);
+        const hp = placesWithPositions().find((p) => p.id === home.id);
+        pos.set(hp.x, 0, hp.z + 6);
+      }
       updateSites(pos.x, pos.z);
       land.update(pos.x, pos.z, Infinity);
-      pos.y = groundAt(pos.x, pos.z);
+      pos.y = Math.max(groundAt(pos.x, pos.z), shrine?.y ?? -Infinity);
       velY = 0;
       game.respawn();
       dead = false;
@@ -1094,6 +1098,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // What everyone has built on their land; redrawn when it changes or a hired builder finishes
   const structures = new Map(); // "ix,iz" -> { group, solid, sig }
   let lastLands = [];
+  // Your finished Spawn Shrine, if you have one: where to stand when you wake (just in front of it)
+  function myShrine() {
+    const now = Date.now();
+    for (const p of lastLands) {
+      if (!p.mine || !Number.isFinite(p.flat)) continue;
+      const s = (p.pieces || []).find((q) => q.t === 'spawn' && !(q.u > now));
+      if (s) return { x: (s.x + 0.5) * CELL, z: (s.z + 0.5) * CELL + 1.4, y: storeyY(p.flat, s.l) };
+    }
+    return null;
+  }
   function showStructures(list) {
     lastLands = list;
     const now = Date.now();
@@ -1154,6 +1168,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setLandMode(v) { plots.setMode(v); },
     get landMode() { return plots.on; },
     selectPlot(p) { return plots.select(p); },
+    choosePlots(list) { plots.setChosen(list); },
+    // where you are, as saved
+    here: () => here(),
     setLands(list) {
       const before = new Set(prepared);
       prepared = new Set(list.filter((p) => Number.isFinite(p.flat)).map((p) => `${p.ix},${p.iz}`));

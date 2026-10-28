@@ -155,7 +155,7 @@ const RIVER_LINES = RIVERS.map((c) => {
   return { pts, box: [Math.min(...xs) - 600, Math.max(...xs) + 600, Math.min(...zs) - 600, Math.max(...zs) + 600] };
 });
 
-function riverDistance(x, z) {
+export function riverDistance(x, z) {
   let best = Infinity;
   for (const r of RIVER_LINES) {
     if (x < r.box[0] || x > r.box[1] || z < r.box[2] || z > r.box[3]) continue;

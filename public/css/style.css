@@ -703,3 +703,12 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .crowns li { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid rgba(200, 146, 26, 0.45); border-radius: 4px; background: rgba(0, 0, 0, 0.3); }
 .crowns b { color: #ffd76a; font-family: 'Cinzel', serif; }
 .crowns small { color: #b9ab8a; }
+
+/* choosing several plots to buy at once */
+.land-basket { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; max-height: 120px; overflow-y: auto; }
+.land-chip { padding: 4px 8px; font: 0.82rem Georgia, serif; color: var(--sys-ink); background: rgba(61, 155, 255, 0.18); border: 1px solid rgba(61, 155, 255, 0.5); cursor: pointer; }
+.land-chip small { color: var(--sys-dim); }
+.map-basket { position: absolute; left: 10px; right: 64px; bottom: 34px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; background: rgba(10, 20, 40, 0.85); border: 1px solid rgba(61, 155, 255, 0.5); color: #e8f2ff; }
+.map-basket[hidden] { display: none; }
+.map-basket span { flex: 1; min-width: 160px; }
+.land-actions { gap: 10px; flex-wrap: wrap; }

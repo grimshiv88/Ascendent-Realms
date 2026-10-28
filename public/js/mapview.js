@@ -87,8 +87,9 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
           <button type="button" data-zoom="me" aria-label="Follow me">◎</button>
           <button type="button" data-zoom="0" aria-label="Show the whole map">⤢</button>
         </div>
+        ${pick ? '<div class="map-basket" role="status" hidden></div>' : ''}
       </div>
-      <p class="map-note">${travel ? '' : 'Purple rings are portals. '}Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pick ? '<b>Land grid is open: zoom in and tap a square to buy it.</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
+      <p class="map-note">${travel ? '' : 'Purple rings are portals. '}Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pick ? '<b>Land grid is open: zoom in and tap squares to choose them, then press Buy. The dashed square is how far you can buy (1 km across, around you).</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
     </div>`;
   // the painted map, drawn once at twice the size so it stays sharp when zoomed a little
   const full = document.createElement('canvas');
@@ -164,6 +165,23 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
       for (let ix = Math.floor(a.x / PLOT); ix <= Math.ceil(b.x / PLOT); ix++) { const [x] = toCanvas(toMap(ix * PLOT, 0).x, 0); ctx.moveTo(x, 0); ctx.lineTo(x, H); }
       for (let iz = Math.floor(a.z / PLOT); iz <= Math.ceil(b.z / PLOT); iz++) { const [, y] = toCanvas(0, toMap(0, iz * PLOT).y); ctx.moveTo(0, y); ctx.lineTo(W, y); }
       ctx.stroke();
+    }
+    // while buying: the 1 km square you can buy in, and the plots chosen so far
+    if (pick && mine.reach) {
+      const p = getPlayer();
+      if (p) {
+        const a = toMap(p.x - mine.reach, p.z - mine.reach), b = toMap(p.x + mine.reach, p.z + mine.reach);
+        const [x0, y0] = toCanvas(a.x, a.y), [x1, y1] = toCanvas(b.x, b.y);
+        ctx.setLineDash([6, 4]); ctx.strokeStyle = 'rgba(159, 212, 255, 0.9)'; ctx.lineWidth = 2;
+        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.setLineDash([]);
+      }
+    }
+    for (const p of mine.chosen?.() || []) {
+      const a = toMap(p.ix * PLOT, p.iz * PLOT), b = toMap((p.ix + 1) * PLOT, (p.iz + 1) * PLOT);
+      const [x0, y0] = toCanvas(a.x, a.y), [x1, y1] = toCanvas(b.x, b.y);
+      const w = Math.max(4, x1 - x0), h = Math.max(4, y1 - y0);
+      ctx.fillStyle = 'rgba(80, 170, 255, 0.55)'; ctx.strokeStyle = '#9fd4ff'; ctx.lineWidth = 1.5;
+      ctx.fillRect(x0, y0, w, h); ctx.strokeRect(x0, y0, w, h);
     }
     for (const p of mine.others || []) {
       const a = toMap(p.ix * PLOT, p.iz * PLOT), b = toMap((p.ix + 1) * PLOT, (p.iz + 1) * PLOT);

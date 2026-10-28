@@ -1,7 +1,7 @@
 // Land plots: who owns which square of the Heartland, what it is for, and whether it has been levelled.
 const db = require('./db');
 const characters = require('./characters');
-const { PURPOSES, PURPOSE_FEE, whyNot, plotPrice, prepareCost, levelHeight } = require('../public/js/data/land.mjs');
+const { PURPOSES, PURPOSE_FEE, checkPurchase, prepareCost, levelHeight } = require('../public/js/data/land.mjs');
 const { setPreparedPlots } = require('../public/js/data/world-layout.mjs');
 const { caveById, cavePrice } = require('../public/js/data/depths.mjs');
 const B = require('../public/js/data/building.mjs');
@@ -47,17 +47,27 @@ function spend(accountId, cost) {
   return { coins: c.coins, character: c };
 }
 
+// Buy one or more plots at once: { plots: [{ix, iz}], purpose }. Only near where you stand.
 function buy(accountId, body) {
-  const at = plotArgs(body);
-  if (!at) return { error: 'Choose a plot.' };
+  const wanted = (Array.isArray(body.plots) ? body.plots : [body]).map(plotArgs);
+  if (!wanted.length || wanted.some((p) => !p)) return { error: 'Choose a plot.' };
   if (!PURPOSES[body.purpose]) return { error: 'Choose what the land is for.' };
-  if (db.prepare('SELECT 1 FROM lands WHERE ix = ? AND iz = ?').get(at.ix, at.iz)) return { error: 'Someone already owns this plot.' };
-  const why = whyNot(at.ix, at.iz);
-  if (why) return { error: why };
-  const paid = spend(accountId, plotPrice(at.ix, at.iz));
+  const c = characters.load(accountId);
+  if (!c) return { error: 'No character yet.' };
+  const everyone = all();
+  const check = checkPurchase(wanted, {
+    owned: new Set(everyone.map((p) => `${p.ix},${p.iz}`)),
+    mine: new Set(everyone.filter((p) => p.accountId === accountId).map((p) => `${p.ix},${p.iz}`)),
+    at: Number.isFinite(c.location?.x) ? c.location : null,
+  });
+  if (check.error) return check;
+  const paid = spend(accountId, check.total);
   if (paid.error) return paid;
-  db.prepare('INSERT INTO lands (ix, iz, account_id, owner, purpose) VALUES (?, ?, ?, ?, ?)').run(at.ix, at.iz, accountId, paid.character.name, body.purpose);
-  return { ok: true, coins: paid.coins, ...list(accountId) };
+  const add = db.prepare('INSERT INTO lands (ix, iz, account_id, owner, purpose) VALUES (?, ?, ?, ?, ?)');
+  db.exec('BEGIN');
+  for (const p of wanted) add.run(p.ix, p.iz, accountId, paid.character.name, body.purpose);
+  db.exec('COMMIT');
+  return { ok: true, coins: paid.coins, bought: wanted.length, ...list(accountId) };
 }
 
 function setPurpose(accountId, body) {

@@ -16,7 +16,7 @@ import { openBuilder as openBuilderView } from './builder.js';
 import { loadSculpts } from './characters/sculpt.js';
 
 const sculptsReady = loadSculpts();
-import { PLOT } from './data/land.mjs';
+import { PLOT, REACH, inReach, plotPrice } from './data/land.mjs';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
@@ -129,7 +129,7 @@ const SWORD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4l-9.5 9
 function startGame(character) {
   $('game').classList.remove('hidden');
   const overlay = $('overlay');
-  const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '', plot: null, landChoice: 'house', landMsg: '', landBusy: false };
+  const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '', plot: null, landChoice: 'house', landMsg: '', landBusy: false, basket: [] };
   let hudQueued = false;
 
   const game = createProgress(character, {
@@ -205,11 +205,41 @@ function startGame(character) {
     world.setLandMode(on);
     if (on) {
       api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
-      showArea('Land: tap a square to see it, or open the Map (M) to buy from afar. Green is for sale, gold is yours. Press L to leave.');
+      showArea(`Land: tap squares to choose them, then buy them all at once. Green is for sale, blue is river (buy it beside your land), gold is yours. You can buy up to ${REACH} m away; the Map (M) shows more. Press L to leave.`);
     } else {
+      ui.basket = [];
       showArea('Left the land grid.');
     }
   }
+  // Tapping a plot (on the grid or the map): one you can buy goes into (or out of) the basket,
+  // to buy together; any other opens on its own in the Land window. Returns the plot's info.
+  function tapPlot(ix, iz) {
+    const info = world.selectPlot({ ix, iz });
+    ui.plot = info;
+    ui.landMsg = '';
+    ui.landChoice = info.owned?.purpose || ui.landChoice || 'house';
+    const k = (p) => p.ix === ix && p.iz === iz;
+    if (ui.basket.some(k)) ui.basket = ui.basket.filter((p) => !k(p));
+    else if (!info.owned && !info.why) {
+      const me = here();
+      if (!inReach(ix, iz, me.x, me.z)) { ui.landMsg = `That plot is too far away. You can buy land up to ${REACH} m from where you stand.`; return info; }
+      ui.basket = [...ui.basket, { ix, iz }];
+    }
+    world.choosePlots(ui.basket);
+    // river plots chosen beside other chosen plots may no longer be allowed: the info is checked again
+    ui.plot = world.selectPlot({ ix, iz });
+    return info;
+  }
+  const basketTotal = () => ui.basket.reduce((a, p) => a + plotPrice(p.ix, p.iz), 0);
+  function updateMapBasket() {
+    const bar = overlay.querySelector('.map-basket');
+    if (!bar) return;
+    bar.hidden = !ui.basket.length && !ui.landMsg;
+    bar.innerHTML = ui.basket.length
+      ? `<span>${ui.basket.length} plot${ui.basket.length === 1 ? '' : 's'} chosen · ${basketTotal()} G</span><button type="button" class="sys-button" data-land-open>Buy…</button><button type="button" class="sys-button ghost" data-land-clear>Clear</button>`
+      : `<span>${ui.landMsg}</span>`;
+  }
+
   async function landAction(call, okText) {
     ui.landBusy = true; drawPanel();
     try {
@@ -217,8 +247,9 @@ function startGame(character) {
       const r = await call();
       game.setCoins(r.coins);
       setLands(r.plots);
+      if (r.bought) { ui.basket = []; world.choosePlots([]); }
       ui.plot = world.selectPlot({ ix: ui.plot.ix, iz: ui.plot.iz });
-      ui.landMsg = okText;
+      ui.landMsg = typeof okText === 'function' ? okText(r) : okText;
     } catch (err) {
       ui.landMsg = err.message;
     }
@@ -256,13 +287,14 @@ function startGame(character) {
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })),
-      { plots: ui.myPlots || [], others: ui.otherPlots || [], caves: (ui.caves || []).filter((q) => q.mine).map((q) => { const cv = caveById(q.cave); return cv && { x: cv.place.x, z: cv.place.z, name: cv.name }; }).filter(Boolean) },
+      { plots: ui.myPlots || [], others: ui.otherPlots || [], chosen: () => ui.basket, reach: REACH, caves: (ui.caves || []).filter((q) => q.mine).map((q) => { const cv = caveById(q.cave); return cv && { x: cv.place.x, z: cv.place.z, name: cv.name }; }).filter(Boolean) },
       world?.landMode ? (x, z) => {
-        // tapping a square on the map opens it in the Land window, to buy it from afar
-        ui.plot = world.selectPlot({ ix: Math.floor(x / PLOT), iz: Math.floor(z / PLOT) });
-        ui.landMsg = ''; ui.landChoice = ui.plot.owned?.purpose || 'house';
-        overlay.dataset.panel = 'land';
-        drawPanel();
+        // tapping squares on the map chooses them to buy together; your own land opens in the Land window
+        const info = tapPlot(Math.floor(x / PLOT), Math.floor(z / PLOT));
+        if (info.owned?.mine || (info.why && !ui.basket.length)) { overlay.dataset.panel = 'land'; drawPanel(); return; }
+        if (info.why) ui.landMsg = info.why;
+        else if (info.owned && !info.owned.mine) ui.landMsg = `Owned by ${info.owned.owner}.`;
+        updateMapBasket();
       } : null);
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '');
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
@@ -276,9 +308,10 @@ function startGame(character) {
       const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
       renderCave(overlay, ui.atCave, game, { owner: own?.owner, mine: own?.mine, message: ui.caveMsg || '', busy: ui.caveBusy });
     }
-    else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy });
+    else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy, basket: ui.basket.map((p) => ({ ...p, price: plotPrice(p.ix, p.iz) })) });
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();
+    if (name === 'map') updateMapBasket();
     if (name === 'bag' || name === 'shop') fillIcons(overlay);
   }
   const openPanel = (name) => {
@@ -443,7 +476,27 @@ function startGame(character) {
       drawPanel(); return;
     }
     if ((v = t('data-land-pick')) != null) { ui.landChoice = v; ui.landMsg = ''; drawPanel(); return; }
-    if (t('data-land-buy') != null) { landAction(() => api.landBuy(ui.plot.ix, ui.plot.iz, ui.landChoice), 'The land is yours!'); return; }
+    if (t('data-land-buy') != null) {
+      landAction(async () => {
+        // the server checks the distance from where you are saved, so save it first
+        const at = world.here();
+        await api.saveLocation(at);
+        return api.landBuy(ui.basket, ui.landChoice, at);
+      }, (r) => (r.bought > 1 ? `${r.bought} plots are yours!` : 'The land is yours!'));
+      return;
+    }
+    if ((v = t('data-land-unpick')) != null) {
+      const [ix, iz] = v.split(',').map(Number);
+      tapPlot(ix, iz);
+      drawPanel(); return;
+    }
+    if (t('data-land-clear') != null) {
+      ui.basket = []; world.choosePlots([]); ui.landMsg = '';
+      if (overlay.dataset.panel === 'map') updateMapBasket(); else drawPanel();
+      return;
+    }
+    if (t('data-land-open') != null) { overlay.dataset.panel = 'land'; drawPanel(); return; }
+    if (t('data-land-open-basket') != null && ui.basket.length) { ui.plot = world.selectPlot(ui.basket[0]); ui.landMsg = ''; drawPanel(); return; }
     if (t('data-land-change') != null) { landAction(() => api.landPurpose(ui.plot.ix, ui.plot.iz, ui.landChoice), 'Purpose changed.'); return; }
     if (t('data-land-prepare') != null) { landAction(() => api.landPrepare(ui.plot.ix, ui.plot.iz), 'Cleared and levelled. Ready to build on.'); return; }
     if (t('data-signout') != null) { logOut(); return; }
@@ -525,9 +578,7 @@ function startGame(character) {
     view: { camera: settings.camera },
     onArea: (name) => showArea(name),
     onPlot(info) {
-      ui.plot = info;
-      ui.landMsg = '';
-      ui.landChoice = info.owned?.purpose || 'house';
+      tapPlot(info.ix, info.iz);
       overlay.dataset.panel = 'land';
       drawPanel();
       overlay.classList.remove('hidden');
@@ -560,7 +611,7 @@ function startGame(character) {
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
       if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
-      if (type === 'defeated') showArea(`Defeated by a ${data.by}. You wake up back home.`);
+      if (type === 'defeated') showArea(`Defeated by a ${data.by}. You wake up ${data.shrine ? 'at your Spawn Shrine' : 'back home'}.`);
     },
     onKey(e) {
       if (e.code === 'KeyC') openPanel('status');
