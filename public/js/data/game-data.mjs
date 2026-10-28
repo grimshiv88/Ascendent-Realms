@@ -152,6 +152,19 @@ export function expToNext(level, raceId) {
   if (KEY_LEVELS.includes(level + 1)) need = level < 20 ? 600 : roundNice(2.5 * need);
   return Math.round(need * (RACES[raceId]?.expMult || 1));
 }
+// EXP for beating a wild monster, on average (each kill gives between half and one and a half
+// times this). Monsters give more every couple of levels (every 2 levels up to 20, every 3 after),
+// so that about 15 monsters of your own level take you up a level at the start, rising slowly to
+// about 40 by level 500. A level 1 monster gives 1 to 3. An evolved one gives a tenth more for
+// each evolution.
+export function killExp(level, stage = 0) {
+  const band = level < 20 ? level - ((level - 1) % 2) : level - ((level - 20) % 3);
+  return Math.max(2, normalExp(band) / (15 + band / 20)) * (1 + 0.1 * (stage || 0));
+}
+export const rollKillExp = (level, stage = 0, rnd = Math.random) => Math.max(1, Math.round(killExp(level, stage) * (0.5 + rnd())));
+// Monsters far below you teach you little: from 5 levels under you, a tenth less for each level
+// more, down to a fifth
+export const killExpScale = (gap) => (gap <= 5 ? 1 : Math.max(0.2, 1 - (gap - 5) * 0.1));
 
 // Appearance options offered at creation. Colours are hex strings.
 export const APPEARANCE = {

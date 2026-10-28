@@ -5,6 +5,7 @@ import { paintCloudBanks } from './clouds.js';
 import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
+import { villageName } from './data/mobvillages.mjs';
 import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, renderChallenge, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass } from './bag.js';
@@ -440,7 +441,8 @@ function startGame(character) {
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'guild') renderGuild(overlay, game, ui.questMsg, ui.bounty);
     else if (name === 'assess') renderAssess(overlay, character, ui.assessed);
-    else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })),
+    else if (name === 'map') renderMap(overlay, () => world?.position(), [...(character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })),
+      ...(character.villages?.list || []).map((v) => ({ x: v.x, z: v.z, label: villageName(v) }))],
       { plots: ui.myPlots || [], others: ui.otherPlots || [], chosen: () => ui.basket, reach: REACH, caves: (ui.caves || []).filter((q) => q.mine).map((q) => { const cv = caveById(q.cave); return cv && { x: cv.place.x, z: cv.place.z, name: cv.name }; }).filter(Boolean) },
       world?.landMode ? (x, z) => {
         // tapping squares on the map chooses them to buy together; your own land opens in the Land window

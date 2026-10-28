@@ -5,6 +5,7 @@ const { SKILLS } = require('../public/js/data/skills.mjs');
 const { ITEMS, EFFECTS } = require('../public/js/data/items.mjs');
 const { SPELLS } = require('../public/js/data/spells.mjs');
 const { CARD_RANKS } = require('../public/js/data/guildcard.mjs');
+const { VILLAGE_RACES } = require('../public/js/data/mobvillages.mjs');
 
 function load(accountId) {
   const row = db.prepare('SELECT data FROM characters WHERE account_id = ?').get(accountId);
@@ -116,6 +117,16 @@ function saveProgress(accountId, p) {
   for (const [id, at] of Object.entries(p.caves && typeof p.caves === 'object' ? p.caves : {}).slice(0, 200)) {
     if (/^cave\d{1,4}$/.test(id) && int(at, 0, 1e15) !== null) caves[id] = at;
   }
+  // monster villages out in the wilds: where they are, who lives there and who is beaten
+  const vv = p.villages && typeof p.villages === 'object' ? p.villages : {};
+  const villages = {
+    list: (Array.isArray(vv.list) ? vv.list.slice(0, 5) : []).filter((v) => typeof v?.id === 'string' && /^v[a-z0-9]{1,20}$/.test(v.id)
+      && int(v.x, -1e6, 1e6) !== null && int(v.z, -1e6, 1e6) !== null && VILLAGE_RACES.includes(v.race)
+      && Array.isArray(v.folk) && v.folk.length <= 16 && v.folk.every((f) => Array.isArray(f) && int(f[0], 0, 2) !== null && int(f[1], 1, 499) !== null)
+      && Array.isArray(v.dead) && v.dead.every((i) => int(i, 0, 15) !== null))
+      .map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.map(([a, b]) => [a, b]), dead: [...new Set(v.dead)], looted: false })),
+    due: (Array.isArray(vv.due) ? vv.due.slice(0, 5) : []).filter((t) => int(t, 0, 1e15) !== null),
+  };
   // a Potion-Maker hired by a Businessman, and the potions brewing
   const pm = p.potionMaker;
   const potionMaker = pm && int(pm.until, 0, 1e15) !== null
@@ -180,7 +191,7 @@ function saveProgress(accountId, p) {
   }
   // monster players from level 100 can switch to their humanoid form and back
   if ((p.form === 'monster' || p.form === 'humanoid') && mayChangeForm({ ...character, level: fields.level ?? character.level })) character.form = p.form;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves });
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };

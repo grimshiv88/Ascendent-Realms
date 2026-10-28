@@ -8,7 +8,9 @@ import { GUILD_HALL_LEVEL } from '../data/guildcard.mjs';
 import { buildInterior } from './interiors.js';
 import { mayEnterCastle, castleDay } from '../data/interiors.mjs';
 import { buildCave } from './caves.js';
-import { createCreatures, KINDS, monsterHit } from './creatures.js';
+import { createCreatures, KINDS, monsterHit, GOBLIN_LINE } from './creatures.js';
+import { buildMobVillage } from './mobvillage.js';
+import { VILLAGES_AT_ONCE, VILLAGE_RETURNS_MS, VILLAGE_NEAR, VILLAGE_KIND, newVillage, villageName, villageCleared, villageLoot } from '../data/mobvillages.mjs';
 import { createSkillFx } from './skillfx.js';
 import { codeFor, actionFor, keyName } from '../data/controls.mjs';
 import { buildDepths } from './depths.js';
@@ -24,8 +26,8 @@ import { wearGear } from '../characters/gear.js';
 import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime } from '../data/clock.mjs';
-import { RACES, restCap } from '../data/game-data.mjs';
-import { setSettledLand } from '../data/wilds.mjs';
+import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
+import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
@@ -392,6 +394,97 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   for (const s of sites) if (s.built && s.place.cave) postGuards(s); // caves built before the monsters existed
 
+  // ---------- monster villages out in the wilds (see data/mobvillages.mjs) ----------
+  const mobVillages = new Map(); // village id -> { v, built, out: whether its folk are about }
+  const tmpV = {};
+  // somewhere a few kilometres out from a town (mostly the one nearest you), on dry land
+  function planVillage() {
+    const towns = placesWithPositions().filter((p) => !p.cave && !p.monster);
+    const nearest = towns.reduce((a, b) => (Math.hypot(b.x - pos.x, b.z - pos.z) < Math.hypot(a.x - pos.x, a.z - pos.z) ? b : a));
+    const B = WORLD_BOUNDS;
+    for (let tries = 0; tries < 60; tries++) {
+      const from = Math.random() < 0.6 ? nearest : towns[Math.floor(Math.random() * towns.length)];
+      const a = Math.random() * Math.PI * 2, d = VILLAGE_NEAR[0] + Math.random() * (VILLAGE_NEAR[1] - VILLAGE_NEAR[0]);
+      const x = from.x + Math.cos(a) * d, z = from.z + Math.sin(a) * d;
+      if (x < B.minX + 300 || x > B.maxX - 300 || z < B.minZ + 300 || z > B.maxZ - 300) continue;
+      const s = sample(x, z, tmpV);
+      if (s.h < s.water + 1 || safeZoneAt(x, z)) continue;
+      const region = s.region;
+      // dry, open ground right across the camp (in the end, a clearing in a wood will do)
+      const open = tries < 45 ? 0.25 : 1;
+      if (s.forest > open) continue;
+      if ([[24, 0], [-24, 0], [0, 24], [0, -24]].some(([dx, dz]) => { const q = sample(x + dx, z + dz, tmpV); return q.h < q.water + 0.5 || q.forest > open; })) continue;
+      const lvl = wildLevelAt(x, z);
+      if (lvl < 12 || lvl > 45) continue;
+      if (game.villages().some((v) => Math.hypot(v.x - x, v.z - z) < 1500)) continue;
+      return newVillage(x, z, region);
+    }
+    return null;
+  }
+  function spawnFolk(q, i, stage, level) {
+    const { v } = q;
+    let id = VILLAGE_KIND[v.race];
+    const extra = { keep: true, site: v.id, village: v.id, folk: i, angry: true };
+    if (v.race === 'goblin') id = GOBLIN_LINE[stage];
+    else if (stage) { extra.stage = stage; extra.title = EVOLUTIONS[v.race][stage]; }
+    if (stage === 2) extra.title = `${EVOLUTIONS[v.race][2]} (Chief)`;
+    const at = q.built.homes[i];
+    creatures.spawnAt(id, level, at.x, at.z, extra);
+  }
+  function dropVillage(q) {
+    scene.remove(q.built.group);
+    colliders.remove(q.built.solid);
+    creatures.removeWhere((m) => m.site === q.v.id);
+    q.built.dispose();
+    mobVillages.delete(q.v.id);
+  }
+  // keep enough villages in the world, build the ones near you and bring out their folk when you come close
+  function tendVillages() {
+    if (!game || depth || inside) return;
+    const now = Date.now();
+    let want = VILLAGES_AT_ONCE - game.villages().length - game.villagesDue().filter((t) => t > now).length;
+    while (want-- > 0) { const v = planVillage(); if (!v) break; game.addVillage(v); }
+    for (const v of game.villages()) {
+      const d = Math.hypot(pos.x - v.x, pos.z - v.z);
+      let q = mobVillages.get(v.id);
+      if (d < 700 && !q) {
+        q = { v, built: buildMobVillage(v), out: false };
+        scene.add(q.built.group);
+        colliders.add(q.built.solid);
+        if (villageCleared(v)) q.built.unlock();
+        mobVillages.set(v.id, q);
+      } else if (d > 900 && q) { dropVillage(q); continue; }
+      if (!q) continue;
+      if (d < 170 && !q.out) {
+        q.out = true;
+        v.folk.forEach(([stage, level], i) => { if (!v.dead.includes(i)) spawnFolk(q, i, stage, level); });
+      } else if (d > 260 && q.out) {
+        q.out = false;
+        creatures.removeWhere((m) => m.site === v.id);
+      }
+    }
+  }
+  function villageFallen(m) {
+    const v = game.villageKill(m.village, m.folk);
+    if (!v || !villageCleared(v)) return;
+    mobVillages.get(v.id)?.built.unlock();
+    say(`${villageName(v)} is beaten! Its chest is open to you`, 'exp');
+  }
+  function openVillageChest(e) {
+    const q = mobVillages.get(e.village);
+    if (!q || e.open) { say('The chest is empty', 'note'); return; }
+    if (!e.unlocked) { say('Locked. Beat every monster in the village first', 'hurt'); return; }
+    const loot = villageLoot(q.v);
+    for (const [id, n] of loot.items) game.addItem(id, n);
+    game.gainCoins(loot.coins);
+    q.built.openChest();
+    say(`+${loot.coins} G and treasure! The village is abandoned`, 'exp');
+    onEvent?.('chest', { coins: loot.coins, items: loot.items.map(([id, n]) => `${n > 1 ? `${n} ` : ''}${ITEMS[id].name}`) });
+    // the village is gone; another springs up somewhere else later
+    game.lootVillage(q.v.id, VILLAGE_RETURNS_MS);
+    setTimeout(() => dropVillage(q), 2500);
+  }
+
   // Death is final: the game shows what happened and the player begins again (see main.js)
   function defeated(m) {
     dead = true;
@@ -651,6 +744,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     depth.built.removeSolid(e);
   }
   function openChest(e) {
+    if (e.village) { openVillageChest(e); return; }
     if (e.open) { say('The chest is empty', 'note'); return; }
     if (!e.unlocked) { say('Locked tight. Beat the boss to open it', 'hurt'); return; }
     const c = game.character;
@@ -780,9 +874,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function finishHit(m, reward) {
     if (reward) {
       m.onDeath?.();
+      if (m.village) villageFallen(m);
       // monsters far below your level teach you little
-      const gap = game.character.level - m.level;
-      reward.exp = Math.max(1, Math.round(reward.exp * (gap <= 3 ? 1 : Math.max(0.1, 1 - (gap - 3) * 0.15))));
+      reward.exp = Math.max(1, Math.round(reward.exp * killExpScale(game.character.level - m.level)));
       floatText(`+${reward.exp} EXP`, new THREE.Vector3(m.x, m.y + m.height + 0.7, m.z), 'exp');
       game.gainExp(reward.exp);
       game.gainCoins(reward.coins);
@@ -1419,6 +1513,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else if (inside) here = inside.shop.name;
       else {
         updateSites(pos.x, pos.z);
+        tendVillages();
         const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
         const caveHere = sites.find((s) => s.built?.inside?.(pos.x, pos.z));
         here = caveHere ? caveById(caveHere.place.id)?.name || 'A cave' : near ? `${regionName(near.place.region)} · ${near.place.name}` : regionName(sample(pos.x, pos.z, tmpS).region);
@@ -1462,6 +1557,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     sun.position.copy(pos).addScaledVector(lightDir, 120);
     sun.target.position.copy(pos);
     for (const s of sites) s.built?.update?.(t);
+    for (const q of mobVillages.values()) q.built.update(t);
     sky.follow(camera);
 
     renderer.render(scene, camera);
@@ -1545,8 +1641,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     jump() { jumpQueued = true; },
     position: () => ({ x: pos.x, z: pos.z, heading }),
     // for testing: where you and the camera are
+    debugSlayVillage(id) { for (const m of creatures.list.filter((q) => q.village === id && !q.dead)) finishHit(m, creatures.hit(m, m.hp)); },
+    debugUse: () => interact(),
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
-    debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`) }),
+    debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`), villages: game?.villages().map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.length, dead: v.dead.length, built: mobVillages.has(v.id) })) }),
     teleport,
     get atPortal() { return atPortal; },
     set paused(v) { paused = !!v; keys.clear(); },

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { sample, toWorld, PLACES, safeZoneAt } from '../data/world-layout.mjs';
-import { EVOLUTIONS } from '../data/game-data.mjs';
+import { EVOLUTIONS, rollKillExp } from '../data/game-data.mjs';
 import { wildLevelAt, stageForLevel } from '../data/wilds.mjs';
 
 // [name, body to build, level range, aggressive?, speed m/s, drops [item, chance, min, max]]
@@ -97,9 +97,7 @@ export function monsterHit(atk, level, def) {
 }
 // EXP for a kill: a small fraction of a level, more for higher levels and for evolved monsters
 // (a Hobgoblin is worth more than a goblin of the same level)
-export function monsterExp(level, stage = 0) {
-  return Math.round((1 + 0.5 * level ** 1.3) * (1 + 0.15 * (stage || 0)));
-}
+export const monsterExp = (level, stage = 0) => rollKillExp(level, stage);
 
 export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush }) {
   const list = [];

@@ -47,6 +47,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.fatigue ??= 0;
   c.trained = { atk: 0, def: 0, matk: 0, mdef: 0, hp: 0, ...(c.trained || {}) }; // Stat Points put straight into ATK, DEF, MATK, MDEF or HP
   c.caves ??= {}; // cave id -> when you last beat its boss
+  c.villages ??= { list: [], due: [] }; // monster villages out in the wilds, and when the next ones appear
   c.potionMaker ??= null; // { until, queue: [{ id, ready }] } while a Businessman has one hired
   // Skills: learned ones, the ones ready on keys (the rest are kept in storage), and choices still to make
   c.skills = (c.skills || []).filter((id) => SKILLS[id]);
@@ -106,7 +107,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null,
+    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null,
   });
 
   // worn gear doesn't take up room in the bag
@@ -383,6 +384,22 @@ export function createProgress(c, { save, onChange, onEvent }) {
     bossHome: (id) => !(c.caves[id] > Date.now() - BOSS_RETURNS_MS),
     caveCleared: (id) => !!c.caves[id],
     clearCave(id) { c.caves[id] = Date.now(); changed('caves'); },
+
+    // Monster villages (see data/mobvillages.mjs)
+    villages: () => c.villages.list,
+    villagesDue: () => c.villages.due,
+    addVillage(v) { c.villages.list.push(v); c.villages.due = c.villages.due.filter((t) => t > Date.now()); changed('villages'); },
+    villageKill(id, i) {
+      const v = c.villages.list.find((q) => q.id === id);
+      if (v && !v.dead.includes(i)) { v.dead.push(i); changed('villages'); }
+      return v;
+    },
+    // looting the chest ends the village; another comes later
+    lootVillage(id, returnsMs) {
+      c.villages.list = c.villages.list.filter((q) => q.id !== id);
+      c.villages.due.push(Date.now() + returnsMs);
+      changed('villages');
+    },
 
     // Brewing: only a Potion Maker brews (no more hiring one)
     canBrew: () => c.cls === 'potion_maker',
