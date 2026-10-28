@@ -3,6 +3,8 @@
 const db = require('./db');
 const characters = require('./characters');
 const G = require('../public/js/data/groups.mjs');
+const { RACES } = require('../public/js/data/game-data.mjs');
+const isMonster = (id) => { const c = id && characters.load(id); return c ? RACES[c.race]?.side === 'monster' : null; };
 const { largestTerritory } = require('../public/js/data/building.mjs');
 const territory = (id) => largestTerritory(db.prepare('SELECT ix, iz FROM lands WHERE account_id = ?').all(id));
 
@@ -29,7 +31,7 @@ function act(me, body = {}) {
   let r;
   let coins;
   switch (body.action) {
-    case 'invite': r = G.invite(s, name, kind, byName(body.name)?.username || null); break;
+    case 'invite': { const t = byName(body.name); r = G.invite(s, name, kind, t?.username || null, Date.now(), t ? isMonster(t.id) : null); break; }
     case 'respond': r = G.respond(s, name, body.id, body.accept === true); break;
     case 'leave': r = G.leave(s, name, kind); break;
     case 'remove': case 'lead': case 'disband': r = G.manage(s, name, kind, body.action, body.name); break;
@@ -39,7 +41,7 @@ function act(me, body = {}) {
       const c = characters.load(me);
       if (!c) return { error: 'No character yet.' };
       if (c.coins < G.GUILD_FEE) return { error: `Founding a guild costs ${G.GUILD_FEE} coins.` };
-      r = G.found(s, name, body.name, c.level || 1);
+      r = G.found(s, name, body.name, c.level || 1, Date.now(), { dark: RACES[c.race]?.side === 'monster' });
       if (r.ok) { c.coins -= G.GUILD_FEE; characters.store(me, c); coins = c.coins; }
       break;
     }

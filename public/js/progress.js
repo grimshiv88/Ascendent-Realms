@@ -1,8 +1,9 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
 import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } from './data/game-data.mjs';
-import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
+import { ITEMS, shopFor, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, gearSkillSlots, mythicSkill, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
+import { PACT_PCT } from './data/cults.mjs';
 import { GUILD_HALL_LEVEL, CARD_FEE, assess, mayTake } from './data/guildcard.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
 import { gameTime, DAY_MS } from './data/clock.mjs';
@@ -49,7 +50,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.potionMaker ??= null; // { until, queue: [{ id, ready }] } while a Businessman has one hired
   // Skills: learned ones, the ones ready on keys (the rest are kept in storage), and choices still to make
   c.skills = (c.skills || []).filter((id) => SKILLS[id]);
-  c.skillBar = (c.skillBar || []).filter((b) => c.skills.includes(b?.id));
+  // (a skill from a Skill Stone in your gear stays on the bar while that gear is off, but only works when worn)
+  c.skillBar = (c.skillBar || []).filter((b) => SKILLS[b?.id]);
   c.skillPicks ??= Math.max(0, Math.floor(c.level / UPGRADE_EVERY) - c.skills.length);
   // skills are given, not chosen: any still waiting are handed out now
   while (c.skillPicks > 0 && giveSkill(c));
@@ -104,7 +106,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0,
+    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null,
   });
 
   // worn gear doesn't take up room in the bag
@@ -133,6 +135,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
     e.n -= n;
     if (e.n === 0) {
       c.inventory.splice(c.inventory.indexOf(e), 1);
+      // Skill Stones in a piece that's gone (sold, merged, dropped) come back to the bag
+      for (const id of e.skills || []) { const st = c.inventory.find((x) => x.id === `stone_${id}`); if (st) st.n += 1; else c.inventory.push({ id: `stone_${id}`, n: 1 }); }
       for (const [slot, v] of Object.entries(c.equipped)) if (e.uid && v === e.uid) c.equipped[slot] = null;
     }
     changed('bag');
@@ -185,7 +189,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     // Shop: buying needs the level and the coins; selling pays less than the shop asks
     // buy from the ordinary shop, or from a market (by its id) when standing at one
     buy(id, market = null) {
-      const unlock = SHOP.find(([sid]) => sid === id)?.[1] ?? Infinity;
+      const unlock = shopFor(c).find(([sid]) => sid === id)?.[1] ?? Infinity;
       const it = ITEMS[id];
       if (market ? !marketStock(market, c.level).includes(id) : c.level < unlock) return 'locked';
       const price = market ? marketPrice(market, id) : it.price;
@@ -277,7 +281,23 @@ export function createProgress(c, { save, onChange, onEvent }) {
     // A potion's strength still running: % more ATK, DEF or speed
     boostPct(stat) {
       const now = Date.now();
-      return c.boosts.reduce((n, x) => (x.stat === stat && x.until > now ? n + x.pct : n), 0);
+      // a cult's dark pact strengthens attacks for good; the Order's holy blessing, defence
+      const pact = (c.pact === 'dark' && stat === 'atk') || (c.pact === 'holy' && stat === 'def') ? PACT_PCT : 0;
+      return pact + c.boosts.reduce((n, x) => (x.stat === stat && x.until > now ? n + x.pct : n), 0);
+    },
+    // The reward for answering a cult: { pact: 'dark', coins } or { pact: 'holy', str }
+    takePact(r) {
+      if (!r) return;
+      c.pact = r.pact;
+      if (r.coins) c.coins += r.coins;
+      if (r.str) c.stats.str += r.str;
+      changed('coins'); changed('stats');
+    },
+    // Stripped by the cult: its powers go, and every coin it gave (as far as you have them)
+    loseCult(coins) {
+      c.pact = null;
+      c.coins = Math.max(0, c.coins - (coins || 0));
+      changed('coins');
     },
 
     // Blacksmiths merge two pieces of the same sub-category (see the merge book in merges.mjs): the
@@ -523,9 +543,46 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return ready;
     },
     // ---------- skills ----------
+    // Skills from Skill Stones set in the gear you're wearing (Rare and better gear holds 3, Legendary
+    // and Mythic 5)
+    gearSkills() {
+      const out = [];
+      for (const [slot] of SLOTS) {
+        const g = gearIn(slot);
+        if (g && gearSkillSlots(g, g.plus)) for (const id of g.entry.skills || []) if (SKILLS[id] && !out.includes(id)) out.push(id);
+      }
+      return out;
+    },
+    // every skill you can use now: learned ones and those in your gear
+    knownSkills() { return [...new Set([...c.skills, ...this.gearSkills()])]; },
+    // the Mythic weapon in your hand's own skill, if you hold one
+    mythic() { const w = gearIn('weapon'); return w ? mythicSkill(w, w.plus) : null; },
+    // set a Skill Stone (by its item id) into a piece of gear (by uid), or take one out again
+    setStone(uidKey, stoneId) {
+      const e = entry(uidKey), st = ITEMS[stoneId];
+      if (!e?.uid || !isGear(ITEMS[e.id]) || st?.kind !== 'stone' || !count(stoneId)) return 'none';
+      const slots = gearSkillSlots(ITEMS[e.id], e.plus || 0);
+      if (!slots) return 'rank';
+      e.skills ||= [];
+      if (e.skills.includes(st.skill)) return 'have';
+      if (e.skills.length >= slots) return 'full';
+      removeItem(stoneId, 1);
+      e.skills.push(st.skill);
+      changed('gear'); changed('skills');
+      return 'ok';
+    },
+    takeStone(uidKey, skillId) {
+      const e = entry(uidKey);
+      if (!e?.skills?.includes(skillId)) return 'none';
+      if (!addItem(`stone_${skillId}`, 1)) return 'full';
+      e.skills = e.skills.filter((x) => x !== skillId);
+      if (!e.skills.length) delete e.skills;
+      changed('gear'); changed('skills');
+      return 'ok';
+    },
     // put a stored skill on the bar, on the first free key
     readySkill(id) {
-      if (!c.skills.includes(id) || c.skillBar.some((b) => b.id === id) || c.skillBar.length >= SKILL_BAR) return false;
+      if (!this.knownSkills().includes(id) || c.skillBar.some((b) => b.id === id) || c.skillBar.length >= SKILL_BAR) return false;
       const key = DEFAULT_KEYS.find((k) => !c.skillBar.some((b) => b.key === k)) || null;
       c.skillBar.push({ id, key });
       changed('skills');

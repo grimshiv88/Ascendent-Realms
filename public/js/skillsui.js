@@ -11,14 +11,16 @@ const what = (sk) => `${esc(sk.text)} <span class="sk-cost">${sk.sp} SP · ${sk.
 // `binding` is the skill waiting for a key press; `message` is shown at the top
 export function renderSkills(el, game, { binding = null, message = '' } = {}) {
   const c = game.character;
-  const stored = c.skills.filter((id) => !c.skillBar.some((b) => b.id === id));
+  const known = game.knownSkills(), fromGear = game.gearSkills().filter((id) => !c.skills.includes(id));
+  const stored = known.filter((id) => !c.skillBar.some((b) => b.id === id));
+  const tag = (id) => (fromGear.includes(id) ? ' <em class="forged-tag">gear</em>' : !known.includes(id) ? ' <em class="forged-tag">gear not worn</em>' : '');
   const bar = c.skillBar.length ? c.skillBar.map((b) => { const sk = SKILLS[b.id]; return `
-    <div class="sk-row"><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}</b><small>${what(sk)}</small></span>
+    <div class="sk-row"><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}${tag(b.id)}</b><small>${what(sk)}</small></span>
       <button type="button" class="sk-key${binding === b.id ? ' waiting' : ''}" data-bind="${b.id}" title="Change the key">${binding === b.id ? 'Press a key…' : b.key ? `Key ${esc(keyLabel(b.key))}` : 'Set a key'}</button>
       <button type="button" class="link-button" data-store="${b.id}">Store</button></div>`; }).join('')
     : '<p class="bag-hint">No skills ready yet. Your first comes at level ${UPGRADE_EVERY}.</p>';
   const kept = stored.length ? stored.map((id) => { const sk = SKILLS[id]; return `
-    <div class="sk-row"><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}</b><small>${what(sk)}</small></span>
+    <div class="sk-row"><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}${tag(id)}</b><small>${what(sk)}</small></span>
       <button type="button" class="gold-button small" data-ready="${id}" ${c.skillBar.length >= SKILL_BAR ? 'disabled title="Store a ready skill first"' : ''}>Get ready</button></div>`; }).join('')
     : '<p class="bag-hint">Skills you aren\'t using wait here. Nothing stored.</p>';
   el.innerHTML = `
@@ -28,6 +30,7 @@ export function renderSkills(el, game, { binding = null, message = '' } = {}) {
       <p class="bag-hint">Every ${UPGRADE_EVERY} levels you grow a little stronger and learn a new skill, given at random. Up to ${SKILL_BAR} are ready at once, each on a key of your choice; on a phone or iPad they are buttons at the bottom middle of the screen.</p>
       <p class="shop-msg" role="status">${esc(message)}</p>
       ${uniqueHtml(c)}
+      ${game.mythic() ? `<h3 class="bag-sub">Mythic weapon</h3><div class="sk-row"><span class="sk-icon">🌟</span><span class="sk-name"><b>${esc(game.mythic().name)}</b><small>${esc(game.mythic().text)} <span class="sk-cost">key ${esc(keyName(codeFor('mythic')))}</span></small></span></div>` : ''}
       <h3 class="bag-sub">Ready <small>(${c.skillBar.length} of ${SKILL_BAR})</small></h3>
       ${bar}
       <h3 class="bag-sub">Stored</h3>
@@ -69,9 +72,11 @@ export function renderSkillBar(el, game) {
   const c = game.character;
   // the Unique Skill always comes first
   const u = uniqueAbility(c), uk = codeFor('unique');
+  const known = game.knownSkills(), myth = game.mythic(), mk = codeFor('mythic');
   el.innerHTML = `<button type="button" class="sk-btn sk-unique" data-skill="unique" aria-label="${esc(u.name)}" title="${esc(u.name)} (Unique Skill)">
-      <span class="sk-icon">${u.icon}</span>${uk ? `<kbd>${esc(keyLabel(uk))}</kbd>` : ''}<span class="sk-cool"></span><b class="sk-time" hidden></b></button>` + c.skillBar.map((b) => { const sk = SKILLS[b.id]; return `
-    <button type="button" class="sk-btn" data-skill="${b.id}" aria-label="${esc(sk.name)}" title="${esc(sk.name)} (${sk.sp} SP)">
+      <span class="sk-icon">${u.icon}</span>${uk ? `<kbd>${esc(keyLabel(uk))}</kbd>` : ''}<span class="sk-cool"></span><b class="sk-time" hidden></b></button>` + (myth ? `<button type="button" class="sk-btn sk-mythic" data-skill="mythic" aria-label="${esc(myth.name)}" title="${esc(myth.name)} (Mythic weapon, ${myth.sp} SP)">
+      <span class="sk-icon">${myth.icon}</span>${mk ? `<kbd>${esc(keyLabel(mk))}</kbd>` : ''}<span class="sk-cool"></span><b class="sk-time" hidden></b></button>` : '') + c.skillBar.map((b) => { const sk = SKILLS[b.id]; return `
+    <button type="button" class="sk-btn${known.includes(b.id) ? '' : ' sk-off'}" data-skill="${b.id}" aria-label="${esc(sk.name)}" title="${esc(sk.name)} (${sk.sp} SP)">
       <span class="sk-icon">${sk.icon}</span>${b.key ? `<kbd>${esc(keyLabel(b.key))}</kbd>` : ''}<span class="sk-cool"></span><b class="sk-time" hidden></b></button>`; }).join('');
   el.classList.remove('hidden');
 }

@@ -94,6 +94,11 @@ function saveProgress(accountId, p) {
       if (!Array.isArray(s.spells) || s.spells.length > 5 || !s.spells.every((id) => typeof id === 'string' && SPELLS[id])) return { error: 'Bad inventory item.' };
       item.spells = [...new Set(s.spells)];
     }
+    // skills from Skill Stones set into a piece of gear (5 at most)
+    if (s.skills !== undefined) {
+      if (!Array.isArray(s.skills) || s.skills.length > 5 || !s.skills.every((id) => typeof id === 'string' && SKILLS[id])) return { error: 'Bad inventory item.' };
+      item.skills = [...new Set(s.skills)];
+    }
     inventory.push(item);
   }
   const equipped = {};
@@ -152,7 +157,7 @@ function saveProgress(accountId, p) {
   // Skills: known skill ids, up to 6 on keys
   const skills = (Array.isArray(p.skills) ? p.skills.slice(0, 200) : []).filter((id) => typeof id === 'string' && SKILLS[id]);
   const skillBar = (Array.isArray(p.skillBar) ? p.skillBar.slice(0, 6) : [])
-    .filter((b) => skills.includes(b?.id) && (b.key === null || (typeof b.key === 'string' && /^[A-Za-z0-9]{1,20}$/.test(b.key))))
+    .filter((b) => SKILLS[b?.id] && (b.key === null || (typeof b.key === 'string' && /^[A-Za-z0-9]{1,20}$/.test(b.key))))
     .map((b) => ({ id: b.id, key: b.key }));
   // Spells you know, and which one the attack key casts
   const spells = [...new Set((Array.isArray(p.spells) ? p.spells.slice(0, 100) : []).filter((id) => typeof id === 'string' && SPELLS[id]))];
@@ -161,6 +166,8 @@ function saveProgress(accountId, p) {
   const t = p.tent;
   const tent = t && Number.isFinite(t.x) && Number.isFinite(t.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6
     ? { x: t.x, z: t.z, heading: Number.isFinite(t.heading) ? t.heading : 0 } : null;
+  // a cult's dark pact or the Order's holy blessing
+  character.pact = ['dark', 'holy'].includes(p.pact) ? p.pact : null;
   // real time played (it only ever grows)
   const playMs = int(Math.round(Number(p.playMs) || 0), 0, 1e13);
   if (playMs !== null && playMs >= (character.playMs || 0)) character.playMs = playMs;

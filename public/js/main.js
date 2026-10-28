@@ -5,7 +5,7 @@ import { paintCloudBanks } from './clouds.js';
 import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
-import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, HELP_HTML } from './status.js';
+import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, renderChallenge, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
@@ -31,6 +31,11 @@ import { renderGroups } from './groupsui.js';
 import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
 import { SKILLS } from './data/skills.mjs';
 import { uniqueAbility, uniqueTier } from './data/unique.mjs';
+import { challengeBar } from './data/kings.mjs';
+import { renderCult } from './cultui.js';
+import { GATES_R } from './data/cults.mjs';
+import { gameTime as realmTime } from './data/clock.mjs';
+import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
 import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } from './data/controls.mjs';
 
@@ -204,6 +209,71 @@ function startGame(character) {
     world?.setCastleAccess({ emperor: !!ui.groups?.nation, guildMaster: !!ui.groups?.guild?.mine, guest: (ui.rentals || []).some((r) => r.room.startsWith('castle') && r.allowed && !r.mine) });
   }
   function loadGroups() { api.groupsList().then(takeGroups).catch(() => {}); }
+  // ---------- cults and the Order of the Dawn ----------
+  // Missions are counted here (kills near towns, kills by night, a night visit to a village waystone)
+  // and kept in this browser until done.
+  const missionCount = (m) => { try { return Number(localStorage.getItem(`ar-mission-${m.id}`)) || 0; } catch { return 0; } };
+  const setMissionCount = (m, n) => { try { localStorage.setItem(`ar-mission-${m.id}`, String(n)); } catch { /* private window */ } };
+  function takeCult(v) {
+    if (!v) return;
+    ui.cult = v;
+    // gave the cult away: its powers and its coins are gone
+    if (v.stripped && !ui.stripping) {
+      ui.stripping = true;
+      game.loseCult(v.stripped.reduce((a, x) => a + (x.coins || 0), 0));
+      showArea('You gave the cult away. Its dark powers and every coin it gave you are gone.');
+      api.cultAct({ action: 'ack' }).then((r) => { ui.stripping = false; takeCult(r); }).catch(() => { ui.stripping = false; });
+    }
+    // a cult has asked you to join: the offer comes to you at once
+    if (v.invited && !ui.cultOffered) { ui.cultOffered = true; openPanel('cult'); return; }
+    if (overlay.dataset.panel === 'cult' && !overlay.classList.contains('hidden')) drawPanel();
+  }
+  function loadCult() { api.cultsView().then(takeCult).catch(() => {}); }
+  const activeMissions = () => [...(ui.cult?.cult?.missions || []), ...(ui.cult?.order?.missions || [])];
+  function missionStep(kind) {
+    for (const m of activeMissions()) {
+      if (m.kind !== kind || ui.missionBusy?.[m.id]) continue;
+      const n = missionCount(m) + 1;
+      setMissionCount(m, n);
+      if (n < m.need) continue;
+      (ui.missionBusy ||= {})[m.id] = true;
+      api.cultAct({ action: 'done', id: m.id }).then((r) => {
+        game.gainCoins(r.coins || 0);
+        world?.say(`Mission done: +${r.coins} G`, 'exp');
+        takeCult(r);
+      }).catch(() => { ui.missionBusy[m.id] = false; });
+    }
+  }
+  const towns = () => placesWithPositions().filter((p) => p.city || p.village);
+  const nearTown = (p, r) => towns().some((q) => Math.hypot(q.x - p.x, q.z - p.z) < r);
+  setInterval(() => {
+    const p = world?.position();
+    if (p && realmTime().night && activeMissions().some((m) => m.kind === 'omen') && placesWithPositions().some((q) => q.village && Math.hypot(q.x - p.x, q.z - p.z) < 25)) missionStep('omen');
+  }, 3000);
+  setInterval(loadCult, 60000);
+
+  // The crowns. A monster player as strong as their race's player King challenges them at once,
+  // and a challenge (or its outcome) is shown straight away to both of them, once.
+  function takeCourts(courts) {
+    ui.courts = courts;
+    const me = character.name;
+    const mine = courts.find((c) => c.race === character.race);
+    if (mine && !challengeBar(mine, character) && !ui.challengeSent) {
+      ui.challengeSent = true;
+      api.kingChallenge(character.race).then((r) => takeCourts(r.courts)).catch(() => {});
+    }
+    for (const c of courts) {
+      const ch = c.challenge;
+      if (!ch || (ch.by !== me && ch.king !== me)) continue;
+      const key = `ar-challenge-${c.race}-${ch.at}-${ch.settled ? 's' : ch.answered ? 'a' : 'n'}`;
+      let seen = false;
+      try { seen = !!localStorage.getItem(key); localStorage.setItem(key, '1'); } catch { /* private window */ }
+      if (seen || (ch.settled && Date.now() - ch.settledAt > 7 * 86400000)) continue;
+      ui.challengeCourt = c; ui.challengeMsg = '';
+      openPanel('challenge');
+      break;
+    }
+  }
   loadGroups();
   loadRooms();
   setInterval(loadGroups, 20000);
@@ -216,18 +286,20 @@ function startGame(character) {
   const skillBar = $('skill-bar');
   let barSig = '';
   function drawSkillBar() {
-    const sig = JSON.stringify([character.skillBar, uniqueTier(character.level), codeFor('unique')]);
+    const sig = JSON.stringify([character.skillBar, uniqueTier(character.level), codeFor('unique'), codeFor('mythic'), game.knownSkills(), game.mythic()?.name]);
     if (sig === barSig) return;
     barSig = sig;
     renderSkillBar(skillBar, game);
   }
   const readyAt = {}; // skill id -> time (ms) it can be used again
   // the Unique Skill is used like a skill, at the strength its tier allows
-  const skillOf = (id) => (id === 'unique' ? uniqueAbility(character) : SKILLS[id]);
+  const skillOf = (id) => (id === 'unique' ? uniqueAbility(character) : id === 'mythic' ? (game.mythic() || { cd: 40, sp: 0, name: 'Mythic skill' }) : SKILLS[id]);
   const cooling = (id) => Math.max(0, (readyAt[id] || 0) - performance.now()) / (skillOf(id).cd * 1000);
   function trySkill(id) {
     const sk = skillOf(id);
     if (!sk || !world) return;
+    if (id === 'mythic' && !game.mythic()) { world.say('Hold a Mythic weapon to use its skill', 'hurt'); return; }
+    if (SKILLS[id] && !game.knownSkills().includes(id)) { world.say(`${sk.name}: put on the gear that holds it`, 'hurt'); return; }
     if (cooling(id) > 0) { world.say(`${sk.name}: ready in ${(cooling(id) * sk.cd).toFixed(1)}s`, 'hurt'); return; }
     const r = world.useSkill(sk);
     if (r === 'sp') world.say(`Not enough SP (${sk.name} needs ${sk.sp})`, 'hurt');
@@ -362,7 +434,7 @@ function startGame(character) {
     else if (name === 'market' && ui.market) renderShop(overlay, game, ui.shopMsg, ui.market);
     else if (name === 'groups') renderGroups(overlay, game, ui.groups, { message: ui.groupMsg, busy: ui.groupBusy });
     else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy, castle: !!ui.roomsCastle, emperor: !!ui.groups?.nation });
-    else if (name === 'gate') renderIdCard(overlay, game, { monster: ui.gate?.monster, courts: ui.courts || [], nation: ui.groups?.nation?.name });
+    else if (name === 'gate') renderIdCard(overlay, game, { monster: ui.gate?.barred, barredText: ui.gate?.barred && !ui.gate?.monster ? 'The guards bare their fangs. "No outsiders in a monster city."' : null, courts: ui.courts || [], nation: ui.groups?.nation?.name });
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg, { workshop: !!ui.workshop });
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
@@ -387,6 +459,8 @@ function startGame(character) {
       renderMap(overlay, () => world?.position(), [], { plots: ui.myPlots || [], caves: [] }, null, ui.trip);
     }
     else if (name === 'rankings') renderRankings(overlay, ui.top, character.name, ui.courts || []);
+    else if (name === 'cult') renderCult(overlay, character, ui.cult, { message: ui.cultMsg || '', counts: missionCount });
+    else if (name === 'challenge' && ui.challengeCourt) renderChallenge(overlay, ui.challengeCourt, character.name, ui.challengeMsg || '');
     else if (name === 'cave' && ui.atCave) {
       const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
       renderCave(overlay, ui.atCave, game, { owner: own?.owner, mine: own?.mine, message: ui.caveMsg || '', busy: ui.caveBusy });
@@ -404,6 +478,7 @@ function startGame(character) {
     ui.workshop = false;
     ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.skillMsg = ''; ui.binding = null;
     if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
+    if (name === 'cult') { ui.cultMsg = ''; loadCult(); }
     if (name === 'rankings') {
       ui.top = null;
       game.saveNow();
@@ -722,6 +797,38 @@ function startGame(character) {
       return;
     }
     if (t('data-tent') != null) { closePanel(); world?.pitchTent(); return; }
+    if ((v = t('data-cult')) != null) {
+      const btn = e.target.closest('[data-cult]');
+      const body = { action: v };
+      if (v === 'answer') body.accept = btn.dataset.accept === '1';
+      if (v === 'found') body.name = overlay.querySelector('[data-cult-found]')?.value;
+      if (v === 'invite') body.name = overlay.querySelector('[data-cult-name]')?.value;
+      if (v === 'give') { body.name = btn.dataset.name; body.pick = Number(overlay.querySelector(`[data-cult-pick="${CSS.escape(btn.dataset.name)}"]`)?.value) || 0; }
+      api.cultAct(body).then((r) => {
+        if (r.reward) game.takePact(r.reward);
+        ui.cultMsg = { answer: body.accept ? 'You have joined. Tell no one.' : 'You refused. Holy power fills you.', order: 'You are sworn to the Order of the Dawn.', found: 'Your cult is founded. You are its Cult Leader.',
+          invite: 'They have been asked. They will never know it was you.', ask: 'A new mission.', give: 'The mission has gone down to them.' }[v] || '';
+        takeCult(r);
+        drawPanel();
+      }).catch((err) => { ui.cultMsg = err.message; drawPanel(); });
+      return;
+    }
+    if ((v = t('data-answer-challenge')) != null) {
+      api.kingChallenge(v, true).then((r) => { ui.courts = r.courts; ui.challengeCourt = r.courts.find((c) => c.race === v); ui.challengeMsg = 'You have accepted the duel.'; drawPanel(); })
+        .catch((err) => { ui.challengeMsg = err.message; drawPanel(); });
+      return;
+    }
+    // Skill Stones: set into a piece of gear, or taken out again
+    if ((v = t('data-set-stone')) != null) {
+      const [u, st] = v.split('|'); const r = game.setStone(u, st);
+      world?.say({ ok: 'The stone sinks into the metal. Its skill is yours while you wear it.', full: 'No room for another skill.', have: 'It already holds that skill.', rank: 'Only Rare or better gear can hold skills.' }[r] || 'That stone is gone.', r === 'ok' ? 'exp' : 'hurt');
+      drawPanel(); return;
+    }
+    if ((v = t('data-take-stone')) != null) {
+      const [u, id] = v.split('|'); const r = game.takeStone(u, id);
+      world?.say(r === 'ok' ? `${SKILLS[id].name} Stone back in your bag` : r === 'full' ? 'Your bag is full' : 'Nothing to take out', r === 'ok' ? 'note' : 'hurt');
+      drawPanel(); return;
+    }
     if ((v = t('data-control')) != null) { ui.bindingControl = v; ui.controlMsg = ''; drawPanel(); return; }
     if (e.target.closest('[data-controls-reset]')) { resetKeys(); ui.controlMsg = 'Every key is back to how it started.'; drawPanel(); return; }
     if ((v = t('data-mouse')) != null) { settings.mouse = v; saveSettings(); world?.setMouseMode(v); drawPanel(); return; }
@@ -808,6 +915,11 @@ function startGame(character) {
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       if (type === 'kill') for (const title of game.questKill(data.kind, data.level)) questReady(title);
+      if (type === 'kill' && activeMissions().length) {
+        const p = world?.position();
+        if (p && nearTown(p, GATES_R)) missionStep('gates');
+        if (realmTime().night) missionStep('night');
+      }
       if (type === 'depths') $('minimap').classList.add('hidden'); // no map underground
       if (type === 'depths') showArea(`${data.cave.name}: ${{ small: 'a small cave', medium: 'a winding cave', deep: 'a deep cave' }[data.cave.size]}. ${world?.holding ? '' : 'Pitch dark: light a torch (T). '}Mine glowing ore veins, break nests, and find the boss at the bottom.`);
       if (type === 'surface') { ui.atCave = null; drawHud(); $('minimap').classList.remove('hidden'); }
@@ -866,7 +978,7 @@ function startGame(character) {
       if (open) openPanel(open);
       if (act === 'builder' && !ui.builder) openBuilder();
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
-      if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); else if (act === 'unique') trySkill('unique'); }
+      if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); else if (act === 'unique') trySkill('unique'); else if (act === 'mythic') trySkill('mythic'); }
       if (act === 'land') toggleLand();
       if (act === 'chat') { e.preventDefault(); world?.releaseMouse(); social?.focusChat(); }
       // Esc opens the options; Esc again (or on any window) closes it
@@ -882,7 +994,9 @@ function startGame(character) {
   // Everyone's land: posts on owned plots, and levelled ground
   api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
   loadCaves();
-  api.kingsList().then((r) => { ui.courts = r.courts; world.setCourts(r.courts); }).catch(() => {});
+  api.kingsList().then((r) => { takeCourts(r.courts); world.setCourts(r.courts); }).catch(() => {});
+  setInterval(() => api.kingsList().then((r) => takeCourts(r.courts)).catch(() => {}), 60000);
+  loadCult(); // a cult's offer, a mission, or news that you were stripped
   // Explore quests finish when you reach the place
   game.fillQuests(here());
   setInterval(() => {

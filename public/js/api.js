@@ -420,8 +420,38 @@ const previewKings = {
   save(list) { storage.set('ar.preview.kings', JSON.stringify(list)); cloudPush('world/kings', { courts: list }); },
 };
 export async function kingsList() {
-  if (await isPreviewMode()) return { courts: await previewKings.all() };
+  if (await isPreviewMode()) {
+    const K = await import('./data/kings.mjs');
+    const courts = await previewKings.all();
+    const settled = courts.map((c) => K.settleChallenge(c));
+    if (settled.some((c, i) => c !== courts[i])) previewKings.save(settled);
+    return { courts: settled };
+  }
   return request('api/kings');
+}
+// Challenge the King of your race (an Overlord as strong as the King), or, as King, answer
+export async function kingChallenge(race, answer = false) {
+  if (await isPreviewMode()) {
+    const K = await import('./data/kings.mjs');
+    const { RACES } = await import('./data/game-data.mjs');
+    const { courts } = await kingsList();
+    return updatePreviewAccount((acc) => {
+      const i = courts.findIndex((c) => c.race === race);
+      if (i < 0) throw new Error('There is no such King.');
+      const c = acc.character;
+      if (answer) {
+        if (courts[i].king.npc || courts[i].king.name !== c.name) throw new Error('Only the King can answer.');
+        courts[i] = K.answerChallenge(courts[i]);
+      } else {
+        const bar = K.challengeBar(courts[i], { ...c, side: RACES[c.race]?.side });
+        if (bar) throw new Error(bar);
+        courts[i] = K.challenge(courts[i], c);
+      }
+      previewKings.save(courts);
+      return { ok: true, courts };
+    });
+  }
+  return request(`api/kings/${answer ? 'answer' : 'challenge'}`, { method: 'POST', body: { race } });
 }
 // You struck down the King of `race`
 export async function kingSlain(race) {
@@ -476,6 +506,8 @@ const previewSocial = {
       d.bounties = [...bounties.values()];
       // parties and guilds: the newest copy wins
       if (remote.groups && (remote.groups.t || 0) > (d.groups?.t || 0)) d.groups = remote.groups;
+      // the cults and the Order: the newest copy wins
+      if (remote.cults && (remote.cults.t || 0) > (d.cults?.t || 0)) d.cults = remote.cults;
       storage.set('ar.preview.social', JSON.stringify(d));
     } catch { /* stay with what this browser has */ }
   },
@@ -522,7 +554,8 @@ export async function playerProfile(name) {
     const rel = previewSocial.relation(d, me.username, other.username);
     const c = other.character;
     const visible = !!c && S.canSeeStatus(c, { self: rel === 'self', friend: rel === 'friend' });
-    return { player: { name: other.username, relation: rel, online: false, privacy: S.privacyOf(c), status: visible ? S.statusSummary(c) : null } };
+    const C = await import('./data/cults.mjs');
+    return { player: { name: other.username, relation: rel, online: false, privacy: S.privacyOf(c), status: visible ? S.statusSummary(c) : null, cult: C.seenBy(d.cults || C.emptyCults(), me.username, other.username) } };
   }
   return request(`api/players/${encodeURIComponent(name)}`);
 }
@@ -586,6 +619,9 @@ export async function chatSend(text, to = null, after = 0) {
     if (!clean) throw new Error('Write something first.');
     const room = to && (await previewChannels(d, me.username)).find((x) => x.label === to);
     if (to && !room && previewSocial.relation(d, me.username, to) !== 'friend') throw new Error('You can only send private messages to friends.');
+    // a cult member who gives the cult away in chat is stripped of its powers and money
+    const C = await import('./data/cults.mjs');
+    if (d.cults && C.givesAway(C.cultOf(d.cults, me.username), clean)) { C.strip(d.cults, me.username); d.cults.t = Date.now(); }
     const n = (d.messages.at(-1)?.n || 0) + 1;
     d.messages.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n, channel: room ? 'x' : to ? 'dm' : 'general', key: room ? room.channel : undefined, to: to && !room ? to.toLowerCase() : null, from: me.username, text: clean, at: Date.now() });
     previewSocial.save(d);
@@ -598,6 +634,52 @@ async function previewChannels(d, name) {
   const [R, G] = await Promise.all([import('./data/interiors.mjs'), import('./data/groups.mjs')]);
   const rooms = (d.rentals || []).filter((r) => r.until > Date.now() && R.mayEnter(r, name)).map((r) => ({ channel: `room:${r.id}`, label: `${R.roomById(r.room)?.name || 'Room'} (private)` }));
   return [...rooms, ...G.groupChannels(d.groups || G.emptyGroups(), name)];
+}
+
+// ---------- cults and the Order of the Dawn (see data/cults.mjs) ----------
+async function previewWho(acc) {
+  const { RACES } = await import('./data/game-data.mjs');
+  const c = acc?.character;
+  return c ? { name: acc.username, race: c.race, side: RACES[c.race]?.side, level: c.level || 1 } : null;
+}
+export async function cultsView() {
+  if (await isPreviewMode()) {
+    const C = await import('./data/cults.mjs');
+    await previewSocial.sync();
+    const w = await previewWho(previewMe());
+    if (!w) throw new Error('No character yet.');
+    return C.view(previewSocial.load().cults || C.emptyCults(), w);
+  }
+  return request('api/cults');
+}
+// body: { action: 'found'|'invite'|'answer'|'order'|'ask'|'give'|'done'|'ack', name, accept, id, pick }
+export async function cultAct(body) {
+  if (await isPreviewMode()) {
+    const C = await import('./data/cults.mjs');
+    await previewSocial.sync();
+    const d = previewSocial.load();
+    const s = d.cults || C.emptyCults();
+    const w = await previewWho(previewMe());
+    if (!w) throw new Error('No character yet.');
+    let r;
+    switch (body.action) {
+      case 'found': r = C.found(s, w, body.name); break;
+      case 'invite': r = C.invite(s, w.name, await previewWho(previewSocial.find(body.name))); break;
+      case 'answer': r = C.answer(s, w, body.accept === true); break;
+      case 'order': r = C.joinOrder(s, w); break;
+      case 'ask': r = C.askMission(s, w); break;
+      case 'give': r = C.giveMission(s, w, String(body.name || ''), body.pick, (await previewWho(previewSocial.find(body.name)))?.level); break;
+      case 'done': r = C.finishMission(s, w, Number(body.id)); break;
+      case 'ack': r = C.ackStrip(s, w.name); break;
+      default: throw new Error('Do what?');
+    }
+    if (r.error) throw new Error(r.error);
+    s.t = Date.now();
+    d.cults = s;
+    previewSocial.save(d);
+    return { ...r, ...C.view(s, w) };
+  }
+  return request('api/cults', { method: 'POST', body });
 }
 
 // ---------- parties and guilds ----------
@@ -625,7 +707,11 @@ export async function groupsAct(body) {
     d.groups ||= G.emptyGroups();
     const kind = body.kind === 'guild' ? 'guild' : 'party';
     let r, coins;
-    if (body.action === 'invite') r = G.invite(d.groups, me.username, kind, previewSocial.find(body.name)?.username || null);
+    if (body.action === 'invite') {
+      const { RACES } = await import('./data/game-data.mjs');
+      const t = previewSocial.find(body.name);
+      r = G.invite(d.groups, me.username, kind, t?.username || null, Date.now(), t?.character ? RACES[t.character.race]?.side === 'monster' : null);
+    }
     else if (body.action === 'respond') r = G.respond(d.groups, me.username, body.id, body.accept === true);
     else if (body.action === 'leave') r = G.leave(d.groups, me.username, kind);
     else if (['remove', 'lead', 'disband'].includes(body.action)) r = G.manage(d.groups, me.username, kind, body.action, body.name);
@@ -634,7 +720,8 @@ export async function groupsAct(body) {
     else if (body.action === 'found') {
       const c = me.character;
       if (!c || c.coins < G.GUILD_FEE) throw new Error(`Founding a guild costs ${G.GUILD_FEE} coins.`);
-      r = G.found(d.groups, me.username, body.name, c.level || 1);
+      const { RACES } = await import('./data/game-data.mjs');
+      r = G.found(d.groups, me.username, body.name, c.level || 1, Date.now(), { dark: RACES[c.race]?.side === 'monster' });
       if (r.ok) coins = updatePreviewAccount((acc) => { acc.character.coins -= G.GUILD_FEE; return acc.character.coins; });
     } else r = { error: 'Do what?' };
     if (r.error) throw new Error(r.error);

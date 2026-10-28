@@ -241,6 +241,7 @@ export function createSocial(host, { onError } = {}) {
               <dt>Level</dt><dd>${s.level}</dd>
               <dt>Race</dt><dd>${esc(RACES[s.race]?.name || s.race)}</dd>
               <dt>Class</dt><dd>${esc(CLASSES[s.cls]?.name || s.cls)}</dd>
+              ${p.cult ? `<dt>Cult</dt><dd>${esc(p.cult.rankName)} of ${esc(p.cult.name)} <small>(only you can see this)</small></dd>` : ''}
               ${s.stats ? `<dt>Stats</dt><dd>STR ${s.stats.str} · AGI ${s.stats.agi} · DEX ${s.stats.dex} · STA ${s.stats.sta} · INT ${s.stats.int}</dd>` : ''}
             </dl>`
           : `<p class="so-empty">${esc(p.name)} ${why}.</p>`}

@@ -25,7 +25,8 @@ import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionNam
 import { createPlots } from './plots.js';
 import { gameTime } from '../data/clock.mjs';
 import { RACES, restCap } from '../data/game-data.mjs';
-import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS } from '../data/items.mjs';
+import { setSettledLand } from '../data/wilds.mjs';
+import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -785,6 +786,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       floatText(`+${reward.exp} EXP`, new THREE.Vector3(m.x, m.y + m.height + 0.7, m.z), 'exp');
       game.gainExp(reward.exp);
       game.gainCoins(reward.coins);
+      // now and then a Skill Stone, with a skill chosen at random
+      if (Math.random() < stoneChance(m.level)) {
+        const st = randomStone();
+        reward.drops.push([st, 1]);
+        floatText(ITEMS[st].name, new THREE.Vector3(m.x, m.y + m.height + 1.2, m.z), 'crit');
+      }
       for (const [id, n] of reward.drops) game.addItem(id, n);
       onEvent?.('kill', reward);
     }
@@ -907,7 +914,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // and go freely until you wander far off. Arriving by waystone or portal needs no check.
   const gate = { cleared: null, prev: null, asked: 0 };
   function checkGates(t) {
-    const city = sites.find((s) => s.place.city && s.built?.gates);
+    // the nearest city (the Central City, or a Monster City)
+    const city = sites.filter((s) => s.place.city && s.built?.gates).sort((a, b) => Math.hypot(pos.x - a.place.x, pos.z - a.place.z) - Math.hypot(pos.x - b.place.x, pos.z - b.place.z))[0];
     if (!city) { gate.prev = null; return; }
     const { x: cx, z: cz } = city.built.centre;
     const d = Math.hypot(pos.x - cx, pos.z - cz);
@@ -926,15 +934,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     autoWalk = false;
     if (t - gate.asked > 4) {
       gate.asked = t;
+      // monsters may not enter the Central City, and players may not enter a Monster City
       const monster = RACES[character.race].side === 'monster';
-      say(monster ? 'Guard: "Halt, monster! You may not enter."' : 'Guard: "Halt! Show your ID."', 'hurt');
-      onEvent?.('gate', { monster });
+      const barred = monster !== !!city.place.monster;
+      gate.city = city.place;
+      say(barred ? (monster ? 'Guard: "Halt, monster! You may not enter."' : 'Guard: "Halt, outsider! This city is for monsters."') : 'Guard: "Halt! Show your ID."', 'hurt');
+      onEvent?.('gate', { barred, monster, city: city.place.name });
     }
   }
   function passGate() {
-    if (RACES[character.race].side === 'monster') return false;
+    const monster = RACES[character.race].side === 'monster';
+    if (monster !== !!gate.city?.monster) return false;
     gate.cleared = true;
-    say('Guard: "All in order. Welcome to Central City."', 'exp');
+    say(`Guard: "All in order. Welcome to ${gate.city?.name || 'Central City'}."`, 'exp');
     return true;
   }
 
@@ -1534,7 +1546,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     position: () => ({ x: pos.x, z: pos.z, heading }),
     // for testing: where you and the camera are
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
-    debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting }),
+    debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`) }),
     teleport,
     get atPortal() { return atPortal; },
     set paused(v) { paused = !!v; keys.clear(); },
@@ -1578,6 +1590,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         land.refreshAt((ix + 0.5) * PLOT, (iz + 0.5) * PLOT, 30);
       }
       plots.setLands(list);
+      setSettledLand(list); // settled land tames the wilds around it
       showStructures(list);
     },
     // let the mouse go (a window is opening)

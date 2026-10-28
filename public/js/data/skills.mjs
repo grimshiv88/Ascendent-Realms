@@ -49,7 +49,7 @@ export const SKILL_BAR = 6;     // skills you can have ready at once; the rest a
 export const DEFAULT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'];
 // keys the game already uses, so a skill can't take them
 export const RESERVED_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight',
-  'KeyF', 'KeyU', 'KeyZ', 'KeyT', 'KeyC', 'KeyI', 'KeyB', 'KeyQ', 'KeyH', 'KeyM', 'KeyO', 'KeyL', 'KeyR', 'KeyK', 'KeyP', 'KeyG', 'KeyV', 'Escape', 'Tab', 'Enter'];
+  'KeyF', 'KeyU', 'KeyJ', 'KeyZ', 'KeyT', 'KeyC', 'KeyI', 'KeyB', 'KeyQ', 'KeyH', 'KeyM', 'KeyO', 'KeyL', 'KeyR', 'KeyK', 'KeyP', 'KeyG', 'KeyV', 'Escape', 'Tab', 'Enter'];
 export const keyLabel = (code) => (code || '').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ');
 
 // A new skill, given at random (players don't choose). Your class's skills turn up most often and

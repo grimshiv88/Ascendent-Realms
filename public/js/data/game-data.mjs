@@ -247,7 +247,7 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
 function startLocation(homeName) {
   // Player races start in the Central City; monster races at a spawn point in their homeland
   const home = homePlace(homeName);
-  const choices = home.id === 'central' ? [home] : PLACES.filter((p) => p.region === home.region && !p.village);
+  const choices = home.id === 'central' ? [home] : PLACES.filter((p) => p.region === home.region && !p.village && !p.city);
   const place = choices[Math.floor(Math.random() * choices.length)] || home;
   const { x, z } = toWorld(place.px, place.py);
   return { area: place.name, x, y: 0, z: z + 6, heading: Math.PI };

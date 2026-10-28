@@ -5,6 +5,7 @@ const auth = require('./auth');
 const characters = require('./characters');
 const land = require('./land');
 const kings = require('./kings');
+const cults = require('./cults');
 const admin = require('./admin');
 const social = require('./social');
 const rooms = require('./rooms');
@@ -82,6 +83,16 @@ app.post('/api/kings/slain', requireAccount, (req, res) => {
   const result = kings.slain(req.account.id, req.body || {});
   res.status(result.error ? 400 : 200).json(result);
 });
+// cults and the Order of the Dawn
+app.get('/api/cults', requireAccount, (req, res) => { const r = cults.list(req.account.id); res.status(r.error ? 400 : 200).json(r); });
+app.post('/api/cults', requireAccount, (req, res) => { const r = cults.act(req.account.id, req.body || {}); res.status(r.error ? 400 : 200).json(r); });
+// an Overlord as strong as the King challenges them; the King answers
+for (const [route, fn] of [['challenge', kings.challenge], ['answer', kings.answer]]) {
+  app.post(`/api/kings/${route}`, requireAccount, (req, res) => {
+    const result = fn(req.account.id, req.body || {});
+    res.status(result.error ? 400 : 200).json(result);
+  });
+}
 app.get('/api/groups', requireAccount, (req, res) => res.json(groups.list(req.account.id)));
 app.post('/api/groups', requireAccount, (req, res) => {
   const r = groups.act(req.account.id, req.body || {});

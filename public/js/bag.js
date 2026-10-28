@@ -1,6 +1,7 @@
 // The Bag (inventory with your character and equipment), the Shop and the Blacksmith's merging.
 // They share one window with the Status Window, with tabs along the top.
-import { ITEMS, SHOP, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds, brewHerbs, categoryOf, forgeCost, forgeOres, FORGE, FORGE_WORKSHOP, FORGE_RANK_LEVEL, MARKETS, marketStock, marketPrice } from './data/items.mjs';
+import { ITEMS, shopFor, formName, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds, brewHerbs, categoryOf, forgeCost, forgeOres, FORGE, FORGE_WORKSHOP, FORGE_RANK_LEVEL, MARKETS, marketStock, marketPrice, gearSkillSlots, mythicSkill } from './data/items.mjs';
+import { SKILLS } from './data/skills.mjs';
 import { codeFor, keyName } from './data/controls.mjs';
 import { subOf, LADDERS, MERGES, MERGE_COUNT, mergesWith, ladderName } from './data/merges.mjs';
 
@@ -8,7 +9,9 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '
 const keyOf = (e) => e.uid || e.id;
 // An item picture: the rendered model fills in later (see icons.js); the emoji shows until then
 const pic = (id, plus = 0, cls = 'bag-icon') => `<img class="item-pic" data-icon="${id}" data-plus="${plus}" alt=""><span class="${cls}">${ITEMS[id]?.icon || '?'}</span>`;
-const nameOf = (e) => `${ITEMS[e.id] ? evolvedName(ITEMS[e.id], e.plus || 0) : e.id}${e.plus ? ` +${e.plus}` : ''}`;
+// monster gear goes by another name while its wearer is in humanoid form (set by each window)
+let wearerForm = null;
+const nameOf = (e) => `${ITEMS[e.id] ? evolvedName({ ...ITEMS[e.id], name: formName(ITEMS[e.id], wearerForm) }, e.plus || 0) : e.id}${e.plus ? ` +${e.plus}` : ''}`;
 // A weapon's rank as a coloured tag
 const rankTag = (it, plus = 0) => { const r = RANKS[rankOf(it, plus)]; return `<span class="rank-tag" style="--rank:${r.color}">${r.name}</span>`; };
 
@@ -23,7 +26,7 @@ export function tabsHtml(active) {
 const catTag = (it) => { const k = categoryOf(it); return `<span class="cat-tag">${k.cat}${k.sub ? ` › ${k.sub}` : ''}</span>`; };
 
 function describe(it, plus = 0) {
-  if (isGear(it)) return `${catTag(it)} ${describeGear(it, plus)}`;
+  if (isGear(it)) return `${catTag(it)} ${describeGear(it, plus)}${it.beast ? `<br><span class="faint">Monster gear · in humanoid form: ${esc(it.human || it.name)}</span>` : ''}`;
   return describeGear(it, plus);
 }
 function describeGear(it, plus = 0) {
@@ -32,6 +35,7 @@ function describeGear(it, plus = 0) {
     const next = [3, 6, 9].find((n) => n > plus);
     return `${rankTag(it, plus)} ${it.magic ? 'MATK' : 'ATK'} +${upgraded(it.power, plus)} · ${it.speed}s per swing · ${reachText(it)}${it.chop >= 4 ? ' · fells even great trees' : it.chop >= 3 ? ' · fells big trees' : it.chop >= 1.5 ? ' · chops young trees fast' : ''}${fx ? `<br>${fx}` : ''}${next ? `<br><span class="faint">Evolves at +${next}</span>` : ''}`;
   }
+  if (it.kind === 'stone') return `💠 Skill Stone · set it into Rare or better gear`;
   if (it.kind === 'coating') return `${EFFECTS[it.coat].icon} Coats a weapon for ${it.hits} hits (Blacksmith)`;
   if (it.kind === 'armour') return `${rankTag(it, plus)} ${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
   if (it.kind === 'food') return [it.heal && (it.heal > 999 ? 'Fills HP' : `Restores ${it.heal} HP`), it.sp && (it.sp > 999 ? 'Fills SP' : `Restores ${it.sp} SP`), it.boost && `+${it.boost.sp} max SP for ${it.boost.minutes} min`,
@@ -40,6 +44,20 @@ function describeGear(it, plus = 0) {
   if (it.rank != null) return `${rankTag(it)} Mined in the caves`;
   if (it.id === 'tent') return 'Sleep anywhere and clear your Fatigue';
   return 'Material';
+}
+
+// The skills set into a piece of gear (from Skill Stones), and the Mythic weapon's own skill
+function gearSkillsHtml(game, e, it) {
+  const slots = gearSkillSlots(it, e.plus || 0);
+  const myth = mythicSkill(it, e.plus || 0);
+  const own = myth ? `<p class="gear-myth">🌟 <b>${esc(myth.name)}</b> · ${esc(myth.text)} Use it with ${esc(keyName(codeFor('mythic')))} while it's in your hand.</p>` : '';
+  if (!slots) return `${own}<p class="bag-hint">Rare or better gear can hold skills from Skill Stones.</p>`;
+  const set = e.skills || [];
+  const rows = set.map((id) => `<li>${SKILLS[id].icon} ${esc(SKILLS[id].name)} <button type="button" class="link-button" data-take-stone="${e.uid}|${id}">Take out</button></li>`).join('');
+  const stones = set.length >= slots ? [] : game.character.inventory.filter((x) => ITEMS[x.id]?.kind === 'stone' && !set.includes(ITEMS[x.id].skill));
+  const add = stones.map((x) => `<button type="button" class="gold-button small" data-set-stone="${e.uid}|${x.id}">${SKILLS[ITEMS[x.id].skill].icon} ${esc(SKILLS[ITEMS[x.id].skill].name)}</button>`).join('');
+  return `${own}<div class="gear-skills"><b>Skills (${set.length} of ${slots})</b>${rows ? `<ul>${rows}</ul>` : '<p class="bag-hint">None set yet. Skill Stones drop from monsters now and then.</p>'}
+    ${add ? `<p class="bag-hint">Set a stone in:</p><div class="bag-actions">${add}</div>` : ''}<p class="bag-hint">You can use these skills while you wear it (put them on a key in the Skills window).</p></div>`;
 }
 
 function slotButton(e, game, selected) {
@@ -53,6 +71,7 @@ function slotButton(e, game, selected) {
 // `selected` is the key (gear id or item id) of the item whose details are shown.
 // The 3D character is drawn by the caller into the element marked data-preview.
 export function renderBag(el, game, selected) {
+  wearerForm = game.character.form;
   const c = game.character;
   // worn gear sits in its slot under your character, not in the bag
   const loose = c.inventory.filter((e) => !game.isEquipped(e));
@@ -77,7 +96,7 @@ export function renderBag(el, game, selected) {
     if (e.id === 'tent') actions.push(`<button type="button" class="gold-button small" data-tent>Pitch here (P)</button>`);
     if (sel.kind === 'food') actions.push(`<button type="button" class="gold-button small" data-use="${keyOf(e)}">Use</button>`);
     actions.push(`<button type="button" class="link-button" data-drop="${keyOf(e)}">Drop one</button>`);
-    details = `<div class="bag-detail"><span class="bag-big">${pic(e.id, e.plus, '')}</span><div><h3>${esc(nameOf(e))}</h3><p>${esc(sel.text)}</p><p class="bag-stat">${describe(sel, e.plus)}${e.coat ? `<br>${EFFECTS[e.coat.id].icon} Coated with ${EFFECTS[e.coat.id].name}: ${e.coat.hits} hits left` : ''}</p><div class="bag-actions">${actions.join('')}</div></div></div>`;
+    details = `<div class="bag-detail"><span class="bag-big">${pic(e.id, e.plus, '')}</span><div><h3>${esc(nameOf(e))}</h3><p>${esc(sel.text)}</p><p class="bag-stat">${describe(sel, e.plus)}${e.coat ? `<br>${EFFECTS[e.coat.id].icon} Coated with ${EFFECTS[e.coat.id].name}: ${e.coat.hits} hits left` : ''}</p><div class="bag-actions">${actions.join('')}</div>${isGear(sel) && e.uid ? gearSkillsHtml(game, e, sel) : ''}</div></div>`;
   }
   const crafts = game.recipes.map((r) => {
     const it = ITEMS[r.makes];
@@ -111,11 +130,13 @@ export function renderBag(el, game, selected) {
 // The shop, styled like a Solo Leveling system window. It only shows what your level can buy;
 // more appears as you level up.
 export function renderShop(el, game, message = '', market = null) {
+  wearerForm = game.character.form;
   const c = game.character;
   const mk = market && MARKETS[market];
   // a spawn-point market sells its own speciality stock (and unlocks it a few levels early)
-  const open = mk ? marketStock(market, c.level).map((id) => [id, 0]) : SHOP.filter(([, lvl]) => c.level >= lvl);
-  const next = mk ? Infinity : SHOP.filter(([, lvl]) => c.level < lvl).reduce((m, [, lvl]) => Math.min(m, lvl), Infinity);
+  const list = shopFor(c), dark = !mk && c.side === 'monster';
+  const open = mk ? marketStock(market, c.level).map((id) => [id, 0]) : list.filter(([, lvl]) => c.level >= lvl);
+  const next = mk ? Infinity : list.filter(([, lvl]) => c.level < lvl).reduce((m, [, lvl]) => Math.min(m, lvl), Infinity);
   const group = (title, kind) => {
     const cards = open.filter(([id]) => ITEMS[id].kind === kind).map(([id]) => {
       const it = ITEMS[id];
@@ -123,7 +144,7 @@ export function renderShop(el, game, message = '', market = null) {
       const poor = c.coins < price;
       return `<div class="sys-card${poor ? ' poor' : ''}">
         <div class="sys-pic">${pic(id, 0, 'sys-emoji')}</div>
-        <b>${esc(it.name)}</b><small>${describe(it)}</small>
+        <b>${esc(formName(it, c.form))}</b><small>${describe(it)}</small>
         <div class="sys-buy"><span class="sys-price">${price} G</span>
         <button type="button" class="sys-button" data-buy="${id}" ${poor ? 'disabled' : ''}>${poor ? 'Not enough' : 'Buy'}</button></div></div>`;
     }).join('');
@@ -137,10 +158,11 @@ export function renderShop(el, game, message = '', market = null) {
   }).join('') : '<p class="sys-hint">Nothing to sell yet. Gather wood and berries, or defeat monsters for their drops. Take gear off before selling it.</p>';
   const bad = /\bnot\b|\bneed|bag is full/i.test(message);
   el.innerHTML = `
-    <div class="system-window" role="dialog" aria-label="${mk ? esc(mk.name) : 'Shop'}">
+    <div class="system-window${dark ? ' dark-market' : ''}" role="dialog" aria-label="${mk ? esc(mk.name) : dark ? 'Dark Market' : 'Shop'}">
       <button type="button" class="sys-close" data-close aria-label="Close">×</button>
       ${mk ? '' : tabsHtml('shop')}
-      <div class="sys-title"><span class="sys-bang">!</span><h2>${mk ? esc(mk.name) : 'Shop'}</h2></div>
+      <div class="sys-title"><span class="sys-bang">!</span><h2>${mk ? esc(mk.name) : dark ? 'Dark Market' : 'Shop'}</h2></div>
+      ${dark ? '<p class="sys-hint">Gear made for monsters: cut for claws, horns, tails and hides. When you take humanoid form it reshapes to fit you.</p>' : ''}
       ${mk ? `<p class="sys-hint">${esc(mk.text)}${mk.bot ? ' City shops charge more and pay less than player shops.' : ''}</p>` : ''}
       <p class="sys-top">Coins <b>${c.coins} G</b> <span>·</span> Level <b>${c.level}</b>${next < Infinity ? ` <span>·</span> New items at level <b>${next}</b>` : ''}</p>
       <p class="sys-msg${bad ? ' bad' : ''}" role="status">${esc(message)}</p>
@@ -183,6 +205,7 @@ function mergeBook(game, a) {
   return `<h3 class="bag-sub">Merge Book <small>(${MERGE_COUNT} merges; gold lines are ones you can make with what you carry)</small></h3>${byLadder}`;
 }
 export function renderSmith(el, game, pick = [], message = '', { workshop = false } = {}) {
+  wearerForm = game.character.form;
   const c = game.character;
   const can = game.canMerge();
   const gear = c.inventory.filter((e) => isGear(ITEMS[e.id]));

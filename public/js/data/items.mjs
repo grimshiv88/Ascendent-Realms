@@ -5,6 +5,8 @@
 // look is the colour and material it is drawn with.
 // Weapons: type picks the 3D model and swing; power adds to damage; speed is seconds between swings;
 // chop multiplies damage to trees and bushes; magic weapons use MATK instead of ATK.
+import { SKILLS } from './skills.mjs';
+
 export const ITEMS = {
   // gathered
   log: { name: 'Log', icon: '🪵', kind: 'material', price: 3, text: 'Wood from a young tree. Used for crafting and building.' },
@@ -162,6 +164,47 @@ export const ITEMS = {
   buckler: { name: 'Buckler', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 1, def: 6, price: 110, workshop: true, look: { color: '#8a6a4a' }, text: 'A small round shield for the fist.' },
   dragonscale_shield: { name: 'Dragonscale Shield', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 5, def: 46, mdef: 16, price: 20000, workshop: true, look: { color: '#7a2a24', metal: true }, text: 'One great scale, rimmed in dragonite.' },
 };
+// Skill Stones: each holds one skill. Set into a Rare or better piece of gear, it lets whoever
+// wears that piece use the skill. They drop from monsters at random and can be taken out again.
+for (const [id, sk] of Object.entries(SKILLS)) {
+  ITEMS[`stone_${id}`] = { name: `${sk.name} Stone`, icon: '💠', kind: 'stone', skill: id, price: 300 + sk.sp * 30, text: `Holds the skill ${sk.name}: ${sk.text} Set it into a Rare or better piece of gear (Bag) to use it while you wear that piece.` };
+}
+// Monster gear, sold only to monster players at the Dark Market: made for claws, tusks, tails and
+// hides. It is cut to fit the monster form, and when its wearer takes humanoid form it reshapes to fit
+// (`human` is what it becomes). It merges only with other monster gear.
+Object.assign(ITEMS, {
+  bone_club: { name: 'Bone Club', human: 'Bone-Studded Club', icon: '🦴', kind: 'weapon', type: 'club', model: 'wooden_club', power: 5, speed: 0.6, chop: 1.5, rank: 0, price: 20, beast: true, text: 'A thighbone as long as an arm.' },
+  fang_knife: { name: 'Fang Knife', human: 'Fang Dirk', icon: '🦷', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 6, speed: 0.35, chop: 0.6, rank: 0, price: 40, beast: true, text: 'A great fang bound to a grip.' },
+  claw_hatchet: { name: 'Claw Hatchet', human: 'Hooked Hatchet', icon: '🪓', kind: 'weapon', type: 'axe', model: 'hand_axe', power: 8, speed: 0.65, chop: 3, rank: 1, price: 90, beast: true, text: 'A claw on a haft. It chops wood too.' },
+  tusk_spear: { name: 'Tusk Spear', human: 'Tusk-Headed Spear', icon: '🔱', kind: 'weapon', type: 'spear', model: 'iron_spear', power: 10, speed: 0.6, chop: 0.6, rank: 2, price: 140, beast: true, text: 'A boar tusk on a long shaft.' },
+  shaman_totem: { name: 'Shaman Totem', human: 'Carved Totem Staff', icon: '🪄', kind: 'weapon', type: 'staff', model: 'oak_staff', power: 8, speed: 0.6, chop: 0.8, magic: true, rank: 2, price: 90, beast: true, text: 'Feathers, bones and old magic. Uses MATK.' },
+  crude_cleaver: { name: 'Crude Cleaver', human: 'Heavy Cleaver', icon: '🗡️', kind: 'weapon', type: 'sword', model: 'iron_sword', power: 11, speed: 0.55, chop: 1, rank: 2, price: 160, beast: true, text: 'More slab than sword, and it does the job.' },
+  skull_maul: { name: 'Skull Maul', human: 'Skull-Headed Maul', icon: '💀', kind: 'weapon', type: 'mace', model: 'iron_mace', power: 14, speed: 0.75, chop: 1.6, rank: 2, price: 260, beast: true, text: 'A skull of something huge on a stout pole.' },
+  serrated_fang: { name: 'Serrated Fang', human: 'Sawtooth Blade', icon: '⚔️', kind: 'weapon', type: 'sword', model: 'steel_sword', power: 19, speed: 0.5, chop: 1, rank: 3, effect: { id: 'bleed', chance: 0.25 }, price: 650, beast: true, text: 'Teeth along the whole edge.' },
+  troll_cleaver: { name: 'Troll Cleaver', human: 'War Cleaver', icon: '🪓', kind: 'weapon', type: 'axe', model: 'war_axe', power: 24, speed: 0.7, chop: 4, rank: 3, effect: { id: 'bleed', chance: 0.25 }, price: 950, beast: true, text: 'Made for a troll\'s grip.' },
+  wyrm_glaive: { name: 'Wyrmtooth Glaive', human: 'Wyrmtooth Glaive', icon: '🔱', kind: 'weapon', type: 'spear', model: 'steel_glaive', power: 22, speed: 0.65, chop: 1, rank: 3, effect: { id: 'poison', chance: 0.25 }, price: 1000, beast: true, text: 'A wyrm\'s tooth on a pole; the tip still weeps venom.' },
+  spirit_totem: { name: 'Spirit Totem', human: 'Spirit Staff', icon: '🔮', kind: 'weapon', type: 'staff', model: 'crystal_staff', power: 26, speed: 0.6, chop: 0.8, magic: true, rank: 4, effect: { id: 'drain', chance: 0.3 }, price: 1800, beast: true, text: 'The spirits in it whisper back. Uses MATK.' },
+  warlord_fang: { name: 'Warlord\'s Fang', human: 'Warlord\'s Blade', icon: '⚔️', kind: 'weapon', type: 'sword', model: 'knight_blade', power: 32, speed: 0.5, chop: 1, rank: 4, effect: { id: 'drain', chance: 1 }, price: 2200, beast: true, text: 'Carried by the warlords of the monster races.' },
+  hide_cap: { name: 'Hide Hood', human: 'Hide Cap', icon: '🧢', kind: 'armour', rank: 0, slot: 'head', def: 2, price: 25, beast: true, look: { color: '#5a4a32' }, text: 'Rough hide, cut around horns and ears.' },
+  hide_wrap: { name: 'Hide Wrap', human: 'Hide Jerkin', icon: '👕', kind: 'armour', rank: 0, slot: 'body', def: 3, price: 30, beast: true, look: { color: '#6a5236' }, text: 'Wrapped around a body of any shape.' },
+  foot_wraps: { name: 'Foot Wraps', human: 'Hide Boots', icon: '🥾', kind: 'armour', rank: 0, slot: 'feet', def: 2, price: 25, beast: true, look: { color: '#4a3a26' }, text: 'For claws, hooves and paws.' },
+  fur_leggings: { name: 'Fur Leggings', human: 'Fur Trousers', icon: '👖', kind: 'armour', rank: 0, slot: 'legs', def: 3, price: 45, beast: true, look: { color: '#5e4a34' }, text: 'Warm, with a gap for a tail.' },
+  bone_shield: { name: 'Bone Shield', human: 'Bone Shield', icon: '🛡️', kind: 'armour', rank: 0, slot: 'shield', def: 4, price: 50, beast: true, look: { color: '#d8ccb0' }, text: 'Ribs lashed into a round.' },
+  scale_harness: { name: 'Scale Harness', human: 'Scale Vest', icon: '🦺', kind: 'armour', rank: 1, slot: 'body', def: 6, price: 90, beast: true, look: { color: '#4a6a4a' }, text: 'Scales sewn to straps.' },
+  bone_mask: { name: 'Bone Mask', human: 'Bone Helm', icon: '💀', kind: 'armour', rank: 2, slot: 'head', def: 6, price: 140, beast: true, look: { color: '#e0d6bc' }, text: 'A skull worn as a face.' },
+  shaman_mantle: { name: 'Shaman Mantle', human: 'Shaman Robe', icon: '🥻', kind: 'armour', rank: 2, slot: 'body', def: 3, mdef: 10, price: 200, beast: true, look: { color: '#4a2a4a', robe: true }, text: 'Feathers and charms against magic.' },
+  scale_mail: { name: 'Scale Mail', human: 'Scale Mail', icon: '🦺', kind: 'armour', rank: 2, slot: 'body', def: 12, price: 320, beast: true, look: { color: '#3e6a50', metal: true }, text: 'Overlapping scales over a hide coat.' },
+  chitin_greaves: { name: 'Chitin Greaves', human: 'Chitin Greaves', icon: '👖', kind: 'armour', rank: 2, slot: 'legs', def: 8, price: 220, beast: true, look: { color: '#3a3a4a', metal: true }, text: 'Shell plates from a giant beetle.' },
+  claw_boots: { name: 'Clawed Boots', human: 'Spiked Boots', icon: '🥾', kind: 'armour', rank: 2, slot: 'feet', def: 5, price: 120, beast: true, look: { color: '#3a3a3a', metal: true }, text: 'Iron caps for claws.' },
+  tortoise_shield: { name: 'Tortoise Shield', human: 'Shell Shield', icon: '🛡️', kind: 'armour', rank: 2, slot: 'shield', def: 9, price: 260, beast: true, look: { color: '#5a6a3a' }, text: 'The shell of a great tortoise.' },
+  horned_helm: { name: 'Horned Helm', human: 'Horned Helm', icon: '⛑️', kind: 'armour', rank: 3, slot: 'head', def: 12, price: 600, beast: true, look: { color: '#5a5048', metal: true }, text: 'Black iron, with room for horns.' },
+  drake_plate: { name: 'Drakehide Plate', human: 'Drakehide Plate', icon: '🦺', kind: 'armour', rank: 3, slot: 'body', def: 22, price: 1100, beast: true, look: { color: '#6a2a24', metal: true }, text: 'Drake hide over iron plates.' },
+  drake_greaves: { name: 'Drakehide Greaves', human: 'Drakehide Greaves', icon: '👖', kind: 'armour', rank: 3, slot: 'legs', def: 15, price: 800, beast: true, look: { color: '#6a2a24', metal: true }, text: 'They bend where a monster\'s legs bend.' },
+  drake_boots: { name: 'Drakehide Boots', human: 'Drakehide Boots', icon: '🥾', kind: 'armour', rank: 3, slot: 'feet', def: 9, price: 500, beast: true, look: { color: '#6a2a24', metal: true }, text: 'Soft drake hide over iron soles.' },
+  bulwark_shell: { name: 'Bulwark Shell', human: 'Bulwark Shield', icon: '🛡️', kind: 'armour', rank: 3, slot: 'shield', def: 18, price: 1200, beast: true, look: { color: '#4a4a3a', metal: true }, text: 'A wall of shell and iron.' },
+  warlord_crown: { name: 'Warlord\'s Crown', human: 'Warlord\'s Helm', icon: '👑', kind: 'armour', rank: 4, slot: 'head', def: 20, mdef: 5, price: 1800, beast: true, look: { color: '#8a6a2a', metal: true }, text: 'Iron and gold, with a ring of fangs.' },
+  warlord_harness: { name: 'Warlord\'s Harness', human: 'Warlord\'s Plate', icon: '🦺', kind: 'armour', rank: 4, slot: 'body', def: 34, mdef: 8, price: 3000, beast: true, look: { color: '#8a6a2a', metal: true }, text: 'Worn by the war chiefs of the monster races.' },
+});
 for (const [id, it] of Object.entries(ITEMS)) it.id = id;
 
 // How far and how wide each kind of weapon hits. reach is metres beyond your body; arc is half the
@@ -253,6 +296,19 @@ export const SHOP = [
   ['steel_boots', 15], ['tower_shield', 18], ['knight_helm', 25], ['knight_plate', 25],
 ];
 
+// The Dark Market: the monster players' shop (food and potions as in the Shop, all halal; the gear is monster gear)
+export const MONSTER_SHOP = [
+  ...SHOP.filter(([id]) => !['weapon', 'armour'].includes(ITEMS[id].kind)),
+  ['bone_club', 1], ['fang_knife', 1], ['claw_hatchet', 3], ['shaman_totem', 3], ['tusk_spear', 6], ['crude_cleaver', 5], ['skull_maul', 8],
+  ['serrated_fang', 12], ['troll_cleaver', 15], ['wyrm_glaive', 16], ['spirit_totem', 20], ['warlord_fang', 20],
+  ['hide_cap', 1], ['hide_wrap', 1], ['foot_wraps', 1], ['fur_leggings', 2], ['bone_shield', 2], ['scale_harness', 3], ['bone_mask', 6], ['shaman_mantle', 5],
+  ['claw_boots', 6], ['scale_mail', 8], ['chitin_greaves', 8], ['tortoise_shield', 8], ['horned_helm', 15], ['drake_plate', 15], ['drake_greaves', 15],
+  ['drake_boots', 15], ['bulwark_shell', 18], ['warlord_crown', 25], ['warlord_harness', 25],
+];
+// the shop a character buys from: monster players get the Dark Market
+export const shopFor = (c) => (c?.side === 'monster' ? MONSTER_SHOP : SHOP);
+// a piece of monster gear's name in its wearer's form
+export const formName = (it, form) => (it.beast && form === 'humanoid' && it.human ? it.human : it.name);
 export const SLOTS = [['weapon', 'Weapon'], ['head', 'Head'], ['body', 'Body'], ['legs', 'Legs'], ['feet', 'Feet'], ['shield', 'Shield']];
 export const isGear = (it) => it && (it.kind === 'weapon' || it.kind === 'armour');
 export const slotOf = (it) => (it.kind === 'weapon' ? 'weapon' : it.slot);
@@ -277,6 +333,7 @@ export function categoryOf(it) {
   if (it.kind === 'coating') return { cat: 'Coating', sub: 'For weapons' };
   if (it.kind === 'food') return { cat: it.heal || it.sp ? 'Food & drink' : 'Potion', sub: null };
   if (it.kind === 'seed') return { cat: 'Seeds', sub: null };
+  if (it.kind === 'stone') return { cat: 'Skill Stone', sub: null };
   return { cat: 'Material', sub: it.rank != null ? 'Ore' : null };
 }
 
@@ -378,3 +435,37 @@ export const brewCost = (id) => Math.round(ITEMS[id].price * POTION_MAKER.share)
 // herbs each brew needs (the Potion Maker's raw material)
 export const brewHerbs = (id) => (ITEMS[id].brewOnly ? 6 : ITEMS[id].price >= 150 ? 4 : ITEMS[id].price >= 60 ? 2 : 1);
 export const brewSeconds = (id) => (ITEMS[id].brewOnly ? 90 : 20);
+
+// ---------- skills on gear ----------
+// Rare and Epic gear holds up to 3 skills (from Skill Stones), Legendary and Mythic up to 5
+export const gearSkillSlots = (it, plus = 0) => { const r = rankOf(it, plus); return r >= 5 ? 5 : r >= 3 ? 3 : 0; };
+export const STONES = Object.values(ITEMS).filter((it) => it.kind === 'stone').map((it) => it.id);
+// the chance a slain monster drops a Skill Stone (a little more for stronger monsters), and which one
+export const stoneChance = (level = 1) => Math.min(0.05, 0.012 + level * 0.0001);
+export const randomStone = (rnd = Math.random) => STONES[Math.floor(rnd() * STONES.length)];
+
+// Every Mythic weapon has a skill of its own, which nobody can take off it: used with the J key
+// (or the red button on the skill bar) while it is in your hand.
+const MYTHIC_ARTS = {
+  sword: { type: 'sweep', mult: 6, radius: 7, names: ['Heaven-Splitting Arc', 'Crescent of Ruin', 'Last Light', 'Kingsbane'] },
+  axe: { type: 'strike', mult: 9, names: ['World Cleaver', 'Mountain Splitter', 'Red Harvest', 'Executioner\'s Verdict'] },
+  spear: { type: 'bolt', mult: 7, reach: 32, names: ['Skypiercer', 'Dragon Lance', 'Falling Star', 'Spear of Dawn'] },
+  dagger: { type: 'dash', mult: 8, dist: 14, names: ['Thousand Cuts', 'Silent Death', 'Shadow Waltz', 'Viper\'s Kiss'] },
+  club: { type: 'sweep', mult: 7, radius: 6, names: ['Earthbreaker', 'Titan\'s Fall', 'Quake Heart', 'Giant\'s Wrath'] },
+  mace: { type: 'sweep', mult: 7, radius: 6, names: ['Judgement', 'Holy Hammerfall', 'Doom Bell', 'Sun Crusher'] },
+  staff: { type: 'bolt', mult: 7, reach: 36, magic: true, names: ['Star Fall', 'Eye of the Storm', 'Arcane Cataclysm', 'Moon Collapse'] },
+};
+const EFFECT_ELEMENT = { burn: 'Fire', frost: 'Water', poison: 'Nature', drain: 'Dark', bleed: 'Light' };
+export const isMythic = (it, plus = 0) => it?.kind === 'weapon' && rankOf(it, plus) >= 6;
+export function mythicSkill(it, plus = 0) {
+  if (!isMythic(it, plus)) return null;
+  const art = MYTHIC_ARTS[it.type] || MYTHIC_ARTS.sword;
+  const h = [...it.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  const fx = weaponEffect(it, plus);
+  return {
+    id: 'mythic', unique: true, tier: 4, name: art.names[h % art.names.length], icon: '🌟', type: art.type, sp: 30, cd: 40,
+    mult: art.mult, radius: art.radius, reach: art.reach, dist: art.dist, magic: !!art.magic,
+    element: EFFECT_ELEMENT[fx?.id] || 'Light', effect: fx?.id && fx.id !== 'drain' ? fx.id : null, drain: fx?.id === 'drain' ? 0.3 : null,
+    text: `${it.name}'s own skill: ${art.mult}× damage${art.radius ? ` to every foe within ${art.radius} m` : art.reach ? ` up to ${art.reach} m away` : art.dist ? ` after a ${art.dist} m rush` : ''}. 30 SP, rests 40 s.`,
+  };
+}

@@ -34,12 +34,13 @@ function tidy(s, now) {
 }
 
 // Found a guild (the fee is taken by the caller once this succeeds)
-export function found(s, me, rawName, level, now = Date.now()) {
+// A monster's guild is a Dark Guild: it takes only monsters, as a player's guild takes only players
+export function found(s, me, rawName, level, now = Date.now(), { dark = false } = {}) {
   if (guildOf(s, me)) return { error: 'Leave your guild before founding another.' };
   if (level < GUILD_LEVEL) return { error: `You must be level ${GUILD_LEVEL} to found a guild.` };
   const check = checkGuildName(s, rawName);
   if (check.error) return check;
-  const g = { id: s.next++, name: check.name, master: me, members: [me], created: now };
+  const g = { id: s.next++, name: check.name, master: me, members: [me], created: now, ...(dark ? { dark: true } : {}) };
   s.guilds.push(g);
   return { ok: true, guild: g };
 }
@@ -69,7 +70,8 @@ export function renameNation(s, me, rawName) {
 }
 
 // Invite a player (`to` is their exact username, already looked up) to your party or guild
-export function invite(s, me, kind, to, now = Date.now()) {
+// `toMonster` says whether the one invited is a monster (a Dark Guild takes only monsters)
+export function invite(s, me, kind, to, now = Date.now(), toMonster = null) {
   tidy(s, now);
   if (!to) return { error: 'There is no player with that username.' };
   if (same(me, to)) return { error: "You can't invite yourself." };
@@ -85,6 +87,7 @@ export function invite(s, me, kind, to, now = Date.now()) {
     if (!group) return { error: 'You are not in a guild.' };
     if (!same(group.master, me)) return { error: 'Only the Guild Master can invite.' };
     if (guildOf(s, to)) return { error: `${to} is already in a guild.` };
+    if (toMonster !== null && !!group.dark !== !!toMonster) return { error: group.dark ? 'A Dark Guild takes only monsters.' : 'Monsters can only join a Dark Guild.' };
     if (group.members.length >= GUILD_MAX) return { error: `A guild holds up to ${GUILD_MAX} players.` };
   } else return { error: 'Invite to what?' };
   if (s.invites.some((i) => i.kind === kind && i.group === group.id && same(i.to, to))) return { error: `You already invited ${to}.` };
@@ -162,7 +165,7 @@ export function view(s, me, info = () => null, now = Date.now()) {
   const label = (i) => (i.kind === 'party' ? `${i.from}'s party` : s.guilds.find((x) => x.id === i.group)?.name || 'a guild');
   return {
     party: p ? { leader: p.leader, members: people(p.members), mine: same(p.leader, me), pending: s.invites.filter((i) => i.kind === 'party' && i.group === p.id).map((i) => i.to) } : null,
-    guild: g ? { name: g.name, master: g.master, members: people(g.members), mine: same(g.master, me), pending: s.invites.filter((i) => i.kind === 'guild' && i.group === g.id).map((i) => i.to) } : null,
+    guild: g ? { name: g.name, dark: !!g.dark, master: g.master, members: people(g.members), mine: same(g.master, me), pending: s.invites.filter((i) => i.kind === 'guild' && i.group === g.id).map((i) => i.to) } : null,
     invites: s.invites.filter((i) => same(i.to, me)).map((i) => ({ id: i.id, kind: i.kind, from: i.from, label: label(i) })),
     nation: nationOf(s, me) ? { name: nationOf(s, me).name } : null,
   };

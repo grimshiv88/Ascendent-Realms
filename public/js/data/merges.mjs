@@ -10,8 +10,8 @@
 // Mythic pieces never come out of a merge: only the Kings hold those.
 import { ITEMS, isGear, MAX_PLUS, categoryOf } from './items.mjs';
 
-// which ladder an item is on: 'weapon:sword', 'armour:head', ...
-export const subOf = (it) => (it?.kind === 'weapon' ? `weapon:${it.type}` : it?.kind === 'armour' ? `armour:${it.slot}` : null);
+// which ladder an item is on: 'weapon:sword', 'armour:head', ... (monster gear has its own: 'weapon:sword:beast')
+export const subOf = (it) => { const k = it?.kind === 'weapon' ? `weapon:${it.type}` : it?.kind === 'armour' ? `armour:${it.slot}` : null; return k && it.beast ? `${k}:beast` : k; };
 const strength = (it) => (it.kind === 'weapon' ? it.power : (it.def || 0) + (it.mdef || 0));
 
 export const LADDERS = {};

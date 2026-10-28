@@ -21,6 +21,27 @@ const CITY_SHOPS = [
   ['tavern', -Math.PI / 2 - 1.4, 12, 9, 7, '#c8b48e', '#6a3a1e'],
 ];
 export const GUILD_NAME = 'Main Guild Hall';
+export const DARK_GUILD_NAME = 'Dark Guild Hall';
+
+// Each city is built in its land's own style: the Central City of the Heartland in pale stone, and
+// the Monster Cities in the stone, colours and trimmings of their continents
+const STYLES = {
+  heart: { paving: '#a39a88', street: '#8e8676', wall: '#8f8676', lamp: ['#ffe2a0', '#ffb84a'],
+    tones: [['#d2c4a4', '#7a3a24'], ['#c4b494', '#4a5a6a'], ['#dccfb2', '#6a4a2a'], ['#b8a888', '#3a4a3a']],
+    guards: ['dwarf', 'elf', 'giant', 'beastkin', 'hobbit', 'elf', 'dwarf', 'beastkin'], gear: { weapon: 'iron_spear', head: 'knight_helm', body: 'knight_plate' } },
+  // Dragon Peaks: black basalt and red tiles, lit by pools of lava
+  peaks: { paving: '#3a3230', street: '#2a2422', wall: '#3c3430', lamp: ['#ff8a3a', '#ff4a0a'], decor: 'lava',
+    tones: [['#4a3e38', '#8a2a1a'], ['#3e3430', '#6a1a10'], ['#54463e', '#a03a1a']], guards: ['dragonewt'], gear: { weapon: 'wyrm_glaive', head: 'horned_helm', body: 'drake_plate' } },
+  // Ashen Wastes: sun-baked mud brick, bone spikes and hide awnings
+  wastes: { paving: '#b08a5a', street: '#9a7a4e', wall: '#a0784a', lamp: ['#ffc070', '#ff8a2a'], decor: 'bones',
+    tones: [['#c49a62', '#6a4a2a'], ['#b88a52', '#5a3a22'], ['#d0a870', '#7a5232']], guards: ['goblin', 'slime'], gear: { weapon: 'tusk_spear', head: 'bone_mask', body: 'scale_mail' } },
+  // The Fae Isles: white stone under violet and sea-green roofs, with floating crystals
+  fae: { paving: '#d8e4e0', street: '#c4d4d0', wall: '#e8eef0', lamp: ['#d8b0ff', '#a060ff'], decor: 'crystals',
+    tones: [['#f0f0f8', '#8a5ac8'], ['#e6f2ee', '#3aa89a'], ['#f4eef8', '#c060a8']], guards: ['fairy'], gear: { weapon: 'spirit_totem', head: 'warlord_crown', body: 'shaman_mantle' } },
+  // Mirefall: dark timber on stilts, reed roofs, moss and green lanterns
+  mire: { paving: '#5a5a3a', street: '#4a4a30', wall: '#5a4a2e', lamp: ['#b0ffa0', '#40c060'], decor: 'reeds',
+    tones: [['#7a6a48', '#4a6a3a'], ['#6a5a3c', '#5a7a3a'], ['#82704c', '#3a5a2e']], guards: ['lizardman', 'naga'], gear: { weapon: 'tusk_spear', head: 'horned_helm', body: 'scale_mail' } },
+};
 
 function house(w, d, h, wall, roof, label) {
   const g = new THREE.Group();
@@ -78,6 +99,8 @@ function placeFacing(g, b, a, r, d) {
 }
 
 export function buildCity(place) {
+  const S = STYLES[place.style] || STYLES.heart;
+  const monster = !!place.monster;
   const centre = buildSpawn(place, { market: false, lanterns: false });
   const g = centre.group;
   const cx = place.x, cz = place.z;
@@ -85,13 +108,13 @@ export function buildCity(place) {
   const shops = [];
 
   // the paved plaza
-  const paving = new THREE.Mesh(new THREE.CircleGeometry(PLAZA_R + 10, 64), new THREE.MeshStandardMaterial({ color: '#a39a88', roughness: 0.95 }));
+  const paving = new THREE.Mesh(new THREE.CircleGeometry(PLAZA_R + 10, 64), new THREE.MeshStandardMaterial({ color: S.paving, roughness: 0.95 }));
   paving.rotation.x = -Math.PI / 2;
   paving.position.y = 0.03;
   paving.receiveShadow = true;
   g.add(paving);
   // streets out to the four gates
-  const streetMat = new THREE.MeshStandardMaterial({ color: '#8e8676', roughness: 0.95 });
+  const streetMat = new THREE.MeshStandardMaterial({ color: S.street, roughness: 0.95 });
   for (let i = 0; i < 4; i++) {
     const st = new THREE.Mesh(new THREE.PlaneGeometry(7, CITY_R - PLAZA_R), streetMat);
     st.rotation.x = -Math.PI / 2;
@@ -103,23 +126,26 @@ export function buildCity(place) {
   }
 
   // the shops round the plaza
-  for (const [id, a, w, d, h, wall, roof] of CITY_SHOPS) {
-    const name = id === 'guild' ? GUILD_NAME : MARKETS[id].name;
+  CITY_SHOPS.forEach(([id, a, w, d, h, wall0, roof0], i) => {
+    const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
+    const name = id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : MARKETS[id].name;
     const b = house(w, d, h, wall, roof, name);
+    if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
     const at = placeFacing(g, b, a, PLAZA_R + d / 2 + 4, d);
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
     shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: true });
-  }
+  });
   // the Guild Hall gets a bell tower and banners
   const guildAt = shops.find((s) => s.id === 'guild');
-  const tower = new THREE.Mesh(new THREE.BoxGeometry(3, 15, 3), new THREE.MeshStandardMaterial({ color: '#bfb08e', roughness: 0.9 }));
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(3, 15, 3), new THREE.MeshStandardMaterial({ color: monster ? S.tones[0][0] : '#bfb08e', roughness: 0.9 }));
   tower.position.set(guildAt.x - cx, 7.5, guildAt.z - cz - 14);
   tower.castShadow = true;
   g.add(tower);
 
   // the Emperors' Castle in the north-east of the city: a great keep with four towers
-  const CASTLE = { x: 52, z: -52, w: 30, d: 24 };
-  {
+  // (only the Central City has it)
+  const CASTLE = monster ? { x: 1e6, z: 1e6 } : { x: 52, z: -52, w: 30, d: 24 };
+  if (!monster) {
     const stoneMat = new THREE.MeshStandardMaterial({ color: '#9a9284', roughness: 0.95 });
     const roofMat = new THREE.MeshStandardMaterial({ color: '#3a3e5a', roughness: 0.8 });
     const k = new THREE.Group();
@@ -160,7 +186,7 @@ export function buildCity(place) {
   }
 
   // houses of the townsfolk on an outer ring, between the streets
-  const tones = [['#d2c4a4', '#7a3a24'], ['#c4b494', '#4a5a6a'], ['#dccfb2', '#6a4a2a'], ['#b8a888', '#3a4a3a']];
+  const tones = S.tones;
   for (let i = 0; i < 20; i++) {
     const a = (i / 20) * Math.PI * 2 + Math.PI / 20;
     if (Math.abs(Math.sin(a * 2)) < 0.25) continue; // keep the streets clear
@@ -169,12 +195,14 @@ export function buildCity(place) {
     const [wall, roof] = tones[i % tones.length];
     const w = 7 + (i % 3), d = 6 + (i % 2), h = 4 + (i % 3) * 0.8;
     const r = 68 + (i % 2) * 14;
-    const at = placeFacing(g, house(w, d, h, wall, roof, null), a, r, d);
+    const hb = house(w, d, h, wall, roof, null);
+    const at = placeFacing(g, hb, a, r, d);
+    if (S.decor === 'reeds') hb.position.y = 0.6;
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
   }
 
   // the city wall, with a gate on each street
-  const wallMat = new THREE.MeshStandardMaterial({ color: '#8f8676', roughness: 0.95 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: S.wall, roughness: 0.95 });
   const seg = 4;
   const n = Math.round((2 * Math.PI * CITY_R) / seg);
   for (let i = 0; i < n; i++) {
@@ -202,7 +230,7 @@ export function buildCity(place) {
   }
 
   // street lamps round the plaza
-  const lampMat = new THREE.MeshStandardMaterial({ color: '#ffe2a0', emissive: '#ffb84a', emissiveIntensity: 1.6 });
+  const lampMat = new THREE.MeshStandardMaterial({ color: S.lamp[0], emissive: S.lamp[1], emissiveIntensity: 1.6 });
   const iron = new THREE.MeshStandardMaterial({ color: '#2e2a26', roughness: 0.6, metalness: 0.4 });
   for (let i = 0; i < 16; i++) {
     const a = ((i + 0.5) / 16) * Math.PI * 2; // between the shop doors
@@ -215,16 +243,17 @@ export function buildCity(place) {
 
   // two guards at each gate, in plate with spears, who check everyone's ID on the way in
   const guards = [];
-  const guardRaces = ['dwarf', 'elf', 'giant', 'beastkin', 'hobbit', 'elf', 'dwarf', 'beastkin'];
+  const guardRaces = S.guards;
+  const guardGear = Object.fromEntries(Object.entries(S.gear).map(([k, id]) => [k, ITEMS[id]]));
   const gates = [];
   for (let k = 0; k < 4; k++) {
     const a = (k * Math.PI) / 2;
     const ox = Math.sin(a), oz = Math.cos(a); // outward
     gates.push({ x: cx + ox * CITY_R, z: cz + oz * CITY_R, a });
     for (const side of [-1, 1]) {
-      const race = guardRaces[k * 2 + (side > 0 ? 1 : 0)];
+      const race = guardRaces[(k * 2 + (side > 0 ? 1 : 0)) % guardRaces.length];
       const body = buildCharacter({ race, form: 'humanoid', look: {} });
-      wearGear(body, { weapon: ITEMS.iron_spear, head: ITEMS.knight_helm, body: ITEMS.knight_plate });
+      wearGear(body, guardGear);
       const r = CITY_R + 3.5, lat = side * 3.4;
       const x = ox * r + oz * lat, z = oz * r - ox * lat;
       body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz), z);
@@ -234,12 +263,93 @@ export function buildCity(place) {
       solid.push({ x: cx + x, z: cz + z, r: 0.6, kind: 'wall', height: 2 });
     }
   }
+  const glow = decorate(g, S, cx, cz, solid);
   const update = (t) => {
     centre.update?.(t);
     for (const b of guards) animateCharacter(b, t, 0);
+    glow?.(t);
   };
 
   return { group: g, update, shops, solid, gates, centre: { x: cx, z: cz } };
+}
+
+// What makes each Monster City its own: lava pools in the Peaks, bone spikes in the Wastes, floating
+// crystals on the Fae Isles, reeds and stilt-posts in Mirefall. Returns an animation, if any.
+function decorate(g, S, cx, cz, solid) {
+  const baseY = heightAt(cx, cz);
+  const at = (a, r) => ({ x: Math.cos(a) * r, z: Math.sin(a) * r });
+  const glowMat = (c, e, k = 2) => new THREE.MeshStandardMaterial({ color: c, emissive: e, emissiveIntensity: k, roughness: 0.4 });
+  if (S.decor === 'lava') {
+    const lava = glowMat('#ff7a1a', '#ff4a00', 2.4), rock = new THREE.MeshStandardMaterial({ color: '#1e1a1a', roughness: 0.9 });
+    const pools = [];
+    for (let i = 0; i < 6; i++) {
+      const p = at((i / 6) * Math.PI * 2 + 0.5, 22);
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(2.2, 20), lava);
+      pool.rotation.x = -Math.PI / 2; pool.position.set(p.x, 0.06, p.z);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.35, 6, 20), rock);
+      rim.rotation.x = -Math.PI / 2; rim.position.set(p.x, 0.15, p.z);
+      g.add(pool, rim); pools.push(pool);
+      solid.push({ x: cx + p.x, z: cz + p.z, r: 2.5, kind: 'wall', height: 1 });
+    }
+    for (let i = 0; i < 14; i++) {
+      const p = at((i / 14) * Math.PI * 2, 100 + (i % 3) * 3);
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(1.2, 6 + (i % 4) * 2, 5), rock);
+      spike.position.set(p.x, heightAt(cx + p.x, cz + p.z) - baseY + 3, p.z);
+      g.add(spike);
+    }
+    return (t) => { lava.emissiveIntensity = 2 + Math.sin(t * 1.7) * 0.6; };
+  }
+  if (S.decor === 'bones') {
+    const bone = new THREE.MeshStandardMaterial({ color: '#e8dcc0', roughness: 0.7 });
+    const n = 48;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      if ([0, 1, 2, 3].some((k) => Math.abs(Math.atan2(Math.sin(a - (k * Math.PI) / 2), Math.cos(a - (k * Math.PI) / 2))) < 0.08)) continue;
+      const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.35, 3, 6), bone);
+      tusk.position.set(Math.sin(a) * (CITY_R - 1.5), 6.8, Math.cos(a) * (CITY_R - 1.5));
+      tusk.rotation.x = 0.4 * Math.cos(a); tusk.rotation.z = -0.4 * Math.sin(a);
+      g.add(tusk);
+    }
+    // great tusks arching over the plaza
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const t = new THREE.Mesh(new THREE.TorusGeometry(6, 0.6, 8, 20, Math.PI * 0.8), bone);
+      const p = at(a, PLAZA_R - 6);
+      t.position.set(p.x, 0, p.z); t.rotation.y = -a;
+      g.add(t);
+    }
+    return null;
+  }
+  if (S.decor === 'crystals') {
+    const cr = glowMat('#c8a0ff', '#8a50ff', 1.8), cr2 = glowMat('#90fff0', '#20c0b0', 1.8);
+    const floats = [];
+    for (let i = 0; i < 10; i++) {
+      const p = at((i / 10) * Math.PI * 2 + 0.3, 20 + (i % 2) * 6);
+      const c = new THREE.Mesh(new THREE.OctahedronGeometry(0.8, 0), i % 2 ? cr : cr2);
+      c.scale.set(1, 2, 1); c.position.set(p.x, 5, p.z);
+      g.add(c); floats.push(c);
+    }
+    return (t) => floats.forEach((c, i) => { c.position.y = 5 + Math.sin(t * 1.2 + i) * 0.6; c.rotation.y = t * 0.5 + i; });
+  }
+  if (S.decor === 'reeds') {
+    const reed = new THREE.MeshStandardMaterial({ color: '#7a8a4a', roughness: 1 });
+    const post = new THREE.MeshStandardMaterial({ color: '#3a2e1e', roughness: 1 });
+    for (let i = 0; i < 80; i++) {
+      const p = at(Math.random() * Math.PI * 2, PLAZA_R + 14 + Math.random() * 50);
+      if (Math.abs(Math.sin(Math.atan2(p.z, p.x) * 2)) < 0.25) continue;
+      const r = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 1.6 + Math.random(), 4), reed);
+      r.position.set(p.x, heightAt(cx + p.x, cz + p.z) - baseY + 0.8, p.z);
+      g.add(r);
+    }
+    for (let i = 0; i < 24; i++) {
+      const p = at((i / 24) * Math.PI * 2, PLAZA_R + 2);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 2.4, 6), post);
+      m.position.set(p.x, 1.2, p.z);
+      g.add(m);
+    }
+    return null;
+  }
+  return null;
 }
 
 // A village: the waystone with a few cottages round it and a tavern

@@ -133,3 +133,40 @@ export function afterKingSlain(court, by, now = Date.now()) {
   next.overlords.push(newOverlord(court.race, [next.king.name, ...next.overlords.map((o) => o.name)]));
   return { court: next, crowned: false };
 }
+
+// ---------- the Overlord's challenge ----------
+// When a monster player of the King's race grows as strong as the King (level KING_LEVEL) while
+// another player wears the crown, both are told at once that they must fight. The King has two real
+// days to answer; a King who doesn't answer loses the crown to the challenger straight away.
+export const CHALLENGE_ANSWER_MS = 2 * 24 * 3600 * 1000;
+// May this character challenge the King of their race? Returns null, or the reason they can't.
+export function challengeBar(court, c) {
+  if (!court || !c) return 'There is no such King.';
+  if (c.side !== 'monster' || c.race !== court.race) return 'Only a monster of the King\'s own race can challenge for the crown.';
+  if (court.king.npc) return 'The King is not a player. Go to the castle and take the throne yourself.';
+  if (court.king.name === c.name) return 'You are the King.';
+  if ((c.level || 1) < KING_LEVEL) return `You must be as strong as the King first (level ${KING_LEVEL}).`;
+  if (court.challenge && !court.challenge.settled) return court.challenge.by === c.name ? 'Your challenge is already sent.' : 'Another challenger is waiting for the King.';
+  return null;
+}
+export function challenge(court, c, now = Date.now()) {
+  return { ...court, challenge: { by: c.name, level: c.level, king: court.king.name, at: now, answered: false, settled: false } };
+}
+// The King answers: the duel will be fought (in the throne room)
+export function answerChallenge(court, now = Date.now()) {
+  if (!court.challenge || court.challenge.settled || court.challenge.answered) return court;
+  return { ...court, challenge: { ...court.challenge, answered: true, answeredAt: now } };
+}
+// A challenge the King left unanswered for two days: the crown goes to the challenger and the old
+// King stands among the Overlords. Returns the court unchanged otherwise.
+export function settleChallenge(court, now = Date.now()) {
+  const ch = court.challenge;
+  if (!ch || ch.settled || ch.answered || now - ch.at < CHALLENGE_ANSWER_MS) return court;
+  const old = { name: `Overlord ${court.king.name}`, level: court.king.level || KING_LEVEL, player: true };
+  return {
+    ...court,
+    king: { name: ch.by, level: ch.level || KING_LEVEL, npc: false, crownedAt: now, byForfeit: true },
+    overlords: [old, ...court.overlords.filter((o) => o.name !== `Overlord ${ch.by}`)].slice(0, Math.max(NPC_OVERLORDS, court.overlords.length)),
+    challenge: { ...ch, settled: true, settledAt: now, outcome: 'forfeit' },
+  };
+}

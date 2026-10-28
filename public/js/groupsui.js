@@ -1,7 +1,7 @@
 // The Party and Guild window (Y): your party, your guild, and invites waiting for you.
 import { PARTY_MAX, GUILD_MAX, GUILD_FEE, GUILD_LEVEL } from './data/groups.mjs';
 import { COUNTRY_PLOTS } from './data/building.mjs';
-import { CLASSES } from './data/game-data.mjs';
+import { CLASSES, RACES } from './data/game-data.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const who = (m) => `${esc(m.name)}${m.level ? ` <small>Lv ${m.level}${CLASSES[m.cls] ? ` · ${esc(CLASSES[m.cls].name)}` : ''}</small>` : ''}`;
@@ -20,6 +20,8 @@ const inviteRow = (kind) => `<div class="room-form"><label>Invite a player <inpu
 export function renderGroups(el, game, v, { message = '', busy = false } = {}) {
   const c = game.character;
   const me = c.name;
+  // monsters have Dark Guilds
+  const G = RACES[c.race]?.side === 'monster' ? 'Dark Guild' : 'Guild';
   let body = '<p class="bag-hint">Loading…</p>';
   if (v) {
     const invites = v.invites.length ? `<h3 class="bag-sub">Invites for you</h3>${v.invites.map((i) => `
@@ -30,11 +32,11 @@ export function renderGroups(el, game, v, { message = '', busy = false } = {}) {
          <button type="button" class="link-button" data-group="leave" data-kind="party">Leave the party</button>${v.party.mine ? ' <button type="button" class="link-button" data-group="disband" data-kind="party">Break up the party</button>' : ''}`
       : `<p class="bag-hint">You're not in a party. Invite someone to start one (up to ${PARTY_MAX} players). Your party has its own chat tab.</p>${inviteRow('party')}`;
     const guild = v.guild
-      ? `<p class="bag-hint"><b>${esc(v.guild.name)}</b> · ${v.guild.members.length} of ${GUILD_MAX} members</p>${members('guild', v.guild, me)}${v.guild.mine && v.guild.members.length < GUILD_MAX ? inviteRow('guild') : ''}
+      ? `<p class="bag-hint"><b>${esc(v.guild.name)}</b>${v.guild.dark ? ' (a Dark Guild)' : ''} · ${v.guild.members.length} of ${GUILD_MAX} members</p>${members('guild', v.guild, me)}${v.guild.mine && v.guild.members.length < GUILD_MAX ? inviteRow('guild') : ''}
          <button type="button" class="link-button" data-group="leave" data-kind="guild">Leave the guild</button>${v.guild.mine ? ' <button type="button" class="link-button" data-group="disband" data-kind="guild">Disband the guild</button>' : ''}`
-      : `<p class="bag-hint">You're not in a guild. Join one by invite, or found your own at the Main Guild Hall counter: it costs ${GUILD_FEE} G and you must be level ${GUILD_LEVEL}. The founder is the Guild Master.</p>
-         <div class="room-form"><label>Guild name <input type="text" data-guild-name maxlength="24" placeholder="3 to 24 letters" autocomplete="off"></label>
-         <button type="button" class="gold-button small" data-group="found" data-kind="guild" ${c.level < GUILD_LEVEL || c.coins < GUILD_FEE ? 'disabled' : ''}>Found a guild (${GUILD_FEE} G)</button></div>`;
+      : `<p class="bag-hint">You're not in a ${G.toLowerCase()}. Join one by invite, or found your own: it costs ${GUILD_FEE} G and you must be level ${GUILD_LEVEL}. The founder is the Guild Master.${G === 'Dark Guild' ? ' A Dark Guild takes only monsters; its hall stands in every Monster City.' : ''}</p>
+         <div class="room-form"><label>${G} name <input type="text" data-guild-name maxlength="24" placeholder="3 to 24 letters" autocomplete="off"></label>
+         <button type="button" class="gold-button small" data-group="found" data-kind="guild" ${c.level < GUILD_LEVEL || c.coins < GUILD_FEE ? 'disabled' : ''}>Found a ${G.toLowerCase()} (${GUILD_FEE} G)</button></div>`;
     const nation = v.nation
       ? `<p class="bag-hint">You are <b>Emperor of ${esc(v.nation.name)}</b>. It shows on your ID card at the city gates.</p>
          <div class="room-form"><label>Rename your nation <input type="text" data-nation-name maxlength="24" value="${esc(v.nation.name)}" autocomplete="off"></label>
@@ -42,7 +44,7 @@ export function renderGroups(el, game, v, { message = '', busy = false } = {}) {
       : `<p class="bag-hint">Own ${COUNTRY_PLOTS} plots of land, all joined up, and you can found a nation, name it, and become its Emperor. Your biggest joined-up land: <b>${v.territory ?? 0} of ${COUNTRY_PLOTS}</b> plots.</p>
          ${(v.territory ?? 0) >= COUNTRY_PLOTS ? `<div class="room-form"><label>Nation name <input type="text" data-nation-name maxlength="24" placeholder="3 to 24 letters" autocomplete="off"></label>
          <button type="button" class="gold-button small" data-group="nation">Found the nation</button></div>` : ''}`;
-    body = `${invites}<h3 class="bag-sub">Party</h3>${party}<h3 class="bag-sub">Guild</h3>${guild}<h3 class="bag-sub">Nation</h3>${nation}`;
+    body = `${invites}<h3 class="bag-sub">Party</h3>${party}<h3 class="bag-sub">${G}</h3>${guild}<h3 class="bag-sub">Nation</h3>${nation}`;
   }
   el.innerHTML = `
     <div class="status-window skills-window" role="dialog" aria-label="Party and guild">

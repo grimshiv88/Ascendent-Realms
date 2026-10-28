@@ -44,6 +44,11 @@ export const PLACES = [
   { id: 'glade', name: 'Fairy Glade', px: 1395, py: 300, region: 'fae', home: 'Fairy Glade' },
   { id: 'temple', name: 'Naga Lake Temple', px: 1130, py: 860, region: 'mire', home: 'Naga Lake Temple' },
   { id: 'marsh', name: 'Lizardman Marsh', px: 960, py: 840, region: 'mire', home: 'Lizardman Marsh' },
+  // the Monster Cities: one in the middle of each monster continent, owned by no one, each built in its land's own style
+  { id: 'emberfall', name: 'Emberfall', px: 854, py: 100, region: 'peaks', city: true, monster: true, style: 'peaks' },
+  { id: 'ashgrave', name: 'Ashgrave', px: 202, py: 478, region: 'warrens', city: true, monster: true, style: 'wastes' },
+  { id: 'lumenhollow', name: 'Lumenhollow', px: 1359, py: 288, region: 'fae', city: true, monster: true, style: 'fae' },
+  { id: 'mirehaven', name: 'Mirehaven', px: 1102, py: 804, region: 'mire', city: true, monster: true, style: 'mire' },
 ];
 
 // Rivers of the Heartland as cubic curves in map pixels: [start, control 1, control 2, end].
@@ -468,9 +473,8 @@ export function regionName(id) {
   return REGIONS.find((r) => r.id === id)?.name || 'The Open Sea';
 }
 
-// Level the ground under the Central City for good (it also keeps trees and rocks out)
-{
-  const city = PLACES.find((p) => p.city);
+// Level the ground under the cities for good (it also keeps trees and rocks out)
+for (const city of PLACES.filter((p) => p.city)) {
   const { x, z } = toWorld(city.px, city.py);
   const flat = Math.round(heightAt(x, z) * 10) / 10;
   const flats = [];

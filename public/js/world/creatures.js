@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { sample, toWorld, PLACES, safeZoneAt } from '../data/world-layout.mjs';
 import { EVOLUTIONS } from '../data/game-data.mjs';
+import { wildLevelAt, stageForLevel } from '../data/wilds.mjs';
 
 // [name, body to build, level range, aggressive?, speed m/s, drops [item, chance, min, max]]
 export const KINDS = {
@@ -105,9 +106,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   const tmp = {};
   let spawnTimer = 0;
 
-  // Monsters turn up close to your own level (bosses are the exception)
-  function levelFor(kind, playerLevel) {
-    return Math.max(1, playerLevel + Math.round(rand(-2, 2)));
+  // A wild monster's level comes from where it is, not from you: weak near towns, villages and
+  // settled land, stronger the further into the wilds (see data/wilds.mjs), give or take a tenth
+  function levelFor(x, z) {
+    const base = wildLevelAt(x, z);
+    return Math.max(1, Math.min(499, Math.round(base * rand(0.9, 1.1))));
   }
 
   // The kind to spawn here: whatever lives in this part of the land
@@ -116,15 +119,16 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     return kinds ? { id: pickOne(kinds) } : null;
   }
 
-  // Once you've evolved, the monsters around you have mostly evolved as far as you: a goblin becomes
-  // the goblin of your stage (a Hobgoblin, a Chieftain…), and other monsters take their race's
+  // Stronger monsters have evolved as far as a player of their level would have: a goblin becomes
+  // the goblin of that stage (a Hobgoblin, a Chieftain…), and other monsters take their race's
   // evolved form and name. A few stay one stage behind.
-  function evolveFor(kindId, p) {
-    const want = Math.max(0, (p.stage || 0) - (Math.random() < 0.3 ? 1 : 0));
+  function evolveFor(kindId, level) {
+    const want = Math.max(0, stageForLevel(level) - (Math.random() < 0.3 ? 1 : 0));
     const kind = KINDS[kindId];
-    if (!want || kind.royal || kindId.startsWith('king_') || kindId.startsWith('overlord_') || kindId.startsWith('guard_')) return { id: kindId };
-    const g = GOBLIN_LINE.indexOf(kindId);
-    if (g >= 0) return { id: GOBLIN_LINE[Math.min(GOBLIN_LINE.length - 1, Math.max(g, want))] };
+    if (kind.royal || kindId.startsWith('king_') || kindId.startsWith('overlord_') || kindId.startsWith('guard_')) return { id: kindId };
+    // the goblin of the monster's own stage, so a weak one near a town is a plain goblin
+    if (GOBLIN_LINE.includes(kindId)) return { id: GOBLIN_LINE[Math.min(GOBLIN_LINE.length - 1, want)] };
+    if (!want) return { id: kindId };
     if (want <= (kind.body.stage || 0)) return { id: kindId };
     const names = EVOLUTIONS[kind.body.race];
     return { id: kindId, stage: want, title: names?.[want] ? `Wild ${names[want]}` : kind.name };
@@ -167,14 +171,15 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       if (!at) continue;
       const found = kindFor(at.s, at.x, at.z);
       if (!found) continue;
-      const pick = evolveFor(found.id, p);
+      const level = levelFor(at.x, at.z);
+      const pick = evolveFor(found.id, level);
       const kind = KINDS[pick.id];
       // goblins roam in small packs
       const n = Math.round(rand(...(kind.pack || [1, 1])));
       for (let i = 0; i < n; i++) {
         const q = i ? spot(at.x, at.z, rand(2, 5)) : at;
         if (!q) continue;
-        make(pick.id, levelFor(kind, p.level), q.x, q.y, q.z, pick.stage ? { stage: pick.stage, title: pick.title } : {});
+        make(pick.id, i ? levelFor(q.x, q.z) : level, q.x, q.y, q.z, pick.stage ? { stage: pick.stage, title: pick.title } : {});
       }
       return;
     }
@@ -194,10 +199,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const pack = ++packs;
     const n = Math.round(rand(3, 5));
     for (let i = 0; i < n; i++) {
-      const id = evolveFor(i === 0 ? lead : pickOne(kinds), p).id;
+      const level = levelFor(at.x, at.z);
+      const id = evolveFor(i === 0 ? lead : pickOne(kinds), level).id;
       const q = i ? spot(at.x, at.z, rand(3, 7), Math.random() * 6.28) : at;
       if (!q) continue;
-      const m = make(id, levelFor(KINDS[id], p.level), q.x, q.y, q.z, { state: 'lurk', pack });
+      const m = make(id, level, q.x, q.y, q.z, { state: 'lurk', pack });
       m.heading = Math.atan2(p.x - q.x, p.z - q.z);
       m.tag.sprite.visible = false;
       m.body.scale.y = 0.72; // crouched low in the grass

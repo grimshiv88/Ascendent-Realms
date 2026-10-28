@@ -873,3 +873,22 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 /* the Unique Skill's button on the skill bar */
 .sk-btn.sk-unique { border-color: #c98cff; background: radial-gradient(circle at 40% 35%, #3a1f52, #120818); box-shadow: 0 0 10px rgba(190, 120, 255, 0.45); }
 .sk-unique-row .sk-icon { filter: drop-shadow(0 0 4px #b77cff); }
+.sk-btn.sk-mythic { border-color: #ff5050; background: radial-gradient(circle at 40% 35%, #4a1414, #140505); box-shadow: 0 0 10px rgba(255, 80, 80, 0.45); }
+.sk-btn.sk-off { filter: grayscale(1) brightness(0.5); }
+.gear-skills { margin-top: 10px; padding: 8px 10px; border: 1px solid rgba(242, 181, 30, 0.35); border-radius: 8px; }
+.gear-skills ul { margin: 6px 0; padding-left: 18px; }
+.gear-skills li { margin: 3px 0; }
+.gear-myth { margin-top: 8px; color: #ffb0a0; }
+/* the monster players' shop */
+.system-window.dark-market { --sys-edge: #a050ff; border-color: #7a3ac8; background: linear-gradient(180deg, rgba(30, 10, 40, 0.96), rgba(12, 4, 18, 0.97)); box-shadow: 0 0 24px rgba(140, 60, 220, 0.45); }
+.system-window.dark-market .sys-bang { background: #7a3ac8; }
+.system-window.dark-market h2 { color: #d9b0ff; }
+/* the Cult window and the Order of the Dawn */
+.cult-window .cult-rank { font-family: 'Cinzel', serif; font-size: 1.05rem; color: #e0c8ff; }
+.cult-window .cult-offer { padding: 10px 12px; border: 1px solid #6a3aa8; border-radius: 8px; background: rgba(40, 14, 60, 0.6); }
+.cult-window .cult-offer i { color: #d8c0ff; }
+.cult-missions, .cult-members { list-style: none; padding: 0; margin: 6px 0; }
+.cult-missions li, .cult-members li { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.cult-missions small, .cult-members small { display: block; opacity: 0.8; }
+.cult-members select { margin: 4px 6px 0 0; max-width: 60%; }
+.gold-button.cult-dark { background: linear-gradient(#6a3aa8, #3a1a5a); color: #f0e0ff; border-color: #8a5ad0; }

@@ -45,7 +45,7 @@ export function whyNot(ix, iz, besideMine = null) {
     return besideMine?.(ix, iz) ? null : RIVER_ALONE;
   }
   const cx = (ix + 0.5) * PLOT, cz = (iz + 0.5) * PLOT;
-  if (placesWithPositions().some((p) => p.city && Math.hypot(p.x - cx, p.z - cz) < CITY_R + 40)) return 'The Central City belongs to no one: its land can\'t be bought.';
+  if (placesWithPositions().some((p) => p.city && Math.hypot(p.x - cx, p.z - cz) < CITY_R + 40)) return 'The cities belong to no one: their land can\'t be bought.';
   if (placesWithPositions().some((p) => Math.hypot(p.x - cx, p.z - cz) < (p.cave ? 40 : 90))) return 'This land belongs to everyone: it is too close to a landmark.';
   const spread = Math.max(...hs.map((p) => p.h)) - Math.min(...hs.map((p) => p.h));
   if (spread > 12) return 'Too steep to build on.';

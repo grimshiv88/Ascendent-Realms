@@ -6,6 +6,7 @@ const characters = require('./characters');
 const S = require('../public/js/data/social.mjs');
 const rooms = require('./rooms');
 const groups = require('./groups');
+const cults = require('./cults');
 // the private chats you're in besides friends: meeting rooms, your party and your guild
 const extraChannels = (me) => [...rooms.channels(me), ...groups.channels(me)];
 
@@ -66,6 +67,8 @@ function profile(me, name) {
     player: {
       name: row.username, relation: rel, online: online(row.id), privacy: S.privacyOf(c),
       status: visible ? S.statusSummary(c) : null,
+      // only a member of the same cult, of the same rank or higher, ever sees this
+      cult: c ? cults.seenBy(nameOf(me), row.username) : null,
     },
   };
 }
@@ -151,6 +154,8 @@ function send(me, body) {
     channel = S.dmChannel(me, row.id);
   }
   lastSent.set(me, now);
+  // a cult member who gives the cult away in chat is stripped of its powers and money
+  cults.checkChat(me, text);
   db.prepare('INSERT INTO chat (channel, from_id, from_name, text, at) VALUES (?, ?, ?, ?, ?)').run(channel, me, nameOf(me), text, now);
   // the general chat only keeps its most recent messages
   if (channel === 'general') db.prepare("DELETE FROM chat WHERE channel = 'general' AND id <= (SELECT id FROM chat WHERE channel = 'general' ORDER BY id DESC LIMIT 1 OFFSET ?)").run(S.KEEP_MESSAGES);

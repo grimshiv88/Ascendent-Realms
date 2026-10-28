@@ -1,5 +1,5 @@
 // The in-game HUD and the Status Window (laid out like Mohammed's black-and-gold design).
-import { CASTLES, castleOf, KING_RETURNS_MS } from './data/kings.mjs';
+import { CASTLES, castleOf, KING_RETURNS_MS, CHALLENGE_ANSWER_MS } from './data/kings.mjs';
 import { CONTROLS, codeFor, keyName } from './data/controls.mjs';
 import {
   RACES, CLASSES, CLASS_GUIDE, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor, mayChangeForm, FORM_SWITCH_LEVEL,
@@ -72,6 +72,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
         <button type="button" data-open="bag">Bag <kbd>I</kbd></button>
         <button type="button" data-open="map">Map <kbd>M</kbd></button>
         <button type="button" data-open="quests">Quests <kbd>Q</kbd></button>
+        <button type="button" data-open="cult">${RACES[c.race]?.side === 'monster' ? 'Cult' : 'The Order'}</button>
         <button type="button" data-open="options">Controls <kbd>Esc</kbd></button>
         <button type="button" data-signout>Log out</button>
       </div>
@@ -202,6 +203,32 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
 }
 
 // The highest-level players. `me` is your character's name, to mark your own row.
+// The Overlord's challenge: shown at once to the challenger and to the King. The King has two real
+// days to answer, or the crown passes to the challenger.
+export function renderChallenge(el, court, me, message = '') {
+  const ch = court.challenge, title = CASTLES[court.race].title;
+  const left = Math.max(0, ch.at + CHALLENGE_ANSWER_MS - Date.now());
+  const time = `${Math.floor(left / 3600000)} h ${Math.floor((left % 3600000) / 60000)} min`;
+  let body;
+  if (ch.settled) body = ch.king === me
+    ? `<p>You didn't answer <b>${esc(ch.by)}</b>'s challenge within two days. The crown of the ${esc(title)} has passed to them, and you now stand among the Overlords.</p>`
+    : `<p><b>${esc(ch.king)}</b> didn't answer your challenge within two days. <b>You are now the ${esc(title)}.</b></p>`;
+  else if (ch.king === me) body = `<p><b>${esc(ch.by)}</b> has grown as strong as you and challenges you for the crown of the ${esc(title)}. You must fight.</p>
+    ${ch.answered ? '<p class="bag-hint">You have accepted. The duel will be fought in the throne room once players can fight each other (not in the game yet).</p>'
+      : `<p class="welcome-warn">Answer within <b>${time}</b>, or the crown passes to ${esc(ch.by)} without a fight.</p>
+    <button type="button" class="gold-button" data-answer-challenge="${court.race}">Accept the duel</button>`}`;
+  else body = `<p>You have grown as strong as the King. Your challenge has gone to <b>${esc(ch.king)}</b>, the ${esc(title)}: the two of you must fight for the crown.</p>
+    ${ch.answered ? `<p class="bag-hint">${esc(ch.king)} has accepted. The duel will be fought in the throne room once players can fight each other (not in the game yet).</p>`
+      : `<p class="bag-hint">If the King doesn't answer within <b>${time}</b>, the crown is yours.</p>`}`;
+  el.innerHTML = `
+    <div class="status-window challenge-window" role="dialog" aria-label="A challenge for the crown">
+      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      <h2>${ch.settled ? 'The crown has passed' : 'A challenge for the crown'}</h2>
+      ${body}
+      <p class="shop-msg" role="status">${esc(message)}</p>
+    </div>`;
+}
+
 export function renderRankings(el, players, me, courts = []) {
   const rows = players === null ? '<p class="bag-hint">Loading…</p>'
     : players.length ? `<ol class="rankings">${players.map((p, i) => `
