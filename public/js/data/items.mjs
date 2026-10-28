@@ -20,16 +20,16 @@ export const ITEMS = {
   drake_horn: { name: 'Drake Horn', icon: '🦴', kind: 'material', price: 40, text: 'A young drake\'s horn. Prized by smiths.' },
   frost_core: { name: 'Frost Core', icon: '❄️', kind: 'material', price: 25, text: 'A cold heart from a frost slime.' },
   // mined in the depths; rank shows how rare each one is
-  copper_ore: { name: 'Copper Ore', icon: '🟠', kind: 'material', rank: 0, price: 8, text: 'Soft reddish ore, common in shallow caves.' },
-  iron_ore: { name: 'Iron Ore', icon: '⚫', kind: 'material', rank: 0, price: 14, text: 'The smith\'s bread and butter.' },
-  crystal_shard: { name: 'Crystal Shard', icon: '🔷', kind: 'material', rank: 1, price: 22, text: 'A shard of the glowing crystal that lights the caves.' },
-  silver_ore: { name: 'Silver Ore', icon: '⚪', kind: 'material', rank: 1, price: 30, text: 'Bright ore that monsters seem to fear.' },
-  gold_ore: { name: 'Gold Ore', icon: '🟡', kind: 'material', rank: 2, price: 60, text: 'Heavy, soft and valuable.' },
-  emerald: { name: 'Emerald', icon: '💚', kind: 'material', rank: 2, price: 90, text: 'A green gem from the damp hollows of the Mire.' },
-  sapphire: { name: 'Sapphire', icon: '💙', kind: 'material', rank: 2, price: 110, text: 'A deep blue gem, cold to the touch.' },
-  ruby: { name: 'Ruby', icon: '❤️', kind: 'material', rank: 3, price: 180, text: 'A blood-red gem that glows faintly in the dark.' },
-  moonstone: { name: 'Moonstone', icon: '🌙', kind: 'material', rank: 4, price: 450, text: 'Found only in the deepest places. Said to hold moonlight.' },
-  dragonite: { name: 'Dragonite', icon: '🐲', kind: 'material', rank: 4, price: 600, text: 'Ore fused by dragon fire. Only drakes\' lairs hold it.' },
+  copper_ore: { name: 'Copper Ore', icon: '🟠', kind: 'material', rank: 1, price: 8, text: 'Soft reddish ore, common in shallow caves.' },
+  iron_ore: { name: 'Iron Ore', icon: '⚫', kind: 'material', rank: 1, price: 14, text: 'The smith\'s bread and butter.' },
+  crystal_shard: { name: 'Crystal Shard', icon: '🔷', kind: 'material', rank: 2, price: 22, text: 'A shard of the glowing crystal that lights the caves.' },
+  silver_ore: { name: 'Silver Ore', icon: '⚪', kind: 'material', rank: 2, price: 30, text: 'Bright ore that monsters seem to fear.' },
+  gold_ore: { name: 'Gold Ore', icon: '🟡', kind: 'material', rank: 3, price: 60, text: 'Heavy, soft and valuable.' },
+  emerald: { name: 'Emerald', icon: '💚', kind: 'material', rank: 3, price: 90, text: 'A green gem from the damp hollows of the Mire.' },
+  sapphire: { name: 'Sapphire', icon: '💙', kind: 'material', rank: 3, price: 110, text: 'A deep blue gem, cold to the touch.' },
+  ruby: { name: 'Ruby', icon: '❤️', kind: 'material', rank: 4, price: 180, text: 'A blood-red gem that glows faintly in the dark.' },
+  moonstone: { name: 'Moonstone', icon: '🌙', kind: 'material', rank: 5, price: 450, text: 'Found only in the deepest places. Said to hold moonlight.' },
+  dragonite: { name: 'Dragonite', icon: '🐲', kind: 'material', rank: 5, price: 600, text: 'Ore fused by dragon fire. Only drakes\' lairs hold it.' },
   // food and potions
   torch: { name: 'Torch', icon: '🔥', kind: 'material', price: 12, text: 'Stand it in the ground with T; press T beside it to pick it back up. In the dark caves, T lights it in your hand instead. Its light keeps monsters away at night, and lets you sleep (Z) beside it.' },
   tent: { name: 'Tent', icon: '⛺', kind: 'material', price: 60, text: 'Pitch it anywhere (P, or from your bag) and sleep inside it (Z) to clear your Fatigue. Monsters leave you alone near it. Pack it up again when you move on.' },
@@ -57,59 +57,63 @@ export const ITEMS = {
   elixir_life: { name: 'Elixir of Life', icon: '❤️‍🔥', kind: 'food', heal: 9999, sp: 9999, rest: 100, price: 600, brewOnly: true, text: 'Fills HP and SP and clears all Fatigue. Only a Potion-Maker can brew it.' },
   sp_booster: { name: 'SP Booster', icon: '💠', kind: 'food', sp: 9999, boost: { sp: 50, minutes: 10 }, price: 120, text: 'Fills your SP and raises max SP by 50 for 10 minutes.' },
   // armour
-  leather_cap: { name: 'Leather Cap', icon: '🧢', kind: 'armour', slot: 'head', def: 2, price: 25, look: { color: '#6b4a2e' }, text: 'A simple leather cap.' },
-  cloth_tunic: { name: 'Cloth Tunic', icon: '👕', kind: 'armour', slot: 'body', def: 3, price: 30, look: { color: '#5a6a8a' }, text: 'Better than nothing.' },
-  leather_boots: { name: 'Leather Boots', icon: '🥾', kind: 'armour', slot: 'feet', def: 2, price: 25, look: { color: '#5a3a22' }, text: 'Sturdy walking boots.' },
-  leather_pants: { name: 'Leather Trousers', icon: '👖', kind: 'armour', slot: 'legs', def: 3, price: 45, look: { color: '#5e4430' }, text: 'Tough leather trousers.' },
-  wooden_shield: { name: 'Wooden Shield', icon: '🛡️', kind: 'armour', slot: 'shield', def: 4, price: 50, look: { color: '#7a5634' }, text: 'Planks bound with iron.' },
-  leather_armor: { name: 'Leather Armour', icon: '🦺', kind: 'armour', slot: 'body', def: 6, price: 90, look: { color: '#6b4a2e' }, text: 'Hardened leather.' },
-  mage_hat: { name: 'Mage Hat', icon: '🎩', kind: 'armour', slot: 'head', def: 1, mdef: 5, price: 80, look: { color: '#3a2a6a', hat: true }, text: 'A pointed hat that wards off spells.' },
-  mage_robe: { name: 'Mage Robe', icon: '🥻', kind: 'armour', slot: 'body', rank: 1, def: 3, mdef: 10, price: 200, look: { color: '#3a2a6a', robe: true }, text: 'Woven with protective runes.' },
-  iron_helm: { name: 'Iron Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 1, def: 6, price: 140, look: { color: '#8f949c', metal: true }, text: 'A solid iron helmet.' },
-  iron_boots: { name: 'Iron Boots', icon: '🥾', kind: 'armour', slot: 'feet', rank: 1, def: 5, price: 120, look: { color: '#8f949c', metal: true }, text: 'Heavy iron-shod boots.' },
-  chainmail: { name: 'Chainmail', icon: '🦺', kind: 'armour', slot: 'body', rank: 1, def: 12, price: 320, look: { color: '#9aa0a8', metal: true }, text: 'Thousands of iron rings.' },
-  chain_leggings: { name: 'Chain Leggings', icon: '👖', kind: 'armour', slot: 'legs', rank: 1, def: 8, price: 220, look: { color: '#9aa0a8', metal: true }, text: 'Chainmail for the legs.' },
-  iron_shield: { name: 'Iron Shield', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 1, def: 9, price: 260, look: { color: '#8f949c', metal: true }, text: 'A round iron shield.' },
-  steel_helm: { name: 'Steel Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 2, def: 12, price: 600, look: { color: '#c0c6ce', metal: true }, text: 'Polished steel.' },
-  steel_plate: { name: 'Steel Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 2, def: 22, price: 1100, look: { color: '#c0c6ce', metal: true }, text: 'Full steel breastplate.' },
-  steel_greaves: { name: 'Steel Greaves', icon: '👖', kind: 'armour', slot: 'legs', rank: 2, def: 15, price: 800, look: { color: '#c0c6ce', metal: true }, text: 'Steel leg plates.' },
-  steel_boots: { name: 'Steel Boots', icon: '🥾', kind: 'armour', slot: 'feet', rank: 2, def: 9, price: 500, look: { color: '#c0c6ce', metal: true }, text: 'Steel sabatons.' },
-  tower_shield: { name: 'Tower Shield', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 2, def: 18, price: 1200, look: { color: '#b0b6be', metal: true }, text: 'A wall you can carry.' },
-  knight_helm: { name: 'Knight\'s Helm', icon: '👑', kind: 'armour', slot: 'head', rank: 3, def: 20, mdef: 5, price: 1800, look: { color: '#d9c27a', metal: true }, text: 'Gold-trimmed and plumed.' },
-  knight_plate: { name: 'Knight\'s Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 3, def: 34, mdef: 8, price: 3000, look: { color: '#d9c27a', metal: true }, text: 'Armour of the realm\'s knights.' },
+  leather_cap: { name: 'Leather Cap', icon: '🧢', kind: 'armour', rank: 0, slot: 'head', def: 2, price: 25, look: { color: '#6b4a2e' }, text: 'A simple leather cap.' },
+  cloth_tunic: { name: 'Cloth Tunic', icon: '👕', kind: 'armour', rank: 0, slot: 'body', def: 3, price: 30, look: { color: '#5a6a8a' }, text: 'Better than nothing.' },
+  leather_boots: { name: 'Leather Boots', icon: '🥾', kind: 'armour', rank: 0, slot: 'feet', def: 2, price: 25, look: { color: '#5a3a22' }, text: 'Sturdy walking boots.' },
+  leather_pants: { name: 'Leather Trousers', icon: '👖', kind: 'armour', rank: 0, slot: 'legs', def: 3, price: 45, look: { color: '#5e4430' }, text: 'Tough leather trousers.' },
+  wooden_shield: { name: 'Wooden Shield', icon: '🛡️', kind: 'armour', rank: 0, slot: 'shield', def: 4, price: 50, look: { color: '#7a5634' }, text: 'Planks bound with iron.' },
+  leather_armor: { name: 'Leather Armour', icon: '🦺', kind: 'armour', rank: 1, slot: 'body', def: 6, price: 90, look: { color: '#6b4a2e' }, text: 'Hardened leather.' },
+  mage_hat: { name: 'Mage Hat', icon: '🎩', kind: 'armour', rank: 1, slot: 'head', def: 1, mdef: 5, price: 80, look: { color: '#3a2a6a', hat: true }, text: 'A pointed hat that wards off spells.' },
+  mage_robe: { name: 'Mage Robe', icon: '🥻', kind: 'armour', slot: 'body', rank: 2, def: 3, mdef: 10, price: 200, look: { color: '#3a2a6a', robe: true }, text: 'Woven with protective runes.' },
+  iron_helm: { name: 'Iron Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 2, def: 6, price: 140, look: { color: '#8f949c', metal: true }, text: 'A solid iron helmet.' },
+  iron_boots: { name: 'Iron Boots', icon: '🥾', kind: 'armour', slot: 'feet', rank: 2, def: 5, price: 120, look: { color: '#8f949c', metal: true }, text: 'Heavy iron-shod boots.' },
+  chainmail: { name: 'Chainmail', icon: '🦺', kind: 'armour', slot: 'body', rank: 2, def: 12, price: 320, look: { color: '#9aa0a8', metal: true }, text: 'Thousands of iron rings.' },
+  chain_leggings: { name: 'Chain Leggings', icon: '👖', kind: 'armour', slot: 'legs', rank: 2, def: 8, price: 220, look: { color: '#9aa0a8', metal: true }, text: 'Chainmail for the legs.' },
+  iron_shield: { name: 'Iron Shield', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 2, def: 9, price: 260, look: { color: '#8f949c', metal: true }, text: 'A round iron shield.' },
+  steel_helm: { name: 'Steel Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 3, def: 12, price: 600, look: { color: '#c0c6ce', metal: true }, text: 'Polished steel.' },
+  steel_plate: { name: 'Steel Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 3, def: 22, price: 1100, look: { color: '#c0c6ce', metal: true }, text: 'Full steel breastplate.' },
+  steel_greaves: { name: 'Steel Greaves', icon: '👖', kind: 'armour', slot: 'legs', rank: 3, def: 15, price: 800, look: { color: '#c0c6ce', metal: true }, text: 'Steel leg plates.' },
+  steel_boots: { name: 'Steel Boots', icon: '🥾', kind: 'armour', slot: 'feet', rank: 3, def: 9, price: 500, look: { color: '#c0c6ce', metal: true }, text: 'Steel sabatons.' },
+  tower_shield: { name: 'Tower Shield', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 3, def: 18, price: 1200, look: { color: '#b0b6be', metal: true }, text: 'A wall you can carry.' },
+  knight_helm: { name: 'Knight\'s Helm', icon: '👑', kind: 'armour', slot: 'head', rank: 4, def: 20, mdef: 5, price: 1800, look: { color: '#d9c27a', metal: true }, text: 'Gold-trimmed and plumed.' },
+  knight_plate: { name: 'Knight\'s Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 4, def: 34, mdef: 8, price: 3000, look: { color: '#d9c27a', metal: true }, text: 'Armour of the realm\'s knights.' },
   // weapons
   // forged only: blacksmiths make these, no shop sells them. `model` borrows another weapon's shape.
-  bronze_sword: { name: 'Bronze Sword', icon: '🗡️', kind: 'weapon', type: 'sword', model: 'iron_sword', power: 8, speed: 0.55, chop: 1, rank: 0, price: 70, forged: true, text: 'A smith\'s first good blade.' },
-  stone_maul: { name: 'Stone Maul', icon: '🔨', kind: 'weapon', type: 'mace', model: 'iron_mace', power: 10, speed: 0.8, chop: 1.4, rank: 0, price: 80, forged: true, text: 'An iron-bound stone on a thick haft.' },
-  hunting_spear: { name: 'Hunting Spear', icon: '🔱', kind: 'weapon', type: 'spear', model: 'iron_spear', power: 8, speed: 0.6, chop: 0.6, rank: 0, price: 75, forged: true, text: 'Light, with a barbed iron head.' },
-  bronze_helm: { name: 'Bronze Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 0, def: 4, price: 70, forged: true, look: { color: '#b07a3a', metal: true }, text: 'Hammered bronze.' },
-  bronze_cuirass: { name: 'Bronze Cuirass', icon: '🦺', kind: 'armour', slot: 'body', rank: 0, def: 8, price: 130, forged: true, look: { color: '#b07a3a', metal: true }, text: 'A bronze chest plate.' },
-  tempered_sword: { name: 'Tempered Sword', icon: '🗡️', kind: 'weapon', type: 'sword', model: 'iron_sword', power: 14, speed: 0.52, chop: 1, rank: 1, price: 300, forged: true, text: 'Iron folded and quenched until it rings.' },
-  iron_waraxe: { name: 'Iron War Axe', icon: '🪓', kind: 'weapon', type: 'axe', model: 'war_axe', power: 16, speed: 0.7, chop: 2.5, rank: 1, price: 340, forged: true, text: 'A broad iron head that bites deep.' },
-  iron_cuirass: { name: 'Iron Cuirass', icon: '🦺', kind: 'armour', slot: 'body', rank: 1, def: 15, price: 420, forged: true, look: { color: '#7d838c', metal: true }, text: 'Riveted iron plates.' },
-  runed_sword: { name: 'Runed Steel Sword', icon: '⚔️', kind: 'weapon', type: 'sword', model: 'steel_sword', power: 27, speed: 0.5, chop: 1, rank: 2, effect: { id: 'bleed', chance: 0.25 }, price: 1300, forged: true, text: 'Steel etched with sharpening runes.' },
-  steel_warhammer: { name: 'Steel Warhammer', icon: '🔨', kind: 'weapon', type: 'mace', model: 'iron_mace', power: 31, speed: 0.8, chop: 1.8, rank: 2, effect: { id: 'frost', chance: 0.15 }, price: 1400, forged: true, text: 'Heavy enough to stagger a troll.' },
-  runed_plate: { name: 'Runed Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 2, def: 28, mdef: 6, price: 1800, forged: true, look: { color: '#a9b4c4', metal: true }, text: 'Steel plate with warding runes.' },
-  runeblade: { name: 'Runeblade', icon: '⚔️', kind: 'weapon', type: 'sword', model: 'knight_blade', power: 46, speed: 0.48, chop: 1.1, rank: 3, effect: { id: 'drain', chance: 1 }, price: 5200, forged: true, text: 'Its runes drink a little life with every cut.' },
-  titan_axe: { name: 'Titan Axe', icon: '🪓', kind: 'weapon', type: 'axe', model: 'war_axe', power: 54, speed: 0.75, chop: 4, rank: 3, effect: { id: 'bleed', chance: 0.3 }, price: 6000, forged: true, text: 'Made for giants; a strong arm can swing it.' },
-  runic_aegis: { name: 'Runic Aegis', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 3, def: 30, mdef: 12, price: 5500, forged: true, look: { color: '#8fa8d8', metal: true }, text: 'A shield that hums when spells come near.' },
-  sunforged_glaive: { name: 'Sunforged Glaive', icon: '🔱', kind: 'weapon', type: 'spear', model: 'steel_glaive', power: 78, speed: 0.62, chop: 1.4, rank: 4, effect: { id: 'burn', chance: 0.4 }, price: 22000, forged: true, text: 'Forged in dragon fire; the blade never cools.' },
-  dragonscale_plate: { name: 'Dragonscale Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 4, def: 60, mdef: 20, price: 24000, forged: true, look: { color: '#7a2a24', metal: true }, text: 'Scales of an elder dragon set in steel.' },
-  dragonscale_helm: { name: 'Dragonscale Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 4, def: 34, mdef: 12, price: 15000, forged: true, look: { color: '#7a2a24', metal: true }, text: 'Horned, and hot to the touch.' },
+  crude_dagger: { name: 'Crude Dagger', icon: '🔪', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 5, speed: 0.38, chop: 0.5, rank: 0, price: 30, forged: true, text: 'A sharpened iron spike with a leather grip.' },
+  copper_spear: { name: 'Copper Spear', icon: '🔱', kind: 'weapon', type: 'spear', model: 'iron_spear', power: 6, speed: 0.6, chop: 0.5, rank: 0, price: 45, forged: true, text: 'A copper point on a straight pole.' },
+  willow_staff: { name: 'Willow Staff', icon: '🪄', kind: 'weapon', type: 'staff', power: 6, speed: 0.6, chop: 0.6, magic: true, rank: 0, price: 50, forged: true, text: 'A bent willow rod bound with copper wire.' },
+  hide_vest: { name: 'Hide Vest', icon: '🦺', kind: 'armour', slot: 'body', rank: 0, def: 4, price: 40, forged: true, look: { color: '#7a5a3a' }, text: 'Tanned hide, stitched tight.' },
+  bronze_sword: { name: 'Bronze Sword', icon: '🗡️', kind: 'weapon', type: 'sword', model: 'iron_sword', power: 8, speed: 0.55, chop: 1, rank: 1, price: 70, forged: true, text: 'A smith\'s first good blade.' },
+  stone_maul: { name: 'Stone Maul', icon: '🔨', kind: 'weapon', type: 'mace', model: 'iron_mace', power: 10, speed: 0.8, chop: 1.4, rank: 1, price: 80, forged: true, text: 'An iron-bound stone on a thick haft.' },
+  hunting_spear: { name: 'Hunting Spear', icon: '🔱', kind: 'weapon', type: 'spear', model: 'iron_spear', power: 8, speed: 0.6, chop: 0.6, rank: 1, price: 75, forged: true, text: 'Light, with a barbed iron head.' },
+  bronze_helm: { name: 'Bronze Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 1, def: 4, price: 70, forged: true, look: { color: '#b07a3a', metal: true }, text: 'Hammered bronze.' },
+  bronze_cuirass: { name: 'Bronze Cuirass', icon: '🦺', kind: 'armour', slot: 'body', rank: 1, def: 8, price: 130, forged: true, look: { color: '#b07a3a', metal: true }, text: 'A bronze chest plate.' },
+  tempered_sword: { name: 'Tempered Sword', icon: '🗡️', kind: 'weapon', type: 'sword', model: 'iron_sword', power: 14, speed: 0.52, chop: 1, rank: 2, price: 300, forged: true, text: 'Iron folded and quenched until it rings.' },
+  iron_waraxe: { name: 'Iron War Axe', icon: '🪓', kind: 'weapon', type: 'axe', model: 'war_axe', power: 16, speed: 0.7, chop: 2.5, rank: 2, price: 340, forged: true, text: 'A broad iron head that bites deep.' },
+  iron_cuirass: { name: 'Iron Cuirass', icon: '🦺', kind: 'armour', slot: 'body', rank: 2, def: 15, price: 420, forged: true, look: { color: '#7d838c', metal: true }, text: 'Riveted iron plates.' },
+  runed_sword: { name: 'Runed Steel Sword', icon: '⚔️', kind: 'weapon', type: 'sword', model: 'steel_sword', power: 27, speed: 0.5, chop: 1, rank: 3, effect: { id: 'bleed', chance: 0.25 }, price: 1300, forged: true, text: 'Steel etched with sharpening runes.' },
+  steel_warhammer: { name: 'Steel Warhammer', icon: '🔨', kind: 'weapon', type: 'mace', model: 'iron_mace', power: 31, speed: 0.8, chop: 1.8, rank: 3, effect: { id: 'frost', chance: 0.15 }, price: 1400, forged: true, text: 'Heavy enough to stagger a troll.' },
+  runed_plate: { name: 'Runed Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 3, def: 28, mdef: 6, price: 1800, forged: true, look: { color: '#a9b4c4', metal: true }, text: 'Steel plate with warding runes.' },
+  runeblade: { name: 'Runeblade', icon: '⚔️', kind: 'weapon', type: 'sword', model: 'knight_blade', power: 46, speed: 0.48, chop: 1.1, rank: 4, effect: { id: 'drain', chance: 1 }, price: 5200, forged: true, text: 'Its runes drink a little life with every cut.' },
+  titan_axe: { name: 'Titan Axe', icon: '🪓', kind: 'weapon', type: 'axe', model: 'war_axe', power: 54, speed: 0.75, chop: 4, rank: 4, effect: { id: 'bleed', chance: 0.3 }, price: 6000, forged: true, text: 'Made for giants; a strong arm can swing it.' },
+  runic_aegis: { name: 'Runic Aegis', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 4, def: 30, mdef: 12, price: 5500, forged: true, look: { color: '#8fa8d8', metal: true }, text: 'A shield that hums when spells come near.' },
+  sunforged_glaive: { name: 'Sunforged Glaive', icon: '🔱', kind: 'weapon', type: 'spear', model: 'steel_glaive', power: 78, speed: 0.62, chop: 1.4, rank: 5, effect: { id: 'burn', chance: 0.4 }, price: 22000, forged: true, text: 'Forged in dragon fire; the blade never cools.' },
+  dragonscale_plate: { name: 'Dragonscale Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 5, def: 60, mdef: 20, price: 24000, forged: true, look: { color: '#7a2a24', metal: true }, text: 'Scales of an elder dragon set in steel.' },
+  dragonscale_helm: { name: 'Dragonscale Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 5, def: 34, mdef: 12, price: 15000, forged: true, look: { color: '#7a2a24', metal: true }, text: 'Horned, and hot to the touch.' },
   wooden_club: { name: 'Wooden Club', icon: '🏏', kind: 'weapon', type: 'club', power: 4, speed: 0.6, chop: 1.5, rank: 0, price: 20, text: 'A heavy stick. Better than fists.' },
   rusty_sword: { name: 'Rusty Sword', icon: '🗡️', kind: 'weapon', type: 'sword', power: 6, speed: 0.55, chop: 1, rank: 0, price: 40, text: 'Old, but still sharp enough.' },
-  hand_axe: { name: 'Hand Axe', icon: '🪓', kind: 'weapon', type: 'axe', power: 8, speed: 0.65, chop: 3, rank: 0, price: 90, text: 'Chops young trees in one or two swings.' },
-  iron_dagger: { name: 'Iron Dagger', icon: '🔪', kind: 'weapon', type: 'dagger', power: 7, speed: 0.35, chop: 0.7, rank: 1, price: 75, text: 'Quick, light strikes.' },
-  oak_staff: { name: 'Oak Staff', icon: '🪄', kind: 'weapon', type: 'staff', power: 8, speed: 0.6, chop: 0.8, magic: true, rank: 1, price: 90, text: 'Channels magic: uses MATK.' },
-  iron_sword: { name: 'Iron Sword', icon: '⚔️', kind: 'weapon', type: 'sword', power: 11, speed: 0.55, chop: 1, rank: 1, price: 160, text: 'A soldier\'s blade.' },
-  iron_mace: { name: 'Iron Mace', icon: '🔨', kind: 'weapon', type: 'mace', power: 14, speed: 0.75, chop: 1.6, rank: 1, price: 260, text: 'Slow, crushing blows.' },
-  steel_sword: { name: 'Steel Sword', icon: '⚔️', kind: 'weapon', type: 'sword', power: 19, speed: 0.5, chop: 1, rank: 2, effect: { id: 'bleed', chance: 0.2 }, price: 650, text: 'Well balanced steel.' },
-  war_axe: { name: 'War Axe', icon: '🪓', kind: 'weapon', type: 'axe', power: 24, speed: 0.7, chop: 4, rank: 2, effect: { id: 'bleed', chance: 0.25 }, price: 950, text: 'Fells trees and foes alike.' },
-  crystal_staff: { name: 'Crystal Staff', icon: '🔮', kind: 'weapon', type: 'staff', power: 26, speed: 0.6, chop: 0.8, magic: true, rank: 3, effect: { id: 'frost', chance: 0.3 }, price: 1800, text: 'A staff topped with a singing crystal.' },
-  knight_blade: { name: 'Knight\'s Blade', icon: '⚔️', kind: 'weapon', type: 'sword', power: 32, speed: 0.5, chop: 1, rank: 3, effect: { id: 'drain', chance: 1 }, price: 2200, text: 'Forged for the realm\'s knights.' },
-  iron_spear: { name: 'Iron Spear', icon: '🔱', kind: 'weapon', type: 'spear', power: 10, speed: 0.6, chop: 0.6, rank: 1, price: 140, text: 'A long ash shaft with an iron head. Keeps foes at a distance.' },
-  steel_glaive: { name: 'Steel Glaive', icon: '🔱', kind: 'weapon', type: 'spear', power: 22, speed: 0.65, chop: 1, rank: 2, effect: { id: 'bleed', chance: 0.2 }, price: 1000, text: 'A curved blade on a long pole: the longest, widest reach in the shop.' },
-  dragonbone_sword: { name: 'Dragonbone Sword', icon: '🐉', kind: 'weapon', type: 'sword', power: 60, speed: 0.5, chop: 1.2, rank: 4, effect: { id: 'burn', chance: 0.35 }, price: 15000, text: 'Carved from an ancient dragon\'s bone.' },
+  hand_axe: { name: 'Hand Axe', icon: '🪓', kind: 'weapon', type: 'axe', power: 8, speed: 0.65, chop: 3, rank: 1, price: 90, text: 'Chops young trees in one or two swings.' },
+  iron_dagger: { name: 'Iron Dagger', icon: '🔪', kind: 'weapon', type: 'dagger', power: 7, speed: 0.35, chop: 0.7, rank: 2, price: 75, text: 'Quick, light strikes.' },
+  oak_staff: { name: 'Oak Staff', icon: '🪄', kind: 'weapon', type: 'staff', power: 8, speed: 0.6, chop: 0.8, magic: true, rank: 2, price: 90, text: 'Channels magic: uses MATK.' },
+  iron_sword: { name: 'Iron Sword', icon: '⚔️', kind: 'weapon', type: 'sword', power: 11, speed: 0.55, chop: 1, rank: 2, price: 160, text: 'A soldier\'s blade.' },
+  iron_mace: { name: 'Iron Mace', icon: '🔨', kind: 'weapon', type: 'mace', power: 14, speed: 0.75, chop: 1.6, rank: 2, price: 260, text: 'Slow, crushing blows.' },
+  steel_sword: { name: 'Steel Sword', icon: '⚔️', kind: 'weapon', type: 'sword', power: 19, speed: 0.5, chop: 1, rank: 3, effect: { id: 'bleed', chance: 0.2 }, price: 650, text: 'Well balanced steel.' },
+  war_axe: { name: 'War Axe', icon: '🪓', kind: 'weapon', type: 'axe', power: 24, speed: 0.7, chop: 4, rank: 3, effect: { id: 'bleed', chance: 0.25 }, price: 950, text: 'Fells trees and foes alike.' },
+  crystal_staff: { name: 'Crystal Staff', icon: '🔮', kind: 'weapon', type: 'staff', power: 26, speed: 0.6, chop: 0.8, magic: true, rank: 4, effect: { id: 'frost', chance: 0.3 }, price: 1800, text: 'A staff topped with a singing crystal.' },
+  knight_blade: { name: 'Knight\'s Blade', icon: '⚔️', kind: 'weapon', type: 'sword', power: 32, speed: 0.5, chop: 1, rank: 4, effect: { id: 'drain', chance: 1 }, price: 2200, text: 'Forged for the realm\'s knights.' },
+  iron_spear: { name: 'Iron Spear', icon: '🔱', kind: 'weapon', type: 'spear', power: 10, speed: 0.6, chop: 0.6, rank: 2, price: 140, text: 'A long ash shaft with an iron head. Keeps foes at a distance.' },
+  steel_glaive: { name: 'Steel Glaive', icon: '🔱', kind: 'weapon', type: 'spear', power: 22, speed: 0.65, chop: 1, rank: 3, effect: { id: 'bleed', chance: 0.2 }, price: 1000, text: 'A curved blade on a long pole: the longest, widest reach in the shop.' },
+  dragonbone_sword: { name: 'Dragonbone Sword', icon: '🐉', kind: 'weapon', type: 'sword', power: 60, speed: 0.5, chop: 1.2, rank: 5, effect: { id: 'burn', chance: 0.35 }, price: 15000, text: 'Carved from an ancient dragon\'s bone.' },
 };
 for (const [id, it] of Object.entries(ITEMS)) it.id = id;
 
@@ -144,7 +148,7 @@ export function reachText(it) {
 
 // Weapon ranks, from plain to legendary. Merging evolves a weapon: every 3 upgrades it climbs a rank.
 export const RANKS = [
-  { name: 'Common', color: '#b9b9b9' }, { name: 'Uncommon', color: '#62c462' }, { name: 'Rare', color: '#4a9cff' },
+  { name: 'Basic', color: '#8a8a80' }, { name: 'Common', color: '#b9b9b9' }, { name: 'Uncommon', color: '#62c462' }, { name: 'Rare', color: '#4a9cff' },
   { name: 'Epic', color: '#b562ff' }, { name: 'Legendary', color: '#ffae2e' }, { name: 'Mythic', color: '#ff5050' },
 ];
 const STAGE_NAMES = ['', 'Honed', 'Awakened', 'Ascended'];
@@ -179,10 +183,10 @@ export function effectText(it, plus = 0) {
 }
 
 // Merging gets dearer as a weapon climbs: coins and monster parts, more for each rank and upgrade
-const MERGE_PARTS = [null, 'goblin_ear', 'lizard_scale', 'serpent_fang', 'frost_core', 'drake_horn'];
+const MERGE_PARTS = [null, null, 'goblin_ear', 'lizard_scale', 'serpent_fang', 'frost_core', 'drake_horn'];
 export function mergeCost(it, plus = 0) {
   const r = rankOf(it, plus);
-  const coins = Math.round(25 * (r + 1) ** 2 * (plus + 1));
+  const coins = Math.round(25 * Math.max(1, r) ** 2 * (plus + 1));
   const part = MERGE_PARTS[r];
   return { coins, needs: part ? [[part, Math.ceil((plus + 1) / 2) + r]] : [] };
 }
@@ -242,15 +246,15 @@ export function categoryOf(it) {
 
 // Forging: a Blacksmith makes weapons and armour from ore and coins. Better and higher-ranked
 // pieces cost a lot more, and need rarer ore.
-// Forging. A Blacksmith unlocks a rank of gear at each class advancement: Common from the start,
-// Uncommon at level 20, Rare at 50, Epic at 100, Legendary at 200. Mythic is never forged; only
-// the Kings hold those. What a smith can make: everything in the shop plus the forge-only pieces.
-export const FORGE_RANK_LEVEL = [1, 20, 50, 100, 200, Infinity];
-// metal for each rank (iron for Common up to dragonite for Legendary). Forging with a better metal
+// Forging. A Blacksmith unlocks a rank of gear at each class advancement: Basic from the start,
+// Common at level 20, Uncommon at 50, Rare at 100, Epic at 200, Legendary at 500. Mythic is never
+// forged; only the Kings hold those. What a smith can make: everything in the shop plus the forge-only pieces.
+export const FORGE_RANK_LEVEL = [1, 20, 50, 100, 200, 500, Infinity];
+// metal for each rank (iron for Basic and Common up to dragonite for Legendary). Forging with a better metal
 // than needed makes the piece stronger: +1 for each step up, at most +2.
 export const FORGE_ORES = ['iron_ore', 'silver_ore', 'gold_ore', 'ruby', 'dragonite'];
 export const FORGE_MAX_BONUS = 2;
-const FORGE_ONLY_LEVEL = { bronze_sword: 4, stone_maul: 6, hunting_spear: 8, bronze_helm: 5, bronze_cuirass: 10, tempered_sword: 22, iron_waraxe: 25, iron_cuirass: 24,
+const FORGE_ONLY_LEVEL = { crude_dagger: 1, copper_spear: 3, willow_staff: 5, hide_vest: 4, bronze_sword: 4, stone_maul: 6, hunting_spear: 8, bronze_helm: 5, bronze_cuirass: 10, tempered_sword: 22, iron_waraxe: 25, iron_cuirass: 24,
   runed_sword: 55, steel_warhammer: 60, runed_plate: 58, runeblade: 100, titan_axe: 110, runic_aegis: 105, sunforged_glaive: 210, dragonscale_plate: 200, dragonscale_helm: 205 };
 // [id, level a Blacksmith needs] for everything forgeable, lowest first
 export const FORGE = [
@@ -259,8 +263,9 @@ export const FORGE = [
 ].sort((a, b) => a[1] - b[1]);
 export const forgeLevel = (id) => FORGE.find(([f]) => f === id)?.[1] ?? Infinity;
 // the cost to forge `it` with `ore` (the rank's own metal when left out): coins, materials and the bonus
+const oreTier = (it) => Math.min(Math.max(0, (it.rank || 0) - 1), FORGE_ORES.length - 1);
 export function forgeCost(it, ore = null) {
-  const r = Math.min(it.rank || 0, FORGE_ORES.length - 1);
+  const r = oreTier(it);
   const tier = ore ? FORGE_ORES.indexOf(ore) : r;
   if (tier < r) return null;
   const bonus = Math.min(FORGE_MAX_BONUS, tier - r);
@@ -268,7 +273,7 @@ export function forgeCost(it, ore = null) {
     needs: [[FORGE_ORES[tier], 2 + r * 2], ...(r >= 2 ? [['iron_ore', 3]] : [])] };
 }
 // the metals a piece can be forged with: its own, then up to two better ones
-export const forgeOres = (it) => FORGE_ORES.slice(Math.min(it.rank || 0, 4), Math.min(it.rank || 0, 4) + 1 + FORGE_MAX_BONUS);
+export const forgeOres = (it) => FORGE_ORES.slice(oreTier(it), oreTier(it) + 1 + FORGE_MAX_BONUS);
 
 // The game's own markets, one beside each waystone (inside its safe zone). Each has a speciality:
 // more of it, and its specialities unlock 5 levels before the ordinary shop sells them. They also

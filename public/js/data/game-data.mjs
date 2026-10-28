@@ -58,7 +58,7 @@ export const CLASS_GUIDE = {
     goals: ['Take down lone strong monsters and bounties', 'Scout caves and far lands for others', 'Rise through the six ranks and become the Assassin King'] },
   healer: { can: ['Heal yourself and others (20% stronger heals)', 'Keep a group alive through long fights', 'Use Light magic with a staff'],
     goals: ['Be the one every cave group needs', 'Keep the front line standing in boss and King fights', 'Rise through the six ranks and become the Healer King'] },
-  blacksmith: { can: ['Forge weapons and armour from ore and coins (Blacksmith window, N)', 'Merge two items into a stronger one, and coat weapons', 'Use better metal to make stronger pieces; unlock a new rank at levels 20, 50, 100 and 200'],
+  blacksmith: { can: ['Forge weapons and armour from ore and coins (Blacksmith window, N)', 'Merge two items into a stronger one, and coat weapons', 'Use better metal to make stronger pieces; unlock a new rank at levels 20, 50, 100, 200 and 500'],
     goals: ['Arm the fighters: they depend on your weapons and armour', 'Reach Epic, then Legendary forging', 'Open a shop and become the Blacksmith King'] },
   businessman: { can: ['Sell to shops for far more (70% of the price, not 40%)', 'Own trading buildings and shops', 'Buy caves and post quests for them'],
     goals: ['Build a trading empire across the continents', 'Hire others through quests and guild work', 'Become the Businessman King'] },
