@@ -720,6 +720,19 @@ function dwarfColors(m, stage) {
   return { skin: `#${m.skin.color.getHexString()}`, hair: `#${m.accent.color.getHexString()}`, boots: '#2a2018', leather: '#5a3a1e', eyes: '#111111', ...c };
 }
 
+// The True Dragon's scales follow the chosen colour; the Ancient Dragon darkens, with gold horns
+function dragonColors(m, stage) {
+  const scales = m.skin.color.clone();
+  if (stage >= 5) scales.lerp(new THREE.Color('#1a1214'), 0.45);
+  const hex = (c) => `#${c.getHexString()}`;
+  return {
+    scales: hex(scales), belly: hex(m.belly.color.clone().lerp(new THREE.Color('#e0b070'), 0.4)),
+    wing: hex(scales.clone().multiplyScalar(0.62)), horn: stage >= 5 ? '#d9a93a' : '#e6dcc4', claw: '#1a1414',
+  };
+}
+// the sculpted True Dragon's height, horns included
+const DRAGON_HEIGHT = [0, 0, 0, 0, 2.9, 3.3];
+
 const BUILDERS = {
   elf(m, stage) {
     const rig = humanoid({ height: 1.95, bulk: 0.88, legFrac: 0.5, headScale: 0.95, armFrac: 0.37 }, m);
@@ -853,6 +866,7 @@ const BUILDERS = {
     return rig;
   },
   dragonewt(m, stage, form) {
+    if (form === 'humanoid' && stage >= 4 && hasSculpt('dragon')) return sculptedRig('dragon', DRAGON_HEIGHT[stage], dragonColors(m, stage), m, stage);
     let rig;
     if (form === 'monster') {
       rig = quadruped({ length: 3.0, bulk: 1.1, neckRaise: 0.55, neckLen: 0.12, legHeight: 1.25, sprawl: 0.25 }, m);
@@ -1022,6 +1036,11 @@ export function animateCharacter(character, t, speed = 0) {
   if (rig.wings) {
     const flap = rig.hovers ? Math.sin(t * 28) * 0.5 : Math.sin(t * 1.6) * 0.06;
     rig.wings.forEach((w, i) => { w.rotation.y = (i % 2 ? 1 : -1) * (0.5 + flap); });
+  }
+  if (rig.wingBones) {
+    // sculpted wings breathe in and out a little, and beat while running
+    const beat = Math.sin(t * 1.4) * 0.05 + Math.sin(t * 9) * Math.max(0, speed - 1) * 0.12;
+    rig.wingBones.forEach((w, i) => { w.rotation.y = (i ? -1 : 1) * beat; });
   }
   if (rig.hovers) rig.root.position.y = (rig.root.userData.height < 1 ? 0.25 : 0.15) + Math.sin(t * 2.2) * 0.04;
   if (rig.body && rig.core) {
