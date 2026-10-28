@@ -108,7 +108,7 @@ export function buildCity(place) {
     const b = house(w, d, h, wall, roof, name);
     const at = placeFacing(g, b, a, PLAZA_R + d / 2 + 4, d);
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
-    shops.push({ id, name, x: cx + at.x, z: cz + at.z });
+    shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: true });
   }
   // the Guild Hall gets a bell tower and banners
   const guildAt = shops.find((s) => s.id === 'guild');
@@ -213,7 +213,7 @@ export function buildVillage(place) {
     const at = placeFacing(g, b, a, r, d);
     b.position.y = heightAt(cx + at.bx, cz + at.bz) - baseY;
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
-    if (tavern) shops.push({ id: 'tavern', name: `${place.name} Tavern`, x: cx + at.x, z: cz + at.z });
+    if (tavern) shops.push({ id: 'tavern', name: `${place.name} Tavern`, x: cx + at.x, z: cz + at.z, building: true });
   }
   return { group: g, update: centre.update, shops, solid, market: centre.market };
 }

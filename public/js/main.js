@@ -24,6 +24,7 @@ import { wearGear } from './characters/gear.js';
 import { fillIcons } from './characters/icons.js';
 import { SPELLS } from './data/spells.mjs';
 import { renderIdCard } from './idcard.js';
+import { renderRooms } from './roomsui.js';
 import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
 import { SKILLS } from './data/skills.mjs';
 import { createSocial } from './social.js';
@@ -164,6 +165,18 @@ function startGame(character) {
       }
     },
   });
+
+  // ---------- meeting rooms in the Guild Hall ----------
+  function takeRentals(list) {
+    ui.rentals = list || [];
+    const allowed = {};
+    for (const r of ui.rentals) if (r.allowed) allowed[r.room] = r.until;
+    world?.setRooms(allowed);
+    if (overlay.dataset.panel === 'rooms' && !overlay.classList.contains('hidden')) drawPanel();
+  }
+  function loadRooms() { api.roomsList().then((r) => takeRentals(r.rentals)).catch(() => {}); }
+  // while you're in the Guild Hall, keep up with who has which room (and when time runs out)
+  setInterval(() => { if (world?.indoors?.kind === 'guild') loadRooms(); }, 15000);
 
   // ---------- skills ----------
   const skillBar = $('skill-bar');
@@ -311,6 +324,7 @@ function startGame(character) {
     else if (name === 'bag') { renderBag(overlay, game, ui.selected); preview.mount(overlay.querySelector('[data-preview]')); }
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
     else if (name === 'market' && ui.market) renderShop(overlay, game, ui.shopMsg, ui.market);
+    else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy });
     else if (name === 'gate') renderIdCard(overlay, game, { monster: ui.gate?.monster, courts: ui.courts || [] });
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
@@ -444,7 +458,7 @@ function startGame(character) {
       <button type="button" class="gold-button" data-portal-go="${to.id}" ${character.coins < fee ? 'disabled' : ''}>Pay ${fee} G and travel</button>`;
   }
   function openPortal() {
-    if (world?.underground) { showArea('There are no portals underground.'); return; }
+    if (world?.underground) { showArea(world.indoors ? 'Go outside to use a portal.' : 'There are no portals underground.'); return; }
     if (!world?.atPortal) { showArea('Stand on a portal stone to use it. The map (M) shows them as purple rings.'); return; }
     openPanel('portal');
   }
@@ -452,7 +466,7 @@ function startGame(character) {
   // The Builder View: your land in 3D, to put up buildings
   async function openBuilder() {
     if (ui.builder) { ui.builder.close(); return; }
-    if (world?.underground) { showArea('Come up to the surface to build.'); return; }
+    if (world?.underground) { showArea(world.indoors ? 'Go outside to build.' : 'Come up to the surface to build.'); return; }
     world?.releaseMouse();
     closePanel();
     let list;
@@ -551,6 +565,35 @@ function startGame(character) {
       for (const i of overlay.querySelectorAll('[data-password] input')) i.type = on ? 'text' : 'password';
       btn.setAttribute('aria-pressed', String(on));
       btn.textContent = on ? 'Hide' : 'Show';
+      return;
+    }
+    if (t('data-open-rooms') != null) { ui.roomMsg = ''; loadRooms(); openPanel('rooms'); return; }
+    if ((v = t('data-room-pick')) != null) { ui.roomPick = v; ui.roomMsg = ''; drawPanel(); return; }
+    if ((v = t('data-room-chat')) != null) { closePanel(); social?.openRoom(v); return; }
+    if ((v = t('data-room-rent')) != null || (v = t('data-room-save')) != null) {
+      const renting = e.target.closest('[data-room-rent]');
+      const names = (renting ? overlay.querySelector('[data-room-guests]') : overlay.querySelector(`[data-room-edit="${v}"]`))?.value.split(',').map((x) => x.trim()).filter(Boolean) || [];
+      const minutes = Number(overlay.querySelector('[data-room-minutes]')?.value || 0);
+      ui.roomBusy = true; drawPanel();
+      (async () => {
+        try {
+          if (renting) {
+            await game.saveNow(); // so the server sees your latest coins
+            const r = await api.roomRent(v, minutes, names);
+            game.setCoins(r.coins);
+            takeRentals(r.rentals);
+            ui.roomPick = null;
+            ui.roomMsg = 'The room is yours. Go up the stairs to its door; your guests can come in too. Its private chat is a new tab in the chat (bottom left).';
+            social?.refresh();
+          } else {
+            const r = await api.roomGuests(Number(v), names);
+            takeRentals(r.rentals);
+            ui.roomMsg = 'Saved: those players can come in now.';
+            social?.refresh();
+          }
+        } catch (err) { ui.roomMsg = err.message; }
+        ui.roomBusy = false; drawPanel();
+      })();
       return;
     }
     if (t('data-show-id') != null) { if (world?.passGate()) closePanel(); return; }
@@ -663,6 +706,14 @@ function startGame(character) {
         }).catch(() => {});
       }
       if (type === 'market') { ui.market = data; openPanel('market'); }
+      if (type === 'indoors') {
+        $('minimap').classList.add('hidden');
+        showArea(data.kind === 'guild' ? 'Main Guild Hall: the counter (E) has guild requests; sit at a table (E by a chair); the stairs lead up to the meeting rooms.' : `${data.shop.name}: walk up to the counter and press E. Sit on a chair with E.`);
+        if (data.kind === 'guild') loadRooms();
+      }
+      if (type === 'outdoors') $('minimap').classList.remove('hidden');
+      if (type === 'meeting-room') { ui.roomPick = data.id; ui.roomMsg = ''; loadRooms(); if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'rooms') openPanel('rooms'); }
+      if (type === 'room-ended') { showArea('Your time in the meeting room is up. You are back in the hallway.'); loadRooms(); }
       if (type === 'gate') { ui.gate = data; if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'gate') openPanel('gate'); }
       if (type === 'guild') { game.fillQuests(here(), 'guild'); openPanel('guild'); }
       if (type === 'chest') showArea(`The chest held ${data.coins} G, ${data.items.join(', ')}.`);
@@ -686,6 +737,8 @@ function startGame(character) {
       if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }
     },
   });
+  if (/[?&]debug\b/.test(location.search)) window.__world = world; // for tests
+
   window.addEventListener('pagehide', () => game.saveNow());
   // Friends and chat: search at the top right, chat at the bottom left
   social = createSocial($('game'));

@@ -94,7 +94,7 @@ export function createSocial(host, { onError } = {}) {
     const list = tabs.get(active) || [];
     log.innerHTML = list.length
       ? list.map((m) => `<p class="${m.mine ? 'me' : ''}"><time>${time(m.at)}</time> <b data-player="${esc(m.from)}">${esc(m.from)}</b> ${esc(cleanText(m.text))}</p>`).join('')
-      : `<p class="so-empty">${active === 'general' ? 'Say hello to everyone in the realm.' : `Your private chat with ${esc(active)}.`}</p>`;
+      : `<p class="so-empty">${active === 'general' ? 'Say hello to everyone in the realm.' : roomTabs.has(active) ? 'Only the people let into this room can read this chat.' : `Your private chat with ${esc(active)}.`}</p>`;
     log.scrollTop = log.scrollHeight;
     input.placeholder = active === 'general' ? 'Press Enter to chat…' : `Message ${active}…`;
   }
@@ -122,21 +122,33 @@ export function createSocial(host, { onError } = {}) {
     if (fresh) { drawTabs(); drawLog(); }
     drawBadges();
   }
+  // private chats of the meeting rooms you're in: a tab while you may be there, gone when the time is up
+  let roomTabs = new Set();
+  function takeRooms(list) {
+    if (!list) return;
+    const now = new Set(list);
+    let changed = false;
+    for (const ch of now) if (!tabs.has(ch)) { tabs.set(ch, []); changed = true; }
+    for (const ch of roomTabs) if (!now.has(ch)) { tabs.delete(ch); unread.delete(ch); if (active === ch) active = 'general'; changed = true; }
+    roomTabs = now;
+    if (changed) { drawTabs(); drawLog(); }
+  }
   function takeLists(r) {
     lists = { friends: r.friends || [], received: r.received || [], sent: r.sent || [] };
     badge.hidden = !lists.received.length;
     badge.textContent = lists.received.length || '';
     if (dropMode === 'friends') drawFriends();
   }
-  async function poll() {
+  async function poll(once = false) {
     if (!alive) return;
     try {
       const r = await api.socialPoll(lastId);
       take(r.messages || []);
+      takeRooms(r.rooms);
       takeLists(r);
       loaded = true;
     } catch { /* try again next time */ }
-    if (alive) setTimeout(poll, POLL_MS);
+    if (alive && !once) setTimeout(poll, POLL_MS);
   }
 
   form.addEventListener('submit', async (e) => {
@@ -261,6 +273,9 @@ export function createSocial(host, { onError } = {}) {
   return {
     // Enter in the world starts typing
     focusChat() { setOpen(true); if (active === 'friends') openTab('general'); input.focus(); },
+    // open a meeting room's private chat
+    openRoom(label) { setOpen(true); openTab(label); },
+    refresh: () => poll(true),
     get typing() { return document.activeElement === input || document.activeElement === search; },
     dispose() {
       alive = false;

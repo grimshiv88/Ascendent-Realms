@@ -453,6 +453,10 @@ const previewSocial = {
       const links = new Map(d.friends.map((f) => [`${f.a}|${f.b}`, f]));
       for (const f of remote.friends || []) { const k = `${f.a}|${f.b}`; if (!links.has(k) || (f.t || 0) > (links.get(k).t || 0)) links.set(k, f); }
       d.friends = [...links.values()].filter((f) => !f.gone);
+      // meeting rooms rented by anyone
+      const rentals = new Map((d.rentals || []).map((r) => [r.id, r]));
+      for (const r of remote.rentals || []) if (!rentals.has(r.id) || (r.t || 0) > (rentals.get(r.id).t || 0)) rentals.set(r.id, r);
+      d.rentals = [...rentals.values()].filter((r) => r.until > Date.now() - 86400000);
       storage.set('ar.preview.social', JSON.stringify(d));
     } catch { /* stay with what this browser has */ }
   },
@@ -507,10 +511,13 @@ export async function socialPoll(after = 0) {
   if (await isPreviewMode()) {
     await previewSocial.sync();
     const me = previewMe(), d = previewSocial.load(), my = me.username.toLowerCase();
-    const mine = d.messages.filter((m) => m.channel === 'general' || m.to === my || m.from.toLowerCase() === my);
+    const R = await import('./data/interiors.mjs');
+    const myRooms = new Map((d.rentals || []).filter((r) => r.until > Date.now() && R.mayEnter(r, me.username)).map((r) => [r.id, `${R.roomById(r.room)?.name || 'Room'} (private)`]));
+    const mine = d.messages.filter((m) => (m.channel === 'room' ? myRooms.has(m.room) : m.channel === 'general' || m.to === my || m.from.toLowerCase() === my));
     const list = after ? mine.filter((m) => m.n > after) : mine.slice(-40);
     return {
-      messages: list.map((m) => ({ id: m.n, channel: m.channel === 'general' ? 'general' : (m.from.toLowerCase() === my ? previewSocial.find(m.to)?.username : m.from), from: m.from, mine: m.from.toLowerCase() === my, text: m.text, at: m.at })),
+      messages: list.map((m) => ({ id: m.n, channel: m.channel === 'room' ? myRooms.get(m.room) : m.channel === 'general' ? 'general' : (m.from.toLowerCase() === my ? previewSocial.find(m.to)?.username : m.from), from: m.from, mine: m.from.toLowerCase() === my, text: m.text, at: m.at })),
+      rooms: [...myRooms.values()],
       ...previewSocial.lists(d, me.username),
     };
   }
@@ -559,13 +566,63 @@ export async function chatSend(text, to = null, after = 0) {
     const me = previewMe(), d = previewSocial.load();
     const clean = S.cleanText(text);
     if (!clean) throw new Error('Write something first.');
-    if (to && previewSocial.relation(d, me.username, to) !== 'friend') throw new Error('You can only send private messages to friends.');
+    const R = await import('./data/interiors.mjs');
+    const room = to && (d.rentals || []).find((r) => r.until > Date.now() && R.mayEnter(r, me.username) && `${R.roomById(r.room)?.name || 'Room'} (private)` === to);
+    if (to && !room && previewSocial.relation(d, me.username, to) !== 'friend') throw new Error('You can only send private messages to friends.');
     const n = (d.messages.at(-1)?.n || 0) + 1;
-    d.messages.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n, channel: to ? 'dm' : 'general', to: to ? to.toLowerCase() : null, from: me.username, text: clean, at: Date.now() });
+    d.messages.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n, channel: room ? 'room' : to ? 'dm' : 'general', room: room ? room.id : undefined, to: to && !room ? to.toLowerCase() : null, from: me.username, text: clean, at: Date.now() });
     previewSocial.save(d);
     return { ok: true, ...(await socialPoll(after)) };
   }
   return request('api/chat', { method: 'POST', body: { text, to, after } });
+}
+// ---------- meeting rooms in the Main Guild Hall ----------
+function roomView(rentals, name) {
+  return import('./data/interiors.mjs').then((R) => ({
+    rentals: rentals.filter((r) => r.until > Date.now()).map((r) => ({ id: r.id, room: r.room, renter: r.renter, until: r.until, mine: r.renter === name, allowed: R.mayEnter(r, name), guests: R.mayEnter(r, name) ? r.guests : [] })),
+  }));
+}
+export async function roomsList() {
+  if (await isPreviewMode()) {
+    await previewSocial.sync();
+    return roomView(previewSocial.load().rentals || [], previewMe().username);
+  }
+  return request('api/rooms');
+}
+export async function roomRent(room, minutes, guests) {
+  if (await isPreviewMode()) {
+    const R = await import('./data/interiors.mjs');
+    const me = previewMe(), d = previewSocial.load();
+    d.rentals = (d.rentals || []).filter((r) => r.until > Date.now() - 86400000);
+    const check = R.checkRent({ room, minutes, guests }, d.rentals);
+    if (check.error) throw new Error(check.error);
+    const missing = check.guests.filter((g) => !previewSocial.find(g));
+    if (missing.length) throw new Error(`No player is called ${missing.join(', ')}.`);
+    const coins = updatePreviewAccount((acc) => {
+      if (acc.character.coins < check.cost) throw new Error(`You need ${check.cost} coins.`);
+      acc.character.coins -= check.cost;
+      return acc.character.coins;
+    });
+    d.rentals.push({ id: Date.now(), room, renter: me.username, guests: check.guests.filter((g) => g.toLowerCase() !== me.username.toLowerCase()), until: Date.now() + minutes * 60000, t: Date.now() });
+    previewSocial.save(d);
+    return { ok: true, coins, ...(await roomView(d.rentals, me.username)) };
+  }
+  return request('api/rooms/rent', { method: 'POST', body: { room, minutes, guests } });
+}
+export async function roomGuests(id, guests) {
+  if (await isPreviewMode()) {
+    const R = await import('./data/interiors.mjs');
+    const me = previewMe(), d = previewSocial.load();
+    const r = (d.rentals || []).find((x) => x.id === id && x.renter === me.username && x.until > Date.now());
+    if (!r) throw new Error('You are not renting that room.');
+    const clean = R.cleanGuests(guests);
+    if (clean.error) throw new Error(clean.error);
+    r.guests = clean;
+    r.t = Date.now();
+    previewSocial.save(d);
+    return { ok: true, ...(await roomView(d.rentals, me.username)) };
+  }
+  return request('api/rooms/guests', { method: 'POST', body: { id, guests } });
 }
 export async function setPrivacy(privacy) {
   if (await isPreviewMode()) {

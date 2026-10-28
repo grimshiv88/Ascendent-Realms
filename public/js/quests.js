@@ -186,6 +186,9 @@ export function renderGuild(el, game, message = '') {
       <p class="sys-top">Guild requests are harder than the quest board and pay more. You can hold <b>one</b> at a time.${mins ? ` <span>·</span> Next request in <b>${mins} min</b>` : ''}</p>
       <p class="sys-msg" role="status">${esc(message)}</p>
       <div class="quest-list">${questCards(game, 'guild') || '<p class="sys-hint">No requests right now. A new one is posted every 20 minutes.</p>'}</div>
+      <h3 class="sys-sub">Meeting rooms</h3>
+      <p class="sys-hint">Upstairs are rooms for parties and guild masters, rented by the hour, with their own private chat.</p>
+      <button type="button" class="gold-button small" data-open-rooms>See the meeting rooms</button>
       <h3 class="sys-sub">Parties</h3>
       <p class="sys-hint">Players will be able to invite you to their parties here. Parties are coming in a later update.</p>
     </div>`;

@@ -4,6 +4,7 @@ import { createLand } from './land.js';
 import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
 import { buildCity, buildVillage } from './city.js';
+import { buildInterior } from './interiors.js';
 import { buildCave } from './caves.js';
 import { createCreatures, KINDS, monsterHit } from './creatures.js';
 import { createSkillFx } from './skillfx.js';
@@ -171,6 +172,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let airborne = false;
   let fallFrom = 0; // the height a fall started from
   let depth = null; // { cave, built, back, leftExit } while you're underground
+  let inside = null; // { built, back, shop, leftExit } while you're inside a building
   const FALL_SAFE = 4; // metres you can drop without getting hurt
   let creatures = null; // made below; caves built before then get their guards later
   updateSites(pos.x, pos.z);
@@ -179,7 +181,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // The ground under a point, counting the shrine platforms
   function groundAt(x, z) {
     // underground, the cave floor is exact; up top, the ground as drawn (see surfaceAt)
-    let g = depth ? heightAt(x, z) : surfaceAt(x, z);
+    let g = depth || inside ? heightAt(x, z) : surfaceAt(x, z);
     for (const s of sites) {
       if (!s.built || s.place.cave) continue;
       if (Math.hypot(x - s.place.x, z - s.place.z) < 7.4) g = Math.max(g, s.place.y + 0.45);
@@ -239,6 +241,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     scene.fog.color.copy(sky.setTime(daylight, sunDir));
     lantern.intensity = (1 - daylight) * 6;
     if (depth) applyDark();
+    if (inside) applyIndoor();
   }
   // a soft glow around you at night, so you can still see your feet
   const lantern = new THREE.PointLight('#ffcf8a', 0, 14, 1.6);
@@ -305,6 +308,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const nearTent = (x, z, r) => { const tn = game?.character.tent; return !!tn && Math.hypot(tn.x - x, tn.z - z) < r; };
   function pitchTent() {
     if (!game || dead) return;
+    if (inside) { say('No room for a tent in here', 'note'); return; }
     const tn = game.character.tent;
     if (tn && nearTent(pos.x, pos.z, TENT_IN + 1)) {
       const r = game.packTent();
@@ -319,6 +323,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   // Somewhere monsters won't come at night: beside a torch, your tent, or a waystone's campfire
   function isSafe(x, z) {
+    if (inside) return true;
     if (nearTent(x, z, TENT_SAFE)) return true;
     if (torchLights.some((tl) => Math.hypot(tl.x - x, tl.z - z) < TORCH_SAFE)) return true;
     return !!safeZoneAt(x, z);
@@ -341,6 +346,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!game || dead) return;
     // underground, T lights a torch in your hand (or puts it out)
     if (depth) { setHolding(!holding); return; }
+    if (inside) { say('The lamps are lit in here', 'note'); return; }
     // standing by one of your torches, T picks it back up
     const took = game.takeTorch(pos.x, pos.z);
     if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
@@ -498,6 +504,102 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     say('Back in the daylight', 'note');
     onEvent?.('surface');
   }
+  // ---------- inside a building ----------
+  function applyIndoor() {
+    sun.intensity = 0;
+    hemi.intensity = 0.55;
+    renderer.toneMappingExposure = 1;
+    scene.fog.color.set('#1a120a');
+    scene.fog.density = 0.004;
+    scene.environment = null;
+    scene.background = new THREE.Color('#1a120a');
+    lantern.intensity = 0;
+    sky.setVisible(false);
+  }
+  function enterBuilding(shop) {
+    if (!game || inside || depth) return;
+    if (sleeping) toggleSleep();
+    const built = buildInterior(shop);
+    setUnderground(built.sample);
+    scene.add(built.group);
+    colliders.add(built.solid);
+    creatures.clear();
+    // back outside: a step out of the door, facing away from it
+    const out = Math.atan2(pos.x - shop.x, pos.z - shop.z);
+    inside = { built, shop, leftExit: false, back: { x: shop.x, z: shop.z, heading: heading + Math.PI } };
+    pos.set(built.start.x, built.floorAt(built.start.x, built.start.z), built.start.z);
+    heading = built.start.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; autoWalk = false;
+    void out;
+    applyIndoor();
+    say(shop.name, 'note');
+    onEvent?.('indoors', { shop, kind: built.kind });
+  }
+  function leaveBuilding(toHall = false) {
+    if (!inside) return;
+    const { built, back } = inside;
+    sitting = null;
+    colliders.remove(built.solid);
+    scene.remove(built.group);
+    built.dispose();
+    setUnderground(null);
+    inside = null;
+    pos.set(back.x, heightAt(back.x, back.z), back.z);
+    heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0;
+    scene.fog.density = 0.00024;
+    scene.environment = skyEnv;
+    scene.background = null;
+    sky.setVisible(true);
+    applyTime();
+    onEvent?.('outdoors');
+    void toHall;
+  }
+  // E inside: the counter, a meeting room door, or a chair
+  function useIndoors() {
+    const b = inside.built;
+    if (sitting) { standUp(); return; }
+    if (b.counter && Math.hypot(pos.x - b.counter.x, pos.z - b.counter.z) < 2.6 && Math.abs(pos.y - b.counter.y) < 1) {
+      onEvent?.(inside.shop.id === 'guild' ? 'guild' : 'market', inside.shop.id);
+      return;
+    }
+    const door = b.rooms.find((r) => Math.hypot(pos.x - r.door.x, pos.z - r.door.z) < 2);
+    if (door) { onEvent?.('meeting-room', { id: door.id }); return; }
+    const seat = b.seats.filter((q) => Math.abs(q.y - pos.y) < 1).sort((p, q) => Math.hypot(p.x - pos.x, p.z - pos.z) - Math.hypot(q.x - pos.x, q.z - pos.z))[0];
+    if (seat && Math.hypot(seat.x - pos.x, seat.z - pos.z) < 1.6) { sitDown(seat); return; }
+    say('Walk to the counter, a chair or a door and press ' + keyName(codeFor('interact')), 'note');
+  }
+  let sitting = null;
+  function sitDown(seat) {
+    sitting = seat;
+    pos.set(seat.x, seat.y, seat.z);
+    heading = seat.heading; velY = 0; speedNow = 0; autoWalk = false;
+    say('You sit down', 'note');
+  }
+  function standUp() {
+    if (!sitting) return;
+    const s = sitting;
+    sitting = null;
+    pos.x = s.x + Math.sin(s.heading) * -0.6; pos.z = s.z + Math.cos(s.heading) * -0.6;
+  }
+  function poseSit(rig) {
+    if (!rig.legs || !rig.arms) return;
+    for (const leg of rig.legs) { leg.hip.rotation.x = -1.45; leg.knee.rotation.x = 1.45; }
+    for (const arm of rig.arms) arm.shoulder.rotation.x = -0.35;
+  }
+  // meeting rooms you may be in: { room id -> until }, from the game
+  let allowedRooms = {};
+  function checkRooms() {
+    const b = inside.built;
+    if (!b.rooms.length) return;
+    const room = b.rooms.find((r) => pos.x > r.x0 && pos.x < r.x1 && pos.z > r.z0 && pos.z < r.z1);
+    if (!room || (allowedRooms[room.id] || 0) > Date.now()) return;
+    // not yours (or your time is up): back out into the hallway
+    const was = (allowedRooms[room.id] || 0) > 0;
+    sitting = null;
+    pos.set(room.door.x, b.floorAt(room.door.x, room.door.z), room.door.z);
+    heading = Math.PI; yaw = heading + Math.PI; velY = 0; speedNow = 0; autoWalk = false;
+    if (was) { delete allowedRooms[room.id]; say('Your time in the room is up', 'note'); onEvent?.('room-ended', { id: room.id }); } else { say(`The ${room.name} is locked`, 'hurt'); onEvent?.('meeting-room', { id: room.id }); }
+  }
+
   // nests send out another monster now and then, while you're near and it still stands
   function tickNests(dt) {
     for (const n of depth.built.nests) {
@@ -562,11 +664,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!game || dead) return;
     const chest = colliders.near(pos.x, pos.z, 3).find((e) => e.kind === 'chest' && Math.hypot(e.x - pos.x, e.z - pos.z) - e.r < 1.6);
     if (chest) { openChest(chest); return; }
+    if (inside) { useIndoors(); return; }
     if (!depth) {
       const took = game.takeTorch(pos.x, pos.z);
       if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
       if (nearTent(pos.x, pos.z, TENT_IN + 1)) { pitchTent(); return; }
       const shop = shopNear(pos.x, pos.z);
+      if (shop?.building) { enterBuilding(shop); return; }
       if (shop) { onEvent?.(shop.id === 'guild' ? 'guild' : 'market', shop.id); return; }
     }
     say('Nothing here to open or pick up', 'note');
@@ -1068,6 +1172,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (held('right') || keys.has('ArrowRight')) fx += 1;
       fx += stick.x; fz -= stick.y;
     }
+    // sitting: any move gets you up; until then you stay in the chair
+    if (sitting) {
+      if (Math.abs(fx) > 0.3 || Math.abs(fz) > 0.3) standUp();
+      else { fx = 0; fz = 0; pos.set(sitting.x, sitting.y, sitting.z); heading = sitting.heading; }
+    }
     const backNow = fz < -0.4 && Math.abs(fx) < 0.6;
     if (backNow && !backWas && !look) { aboutFace = true; turnLeft = Math.PI; backYaw = yaw + Math.PI; backHeading = heading + Math.PI; }
     if (fz > -0.1) aboutFace = false;
@@ -1125,6 +1234,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
           else if (open(px, pos.z)) pos.x = px;
           else { pos.x = px; pos.z = pz; }
         }
+      } else if (inside) {
+        // never out through the walls, whatever the colliders miss
+        inside.built.clampPos(pos);
       } else {
         pos.x = THREE.MathUtils.clamp(pos.x, B.minX + 50, B.maxX - 50);
         pos.z = THREE.MathUtils.clamp(pos.z, B.minZ + 50, B.maxZ - 50);
@@ -1169,6 +1281,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const rig = avatar.userData.rig;
     rig.root.position.z = 0;
     animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 1.6);
+    if (sitting) { poseSit(rig); avatar.position.y = sitting.y + 0.5 - bodyH * 0.27; }
     moveHelper(dt, t);
 
     if (skillPose) { skillPose.t += dt; poseSkill(rig, skillPose); if (skillPose.t >= skillPose.dur) skillPose = null; }
@@ -1227,7 +1340,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
 
     // Stream the land, places and monsters
-    if (!depth) {
+    if (!depth && !inside) {
       land.update(pos.x, pos.z);
       plots.update(pos.x, pos.z);
     }
@@ -1248,13 +1361,21 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (s.built?.hole && !dead && Math.hypot(pos.x - s.built.hole.x, pos.z - s.built.hole.z) < 1.6) { enterDepths(s); break; }
       }
     }
-    if (!depth) checkGates(t);
+    if (!depth && !inside) checkGates(t);
+    if (inside) {
+      inside.built.update(t);
+      checkRooms();
+      const d = Math.hypot(pos.x - inside.built.exit.x, pos.z - inside.built.exit.z);
+      if (d > 3) inside.leftExit = true;
+      else if (inside.leftExit && d < 1.2 && !dead) leaveBuilding();
+    }
     for (const q of portals) q.built?.update(t);
     if (holding) heldTorch.light.intensity = 20 + Math.sin(t * 13) * 2 + Math.sin(t * 7.3) * 1.5;
     if (t - lastArea > 0.5) {
       lastArea = t;
       let here;
       if (depth) here = `${depth.cave.name} · ${Math.max(0, Math.round(-pos.y))} m down`;
+      else if (inside) here = inside.shop.name;
       else {
         updateSites(pos.x, pos.z);
         const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
@@ -1285,6 +1406,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const cam = focus.clone().addScaledVector(dir, camDist);
     cam.y = Math.max(cam.y, heightAt(cam.x, cam.z) + 0.5, water + 0.3);
     if (depth) cam.y = Math.min(cam.y, depth.built.roofAt(cam.x, cam.z) - 0.5);
+    if (inside) {
+      inside.built.clampCam(cam, inside.built.upstairs(pos));
+      // in a meeting room the camera stays in the room
+      const rm = inside.built.rooms.find((r) => pos.x > r.x0 && pos.x < r.x1 && pos.z > r.z0 && pos.z < r.z1);
+      if (rm) { cam.x = Math.max(rm.x0 + 0.4, Math.min(rm.x1 - 0.4, cam.x)); cam.z = Math.max(rm.z0 + 0.4, Math.min(rm.z1 - 0.4, cam.z)); }
+      cam.y = Math.min(cam.y, inside.built.roofAt(cam.x, cam.z) - 0.2); }
     camera.position.lerp(cam, Math.min(1, dt * 10));
     camera.lookAt(focus);
 
@@ -1315,7 +1442,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   });
 
   // where you are, for saving: underground counts as the cave's mouth
-  const here = () => (depth ? { x: depth.back.x, y: heightAt(depth.back.x, depth.back.z), z: depth.back.z, heading: depth.back.heading } : { x: pos.x, y: pos.y, z: pos.z, heading });
+  const here = () => (depth ? { x: depth.back.x, y: heightAt(depth.back.x, depth.back.z), z: depth.back.z, heading: depth.back.heading }
+    : inside ? { x: inside.back.x, y: heightAt(inside.back.x, inside.back.z), z: inside.back.z, heading: inside.back.heading }
+      : { x: pos.x, y: pos.y, z: pos.z, heading });
   const saveNow = () => onSaveLocation?.(here());
   window.addEventListener('pagehide', saveNow);
 
@@ -1370,6 +1499,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   return {
     position: () => ({ x: pos.x, z: pos.z, heading }),
+    // for testing: where you and the camera are
+    debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
+    debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting }),
     teleport,
     get atPortal() { return atPortal; },
     set paused(v) { paused = !!v; keys.clear(); },
@@ -1383,7 +1515,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
     holdTorch() { setHolding(!holding); },
     get holding() { return holding; },
-    get underground() { return !!depth; },
+    get underground() { return !!depth || !!inside; },
+    get indoors() { return inside ? { shop: inside.shop, kind: inside.built.kind } : null; },
+    // the meeting rooms you may be in: { room id: until (ms) }
+    setRooms(map) { allowedRooms = { ...map }; },
+    leaveBuilding: () => leaveBuilding(),
     refreshHelper,
     sleep: toggleSleep,
     placeTorch,

@@ -4,6 +4,7 @@
 const db = require('./db');
 const characters = require('./characters');
 const S = require('../public/js/data/social.mjs');
+const rooms = require('./rooms');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS friends (
@@ -112,19 +113,24 @@ function friends(me) {
 function poll(me, after) {
   lastSeen.set(me, Date.now());
   after = Math.max(0, Number(after) || 0);
+  // the rooms you're in have their own private chats
+  const rc = rooms.channels(me);
+  const roomLabel = new Map(rc.map((r) => [r.channel, r.label]));
+  const inRooms = rc.length ? ` OR channel IN (${rc.map(() => '?').join(',')})` : '';
+  const args = [`dm:${me}:%`, `dm:%:${me}`, ...rc.map((r) => r.channel)];
   // the first look shows the last few messages; after that, everything new
   const rows = after
-    ? db.prepare("SELECT * FROM chat WHERE id > ? AND (channel = 'general' OR channel LIKE ? OR channel LIKE ?) ORDER BY id LIMIT 100").all(after, `dm:${me}:%`, `dm:%:${me}`)
-    : db.prepare("SELECT * FROM (SELECT * FROM chat WHERE channel = 'general' OR channel LIKE ? OR channel LIKE ? ORDER BY id DESC LIMIT 40) ORDER BY id").all(`dm:${me}:%`, `dm:%:${me}`);
+    ? db.prepare(`SELECT * FROM chat WHERE id > ? AND (channel = 'general' OR channel LIKE ? OR channel LIKE ?${inRooms}) ORDER BY id LIMIT 100`).all(after, ...args)
+    : db.prepare(`SELECT * FROM (SELECT * FROM chat WHERE channel = 'general' OR channel LIKE ? OR channel LIKE ?${inRooms} ORDER BY id DESC LIMIT 40) ORDER BY id`).all(...args);
   const messages = rows.map((r) => {
     let channel = 'general';
     if (r.channel.startsWith('dm:')) {
       const [, x, y] = r.channel.split(':').map(Number);
       channel = nameOf(x === me ? y : x) || '?';
-    }
+    } else if (roomLabel.has(r.channel)) channel = roomLabel.get(r.channel);
     return { id: r.id, channel, from: r.from_name, mine: r.from_id === me, text: r.text, at: r.at };
   });
-  return { messages, ...friends(me) };
+  return { messages, rooms: rc.map((r) => r.label), ...friends(me) };
 }
 
 // Send to the general chat, or to a friend by username
@@ -134,7 +140,9 @@ function send(me, body) {
   const now = Date.now();
   if (now - (lastSent.get(me) || 0) < S.SEND_GAP_MS) return { error: 'Slow down a little.' };
   let channel = 'general';
-  if (body.to) {
+  const room = body.to && rooms.channels(me).find((r) => r.label === body.to);
+  if (room) channel = room.channel;
+  else if (body.to) {
     const row = byName(body.to);
     if (!row || relation(me, row.id) !== 'friend') return { error: 'You can only send private messages to friends.' };
     channel = S.dmChannel(me, row.id);

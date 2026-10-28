@@ -806,3 +806,9 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .id-card dt { font-weight: 700; min-width: 48px; }
 .id-card dd { margin: 0; }
 @media (max-width: 420px) { .id-card { flex-direction: column; } }
+
+/* Meeting rooms */
+.room-form { display: grid; gap: 10px; margin: 8px 0 12px; }
+.room-form label, .room-mine label { display: grid; gap: 4px; font-size: 14px; }
+.room-form select, .room-form input, .room-mine input { font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--gold-4); background: rgba(0, 0, 0, 0.35); color: var(--ink); min-width: 0; }
+.room-mine { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid rgba(245, 200, 76, 0.2); }
