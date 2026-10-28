@@ -471,6 +471,9 @@ const previewSocial = {
       const rentals = new Map((d.rentals || []).map((r) => [r.id, r]));
       for (const r of remote.rentals || []) if (!rentals.has(r.id) || (r.t || 0) > (rentals.get(r.id).t || 0)) rentals.set(r.id, r);
       d.rentals = [...rentals.values()].filter((r) => r.until > Date.now() - 86400000);
+      const bounties = new Map((d.bounties || []).map((b) => [b.id, b]));
+      for (const b of remote.bounties || []) if (!bounties.has(b.id) || (b.t || 0) > (bounties.get(b.id).t || 0)) bounties.set(b.id, b);
+      d.bounties = [...bounties.values()];
       // parties and guilds: the newest copy wins
       if (remote.groups && (remote.groups.t || 0) > (d.groups?.t || 0)) d.groups = remote.groups;
       storage.set('ar.preview.social', JSON.stringify(d));
@@ -648,6 +651,36 @@ function roomView(rentals, name) {
     rentals: rentals.filter((r) => r.until > Date.now()).map((r) => ({ id: r.id, room: r.room, renter: r.renter, until: r.until, mine: r.renter === name, allowed: R.mayEnter(r, name), guests: R.mayEnter(r, name) ? r.guests : [] })),
   }));
 }
+// The Bounty Board in the Guild Hall (see data/guildcard.mjs)
+export async function bountiesList() {
+  if (await isPreviewMode()) {
+    const B = await import('./data/guildcard.mjs');
+    await previewSocial.sync();
+    return { board: B.boardView(previewSocial.load().bounties || [], Date.now(), previewMe().username) };
+  }
+  return request('api/bounties');
+}
+export async function bountyPost(target, prize) {
+  if (await isPreviewMode()) {
+    const B = await import('./data/guildcard.mjs');
+    const me = previewMe(), d = previewSocial.load();
+    const check = B.checkBounty({ target, prize }, me.username);
+    if (check.error) throw new Error(check.error);
+    const who = previewSocial.find(check.target)?.username;
+    if (!who) throw new Error(`No player or monster is called ${check.target}.`);
+    const cost = check.prize + check.fee;
+    const coins = updatePreviewAccount((acc) => {
+      if (acc.character.coins < cost) throw new Error(`You need ${cost} coins: the ${check.prize} prize and a ${check.fee} fee.`);
+      acc.character.coins -= cost;
+      return acc.character.coins;
+    });
+    d.bounties = [...(d.bounties || []), { id: Date.now(), target: who, by: me.username, prize: check.prize, at: Date.now(), state: 'open', t: Date.now() }];
+    previewSocial.save(d);
+    return { ok: true, coins, board: B.boardView(d.bounties, Date.now(), me.username) };
+  }
+  return request('api/bounties', { method: 'POST', body: { target, prize } });
+}
+
 export async function roomsList() {
   if (await isPreviewMode()) {
     await previewSocial.sync();

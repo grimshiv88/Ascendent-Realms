@@ -852,3 +852,20 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .hud-show span { color: #e07a6a; font: 600 0.75rem 'Oswald', sans-serif; margin-left: 4px; }
 .hud-name { padding-right: 50px; }
 .sw-form { margin-left: 6px; padding: 2px 8px; font: 0.75rem 'Cinzel', serif; color: var(--gold-1); background: #2a1e08; border: 1px solid var(--gold-3); border-radius: 4px; cursor: pointer; }
+
+/* the Hunter's Guild Card and the Bounty Board */
+.guild-card { display: flex; gap: 12px; align-items: center; padding: 10px 12px; margin: 6px 0; background: linear-gradient(135deg, #2a2010, #0d0a05); border: 1px solid #c8921a; border-radius: 8px; }
+.guild-card .gc-rank { display: grid; place-items: center; width: 42px; height: 42px; font: 700 1.5rem 'Cinzel', serif; color: #0d0a05; background: radial-gradient(circle at 40% 35%, #ffe28a, #c8921a); border-radius: 50%; }
+.guild-card b { display: block; color: #fff3cf; }
+.guild-card small { color: #b9ab8a; font: 0.85rem Georgia, serif; }
+.bounty-list { display: grid; gap: 6px; margin: 6px 0; }
+.bounty { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 8px 10px; background: #0d0a05; border: 1px solid #4a3608; border-radius: 4px; color: #fff3cf; }
+.bounty small { color: #b9ab8a; }
+.bounty.featured { border-color: #d2483a; background: #1a0a06; }
+.bounty em { margin-left: auto; color: #ff8a6a; font: 600 0.75rem 'Oswald', sans-serif; letter-spacing: 0.08em; text-transform: uppercase; font-style: normal; }
+.bounty-form { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.bounty-form input { flex: 1 1 120px; min-width: 0; padding: 6px 8px; color: #fff3cf; background: #0d0a05; border: 1px solid #4a3608; border-radius: 4px; font: inherit; }
+.assess-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 6px; margin: 8px 0; }
+.assess-stats div { padding: 6px; text-align: center; background: #0d0a05; border: 1px solid #4a3608; border-radius: 4px; }
+.assess-stats dt { font: 600 0.7rem 'Oswald', sans-serif; color: #b9ab8a; letter-spacing: 0.08em; }
+.assess-stats dd { margin: 0; font: 700 1.1rem 'Cinzel', serif; color: #fff3cf; }

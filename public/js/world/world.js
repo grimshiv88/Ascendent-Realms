@@ -4,6 +4,7 @@ import { createLand } from './land.js';
 import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
 import { buildCity, buildVillage } from './city.js';
+import { GUILD_HALL_LEVEL } from '../data/guildcard.mjs';
 import { buildInterior } from './interiors.js';
 import { mayEnterCastle, castleDay } from '../data/interiors.mjs';
 import { buildCave } from './caves.js';
@@ -521,6 +522,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       onEvent?.('castle-denied', { day: castleDay() });
       return;
     }
+    if (shop.id === 'guild' && (game.character.level || 1) < GUILD_HALL_LEVEL) {
+      say(`Guard: "Hunters of level ${GUILD_HALL_LEVEL} and above only."`, 'hurt');
+      onEvent?.('guild-denied', { level: GUILD_HALL_LEVEL });
+      return;
+    }
     if (sleeping) toggleSleep();
     const built = buildInterior(shop);
     setUnderground(built.sample);
@@ -564,6 +570,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       onEvent?.(inside.shop.id === 'guild' ? 'guild' : inside.shop.id === 'castle' ? 'castle' : 'market', inside.shop.id);
       return;
     }
+    const spot = (b.spots || []).find((q) => Math.hypot(pos.x - q.x, pos.z - q.z) < q.r && Math.abs(pos.y - q.y) < 1);
+    if (spot) { onEvent?.(spot.event, inside.shop.id); return; }
     const door = b.rooms.find((r) => Math.hypot(pos.x - r.door.x, pos.z - r.door.z) < 2);
     if (door) { onEvent?.('meeting-room', { id: door.id }); return; }
     const seat = b.seats.filter((q) => Math.abs(q.y - pos.y) < 1).sort((p, q) => Math.hypot(p.x - pos.x, p.z - pos.z) - Math.hypot(q.x - pos.x, q.z - pos.z))[0];

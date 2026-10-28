@@ -10,6 +10,7 @@ import { expToNext } from './data/game-data.mjs';
 import { placesWithPositions, regionName, sample } from './data/world-layout.mjs';
 import { gameTime, now, DAY_MS } from './data/clock.mjs';
 import { KINDS, BY_REGION, GOBLIN_LINE } from './world/creatures.js';
+import { CARD_RANKS, rankIndex, rankHard, rankForLevel, CARD_FEE, mayTake } from './data/guildcard.mjs';
 
 export const BOARD = 4;
 export const QUESTS_PER_DAY = 3;
@@ -106,9 +107,18 @@ export function fillBoard(c, here, board = 'quests') {
   c[B.list] ||= [];
   const list = c[B.list];
   const post = () => {
-    const q = { ...makeQuest(c, here, undefined, B.hard), accepted: false };
-    if (board === 'guild') { q.guild = true; q.title = `Guild ${q.title}`; }
-    list.push(q);
+    if (board === 'guild') {
+      // guild requests carry a rank: mostly the hunter's own, now and then one higher (to aim for)
+      const mine = c.guildCard?.rank ? rankIndex(c.guildCard.rank) : rankIndex(rankForLevel(c.level).id);
+      const own = CARD_RANKS[mine].id;
+      const higher = list.some((q) => q.rank === own) && Math.random() < 0.3; // always at least one you can take
+      const rank = CARD_RANKS[Math.min(CARD_RANKS.length - 1, mine + (higher ? 1 : 0))].id;
+      const q = { ...makeQuest(c, here, undefined, rankHard(rank)), accepted: false, guild: true, rank };
+      q.title = `Rank ${rank} · Guild ${q.title}`;
+      list.push(q);
+      return;
+    }
+    list.push({ ...makeQuest(c, here, undefined, B.hard), accepted: false });
   };
   const t = now();
   if (!list.length && !c[B.next]) { while (list.length < B.size) post(); return; }
@@ -140,10 +150,11 @@ function questCards(game, board) {
     const have = progressOf(q, game);
     const done = q.accepted && have >= q.need;
     const r = q.reward;
+    const locked = board === 'guild' && (!c.guildCard?.rank || (q.rank && !mayTake(c.guildCard, q.rank)));
     const reward = [`${r.exp} EXP`, `${r.coins} G`, r.item ? ITEMS[r.item].name : null].filter(Boolean).join(' · ');
     const at = `data-board="${board}"`;
     const action = !q.accepted
-      ? `<button type="button" class="sys-button" data-quest-accept="${i}" ${at} ${blocked ? 'disabled' : ''}>Accept</button>`
+      ? `<button type="button" class="sys-button" data-quest-accept="${i}" ${at} ${blocked || locked ? 'disabled' : ''}>${locked ? (c.guildCard?.rank ? `Needs rank ${q.rank}` : 'Needs a Guild Card') : 'Accept'}</button>`
       : done
         ? `<button type="button" class="sys-button" data-quest-claim="${i}" ${at}>Claim reward</button>`
         : `<button type="button" class="sys-button ghost" data-quest-drop="${i}" ${at}>Give up</button>`;
@@ -176,16 +187,42 @@ export function renderQuests(el, game, tabsHtml, message = '') {
 }
 
 // The Main Guild Hall: every guild's requests are posted here. One guild request at a time.
-export function renderGuild(el, game, message = '') {
+// The Main Guild Hall counter: your Hunter's Guild Card, guild requests, the Bounty Board, and the
+// way to the meeting rooms and to parties and guilds. `bounty` is { board, message } from the guild.
+export function renderGuild(el, game, message = '', bounty = null) {
   const c = game.character;
   const mins = nextIn(c, 'guild');
+  const card = c.guildCard;
+  const rank = card?.rank ? CARD_RANKS[rankIndex(card.rank)] : null;
+  const cardHtml = !card
+    ? `<p class="sys-hint">To take guild requests you need a <b>Hunter's Guild Card</b>. Ask for one here, then go to the Assessment Room (the glowing crystal in the back left corner) to have your level and stats read.</p>
+       <button type="button" class="gold-button small" data-card-request ${c.coins < CARD_FEE ? 'disabled' : ''}>Ask for a Hunter Card · ${CARD_FEE} G</button>`
+    : card.pending
+      ? '<p class="sys-hint">Your card is waiting. Go to the <b>Assessment Room</b> in the back left corner and press E at the crystal to have it read.</p>'
+      : `<div class="guild-card"><span class="gc-rank">${rank.id}</span><span><b>${esc(c.name)}</b><small>Rank ${rank.id} · ${rank.name} hunter · read at level ${card.level}</small></span></div>
+         <p class="sys-hint">You can take requests of rank ${rank.id} and below.${rankForLevel(c.level).id !== rank.id ? ' <b>You have grown since your card was read:</b> touch the crystal again to raise its rank.' : ''}</p>`;
+  const board = bounty?.board || [];
+  const rows = board.map((b) => `<div class="bounty${b.featured ? ' featured' : ''}"><b>${esc(b.target)}</b>
+      <span>${b.total + b.gift} G${b.gift ? ` <small>(${b.total} from hunters + ${b.gift} from the guild)</small>` : ''}${b.mine ? ` <small>· ${b.mine} G of it is yours</small>` : ''}</span>${b.featured ? '<em>Wanted today</em>' : ''}</div>`).join('');
   el.innerHTML = `
     <div class="system-window quest-window" role="dialog" aria-label="Main Guild Hall">
       <button type="button" class="sys-close" data-close aria-label="Close">×</button>
       <div class="sys-title"><span class="sys-bang">!</span><h2>Main Guild Hall</h2></div>
-      <p class="sys-top">Guild requests are harder than the quest board and pay more. You can hold <b>one</b> at a time.${mins ? ` <span>·</span> Next request in <b>${mins} min</b>` : ''}</p>
       <p class="sys-msg" role="status">${esc(message)}</p>
+      <h3 class="sys-sub">Your Guild Card</h3>
+      ${cardHtml}
+      <h3 class="sys-sub">Guild requests</h3>
+      <p class="sys-top">Harder than the quest board, and they pay more. Each has a rank; you can hold <b>one</b> at a time.${mins ? ` <span>·</span> Next request in <b>${mins} min</b>` : ''}</p>
       <div class="quest-list">${questCards(game, 'guild') || '<p class="sys-hint">No requests right now. A new one is posted every 20 minutes.</p>'}</div>
+      <h3 class="sys-sub">Bounty Board</h3>
+      <p class="sys-hint">Put a price on anyone's head, player or monster. You pay the prize to the guild (plus a 10% fee) and the guild pays whoever brings them down. Each day the guild picks a few wanted names and adds a prize of its own.</p>
+      <div class="bounty-list">${bounty ? rows || '<p class="sys-hint">No bounties posted.</p>' : '<p class="sys-hint">Reading the board…</p>'}</div>
+      <form class="bounty-form" data-bounty-form>
+        <input name="target" maxlength="24" placeholder="Name" autocomplete="off" required>
+        <input name="prize" type="number" min="100" step="10" placeholder="Prize (G)" required>
+        <button type="submit" class="gold-button small">Post bounty</button>
+      </form>
+      ${bounty?.message ? `<p class="sys-msg">${esc(bounty.message)}</p>` : ''}
       <h3 class="sys-sub">Meeting rooms</h3>
       <p class="sys-hint">Upstairs are rooms for parties and guild masters, rented by the hour, with their own private chat.</p>
       <button type="button" class="gold-button small" data-open-rooms>See the meeting rooms</button>

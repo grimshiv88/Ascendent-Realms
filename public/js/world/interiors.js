@@ -29,6 +29,7 @@ export function buildInterior(shop) {
   const people = [];
   const workers = []; // { station, body }: people doing their jobs
   const rooms = [];
+  const spots = []; // things to use with E: { x, z, y, event, r }
   const mats = [];
   const mat = (color, extra = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra }); mats.push(m); return m; };
   const box = (w, h, d, m, x, y, z, ry = 0) => {
@@ -224,6 +225,23 @@ export function buildInterior(shop) {
     const board = box(3.2, 2, 0.12, mat('#7a5a34'), -9, 1, D - 0.3);
     for (let i = 0; i < 6; i++) box(0.6, 0.45, 0.02, mat('#efe2c0'), -10.2 + (i % 3) * 1.1, 1.5 + Math.floor(i / 2) * 0, D - 0.38);
     board.receiveShadow = true;
+    spots.push({ x: OX - 9, z: OZ + D - 1.4, y: 0, event: 'guild', r: 2 }); // the Bounty Board on the wall
+    // the Assessment Room in the back left corner: a glowing crystal that reads a hunter's level and stats
+    const AX = -W / 2 + 2.6, AZ = D - 5.5;
+    wall(-W / 2, AZ - 2.6, -W / 2 + 3.6, AZ - 2.6, 0, 3.2, [[1.0, 2.6]]);
+    cyl(0.35, 0.45, 0.9, stone, AX, 0, AZ, 12);
+    const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 1), mat('#8fd8ff', { emissive: '#3fb0ff', emissiveIntensity: 1.6, transparent: true, opacity: 0.9 }));
+    orb.position.set(AX, 1.3, AZ);
+    g.add(orb);
+    const glow = new THREE.PointLight('#7fd0ff', 8, 6, 1.6);
+    glow.position.set(AX, 1.6, AZ);
+    g.add(glow); lights.push(glow);
+    block(AX, AZ, 0.5, 0, 1.4);
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), new THREE.MeshBasicMaterial({ map: textTexture('Assessment Room'), transparent: true }));
+    plate.position.set(-W / 2 + 2.1, 2.9, AZ - 2.75);
+    plate.rotation.y = Math.PI;
+    g.add(plate);
+    spots.push({ x: OX + AX, z: OZ + AZ, y: 0, event: 'assess', r: 1.8, spin: orb });
     // tables with chairs round them
     for (const [x, z] of [[-7, 5], [-7, 10.5], [0, 7.5], [5, 4.5]]) table(x, z);
     // the stairs up along the right wall: from z = 7 at the floor to z = D at the upper floor
@@ -361,7 +379,7 @@ export function buildInterior(shop) {
   }
   const tmp = {};
   return {
-    kind, group: g, solid, seats, rooms, counter, exit, start,
+    kind, group: g, solid, seats, rooms, spots, counter, exit, start,
     sample: sampleAt,
     floorAt: (x, z) => sampleAt(x, z, tmp).h,
     roofAt: (x, z) => (z - OZ > D ? (kind === 'guild' ? UP + 4 : 6) : H) - 0.3,
@@ -381,6 +399,7 @@ export function buildInterior(shop) {
     update(t) {
       for (const p of people) animateCharacter(p, t, 0);
       for (const w of workers) w.station.play(w.body, t);
+      for (const sp of spots) if (sp.spin) { sp.spin.rotation.y = t * 0.8; sp.spin.position.y = 1.3 + Math.sin(t * 2) * 0.05; }
     },
     dispose() { for (const w of workers) w.station.dispose(); g.traverse((o) => { o.geometry?.dispose(); if (o.material?.map) o.material.map.dispose(); }); for (const m of mats) m.dispose(); },
   };

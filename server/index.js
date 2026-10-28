@@ -8,6 +8,7 @@ const kings = require('./kings');
 const admin = require('./admin');
 const social = require('./social');
 const rooms = require('./rooms');
+const bounties = require('./bounties');
 const groups = require('./groups');
 
 const app = express();
@@ -84,6 +85,12 @@ app.post('/api/kings/slain', requireAccount, (req, res) => {
 app.get('/api/groups', requireAccount, (req, res) => res.json(groups.list(req.account.id)));
 app.post('/api/groups', requireAccount, (req, res) => {
   const r = groups.act(req.account.id, req.body || {});
+  res.status(r.error ? 400 : 200).json(r);
+});
+// The Bounty Board in the Guild Hall
+app.get('/api/bounties', requireAccount, (req, res) => res.json(bounties.list(req.account.id)));
+app.post('/api/bounties', requireAccount, (req, res) => {
+  const r = bounties.place(req.account.id, req.body || {});
   res.status(r.error ? 400 : 200).json(r);
 });
 app.get('/api/rooms', requireAccount, (req, res) => res.json(rooms.list(req.account.id)));

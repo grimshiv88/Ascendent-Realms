@@ -3,6 +3,7 @@
 import { RACES, CLASSES, ADVANCEMENTS, rankFor } from './data/game-data.mjs';
 import { CASTLES } from './data/kings.mjs';
 import { characterPortrait } from './characters/icons.js';
+import { CARD_RANKS, rankIndex } from './data/guildcard.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -37,5 +38,24 @@ export function renderIdCard(el, game, { monster = false, courts = [], nation = 
       </div>
       <p class="shop-msg" role="status">${esc(message)}</p>
       ${monster ? '<button type="button" class="link-button" data-close>Turn back</button>' : '<button type="button" class="gold-button" data-show-id>Show your ID</button>'}
+    </div>`;
+}
+
+// The Assessment Room: the crystal reads your level and stats and ranks your Hunter's Guild Card.
+// `result` is 'new', 'up' or 'same' (see progress.assessCard).
+export function renderAssess(el, c, result = 'new') {
+  const card = c.guildCard;
+  const r = CARD_RANKS[rankIndex(card.rank)];
+  const next = CARD_RANKS[rankIndex(card.rank) + 1];
+  const stats = Object.entries(card.stats || c.stats).map(([k, v]) => `<div><dt>${esc(k.toUpperCase())}</dt><dd>${v}</dd></div>`).join('');
+  el.innerHTML = `
+    <div class="status-window id-window" role="dialog" aria-label="Assessment Room">
+      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      <h2>Assessment Room</h2>
+      <p class="bag-hint">You lay a hand on the crystal. It glows, and words of light spell out what it sees.</p>
+      <dl class="assess-stats"><div><dt>Level</dt><dd>${card.level}</dd></div>${stats}</dl>
+      <div class="guild-card"><span class="gc-rank">${r.id}</span><span><b>${esc(c.name)}</b><small>Hunter's Guild Card · Rank ${r.id} (${r.name})</small></span></div>
+      <p class="shop-msg" role="status">${{ new: `Your card is ready: Rank ${r.id}. You can now take guild requests of rank ${r.id} and below at the counter.`, up: `Your card rises to Rank ${r.id}!`, same: `Your card stays at Rank ${r.id}.` }[result]}${next ? ` Rank ${next.id} needs level ${next.level}.` : ''}</p>
+      <button type="button" class="gold-button" data-close>Take the card</button>
     </div>`;
 }

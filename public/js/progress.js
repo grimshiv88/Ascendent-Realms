@@ -3,6 +3,7 @@
 import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } from './data/game-data.mjs';
 import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
+import { GUILD_HALL_LEVEL, CARD_FEE, assess, mayTake } from './data/guildcard.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
 import { gameTime, DAY_MS } from './data/clock.mjs';
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
@@ -103,7 +104,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, form: c.form,
+    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, form: c.form, guildCard: c.guildCard || null,
   });
 
   // worn gear doesn't take up room in the bag
@@ -476,7 +477,11 @@ export function createProgress(c, { save, onChange, onEvent }) {
       const list = c[BOARDS[board].list] || [];
       const q = list[i];
       if (!q || q.accepted) return 'pick';
-      if (board === 'guild') { if (list.some((x) => x.accepted)) return 'one'; }
+      if (board === 'guild') {
+        if (!c.guildCard?.rank) return 'card';
+        if (q.rank && !mayTake(c.guildCard, q.rank)) return 'rank';
+        if (list.some((x) => x.accepted)) return 'one';
+      }
       else {
         if (questsToday(c) >= QUESTS_PER_DAY) return 'limit';
         c.questDay = { day: gameTime().day, n: questsToday(c) + 1 };
@@ -571,6 +576,24 @@ export function createProgress(c, { save, onChange, onEvent }) {
       c.torches.splice(best, 1);
       changed('torches');
       return 'ok';
+    },
+    // The Hunter's Guild Card: ask for one at the Guild Hall counter (paying the fee), then lay a
+    // hand on the crystal in the Assessment Room to have it read and ranked
+    requestCard() {
+      if (c.level < GUILD_HALL_LEVEL) return 'level';
+      if (c.guildCard) return c.guildCard.pending ? 'pending' : 'have';
+      if (c.coins < CARD_FEE) return 'coins';
+      c.coins -= CARD_FEE;
+      c.guildCard = { pending: true, issued: Date.now() };
+      changed('coins');
+      return 'ok';
+    },
+    assessCard() {
+      if (!c.guildCard) return 'none';
+      const before = c.guildCard.rank;
+      c.guildCard = assess(c);
+      changed('card');
+      return before && before !== c.guildCard.rank ? 'up' : before ? 'same' : 'new';
     },
     // Monster players from level 100: switch between monster and humanoid form
     changeForm() {

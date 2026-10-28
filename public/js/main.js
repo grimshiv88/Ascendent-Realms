@@ -10,6 +10,7 @@ import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
 import { playWork } from './workscene.js';
+import { renderAssess } from './idcard.js';
 import { renderQuests, renderGuild } from './quests.js';
 import { renderLand, renderCave } from './landui.js';
 import { caveById } from './data/depths.mjs';
@@ -169,6 +170,13 @@ function startGame(character) {
       }
     },
   });
+
+  // ---------- the Bounty Board in the Guild Hall ----------
+  function loadBounties() {
+    ui.bounty = null;
+    api.bountiesList().then((r) => { ui.bounty = { board: r.board }; }).catch(() => { ui.bounty = { board: [] }; })
+      .then(() => { if (overlay.dataset.panel === 'guild' && !overlay.classList.contains('hidden')) drawPanel(); });
+  }
 
   // ---------- meeting rooms in the Guild Hall ----------
   function takeRentals(list) {
@@ -355,7 +363,8 @@ function startGame(character) {
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg, { workshop: !!ui.workshop });
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
-    else if (name === 'guild') renderGuild(overlay, game, ui.questMsg);
+    else if (name === 'guild') renderGuild(overlay, game, ui.questMsg, ui.bounty);
+    else if (name === 'assess') renderAssess(overlay, character, ui.assessed);
     else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })),
       { plots: ui.myPlots || [], others: ui.otherPlots || [], chosen: () => ui.basket, reach: REACH, caves: (ui.caves || []).filter((q) => q.mine).map((q) => { const cv = caveById(q.cave); return cv && { x: cv.place.x, z: cv.place.z, name: cv.name }; }).filter(Boolean) },
       world?.landMode ? (x, z) => {
@@ -475,6 +484,19 @@ function startGame(character) {
     location.reload();
   }
   // Settings: set a new password (for now without the old one)
+  // posting a bounty on the Guild Hall's board
+  overlay.addEventListener('submit', async (e) => {
+    if (!e.target.matches('[data-bounty-form]')) return;
+    e.preventDefault();
+    const { target, prize } = Object.fromEntries(new FormData(e.target));
+    try {
+      const r = await api.bountyPost(target, Number(prize));
+      character.coins = r.coins;
+      ui.bounty = { board: r.board, message: `Bounty posted on ${target}. The guild holds the prize.` };
+      drawHud();
+    } catch (err) { ui.bounty = { ...(ui.bounty || {}), message: err.message }; }
+    drawPanel();
+  });
   overlay.addEventListener('submit', async (e) => {
     if (!e.target.matches('[data-password]')) return;
     e.preventDefault();
@@ -574,7 +596,7 @@ function startGame(character) {
     const board = t('data-board') || 'quests';
     if ((v = t('data-quest-accept')) != null) {
       const r = game.questAccept(Number(v), board);
-      ui.questMsg = { ok: board === 'guild' ? 'Guild request accepted.' : 'Quest accepted.', limit: 'You have taken on 3 quests today. Come back tomorrow (a day of the realm is one real hour).', one: 'You can hold only one guild request at a time.', pick: '' }[r];
+      ui.questMsg = { ok: board === 'guild' ? 'Guild request accepted.' : 'Quest accepted.', limit: 'You have taken on 3 quests today. Come back tomorrow (a day of the realm is one real hour).', one: 'You can hold only one guild request at a time.', card: 'You need a Hunter\'s Guild Card first. Ask for one at the counter.', rank: 'That request is above your card\'s rank.', pick: '' }[r];
       drawPanel(); return;
     }
     if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here(), board); ui.questMsg = 'Given up. A new one is posted every 20 minutes.'; drawPanel(); return; }
@@ -639,6 +661,11 @@ function startGame(character) {
         ui.groupBusy = false; drawPanel();
       })();
       return;
+    }
+    if (t('data-card-request') != null) {
+      const r = game.requestCard();
+      ui.questMsg = { ok: `Paid. Now go to the Assessment Room (the glowing crystal in the back left corner of the hall) and press E to have your card read.`, coins: 'Not enough coins.', level: 'You must be level 20 to be a hunter.', pending: 'Your card is waiting in the Assessment Room.', have: 'You already have a card.' }[r];
+      drawPanel(); return;
     }
     if (t('data-open-rooms') != null) { ui.roomMsg = ''; ui.roomsCastle = false; loadRooms(); openPanel('rooms'); return; }
     if ((v = t('data-room-pick')) != null) { ui.roomPick = v; ui.roomMsg = ''; drawPanel(); return; }
@@ -815,7 +842,13 @@ function startGame(character) {
       if (type === 'meeting-room') { ui.roomsCastle = data.id.startsWith('castle'); ui.roomPick = data.id; ui.roomMsg = ''; loadRooms(); if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'rooms') openPanel('rooms'); }
       if (type === 'room-ended') { showArea('Your time in the meeting room is up. You are back in the hallway.'); loadRooms(); }
       if (type === 'gate') { ui.gate = data; if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'gate') openPanel('gate'); }
-      if (type === 'guild') { game.fillQuests(here(), 'guild'); openPanel('guild'); }
+      if (type === 'guild') { game.fillQuests(here(), 'guild'); openPanel('guild'); loadBounties(); }
+      if (type === 'guild-denied') showArea(`The guards at the Main Guild Hall turn you away: only hunters of level ${data.level} or more may enter.`);
+      if (type === 'assess') {
+        const r = game.assessCard();
+        if (r === 'none') showArea('The crystal stays dark. Ask for a Hunter Card at the counter first.');
+        else { ui.assessed = r; openPanel('assess'); }
+      }
       if (type === 'chest') showArea(`The chest held ${data.coins} G, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();
       if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);

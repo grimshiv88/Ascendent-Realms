@@ -4,6 +4,7 @@ const { newCharacter, fallenKeep, rebornWith, mayChangeForm } = require('../publ
 const { SKILLS } = require('../public/js/data/skills.mjs');
 const { ITEMS, EFFECTS } = require('../public/js/data/items.mjs');
 const { SPELLS } = require('../public/js/data/spells.mjs');
+const { CARD_RANKS } = require('../public/js/data/guildcard.mjs');
 
 function load(accountId) {
   const row = db.prepare('SELECT data FROM characters WHERE account_id = ?').get(accountId);
@@ -157,6 +158,13 @@ function saveProgress(accountId, p) {
   const t = p.tent;
   const tent = t && Number.isFinite(t.x) && Number.isFinite(t.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6
     ? { x: t.x, z: t.z, heading: Number.isFinite(t.heading) ? t.heading : 0 } : null;
+  // the Hunter's Guild Card: asked for (pending) or read by the crystal (with a rank)
+  const gc = p.guildCard;
+  if (gc && typeof gc === 'object') {
+    const t = (v) => (Number.isFinite(v) && v > 0 ? Math.round(v) : Date.now());
+    if (gc.pending === true) character.guildCard = { pending: true, issued: t(gc.issued) };
+    else if (CARD_RANKS.some((r) => r.id === gc.rank)) character.guildCard = { rank: gc.rank, level: int(gc.level, 1, 10000) ?? 1, issued: t(gc.issued), assessed: t(gc.assessed) };
+  }
   // monster players from level 100 can switch to their humanoid form and back
   if ((p.form === 'monster' || p.form === 'humanoid') && mayChangeForm({ ...character, level: fields.level ?? character.level })) character.form = p.form;
   Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves });
