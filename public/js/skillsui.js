@@ -93,3 +93,51 @@ export function updateSkillBar(el, game, cooling, skillOf) {
     btn.classList.toggle('no-sp', game.character.sp < sk.sp);
   }
 }
+
+// A new power has come to you: what it is, what it does, and where it is now, so you can choose
+// to keep it on a key or put it away. `power` is { kind: 'skill'|'spell'|'unique', id }.
+export function renderPower(el, game, power, { binding = null, message = '', more = 0 } = {}) {
+  const c = game.character;
+  let icon = '✨', name = '', kind = '', does = '', where = '', buttons = '';
+  if (power.kind === 'skill') {
+    const sk = SKILLS[power.id];
+    const b = c.skillBar.find((x) => x.id === power.id);
+    icon = sk.icon; name = sk.name; kind = 'New skill';
+    does = what(sk);
+    if (b) {
+      where = b.key ? `It is ready on key <kbd>${esc(keyLabel(b.key))}</kbd>${matchMedia('(pointer: coarse)').matches ? ' and as a button at the bottom of the screen' : ''}.` : 'It is on your skill bar, but has no key yet.';
+      buttons = `<button type="button" class="gold-button small${binding === power.id ? ' waiting' : ''}" data-bind="${power.id}">${binding === power.id ? 'Press a key…' : b.key ? 'Change its key' : 'Choose a key'}</button>
+        <button type="button" class="gold-button small" data-store="${power.id}">Keep it in storage</button>`;
+    } else {
+      const full = c.skillBar.length >= SKILL_BAR;
+      where = full ? `Your skill bar is full (${SKILL_BAR} of ${SKILL_BAR}), so it is kept in storage. Store another skill to make room for it.` : 'It is kept in storage.';
+      buttons = `<button type="button" class="gold-button small" data-ready="${power.id}" ${full ? 'disabled' : ''}>Put it on a key</button>`;
+    }
+  } else if (power.kind === 'spell') {
+    const sp = SPELLS[power.id];
+    const st = game.staff();
+    const on = st?.spells.includes(power.id);
+    name = sp.name; kind = 'New spell';
+    does = `${esc(sp.element)} · ${esc(KIND_TEXT[sp.kind])} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span>`;
+    where = on ? `It is attached to your staff. The attack key casts the chosen spell; ${esc(keyName(codeFor('spell')))} changes spell.` : st ? 'It is not on your staff yet.' : 'Hold a staff to cast it: attach it in Skills (K).';
+    if (st && !on) buttons = `<button type="button" class="gold-button small" data-spell="${power.id}" ${st.spells.length >= st.slots ? 'disabled' : ''}>Attach it to your staff</button>`;
+    else if (on) buttons = `<button type="button" class="gold-button small" data-unspell="${power.id}">Detach it</button>`;
+  } else {
+    const u = uniqueAbility(c);
+    icon = u.icon; name = u.name; kind = `Unique Skill · ${TIER_NAMES[u.tier]}`;
+    does = esc(u.text);
+    where = `It needs no SP and is always on key <kbd>${esc(keyName(codeFor('unique')))}</kbd> (the first button on your skill bar).`;
+  }
+  el.innerHTML = `
+    <div class="status-window power-window" role="dialog" aria-label="${kind}">
+      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      <h2>${power.kind === 'unique' ? 'Your power grows' : 'You received a new power'}</h2>
+      <p class="shop-msg" role="status">${esc(message)}</p>
+      <div class="power-card"><span class="power-icon">${icon}</span>
+        <div><small class="power-kind">${esc(kind)}</small><b class="power-name">${esc(name)}</b><p>${does}</p></div></div>
+      <p class="bag-hint">${where}</p>
+      <div class="bag-actions">${buttons}
+        <button type="button" class="link-button" data-open="skills">All skills (K)</button>
+        <button type="button" class="gold-button small" data-power-next>${more ? `Next (${more} more)` : 'Got it'}</button></div>
+    </div>`;
+}

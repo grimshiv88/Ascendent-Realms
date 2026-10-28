@@ -29,7 +29,7 @@ import { SPELLS } from './data/spells.mjs';
 import { renderIdCard } from './idcard.js';
 import { renderRooms } from './roomsui.js';
 import { renderGroups } from './groupsui.js';
-import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
+import { renderSkills, renderSkillBar, updateSkillBar, renderPower } from './skillsui.js';
 import { SKILLS } from './data/skills.mjs';
 import { uniqueAbility, uniqueTier } from './data/unique.mjs';
 import { challengeBar } from './data/kings.mjs';
@@ -38,6 +38,12 @@ import { GATES_R } from './data/cults.mjs';
 import { gameTime as realmTime } from './data/clock.mjs';
 import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
+
+// Nothing in the game can be selected, copied or right-clicked, except the boxes you type in
+const typing = (e) => e.target.closest?.('input, textarea, select, [contenteditable="true"]');
+document.addEventListener('contextmenu', (e) => { if (!typing(e)) e.preventDefault(); });
+document.addEventListener('selectstart', (e) => { if (!typing(e)) e.preventDefault(); });
+document.addEventListener('dragstart', (e) => { if (!typing(e)) e.preventDefault(); });
 import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } from './data/controls.mjs';
 
 paintCloudBanks();
@@ -166,17 +172,26 @@ function startGame(character) {
       if (type === 'evolved') { world?.say('Your weapon evolved!', 'exp'); showArea(`Your weapon evolved into the ${data.name}!`); }
       if (type === 'spell') {
         const sp = SPELLS[data.id];
-        const on = game.attachSpell(data.id) === 'ok';
-        showArea(`You learned the spell ${sp.name}!${on ? ' It is on your staff.' : ' Attach it to a staff in Skills (K).'}`);
+        game.attachSpell(data.id);
         world?.say(`New spell: ${sp.name}`, 'exp');
+        newPower({ kind: 'spell', id: data.id });
       }
       if (type === 'upgrade') {
-        const sk = data.skill ? ` You learned ${SKILLS[data.skill].icon} ${SKILLS[data.skill].name}!` : '';
-        showArea(data.evolution ? `Level ${data.level}!${sk}` : `Level ${data.level} upgrade! Every stat +2.${sk}`);
-        if (data.skill) { world?.say(`New skill: ${SKILLS[data.skill].name}`, 'exp'); drawSkillBar(); }
+        showArea(data.evolution ? `Level ${data.level}!` : `Level ${data.level} upgrade! Every stat +2.`);
+        if (data.skill) { world?.say(`New skill: ${SKILLS[data.skill].name}`, 'exp'); drawSkillBar(); newPower({ kind: 'skill', id: data.skill }); }
       }
+      // an evolution lets more of the Unique Skill out
+      if (type === 'level' && uniqueTier(data) > ui.uniqueTier) { ui.uniqueTier = uniqueTier(data); drawSkillBar(); newPower({ kind: 'unique' }); }
     },
   });
+
+  // ---------- a new power: a window says what it is and what it does, and where it went ----------
+  ui.uniqueTier = uniqueTier(character.level);
+  ui.powers = [];
+  function newPower(p) {
+    ui.powers.push(p);
+    if (overlay.dataset.panel !== 'power' || overlay.classList.contains('hidden')) { ui.skillMsg = ''; openPanel('power'); } else drawPanel();
+  }
 
   // ---------- the Bounty Board in the Guild Hall ----------
   function loadBounties() {
@@ -459,6 +474,7 @@ function startGame(character) {
       } : null);
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '' });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
+    else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
     else if (name === 'options') renderOptions(overlay);
     else if (name === 'welcome') renderWelcome(overlay, character.name, !(character.level === 1 && !character.exp));
     else if (name === 'portal' && world?.atPortal) {
@@ -482,6 +498,7 @@ function startGame(character) {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
     world?.releaseMouse();
     overlay.dataset.panel = name;
+    if (name !== 'power') ui.powers = [];
     ui.workshop = false;
     ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.skillMsg = ''; ui.binding = null;
     if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
@@ -513,7 +530,7 @@ function startGame(character) {
     overlay.classList.remove('hidden');
     overlay.querySelector('[data-begin-again]').addEventListener('click', () => location.reload());
   }
-  const closePanel = () => { overlay.classList.add('hidden'); overlay.dataset.shown = ''; preview.unmount(); };
+  const closePanel = () => { if (overlay.dataset.panel === 'power') ui.powers = []; overlay.classList.add('hidden'); overlay.dataset.shown = ''; preview.unmount(); };
 
   // Your character in the bag, turning slowly, wearing what you have on
   const preview = (() => {
@@ -786,6 +803,7 @@ function startGame(character) {
     if ((v = t('data-unspell')) != null) { game.detachSpell(v); ui.skillMsg = `${SPELLS[v].name} detached.`; drawPanel(); return; }
     if ((v = t('data-ready')) != null) { game.readySkill(v); ui.skillMsg = ''; drawPanel(); return; }
     if ((v = t('data-store')) != null) { game.storeSkill(v); ui.skillMsg = `${SKILLS[v].name} stored.`; drawPanel(); return; }
+    if (t('data-power-next') != null) { ui.powers.shift(); ui.skillMsg = ''; if (ui.powers.length) drawPanel(); else closePanel(); return; }
     if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }
     if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
     if (t('data-hold-torch') != null) { closePanel(); world?.holdTorch(); return; }
@@ -1007,7 +1025,7 @@ function startGame(character) {
     },
   });
   if (ui.rentals) takeRentals(ui.rentals); else castleAccess(); // the world is here now
-  if (/[?&]debug\b/.test(location.search)) window.__world = world; // for tests
+  if (/[?&]debug\b/.test(location.search)) { window.__world = world; window.__game = game; } // for tests
 
   window.addEventListener('pagehide', () => game.saveNow());
   // Friends and chat: search at the top right, chat at the bottom left

@@ -19,7 +19,13 @@ html, body {
   background: #000;
   color: var(--ink);
   font-family: 'Cinzel', Georgia, serif;
+  /* the game's text and icons can't be selected or dragged; only boxes you type in can */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
+input, textarea, select, [contenteditable="true"] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+img, svg, canvas { -webkit-user-drag: none; user-drag: none; }
 
 #scene {
   position: fixed;
@@ -894,3 +900,12 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .gold-button.cult-dark { background: linear-gradient(#6a3aa8, #3a1a5a); color: #f0e0ff; border-color: #8a5ad0; }
 .gold-button.cult-light { background: linear-gradient(#fff6d0, #e8c860); color: #3a2a00; border-color: #fff0a0; }
 .cult-choice { flex-wrap: wrap; gap: 8px; }
+
+/* a new power: what it is and what it does */
+.power-window { max-width: 460px; }
+.power-card { display: flex; gap: 14px; align-items: flex-start; background: rgba(255, 215, 120, 0.07); border: 1px solid var(--gold-3); border-radius: 8px; padding: 12px 14px; margin: 6px 0 10px; }
+.power-icon { font-size: 2.4rem; line-height: 1; }
+.power-kind { display: block; color: var(--gold-3); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; }
+.power-name { display: block; font-size: 1.25rem; color: var(--gold-1, #ffd76a); margin: 2px 0 4px; }
+.power-card p { margin: 0; font-family: Georgia, serif; font-size: 0.92rem; }
+.power-window .bag-actions { flex-wrap: wrap; gap: 8px; align-items: center; }
