@@ -3,8 +3,10 @@
 // Hall. Villages are smaller: a waystone with a few houses and a tavern.
 import * as THREE from 'three';
 import { heightAt, CITY_R } from '../data/world-layout.mjs';
-import { MARKETS } from '../data/items.mjs';
+import { MARKETS, ITEMS } from '../data/items.mjs';
 import { buildSpawn, textTexture } from './spawn.js';
+import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { wearGear } from '../characters/gear.js';
 
 const PLAZA_R = 34;
 
@@ -167,7 +169,33 @@ export function buildCity(place) {
     g.add(pole, lamp);
   }
 
-  return { group: g, update: centre.update, shops, solid };
+  // two guards at each gate, in plate with spears, who check everyone's ID on the way in
+  const guards = [];
+  const guardRaces = ['dwarf', 'elf', 'giant', 'beastkin', 'hobbit', 'elf', 'dwarf', 'beastkin'];
+  const gates = [];
+  for (let k = 0; k < 4; k++) {
+    const a = (k * Math.PI) / 2;
+    const ox = Math.sin(a), oz = Math.cos(a); // outward
+    gates.push({ x: cx + ox * CITY_R, z: cz + oz * CITY_R, a });
+    for (const side of [-1, 1]) {
+      const race = guardRaces[k * 2 + (side > 0 ? 1 : 0)];
+      const body = buildCharacter({ race, form: 'humanoid', look: {} });
+      wearGear(body, { weapon: ITEMS.iron_spear, head: ITEMS.knight_helm, body: ITEMS.knight_plate });
+      const r = CITY_R + 3.5, lat = side * 3.4;
+      const x = ox * r + oz * lat, z = oz * r - ox * lat;
+      body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz), z);
+      body.rotation.y = a; // facing out, towards those coming in
+      g.add(body);
+      guards.push(body);
+      solid.push({ x: cx + x, z: cz + z, r: 0.6, kind: 'wall', height: 2 });
+    }
+  }
+  const update = (t) => {
+    centre.update?.(t);
+    for (const b of guards) animateCharacter(b, t, 0);
+  };
+
+  return { group: g, update, shops, solid, gates, centre: { x: cx, z: cz } };
 }
 
 // A village: the waystone with a few cottages round it and a tavern

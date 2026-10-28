@@ -18,7 +18,7 @@ import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
-import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground } from '../data/world-layout.mjs';
+import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime } from '../data/clock.mjs';
 import { RACES, restCap } from '../data/game-data.mjs';
@@ -771,6 +771,42 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     else to = ahead(SPELL_REACH);
     skillFx.spell(element, from, to);
   }
+  // ---------- the city gates: the guards check your ID on the way in ----------
+  // Walking in from outside stops you at the gate until you show your ID; once let in you can come
+  // and go freely until you wander far off. Arriving by waystone or portal needs no check.
+  const gate = { cleared: null, prev: null, asked: 0 };
+  function checkGates(t) {
+    const city = sites.find((s) => s.place.city && s.built?.gates);
+    if (!city) { gate.prev = null; return; }
+    const { x: cx, z: cz } = city.built.centre;
+    const d = Math.hypot(pos.x - cx, pos.z - cz);
+    if (gate.cleared === null) gate.cleared = d < CITY_R; // starting inside the city
+    if (d > CITY_R + 40) gate.cleared = false;
+    const prev = gate.prev;
+    gate.prev = d;
+    if (gate.cleared || prev === null || prev < CITY_R + 1 || d >= CITY_R + 1 || prev - d > 3) {
+      if (prev !== null && prev - d > 3 && d < CITY_R) gate.cleared = true; // came in by magic
+      return;
+    }
+    // stopped at the gate: back a step, and the guard asks for your ID
+    const k = (CITY_R + 1.6) / d;
+    pos.x = cx + (pos.x - cx) * k; pos.z = cz + (pos.z - cz) * k;
+    gate.prev = CITY_R + 1.6;
+    autoWalk = false;
+    if (t - gate.asked > 4) {
+      gate.asked = t;
+      const monster = RACES[character.race].side === 'monster';
+      say(monster ? 'Guard: "Halt, monster! You may not enter."' : 'Guard: "Halt! Show your ID."', 'hurt');
+      onEvent?.('gate', { monster });
+    }
+  }
+  function passGate() {
+    if (RACES[character.race].side === 'monster') return false;
+    gate.cleared = true;
+    say('Guard: "All in order. Welcome to Central City."', 'exp');
+    return true;
+  }
+
   // the spell the Spell key (X) moves on to
   function nextSpell() {
     const sp = game?.nextSpell();
@@ -1212,6 +1248,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (s.built?.hole && !dead && Math.hypot(pos.x - s.built.hole.x, pos.z - s.built.hole.z) < 1.6) { enterDepths(s); break; }
       }
     }
+    if (!depth) checkGates(t);
     for (const q of portals) q.built?.update(t);
     if (holding) heldTorch.light.intensity = 20 + Math.sin(t * 13) * 2 + Math.sin(t * 7.3) * 1.5;
     if (t - lastArea > 0.5) {
@@ -1341,6 +1378,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     attack,
     useSkill,
     nextSpell,
+    passGate,
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
     holdTorch() { setHolding(!holding); },

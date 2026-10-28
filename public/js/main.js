@@ -23,6 +23,7 @@ import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
 import { fillIcons } from './characters/icons.js';
 import { SPELLS } from './data/spells.mjs';
+import { renderIdCard } from './idcard.js';
 import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
 import { SKILLS } from './data/skills.mjs';
 import { createSocial } from './social.js';
@@ -310,6 +311,7 @@ function startGame(character) {
     else if (name === 'bag') { renderBag(overlay, game, ui.selected); preview.mount(overlay.querySelector('[data-preview]')); }
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
     else if (name === 'market' && ui.market) renderShop(overlay, game, ui.shopMsg, ui.market);
+    else if (name === 'gate') renderIdCard(overlay, game, { monster: ui.gate?.monster, courts: ui.courts || [] });
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
@@ -551,6 +553,7 @@ function startGame(character) {
       btn.textContent = on ? 'Hide' : 'Show';
       return;
     }
+    if (t('data-show-id') != null) { if (world?.passGate()) closePanel(); return; }
     if ((v = t('data-spell')) != null) { const r = game.attachSpell(v); ui.skillMsg = { ok: `${SPELLS[v].name} attached to your staff.`, full: 'Your staff is full: detach a spell first.', staff: 'Hold a staff first.' }[r] || ''; drawPanel(); return; }
     if ((v = t('data-unspell')) != null) { game.detachSpell(v); ui.skillMsg = `${SPELLS[v].name} detached.`; drawPanel(); return; }
     if ((v = t('data-ready')) != null) { game.readySkill(v); ui.skillMsg = ''; drawPanel(); return; }
@@ -660,6 +663,7 @@ function startGame(character) {
         }).catch(() => {});
       }
       if (type === 'market') { ui.market = data; openPanel('market'); }
+      if (type === 'gate') { ui.gate = data; if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'gate') openPanel('gate'); }
       if (type === 'guild') { game.fillQuests(here(), 'guild'); openPanel('guild'); }
       if (type === 'chest') showArea(`The chest held ${data.coins} G, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();

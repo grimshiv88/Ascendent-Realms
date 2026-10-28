@@ -2,7 +2,8 @@
 // and rendered once into an image. Items without a model keep their emoji.
 import * as THREE from 'three';
 import { ITEMS } from '../data/items.mjs';
-import { weaponModel } from './gear.js';
+import { weaponModel, wearGear } from './gear.js';
+import { buildCharacter } from './model.js';
 
 const SIZE = 256;
 let renderer = null, scene = null, camera = null;
@@ -238,4 +239,31 @@ export function fillIcons(root) {
     if (imgs.length) requestAnimationFrame(step);
   };
   step();
+}
+
+// A photo of a character for their ID card: head and shoulders, in their gear
+export function characterPortrait(c, worn = {}) {
+  try {
+    if (!renderer) setup();
+    const body = buildCharacter({ race: c.race, form: c.form, stage: c.stage || 0, look: c.look });
+    wearGear(body, worn);
+    const holder = new THREE.Group();
+    holder.add(body);
+    body.rotation.y = 0.35;
+    scene.add(holder);
+    holder.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(body);
+    const h = box.max.y - box.min.y;
+    // frame the top 45% of the body
+    const top = box.max.y, cy = top - h * 0.2, span = h * 0.44;
+    const d = span / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+    camera.position.set(0, cy, d + (box.max.z - box.min.z) / 2);
+    camera.lookAt(0, cy, 0);
+    renderer.render(scene, camera);
+    const url = renderer.domElement.toDataURL('image/png');
+    scene.remove(holder);
+    return url;
+  } catch {
+    return null;
+  }
 }
