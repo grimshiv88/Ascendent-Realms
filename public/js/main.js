@@ -30,6 +30,7 @@ import { renderRooms } from './roomsui.js';
 import { renderGroups } from './groupsui.js';
 import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
 import { SKILLS } from './data/skills.mjs';
+import { uniqueAbility, uniqueTier } from './data/unique.mjs';
 import { createSocial } from './social.js';
 import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } from './data/controls.mjs';
 
@@ -215,15 +216,17 @@ function startGame(character) {
   const skillBar = $('skill-bar');
   let barSig = '';
   function drawSkillBar() {
-    const sig = JSON.stringify(character.skillBar);
+    const sig = JSON.stringify([character.skillBar, uniqueTier(character.level), codeFor('unique')]);
     if (sig === barSig) return;
     barSig = sig;
     renderSkillBar(skillBar, game);
   }
   const readyAt = {}; // skill id -> time (ms) it can be used again
-  const cooling = (id) => Math.max(0, (readyAt[id] || 0) - performance.now()) / (SKILLS[id].cd * 1000);
+  // the Unique Skill is used like a skill, at the strength its tier allows
+  const skillOf = (id) => (id === 'unique' ? uniqueAbility(character) : SKILLS[id]);
+  const cooling = (id) => Math.max(0, (readyAt[id] || 0) - performance.now()) / (skillOf(id).cd * 1000);
   function trySkill(id) {
-    const sk = SKILLS[id];
+    const sk = skillOf(id);
     if (!sk || !world) return;
     if (cooling(id) > 0) { world.say(`${sk.name}: ready in ${(cooling(id) * sk.cd).toFixed(1)}s`, 'hurt'); return; }
     const r = world.useSkill(sk);
@@ -237,7 +240,7 @@ function startGame(character) {
     e.preventDefault(); e.stopPropagation();
     trySkill(b.dataset.skill);
   });
-  setInterval(() => updateSkillBar(skillBar, game, cooling), 100);
+  setInterval(() => { drawSkillBar(); updateSkillBar(skillBar, game, cooling, skillOf); }, 100);
   // the Potion-Maker's brewing: finished potions go into the bag
   setInterval(() => {
     const got = game.collectBrews();
@@ -863,7 +866,7 @@ function startGame(character) {
       if (open) openPanel(open);
       if (act === 'builder' && !ui.builder) openBuilder();
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
-      if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); }
+      if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); else if (act === 'unique') trySkill('unique'); }
       if (act === 'land') toggleLand();
       if (act === 'chat') { e.preventDefault(); world?.releaseMouse(); social?.focusChat(); }
       // Esc opens the options; Esc again (or on any window) closes it

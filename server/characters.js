@@ -13,7 +13,10 @@ function load(accountId) {
 
 function create(accountId, username, body) {
   if (load(accountId)) return { error: 'This account already has a character.' };
-  const result = newCharacter(username, body);
+  // Unique Skills already held by someone (alive, or kept by a fallen one), so the new one is unlike theirs
+  const takenUniques = new Set(db.prepare("SELECT json_extract(data, '$.uniqueSkill.name') AS n FROM characters UNION SELECT json_extract(data, '$.uniqueSkill.name') FROM fallen")
+    .all().map((r) => r.n).filter(Boolean));
+  const result = newCharacter(username, body, { takenUniques });
   if (result.error) return result;
   // a character who fell before passes their Unique Skill on
   const kept = db.prepare('SELECT data FROM fallen WHERE account_id = ?').get(accountId);

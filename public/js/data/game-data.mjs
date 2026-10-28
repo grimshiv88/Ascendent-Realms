@@ -1,6 +1,7 @@
 // Game rules shared by the browser and the server. Numbers come from the rulebook.
 import { homePlace, toWorld, PLACES } from './world-layout.mjs';
 import { STARTER_ITEMS } from './items.mjs';
+import { pickUnique, uniqueByName, uniqueSlot } from './unique.mjs';
 
 export const MAIN_STATS = ['str', 'agi', 'dex', 'sta', 'int'];
 export const STAT_NAMES = { str: 'Strength', agi: 'Agility', dex: 'Dexterity', sta: 'Stamina', int: 'Intelligence' };
@@ -97,20 +98,8 @@ export const ADVANCEMENTS = {
 export const CLASS_ELEMENT = { assassin: 'Dark', healer: 'Light', blacksmith: 'Fire', builder: 'Earth', farmer: 'Nature', potion_maker: 'Water' };
 export const ELEMENTS = ['Fire', 'Water', 'Earth', 'Wind', 'Lightning', 'Nature', 'Light', 'Dark'];
 
-export const UNIQUE_SKILLS = [
-  { name: 'Predator', text: 'Absorb a defeated monster to copy one of its skills.', sealed: 'Only monsters 10+ levels below you, once a day.' },
-  { name: 'Shadow Legion', text: 'Raise defeated enemies as shadow soldiers.', sealed: '1 soldier, lasting 30 seconds.' },
-  { name: 'Midas Touch', text: 'Anything you sell is worth more.', sealed: '+5% sale price.' },
-  { name: 'Dragon Heart', text: 'When HP drops below 30%, all stats rise.', sealed: '+5% for 10 seconds, once an hour.' },
-  { name: 'Time Step', text: 'Freeze time for everyone else.', sealed: '0.5 seconds, once a day.' },
-  { name: 'Iron Will', text: 'Refuse to fall: survive a killing blow with 1 HP.', sealed: 'Once every 6 hours.' },
-  { name: 'Storm Caller', text: 'Summon a storm of your strongest element.', sealed: 'A small cloud, 5 metres wide.' },
-  { name: 'Mimic', text: 'Copy the look and voice of another character.', sealed: '10 seconds, cannot copy higher levels.' },
-  { name: 'Golden Harvest', text: 'Everything you gather or grow yields far more.', sealed: '+10% yield.' },
-  { name: 'Wild Bond', text: 'Speak with and command wild creatures.', sealed: 'One small creature at a time.' },
-  { name: 'All-Seeing Eye', text: 'See hidden things: traps, stealth, weak points.', sealed: '10 metres, 5 seconds.' },
-  { name: 'Blink', text: 'Teleport to any point you can see.', sealed: '5 metres, once a minute.' },
-];
+// Unique Skills live in unique.mjs
+export { UNIQUE_SKILLS } from './unique.mjs';
 
 export const SECOND_ELEMENT_CHANCE = { default: 0.2, mage: 0.35 };
 
@@ -208,18 +197,18 @@ function cleanLook(raceId, look = {}) {
 export const FORM_SWITCH_LEVEL = 100;
 export const mayChangeForm = (c) => c.side === 'monster' && (c.level || 1) >= FORM_SWITCH_LEVEL;
 
-// Death is final. What a fallen character passes on: their Unique Skill (its seals close again, to
-// be opened anew by evolving) and a count of the lives lived so far.
-export const fallenKeep = (c) => ({ uniqueSkill: { ...c.uniqueSkill, sealsOpen: 0 }, lives: (c.lives || 1) + 1, fell: new Date().toISOString() });
+// Death is final. What a fallen character passes on: their Unique Skill (its power follows the new
+// character's level, so it is held back again until they evolve) and a count of the lives lived so far.
+export const fallenKeep = (c) => ({ uniqueSkill: { name: c.uniqueSkill?.name }, lives: (c.lives || 1) + 1, fell: new Date().toISOString() });
 export function rebornWith(character, keep) {
-  const skill = UNIQUE_SKILLS.find((u) => u.name === keep?.uniqueSkill?.name);
-  if (skill) character.uniqueSkill = { ...skill, sealsOpen: 0 };
+  const skill = uniqueByName(keep?.uniqueSkill?.name);
+  if (skill) character.uniqueSkill = uniqueSlot(skill);
   character.lives = Math.max(2, Number(keep?.lives) || 2);
   return character;
 }
 
 // Returns { character } or { error }.
-export function newCharacter(name, { side, race: raceId, cls: classId, form, look }) {
+export function newCharacter(name, { side, race: raceId, cls: classId, form, look }, { takenUniques } = {}) {
   const race = RACES[raceId];
   if (!race) return { error: 'Please choose a race.' };
   if (!CLASSES[classId]) return { error: 'Please choose a class.' };
@@ -242,7 +231,8 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
       coins: 100,
       titles: [],
       elements: rollElements(raceId, classId),
-      uniqueSkill: { ...pick(UNIQUE_SKILLS), sealsOpen: 0 },
+      // one nobody else holds, while there are any left (the server says which are taken)
+      uniqueSkill: uniqueSlot(pickUnique(takenUniques)),
       skills: [],
       // A new character starts at a random safe zone (waystone) on their home continent
       location: startLocation(race.home),

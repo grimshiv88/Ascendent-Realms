@@ -870,3 +870,6 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .assess-stats dt { font: 600 0.7rem 'Oswald', sans-serif; color: #b9ab8a; letter-spacing: 0.08em; }
 .assess-stats dd { margin: 0; font: 700 1.1rem 'Cinzel', serif; color: #fff3cf; }
 .story-link { display: block; margin: 12px auto 0; }
+/* the Unique Skill's button on the skill bar */
+.sk-btn.sk-unique { border-color: #c98cff; background: radial-gradient(circle at 40% 35%, #3a1f52, #120818); box-shadow: 0 0 10px rgba(190, 120, 255, 0.45); }
+.sk-unique-row .sk-icon { filter: drop-shadow(0 0 4px #b77cff); }

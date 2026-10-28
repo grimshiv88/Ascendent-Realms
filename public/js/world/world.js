@@ -738,7 +738,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const w = game?.weapon();
     const s = game.stats();
     const useMagic = magic ?? !!w?.magic;
-    let dmg = (w || magic ? (useMagic ? s.matk : s.atk) : s.base.atk * 0.6 + 2) * mult * buffed('atk');
+    let dmg = (w || magic !== null ? (useMagic ? s.matk : s.atk) : s.base.atk * 0.6 + 2) * mult * buffed('atk');
     dmg = dmg * (0.9 + Math.random() * 0.2) - m.def * 0.5;
     const crit = Math.random() < 0.1 + Math.min(character.stats.dex * 0.002, 0.25);
     if (crit) dmg *= 1.6;
@@ -751,6 +751,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (w.coat) { applyEffect(m, w.coat.id, dmg, 1); game.useCoat(); }
     }
     finishHit(m, creatures.hit(m, dmg));
+    return dmg;
   }
   // Poison, burn and bleed hurt each second; frost slows; drain heals you
   function applyEffect(m, id, dmg, power) {
@@ -796,12 +797,26 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (c.sp < sk.sp) return 'sp';
     const reachNear = bodyR + Math.max(1.8, weaponReach(game.weapon()).reach) * Math.max(0.8, bodyH / 1.8);
     const look = { p: pos.clone(), h: bodyH, heading };
+    // a Unique Skill hits with whichever is stronger, ATK or MATK, and carries its element's effect
+    // (a freeze slows every foe it hits; a devouring blow heals you)
+    let hitFoe = (m, mult, magic) => damageMonster(m, mult, magic);
+    if (sk.unique) {
+      const st = game.stats();
+      hitFoe = (m, mult) => {
+        const hp = m.hp;
+        const dmg = damageMonster(m, mult, st.matk > st.atk);
+        if (sk.drain) game.heal(Math.max(1, Math.round(dmg * sk.drain)));
+        if (m.dead || m.hp <= 0) return;
+        if (sk.hold) m.slow = Math.max(m.slow || 0, sk.hold);
+        if (sk.effect) applyEffect(m, sk.effect, Math.max(1, hp - m.hp), 1 + sk.tier * 0.3);
+      };
+    }
     if (sk.type === 'strike' || sk.type === 'bolt') {
       // with nobody in reach the skill still goes off, into the air in front of you
       const m = creatures.target(pos.x, pos.z, heading, sk.type === 'bolt' ? sk.reach : reachNear + 0.4);
       if (m) {
         look.to = { x: m.x, y: m.y, z: m.z, h: m.height };
-        damageMonster(m, sk.mult, sk.magic || null);
+        hitFoe(m, sk.mult, sk.magic || null);
       } else {
         const d = sk.type === 'bolt' ? sk.reach : reachNear;
         const x = pos.x + Math.sin(heading) * d, z = pos.z + Math.cos(heading) * d;
@@ -809,7 +824,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     } else if (sk.type === 'sweep') {
       const near = creatures.list.filter((m) => !m.dead && Math.hypot(m.x - pos.x, m.z - pos.z) - m.radius < sk.radius);
-      for (const m of near) damageMonster(m, sk.mult, sk.magic || null);
+      for (const m of near) hitFoe(m, sk.mult, sk.magic || null);
     } else if (sk.type === 'dash') {
       // rush forward, stopping at the first foe in the way
       look.path = [];
@@ -818,7 +833,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         colliders.push(pos, bodyR);
         look.path.push(new THREE.Vector3(pos.x, heightAt(pos.x, pos.z) + bodyH * 0.5, pos.z));
         const m = creatures.target(pos.x, pos.z, heading, reachNear);
-        if (m) { damageMonster(m, sk.mult); break; }
+        if (m) { hitFoe(m, sk.mult, null); break; }
       }
       pos.y = Math.max(pos.y, heightAt(pos.x, pos.z));
     } else if (sk.type === 'heal') {

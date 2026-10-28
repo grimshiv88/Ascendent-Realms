@@ -3,6 +3,7 @@
 import { SKILLS, SKILL_BAR, UPGRADE_EVERY, keyLabel } from './data/skills.mjs';
 import { SPELLS, KIND_TEXT, spellEvery } from './data/spells.mjs';
 import { keyName, codeFor } from './data/controls.mjs';
+import { uniqueAbility, nextTierLevel, TIER_NAMES, UNBOUND_LEVEL } from './data/unique.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const what = (sk) => `${esc(sk.text)} <span class="sk-cost">${sk.sp} SP · ${sk.cd}s rest</span>`;
@@ -15,7 +16,7 @@ export function renderSkills(el, game, { binding = null, message = '' } = {}) {
     <div class="sk-row"><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}</b><small>${what(sk)}</small></span>
       <button type="button" class="sk-key${binding === b.id ? ' waiting' : ''}" data-bind="${b.id}" title="Change the key">${binding === b.id ? 'Press a key…' : b.key ? `Key ${esc(keyLabel(b.key))}` : 'Set a key'}</button>
       <button type="button" class="link-button" data-store="${b.id}">Store</button></div>`; }).join('')
-    : '<p class="bag-hint">No skills ready yet. Your first comes at level 10.</p>';
+    : '<p class="bag-hint">No skills ready yet. Your first comes at level ${UPGRADE_EVERY}.</p>';
   const kept = stored.length ? stored.map((id) => { const sk = SKILLS[id]; return `
     <div class="sk-row"><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}</b><small>${what(sk)}</small></span>
       <button type="button" class="gold-button small" data-ready="${id}" ${c.skillBar.length >= SKILL_BAR ? 'disabled title="Store a ready skill first"' : ''}>Get ready</button></div>`; }).join('')
@@ -26,12 +27,22 @@ export function renderSkills(el, game, { binding = null, message = '' } = {}) {
       <h2>Skills</h2>
       <p class="bag-hint">Every ${UPGRADE_EVERY} levels you grow a little stronger and learn a new skill, given at random. Up to ${SKILL_BAR} are ready at once, each on a key of your choice; on a phone or iPad they are buttons at the bottom middle of the screen.</p>
       <p class="shop-msg" role="status">${esc(message)}</p>
+      ${uniqueHtml(c)}
       <h3 class="bag-sub">Ready <small>(${c.skillBar.length} of ${SKILL_BAR})</small></h3>
       ${bar}
       <h3 class="bag-sub">Stored</h3>
       ${kept}
       ${spellsHtml(game)}
     </div>`;
+}
+
+// Your Unique Skill: how much of it is let out so far
+export function uniqueHtml(c) {
+  const u = uniqueAbility(c), next = nextTierLevel(c.level);
+  return `<h3 class="bag-sub">Unique Skill <small>(${esc(TIER_NAMES[u.tier])})</small></h3>
+    <div class="sk-row sk-unique-row"><span class="sk-icon">${u.icon}</span><span class="sk-name"><b>${esc(u.name)}</b>
+      <small>${esc(u.element)} · ${esc(u.text)} <span class="sk-cost">No SP · key ${esc(keyName(codeFor('unique')))}</span></small></span></div>
+    <p class="bag-hint">${next ? `It is held back. Each evolution lets out more of it${next === UNBOUND_LEVEL ? '' : ` (next at level ${next})`}, and at level ${UNBOUND_LEVEL} it is Unbound, used to the full.` : 'Unbound: nothing holds it back any more.'} It stays yours even if you fall and begin again.</p>`;
 }
 
 // Spells: the ones you know, and which are attached to the staff in your hand
@@ -56,20 +67,24 @@ function spellsHtml(game) {
 // The bar of ready skills. `cooling(id)` is the share of the rest still to go (0 when ready).
 export function renderSkillBar(el, game) {
   const c = game.character;
-  el.innerHTML = c.skillBar.map((b) => { const sk = SKILLS[b.id]; return `
+  // the Unique Skill always comes first
+  const u = uniqueAbility(c), uk = codeFor('unique');
+  el.innerHTML = `<button type="button" class="sk-btn sk-unique" data-skill="unique" aria-label="${esc(u.name)}" title="${esc(u.name)} (Unique Skill)">
+      <span class="sk-icon">${u.icon}</span>${uk ? `<kbd>${esc(keyLabel(uk))}</kbd>` : ''}<span class="sk-cool"></span><b class="sk-time" hidden></b></button>` + c.skillBar.map((b) => { const sk = SKILLS[b.id]; return `
     <button type="button" class="sk-btn" data-skill="${b.id}" aria-label="${esc(sk.name)}" title="${esc(sk.name)} (${sk.sp} SP)">
       <span class="sk-icon">${sk.icon}</span>${b.key ? `<kbd>${esc(keyLabel(b.key))}</kbd>` : ''}<span class="sk-cool"></span><b class="sk-time" hidden></b></button>`; }).join('');
-  el.classList.toggle('hidden', !c.skillBar.length);
+  el.classList.remove('hidden');
 }
 
-export function updateSkillBar(el, game, cooling) {
+export function updateSkillBar(el, game, cooling, skillOf) {
   for (const btn of el.querySelectorAll('[data-skill]')) {
+    const sk = skillOf(btn.dataset.skill);
     const left = cooling(btn.dataset.skill);
     btn.querySelector('.sk-cool').style.height = `${Math.round(left * 100)}%`;
     // the seconds until it can be used again, counting down on the button
-    const secs = left * SKILLS[btn.dataset.skill].cd, time = btn.querySelector('.sk-time');
+    const secs = left * sk.cd, time = btn.querySelector('.sk-time');
     time.hidden = secs <= 0;
     if (secs > 0) time.textContent = secs < 10 ? secs.toFixed(1) : String(Math.ceil(secs));
-    btn.classList.toggle('no-sp', game.character.sp < SKILLS[btn.dataset.skill].sp);
+    btn.classList.toggle('no-sp', game.character.sp < sk.sp);
   }
 }

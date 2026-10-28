@@ -13,6 +13,7 @@ export const CONTROLS = [
   ['attack', 'Attack', 'KeyF', 'Doing'],
   ['interact', 'Open / pick up', 'KeyE', 'Doing'],
   ['spell', 'Change spell (staff)', 'KeyX', 'Doing'],
+  ['unique', 'Unique Skill', 'KeyU', 'Doing'],
   ['sleep', 'Sleep / wake', 'KeyZ', 'Doing'],
   ['torch', 'Torch', 'KeyT', 'Doing'],
   ['tent', 'Pitch / pack tent', 'KeyP', 'Doing'],

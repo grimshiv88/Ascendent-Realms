@@ -203,6 +203,7 @@ export function createSkillFx(scene) {
     const id = sk.id;
     const from = chest(p, h);
     const hit = to ? new THREE.Vector3(to.x, to.y + (to.h || 1.6) * 0.6, to.z) : null;
+    if (sk.unique) return unique(sk, p, h, heading, from, to, hit, path);
     if (id === 'whirlwind') return whirlwind(p, h, sk.radius || 3.5);
     if (id === 'frost_nova') return frostNova(p, sk.radius || 5);
     if (id === 'ground_slam') return slam(p, sk.radius || 4, '#ffb060', '#8a6a44');
@@ -236,6 +237,31 @@ export function createSkillFx(scene) {
       return;
     }
     if (hit) flash(hit, '#ffffff');
+  }
+
+  // A Unique Skill, in its own element's colours, bigger the further it has been let out
+  function unique(sk, p, h, heading, from, to, hit, path) {
+    const L = ELEMENT_LOOK[sk.element] || ELEMENT_LOOK.Light;
+    const big = 1 + sk.tier * 0.25 + (sk.tier >= 6 ? 1.5 : 0);
+    if (sk.type === 'bolt') {
+      const end = hit || new THREE.Vector3(p.x + Math.sin(heading) * sk.reach, p.y + h * 0.6, p.z + Math.cos(heading) * sk.reach);
+      spell(sk.element, from, end);
+      return setTimeout(() => { flash(end, L.hit, big); burst(end, L.core, 10 + sk.tier * 4, 3 * big); }, 250);
+    }
+    if (sk.type === 'sweep') {
+      for (let i = 0; i < 3; i++) setTimeout(() => ring(p, i % 2 ? L.trail : L.core, 0.3, sk.radius * (0.6 + i * 0.2), 0.6, 0.15 + i * 0.3), i * 110);
+      const n = 6 + sk.tier * 2;
+      for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; burst(new THREE.Vector3(p.x + Math.sin(a) * sk.radius * 0.7, p.y + 0.4, p.z + Math.cos(a) * sk.radius * 0.7), L.core, 4, 2, 0.6, 3); }
+      return aura(p, h, L.core, L.trail);
+    }
+    if (sk.type === 'dash') { dash(path, L.core, false); if (hit) flash(hit, L.hit, big); return; }
+    if (sk.type === 'heal') return healRise(p, h, L.core);
+    if (sk.type === 'buff') { aura(p, h, L.core, L.trail); return ring(p, L.hit, 0.4, 3 * big, 0.7, 0.2); }
+    // a blow
+    const at = hit || new THREE.Vector3(p.x + Math.sin(heading) * 1.5, p.y + h * 0.6, p.z + Math.cos(heading) * 1.5);
+    flash(at, L.hit, big * 1.2);
+    burst(at, L.core, 12 + sk.tier * 3, 3 * big);
+    ring(to || p, L.core, 0.3, 1.5 * big, 0.5, 0.2);
   }
 
   // A mage's spell in their own element, thrown from `from` to `to` (both Vector3)
