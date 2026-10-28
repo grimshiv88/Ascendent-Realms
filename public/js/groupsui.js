@@ -1,5 +1,6 @@
 // The Party and Guild window (Y): your party, your guild, and invites waiting for you.
 import { PARTY_MAX, GUILD_MAX, GUILD_FEE, GUILD_LEVEL } from './data/groups.mjs';
+import { COUNTRY_PLOTS } from './data/building.mjs';
 import { CLASSES } from './data/game-data.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -34,12 +35,19 @@ export function renderGroups(el, game, v, { message = '', busy = false } = {}) {
       : `<p class="bag-hint">You're not in a guild. Join one by invite, or found your own at the Main Guild Hall counter: it costs ${GUILD_FEE} G and you must be level ${GUILD_LEVEL}. The founder is the Guild Master.</p>
          <div class="room-form"><label>Guild name <input type="text" data-guild-name maxlength="24" placeholder="3 to 24 letters" autocomplete="off"></label>
          <button type="button" class="gold-button small" data-group="found" data-kind="guild" ${c.level < GUILD_LEVEL || c.coins < GUILD_FEE ? 'disabled' : ''}>Found a guild (${GUILD_FEE} G)</button></div>`;
-    body = `${invites}<h3 class="bag-sub">Party</h3>${party}<h3 class="bag-sub">Guild</h3>${guild}`;
+    const nation = v.nation
+      ? `<p class="bag-hint">You are <b>Emperor of ${esc(v.nation.name)}</b>. It shows on your ID card at the city gates.</p>
+         <div class="room-form"><label>Rename your nation <input type="text" data-nation-name maxlength="24" value="${esc(v.nation.name)}" autocomplete="off"></label>
+         <button type="button" class="gold-button small" data-group="rename-nation">Rename</button></div>`
+      : `<p class="bag-hint">Own ${COUNTRY_PLOTS} plots of land, all joined up, and you can found a nation, name it, and become its Emperor. Your biggest joined-up land: <b>${v.territory ?? 0} of ${COUNTRY_PLOTS}</b> plots.</p>
+         ${(v.territory ?? 0) >= COUNTRY_PLOTS ? `<div class="room-form"><label>Nation name <input type="text" data-nation-name maxlength="24" placeholder="3 to 24 letters" autocomplete="off"></label>
+         <button type="button" class="gold-button small" data-group="nation">Found the nation</button></div>` : ''}`;
+    body = `${invites}<h3 class="bag-sub">Party</h3>${party}<h3 class="bag-sub">Guild</h3>${guild}<h3 class="bag-sub">Nation</h3>${nation}`;
   }
   el.innerHTML = `
     <div class="status-window skills-window" role="dialog" aria-label="Party and guild">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>Party and Guild</h2>
+      <h2>Party, Guild and Nation</h2>
       <p class="shop-msg" role="status">${esc(message)}</p>
       ${busy ? '<p class="bag-hint">One moment…</p>' : ''}
       ${body}

@@ -3,6 +3,8 @@
 const db = require('./db');
 const characters = require('./characters');
 const G = require('../public/js/data/groups.mjs');
+const { largestTerritory } = require('../public/js/data/building.mjs');
+const territory = (id) => largestTerritory(db.prepare('SELECT ix, iz FROM lands WHERE account_id = ?').all(id));
 
 db.exec('CREATE TABLE IF NOT EXISTS world_state (key TEXT PRIMARY KEY, data TEXT NOT NULL)');
 const load = () => { const r = db.prepare("SELECT data FROM world_state WHERE key = 'groups'").get(); return r ? JSON.parse(r.data) : G.emptyGroups(); };
@@ -17,7 +19,7 @@ function info(name) {
 }
 const view = (s, me) => G.view(s, account(me).username, info);
 
-function list(me) { return view(load(), me); }
+function list(me) { return { ...view(load(), me), territory: territory(me) }; }
 // body: { action: 'invite'|'respond'|'leave'|'remove'|'lead'|'disband'|'found', kind, name, id, accept }
 function act(me, body = {}) {
   const s = load();
@@ -31,6 +33,8 @@ function act(me, body = {}) {
     case 'respond': r = G.respond(s, name, body.id, body.accept === true); break;
     case 'leave': r = G.leave(s, name, kind); break;
     case 'remove': case 'lead': case 'disband': r = G.manage(s, name, kind, body.action, body.name); break;
+    case 'nation': r = G.foundNation(s, name, body.name, territory(me)); break;
+    case 'rename-nation': r = G.renameNation(s, name, body.name); break;
     case 'found': {
       const c = characters.load(me);
       if (!c) return { error: 'No character yet.' };
@@ -43,9 +47,10 @@ function act(me, body = {}) {
   }
   if (r.error) return r;
   save(s);
-  return { ok: true, ...(coins !== undefined ? { coins } : {}), ...view(s, me) };
+  return { ok: true, ...(coins !== undefined ? { coins } : {}), ...view(s, me), territory: territory(me) };
 }
 const channels = (me) => G.groupChannels(load(), account(me)?.username || '');
 const guildMaster = (name) => G.isGuildMaster(load(), name);
+const emperorTitle = (name) => G.emperorTitle(load(), name);
 
-module.exports = { list, act, channels, guildMaster };
+module.exports = { list, act, channels, guildMaster, emperorTitle, load };

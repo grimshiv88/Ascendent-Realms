@@ -7,15 +7,15 @@ import { characterPortrait } from './characters/icons.js';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // the title on the card: a crown, an empire, or the rank your level gives you
-export function titleOf(c, courts = []) {
+export function titleOf(c, courts = [], nation = null) {
   const court = courts.find((q) => q.king && !q.king.npc && q.king.name === c.name);
   if (court) return CASTLES[court.race]?.title || 'King';
-  if (c.nation?.name) return `Emperor of ${c.nation.name}`;
+  if (nation) return `Emperor of ${nation}`;
   return rankFor(c.level);
 }
 
 let photo = { key: '', url: null };
-export function renderIdCard(el, game, { monster = false, courts = [], message = '' } = {}) {
+export function renderIdCard(el, game, { monster = false, courts = [], nation = null, message = '' } = {}) {
   const c = game.character;
   const key = JSON.stringify([c.race, c.form, c.stage, c.look, c.equipped]);
   if (photo.key !== key) photo = { key, url: characterPortrait(c, game.worn()) };
@@ -31,7 +31,7 @@ export function renderIdCard(el, game, { monster = false, courts = [], message =
           <div><dt>Name</dt><dd>${esc(c.name)}</dd></div>
           <div><dt>Race</dt><dd>${esc(RACES[c.race].name)}</dd></div>
           <div><dt>Level</dt><dd>${c.level}</dd></div>
-          <div><dt>Title</dt><dd>${esc(titleOf(c, courts))}</dd></div>
+          <div><dt>Title</dt><dd>${esc(titleOf(c, courts, nation))}</dd></div>
           <div><dt>Class</dt><dd>${esc(cls)}</dd></div>
         </dl>
       </div>

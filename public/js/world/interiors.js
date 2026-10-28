@@ -4,7 +4,7 @@
 // rooms; a smithy has its anvil and forge; the potion shop its shelves of bottles; and so on.
 import * as THREE from 'three';
 import { DEPTHS_X } from '../data/world-layout.mjs';
-import { MEETING_ROOMS } from '../data/interiors.mjs';
+import { MEETING_ROOMS, CASTLE_ROOMS } from '../data/interiors.mjs';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { textTexture } from './spawn.js';
 
@@ -14,8 +14,8 @@ const UP = 4.5; // the Guild Hall's upper floor
 const SEAT_H = 0.48;
 
 // [width, depth, ceiling] of each kind of room (the Guild Hall's ground floor)
-const SIZES = { guild: [24, 20, 9], tavern: [16, 13, 5], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5] };
-export const kindOf = (shopId) => ({ guild: 'guild', tavern: 'tavern', city_potions: 'potions', city_smith: 'smith', city_armoury: 'armoury', city_tailor: 'tailor', city_food: 'food' }[shopId] || 'tavern');
+const SIZES = { castle: [30, 22, 12], guild: [24, 20, 9], tavern: [16, 13, 5], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5] };
+export const kindOf = (shopId) => ({ castle: 'castle', guild: 'guild', tavern: 'tavern', city_potions: 'potions', city_smith: 'smith', city_armoury: 'armoury', city_tailor: 'tailor', city_food: 'food' }[shopId] || 'tavern');
 
 export function buildInterior(shop) {
   const kind = kindOf(shop.id);
@@ -250,6 +250,48 @@ export function buildInterior(shop) {
     chandelier(4, H - 1.4, 9);
     // banners on the side walls
     for (const z of [5, 12]) for (const s of [-1, 1]) box(0.05, 3, 1.4, cloth, s * (W / 2 - 0.2), 3.5, z);
+  } else if (kind === 'castle') {
+    // ---------- the Emperors' Castle: a great hall with the council table, and chambers behind ----------
+    const n = CASTLE_ROOMS.length, rw = W / n, Z2 = D + 10;
+    wall(-W / 2, D, W / 2, D, 0, H, CASTLE_ROOMS.map((_, i) => [i * rw + rw / 2 - 0.8, i * rw + rw / 2 + 0.8]));
+    ceiling(-W / 2, W / 2, 0, D, H);
+    floor(-W / 2, W / 2, D, Z2, 0, mat('#5a3a2a'));
+    wall(-W / 2, D, -W / 2, Z2, 0, 6); wall(W / 2, D, W / 2, Z2, 0, 6); wall(-W / 2, Z2, W / 2, Z2, 0, 6);
+    ceiling(-W / 2, W / 2, D, Z2, 6);
+    // the steward's desk by the door: E there for the castle's chambers and today's rule
+    counterAt(W / 2 - 5, 3.5, 3, "The Emperors' Castle");
+    // a red carpet up the middle to the council table and the empty throne
+    const carpet = new THREE.Mesh(new THREE.PlaneGeometry(3, D - 6), mat('#8a1a1a'));
+    carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.02, (D - 6) / 2); g.add(carpet);
+    // the long council table, chairs down both sides and one at each end
+    box(2.2, 0.1, 11, wood, 0, 0.75, 11);
+    for (const [lx, lz] of [[-0.9, 6], [0.9, 6], [-0.9, 16], [0.9, 16]]) box(0.15, 0.75, 0.15, darkWood, lx, 0, lz);
+    for (let z = 6.5; z <= 15.5; z += 1.5) block(0, z, 1.1, 0, 1);
+    for (let z = 6.5; z <= 15.5; z += 1.8) { chair(-1.6, z, 0, Math.PI / 2); chair(1.6, z, 0, -Math.PI / 2); }
+    chair(0, 4.6, 0, 0);
+    // the throne on its dais
+    const TZ = D - 3.6; // at the head of the table, in front of the middle chamber's door, with room to walk round
+    box(5, 0.4, 3, stone, 0, 0, TZ);
+    box(1.4, 0.6, 1.2, mat('#c8a040', { metalness: 0.8, roughness: 0.3 }), 0, 0.4, TZ + 0.4);
+    box(1.4, 2.4, 0.25, mat('#c8a040', { metalness: 0.8, roughness: 0.3 }), 0, 0.4, TZ + 0.95);
+    for (const sx of [-1.6, 0, 1.6]) block(sx, TZ, 1, 0, 2);
+    // pillars and banners
+    for (const z of [4, 10, 16]) for (const sx of [-1, 1]) { cyl(0.6, 0.7, H, stone, sx * (W / 2 - 4), 0, z, 12); block(sx * (W / 2 - 4), z, 0.8, 0, H); }
+    for (const z of [6, 13]) for (const sx of [-1, 1]) box(0.05, 4, 1.6, cloth, sx * (W / 2 - 0.2), 4, z);
+    chandelier(0, H - 2, 7); chandelier(0, H - 2, 15);
+    lamp(-9, 5, 3); lamp(9, 5, 19);
+    // the chambers behind, each with a table
+    CASTLE_ROOMS.forEach((room, i) => {
+      const x0 = -W / 2 + i * rw, x1 = x0 + rw, cx = (x0 + x1) / 2, cz = (D + Z2) / 2;
+      if (i) wall(x0, D, x0, Z2, 0, 6);
+      table(cx, cz, 0, 1.1, 8);
+      lamp(cx, 5, cz, 14);
+      const plate = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.5), new THREE.MeshBasicMaterial({ map: textTexture(room.name), transparent: true }));
+      plate.position.set(cx, 3.2, D - 0.2);
+      plate.rotation.y = Math.PI;
+      g.add(plate);
+      rooms.push({ ...room, x0: OX + x0, x1: OX + x1, z0: OZ + D, z1: OZ + Z2, door: { x: OX + cx, z: OZ + D - 1.2 } });
+    });
   } else {
     wall(-W / 2, D, W / 2, D, 0, H);
     ceiling(-W / 2, W / 2, 0, D, H);
@@ -305,17 +347,17 @@ export function buildInterior(shop) {
     kind, group: g, solid, seats, rooms, counter, exit, start,
     sample: sampleAt,
     floorAt: (x, z) => sampleAt(x, z, tmp).h,
-    roofAt: (x, z) => (kind === 'guild' && z - OZ > D ? UP + 4 : H) - 0.3,
+    roofAt: (x, z) => (z - OZ > D ? (kind === 'guild' ? UP + 4 : 6) : H) - 0.3,
     // keep the camera inside the walls of the floor you're on
     clampCam(v, upstairs) {
-      const lo = upstairs ? D + 0.4 : 0.4, hi = upstairs ? D + 12 - 0.4 : D - 0.4;
+      const lo = upstairs ? D + 0.4 : 0.4, hi = upstairs ? D + 12 - 0.4 : (kind === 'castle' ? D + 10 : D) - 0.4;
       v.x = OX + Math.max(-W / 2 + 0.4, Math.min(W / 2 - 0.4, v.x - OX));
       v.z = OZ + Math.max(lo, Math.min(hi, v.z - OZ));
       return v;
     },
     clampPos(v) {
       v.x = OX + Math.max(-W / 2 + 0.4, Math.min(W / 2 - 0.4, v.x - OX));
-      v.z = OZ + Math.max(0.4, Math.min((kind === 'guild' ? D + 12 : D) - 0.4, v.z - OZ));
+      v.z = OZ + Math.max(0.4, Math.min((kind === 'guild' ? D + 12 : kind === 'castle' ? D + 10 : D) - 0.4, v.z - OZ));
       return v;
     },
     upstairs: (p) => kind === 'guild' && p.z - OZ > D,

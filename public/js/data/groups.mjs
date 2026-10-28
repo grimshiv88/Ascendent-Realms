@@ -4,6 +4,7 @@
 // Guild Master. Each has its own private chat. Everything here works on a plain state object
 // { parties, guilds, invites, next } and changes it in place.
 import { cleanText } from './social.mjs';
+import { COUNTRY_PLOTS } from './building.mjs';
 
 export const PARTY_MAX = 5;
 export const GUILD_MAX = 30;
@@ -11,19 +12,19 @@ export const GUILD_FEE = 1000;
 export const GUILD_LEVEL = 20;
 export const INVITE_MS = 24 * 3600 * 1000; // invites expire after a day
 
-export const emptyGroups = () => ({ parties: [], guilds: [], invites: [], next: 1 });
+export const emptyGroups = () => ({ parties: [], guilds: [], invites: [], nations: [], next: 1 });
 const same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 const has = (list, name) => list.some((m) => same(m, name));
 export const partyOf = (s, name) => s.parties.find((p) => has(p.members, name)) || null;
 export const guildOf = (s, name) => s.guilds.find((g) => has(g.members, name)) || null;
 
-// A guild's name: 3 to 24 letters, numbers and spaces, no bad words, not taken
-export function checkGuildName(s, raw) {
+// A guild's (or nation's) name: 3 to 24 letters, numbers and spaces, no bad words, not taken
+export function checkGuildName(s, raw, list = s.guilds, what = 'guild') {
   const name = String(raw || '').trim().replace(/\s+/g, ' ');
-  if (name.length < 3 || name.length > 24) return { error: 'A guild name is 3 to 24 letters long.' };
+  if (name.length < 3 || name.length > 24) return { error: `A ${what} name is 3 to 24 letters long.` };
   if (!/^[A-Za-z0-9 ']+$/.test(name)) return { error: 'Use only letters, numbers and spaces in the name.' };
   if (cleanText(name) !== name) return { error: 'Choose a cleaner name.' };
-  if (s.guilds.some((g) => same(g.name, name))) return { error: 'There is already a guild with that name.' };
+  if (list.some((g) => same(g.name, name))) return { error: `There is already a ${what} with that name.` };
   return { name };
 }
 
@@ -41,6 +42,30 @@ export function found(s, me, rawName, level, now = Date.now()) {
   const g = { id: s.next++, name: check.name, master: me, members: [me], created: now };
   s.guilds.push(g);
   return { ok: true, guild: g };
+}
+
+// ---------- nations ----------
+// A player whose land holds 100 or more plots, all joined up, can found a nation and name it,
+// becoming its Emperor. `territory` is the size of their biggest joined-up piece of land.
+export const nationOf = (s, name) => (s.nations || []).find((n) => same(n.emperor, name)) || null;
+export function foundNation(s, me, rawName, territory, now = Date.now()) {
+  s.nations ||= [];
+  if (nationOf(s, me)) return { error: 'You already rule a nation.' };
+  if (territory < COUNTRY_PLOTS) return { error: `A nation needs ${COUNTRY_PLOTS} plots of land, all joined up. Your biggest joined-up land is ${territory} plots.` };
+  const check = checkGuildName(s, rawName, s.nations, 'nation');
+  if (check.error) return check;
+  const n = { id: s.next++, name: check.name, emperor: me, created: now };
+  s.nations.push(n);
+  return { ok: true, nation: n };
+}
+// rename your nation
+export function renameNation(s, me, rawName) {
+  const n = nationOf(s, me);
+  if (!n) return { error: 'You do not rule a nation.' };
+  const check = checkGuildName(s, rawName, s.nations.filter((x) => x !== n), 'nation');
+  if (check.error) return check;
+  n.name = check.name;
+  return { ok: true };
 }
 
 // Invite a player (`to` is their exact username, already looked up) to your party or guild
@@ -139,6 +164,7 @@ export function view(s, me, info = () => null, now = Date.now()) {
     party: p ? { leader: p.leader, members: people(p.members), mine: same(p.leader, me), pending: s.invites.filter((i) => i.kind === 'party' && i.group === p.id).map((i) => i.to) } : null,
     guild: g ? { name: g.name, master: g.master, members: people(g.members), mine: same(g.master, me), pending: s.invites.filter((i) => i.kind === 'guild' && i.group === g.id).map((i) => i.to) } : null,
     invites: s.invites.filter((i) => same(i.to, me)).map((i) => ({ id: i.id, kind: i.kind, from: i.from, label: label(i) })),
+    nation: nationOf(s, me) ? { name: nationOf(s, me).name } : null,
   };
 }
 // the private chats a player is in
@@ -149,5 +175,6 @@ export function groupChannels(s, me) {
   if (g) out.push({ channel: `guild:${g.id}`, label: `Guild: ${g.name}` });
   return out;
 }
+export const emperorTitle = (s, name) => { const n = nationOf(s, name); return n ? `Emperor of ${n.name}` : null; };
 // is this player a Guild Master (for the castle)?
 export const isGuildMaster = (s, name) => s.guilds.some((g) => same(g.master, name));

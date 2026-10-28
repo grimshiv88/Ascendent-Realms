@@ -9,7 +9,31 @@ export const STOREY = 3;               // metres from one floor to the next
 export const SLAB = 0.3;               // how far a foundation stands above the ground
 export const MAX_LEVEL = 7;            // the 8th storey is the highest
 export const MAX_PIECES = 4000;        // per player
-export const COUNTRY_PLOTS = 100;      // own this many plots and you rule a country (castles need one)
+export const COUNTRY_PLOTS = 100;      // own this many plots, all joined up, and you rule a country (castles need one)
+// The size of the biggest piece of joined-up land among these plots ({ ix, iz }): plots join when
+// they share a side
+export function largestTerritory(plots) {
+  const left = new Set(plots.map((p) => `${p.ix},${p.iz}`));
+  let best = 0;
+  for (const start of [...left]) {
+    if (!left.has(start)) continue;
+    left.delete(start);
+    let n = 0;
+    const todo = [start];
+    while (todo.length) {
+      const k = todo.pop();
+      n++;
+      const [ix, iz] = k.split(',').map(Number);
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nk = `${ix + dx},${iz + dz}`;
+        if (left.has(nk)) { left.delete(nk); todo.push(nk); }
+      }
+    }
+    best = Math.max(best, n);
+  }
+  return best;
+}
+export const isRuler = (plots) => plots.length >= COUNTRY_PLOTS && largestTerritory(plots) >= COUNTRY_PLOTS;
 
 // Where a piece sits: on a cell, on a cell's north or west edge, or on a cell's north-west corner
 export const PIECES = {
@@ -216,7 +240,7 @@ export function applyBuild(plots, body, cls, now) {
   if (b) {
     if (!BUILDINGS[b.type]) return { error: 'Choose a building.' };
     if (!Number.isInteger(b.x) || !Number.isInteger(b.z) || ![0, 1, 2, 3].includes(b.r)) return { error: 'Choose where it goes.' };
-    if (BUILDINGS[b.type].ruler && plots.length < COUNTRY_PLOTS) return { error: `Only rulers of a country can build a castle (own at least ${COUNTRY_PLOTS} plots).` };
+    if (BUILDINGS[b.type].ruler && !isRuler(plots)) return { error: `Only rulers of a country can build a castle (own at least ${COUNTRY_PLOTS} plots, all joined up).` };
     const how = b.how === 'hire' ? 'hire' : 'self';
     add = placeBuilding(b.type, b.x, b.z, b.r);
     if (how === 'hire') { const u = now + hireMinutes(b.type) * 60000; for (const p of add) p.u = u; }

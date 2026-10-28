@@ -2,6 +2,7 @@
 const db = require('./db');
 const characters = require('./characters');
 const R = require('../public/js/data/interiors.mjs');
+const groups = require('./groups');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS rentals (
@@ -25,9 +26,9 @@ function list(me) {
   };
 }
 function rent(me, body) {
-  const check = R.checkRent(body, active());
-  if (check.error) return check;
   const name = nameOf(me);
+  const check = R.checkRent(body, active(), Date.now(), { emperor: !!groups.emperorTitle(name) });
+  if (check.error) return check;
   const guests = check.guests.filter((g) => g.toLowerCase() !== name.toLowerCase());
   const missing = guests.filter((g) => !db.prepare('SELECT 1 FROM accounts WHERE username = ? COLLATE NOCASE').get(g));
   if (missing.length) return { error: `No player is called ${missing.join(', ')}.` };

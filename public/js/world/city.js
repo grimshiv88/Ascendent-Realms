@@ -117,11 +117,55 @@ export function buildCity(place) {
   tower.castShadow = true;
   g.add(tower);
 
+  // the Emperors' Castle in the north-east of the city: a great keep with four towers
+  const CASTLE = { x: 52, z: -52, w: 30, d: 24 };
+  {
+    const stoneMat = new THREE.MeshStandardMaterial({ color: '#9a9284', roughness: 0.95 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: '#3a3e5a', roughness: 0.8 });
+    const k = new THREE.Group();
+    const keep = new THREE.Mesh(new THREE.BoxGeometry(CASTLE.w, 16, CASTLE.d), stoneMat);
+    keep.position.y = 8;
+    k.add(keep);
+    // battlements along the top
+    for (let x = -CASTLE.w / 2 + 1; x <= CASTLE.w / 2 - 1; x += 2.2) for (const z of [-CASTLE.d / 2, CASTLE.d / 2]) { const m = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.4, 0.8), stoneMat); m.position.set(x, 16.7, z); k.add(m); }
+    for (let z = -CASTLE.d / 2 + 1; z <= CASTLE.d / 2 - 1; z += 2.2) for (const x of [-CASTLE.w / 2, CASTLE.w / 2]) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.4, 1.1), stoneMat); m.position.set(x, 16.7, z); k.add(m); }
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const t = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.6, 24, 14), stoneMat);
+      t.position.set(x * CASTLE.w / 2, 12, z * CASTLE.d / 2);
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(4, 7, 14), roofMat);
+      cone.position.set(x * CASTLE.w / 2, 27.5, z * CASTLE.d / 2);
+      k.add(t, cone);
+    }
+    // the great door, a sign over it and banners either side (on the side facing the plaza)
+    const doorMat = new THREE.MeshStandardMaterial({ color: '#4a2e1a', roughness: 0.8 });
+    const door = new THREE.Mesh(new THREE.BoxGeometry(4, 6, 0.4), doorMat);
+    door.position.set(0, 3, CASTLE.d / 2 + 0.1);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 1.2), new THREE.MeshBasicMaterial({ map: textTexture("The Emperors' Castle"), transparent: true }));
+    sign.position.set(0, 7.4, CASTLE.d / 2 + 0.25);
+    k.add(door, sign);
+    for (const sx of [-4, 4]) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 5, 0.1), new THREE.MeshStandardMaterial({ color: '#7a1a1a' })); b.position.set(sx, 7, CASTLE.d / 2 + 0.2); k.add(b); }
+    k.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    // turn it so the door faces the middle of the city
+    const rot = Math.atan2(-CASTLE.x, -CASTLE.z);
+    k.position.set(CASTLE.x, heightAt(cx + CASTLE.x, cz + CASTLE.z) - heightAt(cx, cz), CASTLE.z);
+    k.rotation.y = rot;
+    g.add(k);
+    boxColliders(cx + CASTLE.x, cz + CASTLE.z, CASTLE.w + 2, CASTLE.d + 2, rot, solid);
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const lx = x * CASTLE.w / 2, lz = z * CASTLE.d / 2;
+      solid.push({ x: cx + CASTLE.x + lx * Math.cos(rot) + lz * Math.sin(rot), z: cz + CASTLE.z - lx * Math.sin(rot) + lz * Math.cos(rot), r: 3.6, kind: 'wall', height: 24 });
+    }
+    const out = CASTLE.d / 2 + 2.2;
+    shops.push({ id: 'castle', name: "The Emperors' Castle", x: cx + CASTLE.x + out * Math.sin(rot), z: cz + CASTLE.z + out * Math.cos(rot), building: true });
+  }
+
   // houses of the townsfolk on an outer ring, between the streets
   const tones = [['#d2c4a4', '#7a3a24'], ['#c4b494', '#4a5a6a'], ['#dccfb2', '#6a4a2a'], ['#b8a888', '#3a4a3a']];
   for (let i = 0; i < 20; i++) {
     const a = (i / 20) * Math.PI * 2 + Math.PI / 20;
     if (Math.abs(Math.sin(a * 2)) < 0.25) continue; // keep the streets clear
+    const r0 = 68 + (i % 2) * 14;
+    if (Math.hypot(Math.cos(a) * r0 - CASTLE.x, Math.sin(a) * r0 - CASTLE.z) < 26) continue; // the castle stands here
     const [wall, roof] = tones[i % tones.length];
     const w = 7 + (i % 3), d = 6 + (i % 2), h = 4 + (i % 3) * 0.8;
     const r = 68 + (i % 2) * 14;

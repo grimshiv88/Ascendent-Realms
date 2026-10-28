@@ -584,10 +584,14 @@ async function previewChannels(d, name) {
 }
 
 // ---------- parties and guilds ----------
+async function previewTerritory(name) {
+  const B = await import('./data/building.mjs');
+  return B.largestTerritory(previewLand.all().filter((p) => p.owner === name));
+}
 async function previewGroupsView(d, name) {
   const G = await import('./data/groups.mjs');
   const info = (n) => { const c = previewSocial.find(n)?.character; return c ? { level: c.level, cls: c.cls } : null; };
-  return G.view(d.groups || G.emptyGroups(), name, info);
+  return { ...G.view(d.groups || G.emptyGroups(), name, info), territory: await previewTerritory(name) };
 }
 export async function groupsList() {
   if (await isPreviewMode()) {
@@ -608,6 +612,8 @@ export async function groupsAct(body) {
     else if (body.action === 'respond') r = G.respond(d.groups, me.username, body.id, body.accept === true);
     else if (body.action === 'leave') r = G.leave(d.groups, me.username, kind);
     else if (['remove', 'lead', 'disband'].includes(body.action)) r = G.manage(d.groups, me.username, kind, body.action, body.name);
+    else if (body.action === 'nation') r = G.foundNation(d.groups, me.username, body.name, await previewTerritory(me.username));
+    else if (body.action === 'rename-nation') r = G.renameNation(d.groups, me.username, body.name);
     else if (body.action === 'found') {
       const c = me.character;
       if (!c || c.coins < G.GUILD_FEE) throw new Error(`Founding a guild costs ${G.GUILD_FEE} coins.`);
@@ -640,7 +646,8 @@ export async function roomRent(room, minutes, guests) {
     const R = await import('./data/interiors.mjs');
     const me = previewMe(), d = previewSocial.load();
     d.rentals = (d.rentals || []).filter((r) => r.until > Date.now() - 86400000);
-    const check = R.checkRent({ room, minutes, guests }, d.rentals);
+    const G = await import('./data/groups.mjs');
+    const check = R.checkRent({ room, minutes, guests }, d.rentals, Date.now(), { emperor: !!G.emperorTitle(d.groups || G.emptyGroups(), me.username) });
     if (check.error) throw new Error(check.error);
     const missing = check.guests.filter((g) => !previewSocial.find(g));
     if (missing.length) throw new Error(`No player is called ${missing.join(', ')}.`);

@@ -173,6 +173,7 @@ function startGame(character) {
     const allowed = {};
     for (const r of ui.rentals) if (r.allowed) allowed[r.room] = r.until;
     world?.setRooms(allowed);
+    castleAccess();
     if (overlay.dataset.panel === 'rooms' && !overlay.classList.contains('hidden')) drawPanel();
   }
   // parties and guilds: invites show up as a note on screen
@@ -183,14 +184,21 @@ function startGame(character) {
     if (!seenInvites && v.invites.length) showArea(`You have ${v.invites.length === 1 ? 'an invite' : `${v.invites.length} invites`} waiting. Press ${keyName(codeFor('groups'))} to answer.`);
     if (seenInvites) for (const i of v.invites) if (!seenInvites.has(i.id)) showArea(`${i.from} invites you to ${i.kind === 'party' ? 'their party' : `the guild ${i.label}`}. Press ${keyName(codeFor('groups'))} to answer.`);
     seenInvites = ids;
+    castleAccess();
     if (overlay.dataset.panel === 'groups' && !overlay.classList.contains('hidden') && !ui.groupBusy) drawPanel();
+  }
+  // who may walk into the Emperors' Castle today
+  function castleAccess() {
+    world?.setCastleAccess({ emperor: !!ui.groups?.nation, guildMaster: !!ui.groups?.guild?.mine, guest: (ui.rentals || []).some((r) => r.room.startsWith('castle') && r.allowed && !r.mine) });
   }
   function loadGroups() { api.groupsList().then(takeGroups).catch(() => {}); }
   loadGroups();
+  loadRooms();
   setInterval(loadGroups, 20000);
   function loadRooms() { api.roomsList().then((r) => takeRentals(r.rentals)).catch(() => {}); }
   // while you're in the Guild Hall, keep up with who has which room (and when time runs out)
-  setInterval(() => { if (world?.indoors?.kind === 'guild') loadRooms(); }, 15000);
+  let roomsTick = 0;
+  setInterval(() => { roomsTick++; if (['guild', 'castle'].includes(world?.indoors?.kind) || roomsTick % 4 === 0) loadRooms(); }, 15000);
 
   // ---------- skills ----------
   const skillBar = $('skill-bar');
@@ -339,8 +347,8 @@ function startGame(character) {
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
     else if (name === 'market' && ui.market) renderShop(overlay, game, ui.shopMsg, ui.market);
     else if (name === 'groups') renderGroups(overlay, game, ui.groups, { message: ui.groupMsg, busy: ui.groupBusy });
-    else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy });
-    else if (name === 'gate') renderIdCard(overlay, game, { monster: ui.gate?.monster, courts: ui.courts || [] });
+    else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy, castle: !!ui.roomsCastle, emperor: !!ui.groups?.nation });
+    else if (name === 'gate') renderIdCard(overlay, game, { monster: ui.gate?.monster, courts: ui.courts || [], nation: ui.groups?.nation?.name });
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
@@ -590,6 +598,7 @@ function startGame(character) {
       const body = { action: v, kind, name: btn.dataset.name, id: Number(btn.dataset.id), accept: btn.dataset.accept === '1' };
       if (v === 'invite') body.name = overlay.querySelector(`[data-group-name="${kind}"]`)?.value.trim();
       if (v === 'found') body.name = overlay.querySelector('[data-guild-name]')?.value.trim();
+      if (v === 'nation' || v === 'rename-nation') body.name = overlay.querySelector('[data-nation-name]')?.value.trim();
       if ((v === 'disband' || (v === 'leave' && kind === 'guild')) && !confirm(v === 'disband' ? `Really ${kind === 'party' ? 'break up the party' : 'disband the guild'}?` : 'Really leave the guild?')) return;
       ui.groupBusy = true; drawPanel();
       (async () => {
@@ -598,14 +607,14 @@ function startGame(character) {
           const r = await api.groupsAct(body);
           if (r.coins !== undefined) game.setCoins(r.coins);
           ui.groups = r;
-          ui.groupMsg = { invite: `Invite sent to ${body.name}.`, respond: body.accept ? 'Welcome aboard! Its chat is a new tab in the chat.' : 'Invite turned down.', leave: `You left the ${kind}.`, remove: `${body.name} was removed.`, lead: `${body.name} now leads.`, disband: kind === 'party' ? 'The party broke up.' : 'The guild is disbanded.', found: `You founded ${body.name}! You are its Guild Master.` }[v] || '';
+          ui.groupMsg = { invite: `Invite sent to ${body.name}.`, respond: body.accept ? 'Welcome aboard! Its chat is a new tab in the chat.' : 'Invite turned down.', leave: `You left the ${kind}.`, remove: `${body.name} was removed.`, lead: `${body.name} now leads.`, disband: kind === 'party' ? 'The party broke up.' : 'The guild is disbanded.', found: `You founded ${body.name}! You are its Guild Master.`, nation: `You founded the nation of ${body.name}. Hail, Emperor!`, 'rename-nation': `Your nation is now ${body.name}.` }[v] || '';
           social?.refresh();
         } catch (err) { ui.groupMsg = err.message; }
         ui.groupBusy = false; drawPanel();
       })();
       return;
     }
-    if (t('data-open-rooms') != null) { ui.roomMsg = ''; loadRooms(); openPanel('rooms'); return; }
+    if (t('data-open-rooms') != null) { ui.roomMsg = ''; ui.roomsCastle = false; loadRooms(); openPanel('rooms'); return; }
     if ((v = t('data-room-pick')) != null) { ui.roomPick = v; ui.roomMsg = ''; drawPanel(); return; }
     if ((v = t('data-room-chat')) != null) { closePanel(); social?.openRoom(v); return; }
     if ((v = t('data-room-rent')) != null || (v = t('data-room-save')) != null) {
@@ -621,7 +630,7 @@ function startGame(character) {
             game.setCoins(r.coins);
             takeRentals(r.rentals);
             ui.roomPick = null;
-            ui.roomMsg = 'The room is yours. Go up the stairs to its door; your guests can come in too. Its private chat is a new tab in the chat (bottom left).';
+            ui.roomMsg = v.startsWith('castle') ? 'The chamber is open. Its door is at the back of the great hall; your guests can come in too, and on trade days they may enter the castle. Its private chat is a new tab in the chat (bottom left).' : 'The room is yours. Go up the stairs to its door; your guests can come in too. Its private chat is a new tab in the chat (bottom left).';
             social?.refresh();
           } else {
             const r = await api.roomGuests(Number(v), names);
@@ -746,11 +755,14 @@ function startGame(character) {
       if (type === 'market') { ui.market = data; openPanel('market'); }
       if (type === 'indoors') {
         $('minimap').classList.add('hidden');
-        showArea(data.kind === 'guild' ? 'Main Guild Hall: the counter (E) has guild requests; sit at a table (E by a chair); the stairs lead up to the meeting rooms.' : `${data.shop.name}: walk up to the counter and press E. Sit on a chair with E.`);
+        if (data.kind === 'castle') { showArea("The Emperors' Castle: meetings at the council table are free. The steward's desk by the door (E) opens the chambers for private business."); loadRooms(); }
+        else showArea(data.kind === 'guild' ? 'Main Guild Hall: the counter (E) has guild requests; sit at a table (E by a chair); the stairs lead up to the meeting rooms.' : `${data.shop.name}: walk up to the counter and press E. Sit on a chair with E.`);
         if (data.kind === 'guild') loadRooms();
       }
       if (type === 'outdoors') $('minimap').classList.remove('hidden');
-      if (type === 'meeting-room') { ui.roomPick = data.id; ui.roomMsg = ''; loadRooms(); if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'rooms') openPanel('rooms'); }
+      if (type === 'castle') { ui.roomsCastle = true; ui.roomPick = null; ui.roomMsg = ''; loadRooms(); openPanel('rooms'); }
+      if (type === 'castle-denied') showArea(data.day === 'council' ? "Today is a council day: only Emperors and Guild Masters may enter the Emperors' Castle." : "Today is a trade day: only Emperors and the guests they invited may enter the Emperors' Castle.");
+      if (type === 'meeting-room') { ui.roomsCastle = data.id.startsWith('castle'); ui.roomPick = data.id; ui.roomMsg = ''; loadRooms(); if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'rooms') openPanel('rooms'); }
       if (type === 'room-ended') { showArea('Your time in the meeting room is up. You are back in the hallway.'); loadRooms(); }
       if (type === 'gate') { ui.gate = data; if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'gate') openPanel('gate'); }
       if (type === 'guild') { game.fillQuests(here(), 'guild'); openPanel('guild'); }
@@ -775,6 +787,7 @@ function startGame(character) {
       if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }
     },
   });
+  if (ui.rentals) takeRentals(ui.rentals); else castleAccess(); // the world is here now
   if (/[?&]debug\b/.test(location.search)) window.__world = world; // for tests
 
   window.addEventListener('pagehide', () => game.saveNow());

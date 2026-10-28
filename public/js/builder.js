@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { codeFor } from './data/controls.mjs';
 import { heightAt, PLOT } from './data/world-layout.mjs';
 import {
-  CELL, STOREY, MAX_LEVEL, PIECES, BUILDINGS, COUNTRY_PLOTS, homePlot, pieceKey, placeBuilding, buildingSize,
+  CELL, STOREY, MAX_LEVEL, PIECES, BUILDINGS, COUNTRY_PLOTS, isRuler, homePlot, pieceKey, placeBuilding, buildingSize,
   piecesCost, removeCost, buildingCost, hireMinutes, applyBuild, READY_MARKUP,
 } from './data/building.mjs';
 import { buildPieces, storeyY } from './world/buildings.js';
@@ -123,7 +123,7 @@ export function openBuilder(host, opts) {
   let offer = null;       // a ready building placed and waiting for "build now" or "hire"
   let hover = null;       // the piece (or building) under the pointer
   let busy = false;
-  const ruler = () => mineOf().length >= COUNTRY_PLOTS;
+  const ruler = () => isRuler(mineOf());
   const groundOk = (ix, iz) => { const p = plots.find((q) => q.mine && q.ix === ix && q.iz === iz); return p?.flat != null; };
   const flatAt = (ix, iz) => plots.find((q) => q.ix === ix && q.iz === iz)?.flat ?? heightAt((ix + 0.5) * PLOT, (iz + 0.5) * PLOT);
   const flatOf = (p) => { const h = homePlot(p, groundOk) || homePlot(p, () => true); return flatAt(h.ix, h.iz); };
@@ -193,7 +193,7 @@ export function openBuilder(host, opts) {
           <b>${esc(b.name)}</b><small>${w * CELL} × ${d * CELL} m</small>
           <span>Hire: ${buildingCost(id, opts.cls, 'hire').toLocaleString()} G</span>
           <span>${builder ? 'Builder' : 'Yourself'}: ${buildingCost(id, opts.cls, 'self').toLocaleString()} G</span>
-          <small>${locked ? `Rulers only (${COUNTRY_PLOTS}+ plots)` : esc(b.text)}</small></button>`;
+          <small>${locked ? `Rulers only (${COUNTRY_PLOTS}+ joined plots)` : esc(b.text)}</small></button>`;
       }).join('');
     } else if (tab === 'pieces') {
       $('.bv-cards').innerHTML = PIECE_ORDER.map((id) => `<button type="button" class="bv-card${piece === id ? ' on' : ''}" data-piece="${id}">

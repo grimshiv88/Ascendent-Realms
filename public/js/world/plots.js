@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { PLOT, heightAt, surfaceAt } from '../data/world-layout.mjs';
 import { whyNot, isRiver, NEIGHBOURS } from '../data/land.mjs';
-import { COUNTRY_PLOTS } from '../data/building.mjs';
+import { isRuler } from '../data/building.mjs';
 
 const GRID_R = 7;       // plots shown in each direction around you
 const STEP = 2.5;       // the grid lines follow the ground every few metres
@@ -110,12 +110,14 @@ export function createPlots(scene) {
   const LINE_H = 0.45, LINE_STEP = 2.5;
   function buildPosts(cx, cz) {
     for (const o of [...posts.children]) { posts.remove(o); o.geometry?.dispose(); }
-    const owned = new Map();
-    for (const p of lands.values()) owned.set(p.owner, (owned.get(p.owner) || 0) + 1);
+    // whose land is a country: 100+ plots, all joined up
+    const byOwner = new Map();
+    for (const p of lands.values()) { if (!byOwner.has(p.owner)) byOwner.set(p.owner, []); byOwner.get(p.owner).push(p); }
+    const ruler = new Map([...byOwner].map(([o, list]) => [o, isRuler(list)]));
     const pos = [], col = [];
     for (const p of lands.values()) {
       if (Math.abs(p.ix - cx) > 25 || Math.abs(p.iz - cz) > 25) continue;
-      const c = p.mine ? BORDER.mine : owned.get(p.owner) >= COUNTRY_PLOTS ? BORDER.nation : BORDER.other;
+      const c = p.mine ? BORDER.mine : ruler.get(p.owner) ? BORDER.nation : BORDER.other;
       const x0 = p.ix * PLOT, z0 = p.iz * PLOT;
       // each side whose neighbour belongs to someone else is part of the border
       for (const [dx, dz, ax, az, bx, bz] of [[0, -1, 0, 0, 1, 0], [0, 1, 0, 1, 1, 1], [-1, 0, 0, 0, 0, 1], [1, 0, 1, 0, 1, 1]]) {

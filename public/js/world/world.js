@@ -5,6 +5,7 @@ import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
 import { buildCity, buildVillage } from './city.js';
 import { buildInterior } from './interiors.js';
+import { mayEnterCastle, castleDay } from '../data/interiors.mjs';
 import { buildCave } from './caves.js';
 import { createCreatures, KINDS, monsterHit } from './creatures.js';
 import { createSkillFx } from './skillfx.js';
@@ -516,8 +517,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     lantern.intensity = 0;
     sky.setVisible(false);
   }
+  let castleAccess = {}; // { emperor, guildMaster, guest } from the game
   function enterBuilding(shop) {
     if (!game || inside || depth) return;
+    if (shop.id === 'castle' && !mayEnterCastle(castleAccess)) {
+      say(castleDay() === 'council' ? 'Guard: "Emperors and Guild Masters only today."' : 'Guard: "Emperors and their invited guests only today."', 'hurt');
+      onEvent?.('castle-denied', { day: castleDay() });
+      return;
+    }
     if (sleeping) toggleSleep();
     const built = buildInterior(shop);
     setUnderground(built.sample);
@@ -558,7 +565,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const b = inside.built;
     if (sitting) { standUp(); return; }
     if (b.counter && Math.hypot(pos.x - b.counter.x, pos.z - b.counter.z) < 2.6 && Math.abs(pos.y - b.counter.y) < 1) {
-      onEvent?.(inside.shop.id === 'guild' ? 'guild' : 'market', inside.shop.id);
+      onEvent?.(inside.shop.id === 'guild' ? 'guild' : inside.shop.id === 'castle' ? 'castle' : 'market', inside.shop.id);
       return;
     }
     const door = b.rooms.find((r) => Math.hypot(pos.x - r.door.x, pos.z - r.door.z) < 2);
@@ -1519,6 +1526,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     get indoors() { return inside ? { shop: inside.shop, kind: inside.built.kind } : null; },
     // the meeting rooms you may be in: { room id: until (ms) }
     setRooms(map) { allowedRooms = { ...map }; },
+    setCastleAccess(a) { castleAccess = { ...a }; },
     leaveBuilding: () => leaveBuilding(),
     refreshHelper,
     sleep: toggleSleep,
