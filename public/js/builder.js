@@ -5,16 +5,15 @@ import { codeFor } from './data/controls.mjs';
 import { heightAt, PLOT } from './data/world-layout.mjs';
 import {
   CELL, STOREY, MAX_LEVEL, PIECES, BUILDINGS, COUNTRY_PLOTS, isRuler, homePlot, pieceKey, placeBuilding, buildingSize,
-  piecesCost, removeCost, buildingCost, hireMinutes, applyBuild, READY_MARKUP,
+  piecesCost, removeCost, buildingCost, hireMinutes, applyBuild, READY_MARKUP, PIECE_GROUPS, BUILDING_GROUPS,
 } from './data/building.mjs';
 import { buildPieces, storeyY } from './world/buildings.js';
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const ghost = (color) => new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false });
 const LOOKS = { ok: ghost('#5fe07a'), bad: ghost('#ff5040'), plan: ghost('#6ab4ff'), remove: ghost('#ff9a30') };
-const PIECE_ORDER = ['foundation', 'wall', 'door', 'window', 'pillar', 'floor', 'stairs', 'roof', 'anvil', 'spawn'];
 
-// `opts`: { plots (everyone's, with mine/flat/pieces), cls, coins(), build(body) -> Promise<plots>, onClose, say(text) }
+// `opts`: { plots (everyone's, with mine/flat/pieces), cls, coins(), build(body) -> Promise<plots>, onClose, onWalk, say(text) }
 export function openBuilder(host, opts) {
   let plots = opts.plots;
   const mineOf = () => plots.filter((p) => p.mine);
@@ -26,6 +25,7 @@ export function openBuilder(host, opts) {
       <div class="bv-top">
         <h2>Builder View</h2>
         <span class="bv-coins"></span>
+        <button type="button" class="bv-walk" data-bv="walk" title="Walk about your land and build from your character">Build from your character</button>
         <button type="button" class="bv-close" data-bv="close" aria-label="Close">×</button>
       </div>
       <p class="bv-msg" role="status"></p>
@@ -118,6 +118,7 @@ export function openBuilder(host, opts) {
 
   // ---------- state ----------
   let tab = 'ready', choice = 'hut', piece = 'foundation', level = 0, turn = 0;
+  let section = { ready: 0, pieces: 0 }; // which section of buildings or pieces is showing
   let plan = [];          // pieces waiting to be paid for
   let removing = new Set(); // keys of built pieces marked to come down
   let offer = null;       // a ready building placed and waiting for "build now" or "hire"
@@ -166,11 +167,13 @@ export function openBuilder(host, opts) {
     const builder = opts.cls === 'builder';
     const downCost = removeCost(builtPieces().filter((q) => removing.has(pieceKey(q))), opts.cls);
     const planCost = piecesCost(plan, opts.cls) + downCost;
+    const groups = tab === 'ready' ? BUILDING_GROUPS : tab === 'pieces' ? PIECE_GROUPS : null;
     $('.bv-tools').innerHTML = `
+      ${groups ? `<span class="bv-sections">${groups.map(([name], i) => `<button type="button" class="bv-section${section[tab] === i ? ' on' : ''}" data-section="${i}">${esc(name)}</button>`).join('')}</span>` : ''}
       ${tab !== 'ready' ? `<span class="bv-level">Storey <button type="button" data-bv="down" aria-label="Down a storey" ${level ? '' : 'disabled'}>−</button> <b>${level + 1}</b> <button type="button" data-bv="up" aria-label="Up a storey" ${level < MAX_LEVEL ? '' : 'disabled'}>+</button></span>` : ''}
       ${tab !== 'remove' ? `<button type="button" data-bv="turn">Turn <kbd>R</kbd></button>` : ''}
       ${plan.length || removing.size ? `<span class="bv-plan">Plan: ${plan.length ? `${plan.length} piece${plan.length === 1 ? '' : 's'} · <b>${(planCost - downCost).toLocaleString()} G</b>` : ''}${removing.size ? ` ${removing.size} to remove (${downCost.toLocaleString()} G)` : ''}${plan.length && removing.size ? ` · total <b>${planCost.toLocaleString()} G</b>` : ''}</span>
-        <button type="button" class="gold-button" data-bv="build" ${busy || planCost > opts.coins() ? 'disabled' : ''}>Build</button>
+        <button type="button" class="gold-button" data-bv="build" ${busy ? 'disabled' : ''}>Build</button>
         <button type="button" data-bv="clear">Clear plan</button>` : ''}`;
     if (offer) {
       const b = BUILDINGS[offer.type];
@@ -178,15 +181,15 @@ export function openBuilder(host, opts) {
       $('.bv-cards').innerHTML = `
         <div class="bv-offer">
           <p><b>${esc(b.name)}</b> here. How do you want it built?</p>
-          <button type="button" class="gold-button" data-bv="hire" ${busy || hire > opts.coins() ? 'disabled' : ''}>Hire a builder (quest): ${hire.toLocaleString()} G <small>ready in ${hireMinutes(offer.type)} min</small></button>
-          <button type="button" class="${builder ? 'gold-button' : ''}" data-bv="self" ${busy || self > opts.coins() ? 'disabled' : ''}>${builder ? 'Build it now (Builder price)' : 'Build it now yourself'}: ${self.toLocaleString()} G</button>
+          <button type="button" class="gold-button" data-bv="hire" ${busy ? 'disabled' : ''}>Hire a builder (quest): ${hire.toLocaleString()} G <small>ready in ${hireMinutes(offer.type)} min</small></button>
+          <button type="button" class="${builder ? 'gold-button' : ''}" data-bv="self" ${busy ? 'disabled' : ''}>${builder ? 'Build it now (Builder price)' : 'Build it now yourself'}: ${self.toLocaleString()} G</button>
           <button type="button" data-bv="cancel">Cancel</button>
           <p class="bv-hint">${builder ? 'As a Builder you raise ready buildings for less than hiring one.' : `Raising it yourself costs ${READY_MARKUP}× what a hired builder charges. A Builder pays far less.`}</p>
         </div>`;
       return;
     }
     if (tab === 'ready') {
-      $('.bv-cards').innerHTML = Object.entries(BUILDINGS).map(([id, b]) => {
+      $('.bv-cards').innerHTML = BUILDING_GROUPS[section.ready][1].map((id) => [id, BUILDINGS[id]]).map(([id, b]) => {
         const locked = b.ruler && !ruler();
         const [w, d] = b.size;
         return `<button type="button" class="bv-card${choice === id ? ' on' : ''}" data-pick="${id}" ${locked ? 'disabled' : ''}>
@@ -196,7 +199,7 @@ export function openBuilder(host, opts) {
           <small>${locked ? `Rulers only (${COUNTRY_PLOTS}+ joined plots)` : esc(b.text)}</small></button>`;
       }).join('');
     } else if (tab === 'pieces') {
-      $('.bv-cards').innerHTML = PIECE_ORDER.map((id) => `<button type="button" class="bv-card${piece === id ? ' on' : ''}" data-piece="${id}">
+      $('.bv-cards').innerHTML = PIECE_GROUPS[section.pieces][1].map((id) => `<button type="button" class="bv-card${piece === id ? ' on' : ''}" data-piece="${id}">
           <b>${PIECES[id].name}</b><span>${Math.round(PIECES[id].price * (builder ? 0.6 : 1))} G</span><small>${PIECES[id].text}</small></button>`).join('');
     } else {
       $('.bv-cards').innerHTML = '<p class="bv-hint">Tap a piece you built to mark it for removal (tap again to keep it), then press Build. Taking pieces down costs about a third of their build price. Pieces holding others up can only come down with them.</p>';
@@ -348,10 +351,12 @@ export function openBuilder(host, opts) {
     const t = (a) => e.target.closest(`[${a}]`)?.getAttribute(a);
     let v;
     if ((v = t('data-tab'))) { tab = v; hover = null; offer = null; drawGhost(null); say(v === 'ready' ? 'Pick a building, then tap your land to place it.' : v === 'pieces' ? 'Start with foundations on levelled land, then walls, then floors or a roof.' : ''); drawPanel(); return; }
+    if ((v = t('data-section')) != null) { section[tab] = Number(v); cards.scrollLeft = 0; drawPanel(); return; }
     if ((v = t('data-pick'))) { choice = v; hover = null; drawPanel(); return; }
     if ((v = t('data-piece'))) { piece = v; hover = null; if (v === 'foundation') { level = 0; drawGrid(); } drawPanel(); return; }
     switch (t('data-bv')) {
       case 'close': close(); break;
+      case 'walk': close(); opts.onWalk?.(); break;
       case 'up': level = Math.min(MAX_LEVEL, level + 1); hover = null; drawGrid(); drawPanel(); break;
       case 'down': level = Math.max(0, level - 1); hover = null; drawGrid(); drawPanel(); break;
       case 'turn': turn = (turn + 1) % 4; hover = null; drawGhost(null); break;

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { sample, toWorld, PLACES, safeZoneAt } from '../data/world-layout.mjs';
 import { EVOLUTIONS, rollKillExp } from '../data/game-data.mjs';
-import { wildLevelAt, stageForLevel } from '../data/wilds.mjs';
+import { wildLevelAt, stageForLevel, wardedAt } from '../data/wilds.mjs';
 
 // [name, body to build, level range, aggressive?, speed m/s, drops [item, chance, min, max]]
 export const KINDS = {
@@ -99,9 +99,11 @@ export function monsterHit(atk, level, def) {
 // (a Hobgoblin is worth more than a goblin of the same level)
 export const monsterExp = (level, stage = 0) => rollKillExp(level, stage);
 
-export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush }) {
+// `groundAt(x, z, fromY)` is where feet rest (the drawn ground, and built floors); monsters walk on it as players do
+export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null }) {
   const list = [];
   const tmp = {};
+  const feet = (x, z, fromY, h) => (groundAt ? groundAt(x, z, fromY) : h);
   let spawnTimer = 0;
 
   // A wild monster's level comes from where it is, not from you: weak near towns, villages and
@@ -159,8 +161,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   function spot(px, pz, d, a = Math.random() * Math.PI * 2) {
     const x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d;
     const s = sample(x, z, tmp);
-    if (s.h < s.water + 0.4 || safeZoneAt(x, z)) return null; // never in the water or a safe zone
-    return { x, z, y: s.h, region: s.region, s: { ...s } };
+    if (s.h < s.water + 0.4 || safeZoneAt(x, z) || wardedAt(x, z)) return null; // never in the water, a safe zone or built land
+    return { x, z, y: feet(x, z, s.h, s.h), region: s.region, s: { ...s } };
   }
 
   function spawn(p) {
@@ -298,9 +300,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         const nx = m.x + Math.sin(m.heading) * speed * dt;
         const nz = m.z + Math.cos(m.heading) * speed * dt;
         const s = sample(nx, nz, tmp);
-        // monsters stay out of the water, caves they weren't in, and the safe zones round the waystones
-        const blocked = s.h <= s.water + 0.2 || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z)) || (!m.kind.royal && safeZoneAt(nx, nz) && !safeZoneAt(m.x, m.z));
-        if (!blocked) { m.x = nx; m.z = nz; m.y = s.h; } else m.heading += Math.PI * 0.7;
+        // monsters stay out of the water, caves they weren't in, the safe zones round the waystones,
+        // and land with buildings on it or that belongs to a nation
+        const blocked = s.h <= s.water + 0.2 || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z)) || (!m.kind.royal && safeZoneAt(nx, nz) && !safeZoneAt(m.x, m.z))
+          || (!m.kind.royal && wardedAt(nx, nz) && !wardedAt(m.x, m.z));
+        if (!blocked) { m.x = nx; m.z = nz; m.y = feet(nx, nz, m.y, s.h); } else m.heading += Math.PI * 0.7;
       }
       m.hurt = Math.max(0, m.hurt - dt);
       m.lunge = Math.max(0, (m.lunge || 0) - dt);
@@ -354,7 +358,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     // put a monster somewhere on purpose (cave guards, cave dwellers, bosses)
     spawnAt(kindId, level, x, z, extra = {}) {
       const s = sample(x, z, tmp);
-      const m = make(kindId, Math.max(1, level), x, s.h, z, extra);
+      const m = make(kindId, Math.max(1, level), x, feet(x, z, s.h, s.h), z, extra);
       if (extra.boss) { m.body.scale.multiplyScalar(1.45); m.height *= 1.45; m.radius *= 1.45; }
       return m;
     },

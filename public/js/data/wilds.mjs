@@ -2,6 +2,7 @@
 // that players have settled), stronger the deeper into the wilds you go. Out in the wilds they top
 // out just below level 500; anything stronger lives only in the castles.
 import { PLACES, toWorld, PLOT } from './world-layout.mjs';
+import { COUNTRY_PLOTS } from './building.mjs';
 
 export const WILD_MAX = 499;
 // level at `d` metres from the nearest settled place: about 5 at 1 km, 28 at 5 km, 70 at 10 km,
@@ -23,7 +24,42 @@ export function setSettledLand(plots) {
   }
   // a lone plot counts for little; a town of them (or a nation) clears the wilds around it
   settled = [...cells.values()].filter((c) => c.n >= 5).map((c) => ({ x: c.x / c.n, z: c.z / c.n }));
+  warded = wardedPlots(plots || []);
 }
+
+// Land monsters can't walk onto: any plot with something built on it, and the whole of a nation
+// (an owner's joined-up land of 100 plots or more). Empty property, owned but unused, stays open.
+let warded = new Set();
+export function wardedPlots(plots) {
+  const out = new Set();
+  const byOwner = new Map();
+  for (const p of plots) {
+    const k = `${p.ix},${p.iz}`;
+    if (p.pieces?.length) out.add(k);
+    const owner = p.owner ?? (p.mine ? '\u0000me' : null);
+    if (owner == null) continue;
+    if (!byOwner.has(owner)) byOwner.set(owner, new Set());
+    byOwner.get(owner).add(k);
+  }
+  for (const left of byOwner.values()) {
+    if (left.size < COUNTRY_PLOTS) continue;
+    for (const start of [...left]) {
+      if (!left.has(start)) continue;
+      left.delete(start);
+      const part = [start], todo = [start];
+      while (todo.length) {
+        const [ix, iz] = todo.pop().split(',').map(Number);
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nk = `${ix + dx},${iz + dz}`;
+          if (left.has(nk)) { left.delete(nk); todo.push(nk); part.push(nk); }
+        }
+      }
+      if (part.length >= COUNTRY_PLOTS) for (const k of part) out.add(k);
+    }
+  }
+  return out;
+}
+export const wardedAt = (x, z) => warded.size > 0 && warded.has(`${Math.floor(x / PLOT)},${Math.floor(z / PLOT)}`);
 // metres to the nearest settled place
 export function settledDistance(x, z) {
   let d = Infinity;

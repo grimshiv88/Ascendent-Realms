@@ -169,6 +169,7 @@ function startGame(character) {
     onEvent(type, data) {
       if (type === 'level') { world?.say(`Level ${data}!`, 'exp'); showArea(`Level ${data}! New Stat Points and a purse of coins.`); }
       if (type === 'bag-full') world?.say('Your bag is full', 'hurt');
+      if (type === 'no-funds') noFunds(data.need);
       if (type === 'evolved') { world?.say('Your weapon evolved!', 'exp'); showArea(`Your weapon evolved into the ${data.name}!`); }
       if (type === 'spell') {
         const sp = SPELLS[data.id];
@@ -184,6 +185,19 @@ function startGame(character) {
       if (type === 'level' && uniqueTier(data) > ui.uniqueTier) { ui.uniqueTier = uniqueTier(data); drawSkillBar(); newPower({ kind: 'unique' }); }
     },
   });
+
+  // ---------- not enough coins: "Insufficient funds" in the middle of the screen ----------
+  let fundsTimer = null;
+  function noFunds(need) {
+    let el = document.getElementById('no-funds');
+    if (!el) { el = document.createElement('div'); el.id = 'no-funds'; el.setAttribute('role', 'alert'); document.body.appendChild(el); }
+    const have = character.coins;
+    el.innerHTML = `<b>Insufficient funds</b>${need ? `<span>You need ${Number(need).toLocaleString()} G and have ${Number(have).toLocaleString()} G${need > have ? ` (${(need - have).toLocaleString()} G short)` : ''}.</span>` : ''}`;
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    clearTimeout(fundsTimer);
+    fundsTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  }
+  window.addEventListener('ar-no-funds', (e) => noFunds(e.detail?.need));
 
   // ---------- a new power: a window says what it is and what it does, and where it went ----------
   ui.uniqueTier = uniqueTier(character.level);
@@ -629,7 +643,7 @@ function startGame(character) {
     box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away</p>
       <p>Fee: <b>${fee} G</b> <small>(you have ${character.coins} G)</small></p>
       ${message ? `<p class="error">${message}</p>` : ''}
-      <button type="button" class="gold-button" data-portal-go="${to.id}" ${character.coins < fee ? 'disabled' : ''}>Pay ${fee} G and travel</button>`;
+      <button type="button" class="gold-button" data-portal-go="${to.id}">Pay ${fee} G and travel</button>`;
   }
   function openPortal() {
     if (world?.underground) { showArea(world.indoors ? 'Go outside to use a portal.' : 'There are no portals underground.'); return; }
@@ -638,7 +652,32 @@ function startGame(character) {
   }
 
   // The Builder View: your land in 3D, to put up buildings
+  // Build from your character, in the world itself (a see-through piece shows in front of you)
+  async function walkBuild() {
+    if (ui.walk) { ui.walk.stop(); return; }
+    if (world?.underground) { showArea(world.indoors ? 'Go outside to build.' : 'Come up to the surface to build.'); return; }
+    let list;
+    try { list = (await api.landList()).plots || []; } catch (err) { showArea(err.message); return; }
+    setLands(list);
+    if (!list.some((p) => p.mine)) { showArea("You don't own any land yet. Press L for the land grid and buy a plot, then build on it."); return; }
+    closePanel();
+    ui.walk = world.startWalkBuild(document.body, {
+      plots: list,
+      cls: character.cls,
+      coins: () => character.coins,
+      async build(body) {
+        await game.saveNow();
+        const r = await api.landBuild(body);
+        game.setCoins(r.coins);
+        setLands(r.plots);
+        drawHud();
+        return r.plots;
+      },
+      onClose: () => { ui.walk = null; },
+    });
+  }
   async function openBuilder() {
+    if (ui.walk) { ui.walk.stop(); return; }
     if (ui.builder) { ui.builder.close(); return; }
     if (world?.underground) { showArea(world.indoors ? 'Go outside to build.' : 'Come up to the surface to build.'); return; }
     world?.releaseMouse();
@@ -659,6 +698,7 @@ function startGame(character) {
         return r.plots;
       },
       onClose: () => { ui.builder = null; if (world) world.paused = false; },
+      onWalk: () => walkBuild(),
     });
     if (ui.builder && world) world.paused = true;
     if (!ui.builder) showArea("You don't own any land yet. Press L for the land grid and buy a plot, then build on it here.");
@@ -1015,7 +1055,7 @@ function startGame(character) {
       const act = actionFor(e.code);
       const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', rankings: 'rankings', skills: 'skills', groups: 'groups' }[act];
       if (open) openPanel(open);
-      if (act === 'builder' && !ui.builder) openBuilder();
+      if (act === 'builder' && !ui.builder) { if (e.shiftKey && !ui.walk) walkBuild(); else openBuilder(); }
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); else if (act === 'unique') trySkill('unique'); else if (act === 'mythic') trySkill('mythic'); }
       if (act === 'land') toggleLand();

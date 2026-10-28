@@ -909,3 +909,33 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .power-name { display: block; font-size: 1.25rem; color: var(--gold-1, #ffd76a); margin: 2px 0 4px; }
 .power-card p { margin: 0; font-family: Georgia, serif; font-size: 0.92rem; }
 .power-window .bag-actions { flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* building from your character: the bar along the bottom */
+.bv-walk { margin-left: auto; margin-right: 44px; padding: 6px 12px; border: 1px solid var(--gold-3); border-radius: 6px; background: rgba(20, 14, 6, 0.85); color: #ffe08a; font: 600 0.85rem 'Cinzel', serif; cursor: pointer; }
+.walkbuild { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 30; width: min(760px, calc(100vw - 32px)); padding: 10px 12px; background: rgba(10, 8, 4, 0.88); border: 1px solid var(--gold-3); border-radius: 10px; color: var(--ink); font-family: 'Cinzel', serif; }
+.walkbuild button { cursor: pointer; }
+.wb-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wb-top b { color: var(--gold-2); font: 700 1.05rem 'Oswald', sans-serif; letter-spacing: 0.04em; }
+.wb-top button, .wb-tools button:not(.gold-button), .wb-offer button:not(.gold-button) { background: rgba(40, 30, 14, 0.9); color: #f3e2b8; border: 1px solid #6b5426; border-radius: 6px; padding: 4px 10px; font: 600 0.8rem 'Cinzel', serif; }
+.wb-top button.on { border-color: var(--gold-2); color: #ffe08a; }
+.wb-coins { color: #ffe08a; font: 600 0.95rem 'Oswald', sans-serif; }
+.wb-x { margin-left: auto; font-size: 1.1rem !important; }
+.wb-msg { margin: 6px 0; font: 0.85rem Georgia, serif; min-height: 1.1em; color: #f0e2c0; }
+.wb-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.wb-chip { flex: none; background: rgba(40, 30, 14, 0.9); color: #f3e2b8; border: 1px solid #6b5426; border-radius: 6px; padding: 5px 9px; font: 600 0.78rem 'Cinzel', serif; }
+.wb-chip.on { border-color: var(--gold-2); background: rgba(90, 66, 20, 0.95); color: #ffe08a; }
+.wb-chip small { opacity: 0.75; font-weight: 400; }
+.wb-tools, .wb-offer { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.wb-level button { width: 26px; padding: 2px 0 !important; }
+.walkbuild kbd { font-size: 0.7rem; opacity: 0.8; }
+.bv-sections, .wb-secs { display: flex; gap: 4px; flex-wrap: wrap; }
+.bv-section, .wb-sec { background: rgba(30, 22, 10, 0.9); color: #e8d7ad; border: 1px solid #5a4520; border-radius: 14px; padding: 3px 10px; font: 600 0.75rem 'Cinzel', serif; cursor: pointer; }
+.bv-section.on, .wb-sec.on { background: #6b4d14; color: #fff0c0; border-color: var(--gold-2); }
+.wb-secs { margin-bottom: 6px; }
+
+/* "Insufficient funds", in the middle of the screen */
+#no-funds { position: fixed; left: 50%; top: 38%; transform: translate(-50%, -50%) scale(0.9); z-index: 200; pointer-events: none; opacity: 0;
+  background: rgba(30, 6, 4, 0.92); border: 2px solid #d0402a; border-radius: 10px; padding: 14px 26px; text-align: center; transition: opacity 0.25s, transform 0.25s; }
+#no-funds.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+#no-funds b { display: block; font: 700 1.6rem 'Oswald', sans-serif; letter-spacing: 0.06em; color: #ff7a5a; text-transform: uppercase; }
+#no-funds span { display: block; margin-top: 4px; font: 0.95rem Georgia, serif; color: #f6dccf; }

@@ -196,7 +196,7 @@ export function renderGuild(el, game, message = '', bounty = null) {
   const rank = card?.rank ? CARD_RANKS[rankIndex(card.rank)] : null;
   const cardHtml = !card
     ? `<p class="sys-hint">To take guild requests you need a <b>Hunter's Guild Card</b>. Ask for one here, then go to the Assessment Room (the glowing crystal in the back left corner) to have your level and stats read.</p>
-       <button type="button" class="gold-button small" data-card-request ${c.coins < CARD_FEE ? 'disabled' : ''}>Ask for a Hunter Card · ${CARD_FEE} G</button>`
+       <button type="button" class="gold-button small" data-card-request>Ask for a Hunter Card · ${CARD_FEE} G</button>`
     : card.pending
       ? '<p class="sys-hint">Your card is waiting. Go to the <b>Assessment Room</b> in the back left corner and press E at the crystal to have it read.</p>'
       : `<div class="guild-card"><span class="gc-rank">${rank.id}</span><span><b>${esc(c.name)}</b><small>Rank ${rank.id} · ${rank.name} hunter · read at level ${card.level}</small></span></div>

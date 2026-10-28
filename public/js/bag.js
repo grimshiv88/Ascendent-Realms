@@ -146,7 +146,7 @@ export function renderShop(el, game, message = '', market = null) {
         <div class="sys-pic">${pic(id, 0, 'sys-emoji')}</div>
         <b>${esc(formName(it, c.form))}</b><small>${describe(it)}</small>
         <div class="sys-buy"><span class="sys-price">${price} G</span>
-        <button type="button" class="sys-button" data-buy="${id}" ${poor ? 'disabled' : ''}>${poor ? 'Not enough' : 'Buy'}</button></div></div>`;
+        <button type="button" class="sys-button" data-buy="${id}">${poor ? 'Not enough' : 'Buy'}</button></div></div>`;
     }).join('');
     return cards ? `<h3 class="sys-sub">${title}</h3><div class="sys-grid">${cards}</div>` : '';
   };
@@ -183,7 +183,7 @@ function roomHtml(game) {
   const price = game.roomPrice();
   return `<h3 class="sys-sub">Rooms</h3>
     <div class="sys-row"><span class="sys-name"><b>${room ? `Your room: ${room.minutes} min left` : 'A room for the day'}</b><small>${room ? 'Sleep here to wake with full HP and SP and no Fatigue.' : 'No land or money for a house? Rent a room for a day of the realm (one real hour). Sleep in it to wake fully rested.'}</small></span>
-      ${room ? '<button type="button" class="sys-button" data-room="sleep">Sleep in your room</button>' : `<button type="button" class="sys-button" data-room="rent" ${game.character.coins < price ? 'disabled' : ''}>Rent · ${price} G</button>`}</div>`;
+      ${room ? '<button type="button" class="sys-button" data-room="sleep">Sleep in your room</button>' : `<button type="button" class="sys-button" data-room="rent">Rent · ${price} G</button>`}</div>`;
 }
 
 // Merging: pick a piece, then a second of the same sub-category; the merge book shows what each

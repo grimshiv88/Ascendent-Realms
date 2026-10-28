@@ -108,6 +108,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('Class', className)}
           ${row('EXP', `${c.exp} / ${need}`)}
           ${row('Coins', c.coins)}
+          ${lifeRows(c).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
         </dl>
         <dl>
           ${row('LVL', c.level)}
@@ -115,7 +116,6 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('Unique', `<span class="sw-unique" title="${esc(uniqueAbility(c).text)}">${esc(c.uniqueSkill.name)}</span> <small>(${esc(TIER_NAMES[uniqueTier(c.level)])})</small>`)}
           ${row(isMonster ? 'Next evolution' : 'Next advancement', `??? <small>at Lv ${KEY_LEVELS.find((k) => k > c.level) ?? '—'}</small>`)}
           ${row('Next upgrade', `Lv ${nextUpgrade(c.level)} <small>(stronger, + a new skill)</small>`)}
-          ${lifeRows(c).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
         </dl>
       </div>
       <details class="sw-guide"><summary>Your class: what you can do and your goals</summary>${classGuide(c.cls)}</details>

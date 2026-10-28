@@ -10,6 +10,7 @@ import { mayEnterCastle, castleDay } from '../data/interiors.mjs';
 import { buildCave } from './caves.js';
 import { createCreatures, KINDS, monsterHit, GOBLIN_LINE } from './creatures.js';
 import { buildMobVillage } from './mobvillage.js';
+import { startWalkBuild } from './buildwalk.js';
 import { VILLAGES_AT_ONCE, VILLAGE_RETURNS_MS, VILLAGE_NEAR, VILLAGE_KIND, newVillage, villageName, villageCleared, villageLoot } from '../data/mobvillages.mjs';
 import { createSkillFx } from './skillfx.js';
 import { codeFor, actionFor, keyName } from '../data/controls.mjs';
@@ -184,12 +185,21 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   land.update(pos.x, pos.z, Infinity); // build the land around you before the clouds part
 
   // The ground under a point, counting the shrine platforms
-  function groundAt(x, z) {
+  const solidTops = new Map(); // "cellX,cellZ" -> heights of the foundations and floors built there
+  function groundAt(x, z, fromY = pos?.y ?? -Infinity) {
     // underground, the cave floor is exact; up top, the ground as drawn (see surfaceAt)
     let g = depth || inside ? heightAt(x, z) : surfaceAt(x, z);
     for (const s of sites) {
       if (!s.built || s.place.cave) continue;
       if (Math.hypot(x - s.place.x, z - s.place.z) < 7.4) g = Math.max(g, s.place.y + 0.45);
+    }
+    // built foundations and floors are solid: you stand on the highest one you can step up to
+    if (!depth && !inside) {
+      const tops = solidTops.get(`${Math.floor(x / CELL)},${Math.floor(z / CELL)}`);
+      if (tops) {
+        const reach = Math.max(g, fromY) + 0.8;
+        for (const t of tops) if (t <= reach && t > g) g = t;
+      }
     }
     return g;
   }
@@ -380,6 +390,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   creatures = createCreatures(scene, {
     getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1 }),
     isNight: () => night,
+    groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
     isInsideCave: insideCave,
     onHitPlayer(m) {
@@ -1290,6 +1301,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
 
+  let walkBuild = null; // building from your character (see buildwalk.js)
   let paused = false; // the Builder View covers the world, so it stops drawing meanwhile
   renderer.setAnimationLoop(() => {
     if (paused) { clock.getDelta(); return; }
@@ -1560,6 +1572,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     sun.target.position.copy(pos);
     for (const s of sites) s.built?.update?.(t);
     for (const q of mobVillages.values()) q.built.update(t);
+    walkBuild?.update();
     sky.follow(camera);
 
     renderer.render(scene, camera);
@@ -1621,6 +1634,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       structures.set(k, { group, solid, sig });
     }
     for (const [k, old] of structures) if (!seen.has(k)) { scene.remove(old.group); colliders.remove(old.solid); structures.delete(k); }
+    // the tops of foundations and floors, cell by cell, to walk on
+    solidTops.clear();
+    for (const p of list) {
+      if (!p.pieces?.length || !Number.isFinite(p.flat)) continue;
+      for (const q of p.pieces) {
+        if ((q.t !== 'foundation' && q.t !== 'floor') || (q.u && q.u > now)) continue;
+        const k = `${q.x},${q.z}`;
+        if (!solidTops.has(k)) solidTops.set(k, []);
+        solidTops.get(k).push(storeyY(p.flat, q.l));
+      }
+    }
   }
   setInterval(() => { if (lastLands.length) showStructures(lastLands); }, 15000);
 
@@ -1643,6 +1667,20 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     jump() { jumpQueued = true; },
     position: () => ({ x: pos.x, z: pos.z, heading }),
     // for testing: where you and the camera are
+    // Build from your character: a see-through piece in front of you, where the camera looks
+    startWalkBuild(host, opts) {
+      if (walkBuild) return walkBuild;
+      walkBuild = startWalkBuild(scene, host, {
+        ...opts,
+        aim(d) {
+          const dx = pos.x - camera.position.x, dz = pos.z - camera.position.z, l = Math.hypot(dx, dz) || 1;
+          return { x: pos.x + (dx / l) * d, z: pos.z + (dz / l) * d };
+        },
+        onClose() { walkBuild = null; opts.onClose?.(); },
+      });
+      return walkBuild;
+    },
+    get walkBuilding() { return !!walkBuild; },
     debugSlayVillage(id) { for (const m of creatures.list.filter((q) => q.village === id && !q.dead)) finishHit(m, creatures.hit(m, m.hp)); },
     debugUse: () => interact(),
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },

@@ -36,7 +36,7 @@ export function renderGroups(el, game, v, { message = '', busy = false } = {}) {
          <button type="button" class="link-button" data-group="leave" data-kind="guild">Leave the guild</button>${v.guild.mine ? ' <button type="button" class="link-button" data-group="disband" data-kind="guild">Disband the guild</button>' : ''}`
       : `<p class="bag-hint">You're not in a ${G.toLowerCase()}. Join one by invite, or found your own: it costs ${GUILD_FEE} G and you must be level ${GUILD_LEVEL}. The founder is the Guild Master.${G === 'Dark Guild' ? ' A Dark Guild takes only monsters; its hall stands in every Monster City.' : ''}</p>
          <div class="room-form"><label>${G} name <input type="text" data-guild-name maxlength="24" placeholder="3 to 24 letters" autocomplete="off"></label>
-         <button type="button" class="gold-button small" data-group="found" data-kind="guild" ${c.level < GUILD_LEVEL || c.coins < GUILD_FEE ? 'disabled' : ''}>Found a ${G.toLowerCase()} (${GUILD_FEE} G)</button></div>`;
+         <button type="button" class="gold-button small" data-group="found" data-kind="guild" ${c.level < GUILD_LEVEL ? 'disabled' : ''}>Found a ${G.toLowerCase()} (${GUILD_FEE} G)</button></div>`;
     const nation = v.nation
       ? `<p class="bag-hint">You are <b>Emperor of ${esc(v.nation.name)}</b>. It shows on your ID card at the city gates.</p>
          <div class="room-form"><label>Rename your nation <input type="text" data-nation-name maxlength="24" value="${esc(v.nation.name)}" autocomplete="off"></label>

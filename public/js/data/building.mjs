@@ -47,7 +47,26 @@ export const PIECES = {
   roof: { name: 'Roof', on: 'cell', price: 45, text: 'Sits on top of the walls of its storey. Add more storeys and roof them again.' },
   anvil: { name: 'Anvil and Forge', on: 'cell', price: 400, text: 'A Blacksmith\'s own anvil, forge and mould. A Blacksmith working here can forge more pieces than anywhere else. Stands on a foundation or floor.' },
   spawn: { name: 'Spawn Shrine', on: 'cell', price: 800, text: 'When you fall, you wake up here instead of back home. One per player. Stands on a foundation or floor.' },
+  // fortress and castle walls: stone, thick, and they can stand straight on levelled ground
+  stone_wall: { name: 'Fortress wall', on: 'edge', price: 55, wall: true, ground: true, text: 'Thick stone. Stands on levelled ground, a foundation, or another wall.' },
+  slit_wall: { name: 'Arrow-slit wall', on: 'edge', price: 60, wall: true, ground: true, text: 'Fortress wall with a narrow slit to shoot through.' },
+  battlement: { name: 'Battlements', on: 'edge', price: 35, wall: true, text: 'The notched top of a castle wall. Goes on top of a wall.' },
+  gate: { name: 'Great gate', on: 'edge', price: 90, wall: true, ground: true, text: 'A wide stone gateway for a fortress or castle wall.' },
+  wall_tower: { name: 'Wall turret', on: 'corner', price: 70, ground: true, text: 'A thick stone turret where walls meet. Stack them to build a tower.' },
+  // fences: light walls round a garden, a field or a camp
+  palisade: { name: 'Palisade', on: 'edge', price: 20, wall: true, ground: true, text: 'Sharpened wooden stakes. A cheap wall for a camp or a fort.' },
+  fence: { name: 'Wooden fence', on: 'edge', price: 10, wall: true, ground: true, text: 'A low fence for a garden or a field.' },
+  iron_fence: { name: 'Iron railings', on: 'edge', price: 30, wall: true, ground: true, text: 'Tall black railings.' },
 };
+// The pieces in sections, as the Builder shows them
+export const PIECE_GROUPS = [
+  ['Floors and roofs', ['foundation', 'floor', 'stairs', 'roof']],
+  ['Walls', ['wall', 'door', 'window', 'pillar']],
+  ['Fortress and castle', ['stone_wall', 'slit_wall', 'battlement', 'gate', 'wall_tower']],
+  ['Fences', ['palisade', 'fence', 'iron_fence']],
+  ['Special', ['anvil', 'spawn']],
+];
+const WALLISH = new Set(Object.keys(PIECES).filter((t) => t === 'wall' || t === 'door' || t === 'window' || PIECES[t].wall));
 export const MAX_SPAWNS = 1;
 // Builders get a better price on everything they build themselves
 export const BUILDER_SHARE = 0.6;
@@ -95,23 +114,28 @@ export function unsupported(pieces, ground) {
   const edgeKeys = (x, z, l) => [`en:${x},${z},${l}`, `en:${x},${z + 1},${l}`, `ew:${x},${z},${l}`, `ew:${x + 1},${z},${l}`];
   const cornerKeys = (x, z, l) => [`c:${x},${z},${l}`, `c:${x + 1},${z},${l}`, `c:${x},${z + 1},${l}`, `c:${x + 1},${z + 1},${l}`];
   const near = (x, z) => [[x + 1, z], [x - 1, z], [x, z + 1], [x, z - 1]];
+  const onGround = (x, z) => { const c = pieceCell({ x, z }); return ground(c.ix, c.iz); };
   function standing(p) {
     const { x, z, l } = p;
     switch (p.t) {
       case 'foundation': { const c = pieceCell(p); return ground(c.ix, c.iz); }
       case 'floor':
         return edgeKeys(x, z, l - 1).some(has) || cornerKeys(x, z, l - 1).some(has) || near(x, z).some(([a, b]) => has(floorAt(a, b, l)));
-      case 'wall': case 'door': case 'window': {
-        const other = p.e === 'n' ? [x, z - 1] : [x - 1, z];
-        return has(floorAt(x, z, l)) || has(floorAt(other[0], other[1], l)) || has(`e${p.e}:${x},${z},${l - 1}`);
-      }
-      case 'pillar':
-        return [[x, z], [x - 1, z], [x, z - 1], [x - 1, z - 1]].some(([a, b]) => has(floorAt(a, b, l))) || has(`c:${x},${z},${l - 1}`);
+      case 'pillar': case 'wall_tower':
+        return [[x, z], [x - 1, z], [x, z - 1], [x - 1, z - 1]].some(([a, b]) => has(floorAt(a, b, l)) || (l === 0 && PIECES[p.t].ground && onGround(a, b))) || has(`c:${x},${z},${l - 1}`);
       case 'stairs': return has(floorAt(x, z, l)) || has(`s:${x},${z},${l - 1}`);
       case 'spawn': case 'anvil': return has(floorAt(x, z, l));
       case 'roof':
         return edgeKeys(x, z, l).some(has) || cornerKeys(x, z, l).some(has) || near(x, z).some(([a, b]) => has(`r:${a},${b},${l}`));
-      default: return false;
+      default: {
+        if (!WALLISH.has(p.t)) return false;
+        const other = p.e === 'n' ? [x, z - 1] : [x - 1, z];
+        // battlements only crown a wall; the rest stand on a floor, a wall below, or (fortress walls
+        // and fences) straight on levelled ground
+        if (p.t === 'battlement') return has(`e${p.e}:${x},${z},${l - 1}`);
+        return has(floorAt(x, z, l)) || has(floorAt(other[0], other[1], l)) || has(`e${p.e}:${x},${z},${l - 1}`)
+          || (l === 0 && !!PIECES[p.t].ground && (onGround(x, z) || onGround(other[0], other[1])));
+      }
     }
   }
   // keep going until nothing new stands
@@ -173,6 +197,25 @@ function castle() {
   for (const p of out) seen.set(pieceKey(p), p);
   return [...seen.values()];
 }
+// A straight run of wall `n` cells long along the north edge: `rows` is the piece for each storey
+// from the ground up; `turrets` puts a Wall turret at each end, as tall as the wall
+function wallRun(n, rows, { turrets = false, middle = null } = {}) {
+  const out = [];
+  rows.forEach((t, l) => { for (let x = 0; x < n; x++) out.push({ t: l === 0 && middle && x === Math.floor(n / 2) ? middle : t, x, z: 0, l, e: 'n' }); });
+  if (turrets) for (let l = 0; l < rows.length; l++) for (const x of [0, n]) out.push({ t: 'wall_tower', x, z: 0, l });
+  return out;
+}
+// A square of wall `n` cells across with a gate in the middle of the south side
+function ring(n, t, gate) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push({ t, x: i, z: 0, l: 0, e: 'n' });
+    out.push({ t: i === Math.floor(n / 2) ? gate : t, x: i, z: n, l: 0, e: 'n' });
+    out.push({ t, x: 0, z: i, l: 0, e: 'w' });
+    out.push({ t, x: n, z: i, l: 0, e: 'w' });
+  }
+  return out;
+}
 export const BUILDINGS = {
   hut: { name: 'Hut', size: [2, 2], pieces: () => box(2, 2, 1, { windows: false }), text: 'One small room. A start.' },
   cottage: { name: 'Cottage', size: [3, 3], pieces: () => box(3, 3, 1), text: 'A snug home with windows.' },
@@ -184,7 +227,26 @@ export const BUILDINGS = {
   manor: { name: 'Manor', size: [5, 5], pieces: () => box(5, 5, 3, { doors: [[2, 5]] }), text: 'Three grand storeys.' },
   shrine: { name: 'Spawn Shrine', size: [1, 1], pieces: () => [{ t: 'foundation', x: 0, z: 0, l: 0 }, { t: 'spawn', x: 0, z: 0, l: 0 }], text: 'Wake up here when you fall, instead of back home. Only one.' },
   castle: { name: 'Castle', size: [10, 10], ruler: true, pieces: castle, text: 'Walls, towers and a keep. Only for rulers of a country.' },
+  // walls and defences
+  fence_run: { name: 'Fence', size: [5, 1], pieces: () => wallRun(5, ['fence']), text: 'A 20 m wooden fence.' },
+  railings: { name: 'Iron railings', size: [5, 1], pieces: () => wallRun(5, ['iron_fence']), text: '20 m of tall black railings.' },
+  palisade_run: { name: 'Palisade', size: [5, 1], pieces: () => wallRun(5, ['palisade']), text: '20 m of sharpened stakes.' },
+  fortress_wall: { name: 'Fortress wall', size: [5, 1], pieces: () => wallRun(5, ['stone_wall', 'stone_wall', 'battlement'], { turrets: true }), text: '20 m of stone wall, two storeys high, with battlements and a turret at each end.' },
+  castle_wall: { name: 'Castle wall', size: [5, 1], pieces: () => wallRun(5, ['stone_wall', 'slit_wall', 'stone_wall', 'battlement'], { turrets: true }), text: '20 m of great wall, three storeys high, with arrow slits, battlements and turrets.' },
+  gatehouse: { name: 'Gatehouse', size: [3, 1], pieces: () => wallRun(3, ['stone_wall', 'slit_wall', 'battlement'], { turrets: true, middle: 'gate' }), text: 'A great gate in a stone wall, between two turrets.' },
+  turret: { name: 'Turret', size: [1, 1], pieces: () => [0, 1, 2, 3].map((l) => ({ t: 'wall_tower', x: 0, z: 0, l })), text: 'A lone stone turret, four storeys tall. Put one where two walls meet.' },
+  fort: { name: 'Wooden fort', size: [6, 6], pieces: () => [...ring(6, 'palisade', 'gate'), ...box(2, 2, 3).map((p) => ({ ...p, x: p.x + 1, z: p.z + 1 }))], text: 'A ring of stakes with a gate, and a watchtower inside.' },
+  stone_keep: { name: 'Stone fort', size: [8, 8], pieces: () => [...ring(8, 'stone_wall', 'gate'), ...ring(8, 'stone_wall', 'stone_wall').map((p) => ({ ...p, l: 1 })), ...ring(8, 'battlement', 'battlement').map((p) => ({ ...p, l: 2 })),
+    ...[[0, 0], [8, 0], [0, 8], [8, 8]].flatMap(([x, z]) => [0, 1, 2, 3].map((l) => ({ t: 'wall_tower', x, z, l })))], text: 'Two-storey stone walls with battlements, a gate and four turrets. Build your own keep inside.' },
 };
+// The ready buildings in sections, as the Builder shows them
+export const BUILDING_GROUPS = [
+  ['Homes', ['hut', 'cottage', 'house', 'manor']],
+  ['Work', ['shop', 'smithy', 'barn']],
+  ['Walls and fences', ['fence_run', 'railings', 'palisade_run', 'fortress_wall', 'castle_wall', 'gatehouse']],
+  ['Towers and forts', ['tower', 'turret', 'fort', 'stone_keep', 'castle']],
+  ['Special', ['shrine']],
+];
 
 // A ready-made building's pieces placed with its north-west corner on cell (x, z), turned `r` quarter turns
 export function placeBuilding(type, x, z, r = 0) {

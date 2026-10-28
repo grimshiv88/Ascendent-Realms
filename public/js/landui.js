@@ -23,7 +23,7 @@ export function renderLand(el, plot, game, { choice = 'house', message = '', bus
       <div class="land-basket">${basket.map((p) => `<button type="button" class="land-chip" data-land-unpick="${p.ix},${p.iz}" title="Take it out">${p.ix}, ${p.iz} <small>${p.price} G</small> ×</button>`).join('')}</div>
       <p class="sys-hint">Tap more squares on the grid, or on the Map (M), to add them; tap one again to take it out. Blue river squares can be bought beside your land, or beside land you choose with them. You can buy up to ${REACH} m from where you stand.</p>
       <h3 class="sys-sub">What will this land be for?</h3>${purposeCards(null)}
-      <div class="land-actions"><button type="button" class="sys-button" data-land-buy ${busy || c.coins < total ? 'disabled' : ''}>${c.coins < total ? 'Not enough coins' : `Buy ${n === 1 ? 'it' : `all ${n}`} as ${PURPOSES[choice].name} for ${total} G`}</button>
+      <div class="land-actions"><button type="button" class="sys-button" data-land-buy ${busy ? 'disabled' : ''}>${c.coins < total ? 'Not enough coins' : `Buy ${n === 1 ? 'it' : `all ${n}`} as ${PURPOSES[choice].name} for ${total} G`}</button>
         <button type="button" class="sys-button ghost" data-land-clear ${busy ? 'disabled' : ''}>Clear</button></div>`;
   } else if (!owned && plot.why) {
     body = `<p class="sys-msg bad">${esc(plot.why)}</p><p class="sys-hint">Green squares on the grid can be bought. Grey ones can't; red ones belong to someone else; gold ones are yours.</p>`;
@@ -34,7 +34,7 @@ export function renderLand(el, plot, game, { choice = 'house', message = '', bus
   } else {
     const cost = prepareCost(plot.ix, plot.iz, c.cls), clear = clearCost(c.cls);
     const level = Number.isFinite(owned.flat), cleared = level || owned.cleared;
-    const btn = (how, price, label) => `<button type="button" class="sys-button${how === 'clear' ? ' ghost' : ''}" data-land-prepare="${how}" ${busy || c.coins < price ? 'disabled' : ''}>${c.coins < price ? `Needs ${price} G` : `${label} for ${price} G`}</button>`;
+    const btn = (how, price, label) => `<button type="button" class="sys-button${how === 'clear' ? ' ghost' : ''}" data-land-prepare="${how}" ${busy ? 'disabled' : ''}>${c.coins < price ? `Needs ${price} G` : `${label} for ${price} G`}</button>`;
     body = `<p class="sys-top">Your land <span>·</span> <b>${PURPOSES[owned.purpose]?.name}</b></p>
       <h3 class="sys-sub">Clear and flatten</h3>
       ${level ? '<p class="sys-hint">✓ Cleared and flattened, ready to build on. Its edges slope gently down (or up) to the land around it.</p>'
@@ -42,7 +42,7 @@ export function renderLand(el, plot, game, { choice = 'house', message = '', bus
            <b>Flatten</b> also makes the whole plot one level, with a gentle slope at its edges (beside land you've already flattened, it takes the same level). You need flat land to build.${c.cls === 'builder' ? ' Builders pay half.' : ''}</p>
            <div class="land-actions">${cleared ? '' : btn('clear', clear, 'Clear')}${btn('flatten', cost, 'Flatten')}</div>`}
       <h3 class="sys-sub">Change what it is for <small>${PURPOSE_FEE} G</small></h3>${purposeCards(owned.purpose)}
-      <div class="land-actions"><button type="button" class="sys-button ghost" data-land-change ${busy || choice === owned.purpose || c.coins < PURPOSE_FEE ? 'disabled' : ''}>Change to ${PURPOSES[choice].name}</button></div>`;
+      <div class="land-actions"><button type="button" class="sys-button ghost" data-land-change ${busy || choice === owned.purpose ? 'disabled' : ''}>Change to ${PURPOSES[choice].name}</button></div>`;
   }
   if (mine && basket.length) body += `<p class="sys-hint">${basket.length} plot${basket.length === 1 ? '' : 's'} chosen to buy (${total} G). <button type="button" class="sys-button ghost" data-land-open-basket>Show them</button></p>`;
   el.innerHTML = `
@@ -66,7 +66,7 @@ export function renderCave(el, cave, game, { owner = null, mine = false, message
   else if (owner) action = `<p class="sys-top">Owned by <b>${esc(owner)}</b></p>`;
   else if (!beaten) action = '<p class="sys-hint">Beat the boss in its deepest chamber, and this cave can be yours.</p>';
   else action = `<p class="sys-top">You beat its boss. For sale: <b>${price} G</b> <span>·</span> You have <b>${c.coins} G</b></p>
-    <div class="land-actions"><button type="button" class="sys-button" data-cave-buy="${cave.id}" ${busy || c.coins < price ? 'disabled' : ''}>${c.coins < price ? 'Not enough coins' : `Buy this cave for ${price} G`}</button></div>`;
+    <div class="land-actions"><button type="button" class="sys-button" data-cave-buy="${cave.id}" ${busy ? 'disabled' : ''}>${c.coins < price ? 'Not enough coins' : `Buy this cave for ${price} G`}</button></div>`;
   el.innerHTML = `
     <div class="system-window" role="dialog" aria-label="Cave">
       <button type="button" class="sys-close" data-close aria-label="Close">×</button>

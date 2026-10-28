@@ -40,13 +40,18 @@ function drawPiece(g, p, y0, look, stone) {
   const X = p.x * CELL, Z = p.z * CELL, H = STOREY, T = stone ? 0.6 : 0.3;
   const m = (k) => look || (stone && STONE[k]) || MATS[k];
   // a wall-like piece along its edge; `parts` are [from, to, bottom, top] in metres along and up the edge
-  const along = (parts, k = 'plaster') => {
-    for (const [a, b, lo, hi] of parts) {
+  const along = (parts, k = 'plaster', thick = T) => {
+    for (const [a, b, lo0, hi] of parts) {
+      // pieces that stand straight on the ground reach down into it (there is no foundation slab)
+      const lo = lo0 === 0 && sunk ? -SLAB - 0.4 : lo0;
       const mid = (a + b) / 2, len = b - a;
-      if (p.e === 'n') block(g, m(k), X + mid, y0 + (lo + hi) / 2, Z, len, hi - lo, T);
-      else block(g, m(k), X, y0 + (lo + hi) / 2, Z + mid, T, hi - lo, len);
+      const mm = k === 'iron' ? look || MATS.iron : k === 'keep' ? look || MATS.keep : m(k);
+      if (p.e === 'n') block(g, mm, X + mid, y0 + (lo + hi) / 2, Z, len, hi - lo, k === 'iron' ? 0.06 : thick);
+      else block(g, mm, X, y0 + (lo + hi) / 2, Z + mid, k === 'iron' ? 0.06 : thick, hi - lo, len);
     }
   };
+  const fort = (parts) => along(parts, 'keep', 0.9);
+  const sunk = p.l === 0 && !!PIECES[p.t].ground;
   switch (p.t) {
     case 'foundation': block(g, m('stone'), X + CELL / 2, y0 - (SLAB + 0.8) / 2, Z + CELL / 2, CELL, SLAB + 0.8, CELL); break;
     case 'floor': block(g, m('floor'), X + CELL / 2, y0 - 0.1, Z + CELL / 2, CELL, 0.2, CELL); break;
@@ -63,6 +68,38 @@ function drawPiece(g, p, y0, look, stone) {
       if (!look) along([[1.3, CELL - 1.3, 1, 2.2]], 'glass');
       break;
     case 'pillar': block(g, m('timber'), X, y0 + H / 2, Z, 0.45, H, 0.45); break;
+    // fortress and castle pieces, in thick grey stone
+    case 'stone_wall': fort([[0, CELL, 0, H]]); break;
+    case 'slit_wall': fort([[0, 1.8, 0, H], [2.2, CELL, 0, H], [1.8, 2.2, 0, 1.1], [1.8, 2.2, 2.5, H]]); break;
+    case 'battlement': fort([[0, CELL, 0, 0.9], [0, 0.8, 0.9, 1.7], [1.6, 2.4, 0.9, 1.7], [3.2, CELL, 0.9, 1.7]]); break;
+    case 'gate':
+      fort([[0, 0.5, 0, H], [CELL - 0.5, CELL, 0, H], [0.5, CELL - 0.5, 3, H]]);
+      // an iron portcullis, raised
+      if (!look) for (let i = 1; i < 7; i++) along([[0.5 + i * 0.43 - 0.03, 0.5 + i * 0.43 + 0.03, 2.4, 3]], 'iron');
+      break;
+    case 'wall_tower': {
+      const c = new THREE.Mesh(turretGeo, look || MATS.keep);
+      c.position.set(X, y0 + H / 2 - (sunk ? (SLAB + 0.4) / 2 : 0), Z);
+      if (sunk) c.scale.y = (H + SLAB + 0.4) / H;
+      c.castShadow = true; c.receiveShadow = true;
+      g.add(c);
+      break;
+    }
+    // fences
+    case 'palisade':
+      for (let i = 0; i < 10; i++) {
+        const a = i * 0.4 + 0.2;
+        along([[a - 0.17, a + 0.17, 0, 2.6 + (i % 2) * 0.25]], 'timber');
+      }
+      break;
+    case 'fence':
+      along([[0, 0.15, 0, 1.2], [CELL / 2 - 0.08, CELL / 2 + 0.08, 0, 1.2], [CELL - 0.15, CELL, 0, 1.2]], 'timber');
+      along([[0, CELL, 0.45, 0.6], [0, CELL, 0.95, 1.1]], 'timber');
+      break;
+    case 'iron_fence':
+      for (let i = 0; i <= 12; i++) along([[i * (CELL / 12) - 0.03, i * (CELL / 12) + 0.03, 0, 1.9]], 'iron');
+      along([[0, CELL, 1.7, 1.8], [0, CELL, 0.15, 0.25]], 'iron');
+      break;
     case 'stairs': {
       // ten steps rising across the cell; r = 0 climbs toward the north
       const n = 10;
@@ -110,6 +147,7 @@ function drawPiece(g, p, y0, look, stone) {
   }
 }
 const gem = new THREE.OctahedronGeometry(1, 0);
+const turretGeo = new THREE.CylinderGeometry(1.1, 1.25, STOREY, 10);
 
 // The floor height of storey `l` on a plot whose levelled ground is at `flat`
 export const storeyY = (flat, l) => flat + SLAB + l * STOREY;
@@ -135,9 +173,10 @@ export function pieceColliders(pieces, flatOf) {
     if (p.l !== 0) continue;
     const y = storeyY(flatOf(p), 0);
     if (PIECES[p.t].on === 'edge') {
-      const spots = p.t === 'door' ? [0.6, CELL - 0.6] : [0.6, CELL / 2, CELL - 0.6];
+      const spots = p.t === 'door' ? [0.6, CELL - 0.6] : p.t === 'gate' ? [0.25, CELL - 0.25] : [0.6, CELL / 2, CELL - 0.6];
       for (const s of spots) out.push({ x: p.e === 'n' ? p.x * CELL + s : p.x * CELL, z: p.e === 'n' ? p.z * CELL : p.z * CELL + s, r: 0.75, kind: 'wall', built: true, height: STOREY, y });
     } else if (p.t === 'pillar') out.push({ x: p.x * CELL, z: p.z * CELL, r: 0.4, kind: 'wall', built: true, height: STOREY, y });
+    else if (p.t === 'wall_tower') out.push({ x: p.x * CELL, z: p.z * CELL, r: 1.2, kind: 'wall', built: true, height: STOREY, y });
   }
   return out;
 }

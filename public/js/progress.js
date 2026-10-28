@@ -98,6 +98,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
   if (c.sp == null || c.sp > stats().sp) c.sp = stats().sp;
 
   let saveTimer = null;
+  // not enough coins: the game says so on screen
+  const poor = (need) => { onEvent?.('no-funds', { need, have: c.coins }); return 'coins'; };
   function changed(what) {
     onChange?.(what);
     // saved at most every 1.5 s, so a steady trickle of changes (SP coming back) still gets saved
@@ -194,7 +196,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       const it = ITEMS[id];
       if (market ? !marketStock(market, c.level).includes(id) : c.level < unlock) return 'locked';
       const price = market ? marketPrice(market, id) : it.price;
-      if (c.coins < price) return 'coins';
+      if (c.coins < price) return poor(price);
       if (!addItem(id, 1)) return 'full';
       c.coins -= price;
       changed('coins');
@@ -245,7 +247,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     rentRoom() {
       if (this.room()) return 'have';
       const price = this.roomPrice();
-      if (c.coins < price) return 'coins';
+      if (c.coins < price) return poor(price);
       c.coins -= price;
       c.room = { until: Date.now() + DAY_MS };
       changed('coins');
@@ -325,7 +327,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (!out) return 'kind';
       if (out.id === a.id && out.plus === (a.plus || 0)) return 'max';
       const cost = this.mergeCost(aKey, bKey);
-      if (c.coins < cost.coins) return 'coins';
+      if (c.coins < cost.coins) return poor(cost.coins);
       if (!cost.needs.every(([id, n]) => count(id) >= n)) return 'parts';
       c.coins -= cost.coins;
       for (const [id, n] of cost.needs) removeItem(id, n);
@@ -352,7 +354,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (c.level < need) return 'level';
       const cost = forgeCost(it, ore);
       if (!cost) return 'pick';
-      if (c.coins < cost.coins) return 'coins';
+      if (c.coins < cost.coins) return poor(cost.coins);
       if (!cost.needs.every(([n, k]) => count(n) >= k)) return 'parts';
       if (used() >= BAG_SLOTS) return 'full';
       c.coins -= cost.coins;
@@ -411,7 +413,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (!from || !to || from === to) return 'pick';
       if (from.region !== to.region) return 'sea';
       const fee = portalFee(from, to);
-      if (c.coins < fee) return 'coins';
+      if (c.coins < fee) return poor(fee);
       c.coins -= fee;
       changed('coins');
       return 'ok';
@@ -422,7 +424,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (!BREWS.includes(id)) return 'pick';
       if (pm.queue.length >= POTION_MAKER.queue) return 'busy';
       const cost = brewCost(id), herbs = brewHerbs(id);
-      if (c.coins < cost) return 'coins';
+      if (c.coins < cost) return poor(cost);
       if (count('herb') < herbs) return 'herbs';
       c.coins -= cost;
       removeItem('herb', herbs);
@@ -658,7 +660,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     requestCard() {
       if (c.level < GUILD_HALL_LEVEL) return 'level';
       if (c.guildCard) return c.guildCard.pending ? 'pending' : 'have';
-      if (c.coins < CARD_FEE) return 'coins';
+      if (c.coins < CARD_FEE) return poor(CARD_FEE);
       c.coins -= CARD_FEE;
       c.guildCard = { pending: true, issued: Date.now() };
       changed('coins');

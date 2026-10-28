@@ -40,7 +40,7 @@ function act(me, body = {}) {
     case 'found': {
       const c = characters.load(me);
       if (!c) return { error: 'No character yet.' };
-      if (c.coins < G.GUILD_FEE) return { error: `Founding a guild costs ${G.GUILD_FEE} coins.` };
+      if (c.coins < G.GUILD_FEE) return { error: `You need ${G.GUILD_FEE} coins to found a guild.` };
       r = G.found(s, name, body.name, c.level || 1, Date.now(), { dark: RACES[c.race]?.side === 'monster' });
       if (r.ok) { c.coins -= G.GUILD_FEE; characters.store(me, c); coins = c.coins; }
       break;
