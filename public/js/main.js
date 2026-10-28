@@ -22,6 +22,7 @@ import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
 import { fillIcons } from './characters/icons.js';
+import { SPELLS } from './data/spells.mjs';
 import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
 import { SKILLS } from './data/skills.mjs';
 import { createSocial } from './social.js';
@@ -149,6 +150,12 @@ function startGame(character) {
       if (type === 'level') { world?.say(`Level ${data}!`, 'exp'); showArea(`Level ${data}! New Stat Points and a purse of coins.`); }
       if (type === 'bag-full') world?.say('Your bag is full', 'hurt');
       if (type === 'evolved') { world?.say('Your weapon evolved!', 'exp'); showArea(`Your weapon evolved into the ${data.name}!`); }
+      if (type === 'spell') {
+        const sp = SPELLS[data.id];
+        const on = game.attachSpell(data.id) === 'ok';
+        showArea(`You learned the spell ${sp.name}!${on ? ' It is on your staff.' : ' Attach it to a staff in Skills (K).'}`);
+        world?.say(`New spell: ${sp.name}`, 'exp');
+      }
       if (type === 'upgrade') {
         const sk = data.skill ? ` You learned ${SKILLS[data.skill].icon} ${SKILLS[data.skill].name}!` : '';
         showArea(data.evolution ? `Level ${data.level}!${sk}` : `Level ${data.level} upgrade! Every stat +2.${sk}`);
@@ -544,6 +551,8 @@ function startGame(character) {
       btn.textContent = on ? 'Hide' : 'Show';
       return;
     }
+    if ((v = t('data-spell')) != null) { const r = game.attachSpell(v); ui.skillMsg = { ok: `${SPELLS[v].name} attached to your staff.`, full: 'Your staff is full: detach a spell first.', staff: 'Hold a staff first.' }[r] || ''; drawPanel(); return; }
+    if ((v = t('data-unspell')) != null) { game.detachSpell(v); ui.skillMsg = `${SPELLS[v].name} detached.`; drawPanel(); return; }
     if ((v = t('data-ready')) != null) { game.readySkill(v); ui.skillMsg = ''; drawPanel(); return; }
     if ((v = t('data-store')) != null) { game.storeSkill(v); ui.skillMsg = `${SKILLS[v].name} stored.`; drawPanel(); return; }
     if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }

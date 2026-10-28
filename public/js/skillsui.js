@@ -1,6 +1,8 @@
 // The Skills window (K): put your skills on keys, keep spare ones in storage.
 // Also the skill bar at the bottom of the screen, which works by key on desktop and by tap on touch.
 import { SKILLS, SKILL_BAR, keyLabel } from './data/skills.mjs';
+import { SPELLS, KIND_TEXT, spellEvery } from './data/spells.mjs';
+import { keyName, codeFor } from './data/controls.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const what = (sk) => `${esc(sk.text)} <span class="sk-cost">${sk.sp} SP · ${sk.cd}s rest</span>`;
@@ -28,7 +30,27 @@ export function renderSkills(el, game, { binding = null, message = '' } = {}) {
       ${bar}
       <h3 class="bag-sub">Stored</h3>
       ${kept}
+      ${spellsHtml(game)}
     </div>`;
+}
+
+// Spells: the ones you know, and which are attached to the staff in your hand
+function spellsHtml(game) {
+  const c = game.character;
+  const st = game.staff();
+  const chosen = game.chosenSpell();
+  const head = `<h3 class="bag-sub">Spells ${st ? `<small>(${st.spells.length} of ${st.slots} on your staff)</small>` : ''}</h3>
+    <p class="bag-hint">You learn a spell in your elements every ${spellEvery(c.cls)} levels, given at random. Attach spells to a staff (3, or 5 on a Legendary or Mythic staff), then the attack key casts the chosen one and ${esc(keyName(codeFor('spell')))} changes spell.${st ? '' : ' <b>Hold a staff to attach spells.</b>'}</p>`;
+  if (!c.spells.length) return `${head}<p class="bag-hint">No spells yet.</p>`;
+  return head + c.spells.map((id) => {
+    const sp = SPELLS[id];
+    const on = st?.spells.includes(id);
+    const btn = !st ? '' : on
+      ? `<button type="button" class="link-button" data-unspell="${id}">Detach</button>`
+      : `<button type="button" class="gold-button small" data-spell="${id}" ${st.spells.length >= st.slots ? 'disabled title="Your staff is full: detach one first"' : ''}>Attach</button>`;
+    return `<div class="sk-row"><span class="sk-icon">✨</span><span class="sk-name"><b>${esc(sp.name)}${chosen?.id === id ? ' · chosen' : ''}</b>
+      <small>${esc(sp.element)} · ${esc(KIND_TEXT[sp.kind])} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span></small></span>${btn}</div>`;
+  }).join('');
 }
 
 // The bar of ready skills. `cooling(id)` is the share of the rest still to go (0 when ready).

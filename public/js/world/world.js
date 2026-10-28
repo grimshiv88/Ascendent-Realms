@@ -720,22 +720,65 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     return 'ok';
   }
 
-  // A mage with a staff casts a spell in one of their elements (taking turns) instead of swinging
+  // With a staff in hand the attack key casts a spell instead of swinging: the spell chosen on the
+  // staff (see data/spells.mjs), or, with none attached or while it rests, a plain bolt of your element
   let spellTurn = 0;
   const SPELL_REACH = 14;
+  const spellReady = {}; // spell id -> clock time it can be cast again
   function castSpell() {
-    const els = character.elements?.length ? character.elements : [RACES[character.race].element];
-    const element = els[spellTurn++ % els.length];
+    const c = game.character;
+    const els = c.elements?.length ? c.elements : [RACES[c.race].element];
     const from = new THREE.Vector3(pos.x + Math.sin(heading) * 0.5, pos.y + bodyH * 0.7, pos.z + Math.cos(heading) * 0.5);
+    const ahead = (d) => new THREE.Vector3(pos.x + Math.sin(heading) * d, pos.y + bodyH * 0.6, pos.z + Math.cos(heading) * d);
+    const at = (m) => new THREE.Vector3(m.x, m.y + m.height * 0.6, m.z);
+    const sp = game.chosenSpell();
+    const cost = sp ? Math.max(1, Math.round(sp.sp * (c.cls === 'mage' ? 0.9 : 1))) : 0;
+    if (sp && clock.elapsedTime >= (spellReady[sp.id] || 0) && c.sp >= cost) {
+      let foes = [], to;
+      if (sp.kind === 'bolt' || sp.kind === 'burst') {
+        const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
+        if (m) {
+          foes = [m];
+          if (sp.kind === 'burst') foes.push(...creatures.list.filter((o) => o !== m && !o.dead && Math.hypot(o.x - m.x, o.z - m.z) - o.radius < 3.5));
+          to = at(m);
+        } else to = ahead(SPELL_REACH);
+      } else if (sp.kind === 'nova') {
+        foes = creatures.targets(pos.x, pos.z, heading, 6, Math.PI);
+        to = null;
+      } else {
+        foes = creatures.targets(pos.x, pos.z, heading, SPELL_REACH, 0.25).slice(0, 3);
+        to = foes.length ? at(foes[foes.length - 1]) : ahead(SPELL_REACH);
+      }
+      for (const m of foes) {
+        const hp = m.hp;
+        damageMonster(m, sp.power, true);
+        if (sp.effect && !m.dead && m.hp > 0 && Math.random() < sp.effect.chance) applyEffect(m, sp.effect.id, Math.max(1, hp - m.hp), 1);
+      }
+      if (to) skillFx.spell(sp.element, from, to);
+      else for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; skillFx.spell(sp.element, from, new THREE.Vector3(pos.x + Math.sin(a) * 6, pos.y + 0.4, pos.z + Math.cos(a) * 6)); }
+      c.sp = Math.max(0, c.sp - cost);
+      game.touch('sp');
+      spellReady[sp.id] = clock.elapsedTime + sp.cd;
+      skillPose = { kind: 'cast', t: 0, dur: 0.6 };
+      say(sp.name, 'exp');
+      return;
+    }
+    if (sp && c.sp < cost && !castSpell.warned) { castSpell.warned = true; say(`Not enough SP for ${sp.name}`, 'hurt'); setTimeout(() => { castSpell.warned = false; }, 3000); }
+    const element = els[spellTurn++ % els.length];
     const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
     let to;
-    if (m) { to = new THREE.Vector3(m.x, m.y + m.height * 0.6, m.z); damageMonster(m, 1, true); }
-    else to = new THREE.Vector3(pos.x + Math.sin(heading) * SPELL_REACH, pos.y + bodyH * 0.6, pos.z + Math.cos(heading) * SPELL_REACH);
+    if (m) { to = at(m); damageMonster(m, 1, true); }
+    else to = ahead(SPELL_REACH);
     skillFx.spell(element, from, to);
+  }
+  // the spell the Spell key (X) moves on to
+  function nextSpell() {
+    const sp = game?.nextSpell();
+    say(sp ? `Spell: ${sp.name}` : game?.staff() ? 'No spells on this staff yet: attach some in Skills (K)' : 'Hold a staff to cast spells', sp ? 'exp' : 'note');
   }
   function resolveSwing() {
     const w = game?.weapon();
-    if (w?.magic && character.cls === 'mage') { castSpell(); return; }
+    if (w?.type === 'staff' || (w?.magic && character.cls === 'mage')) { castSpell(); return; }
     const r = weaponReach(w);
     const reach = bodyR + r.reach * Math.max(0.8, bodyH / 1.8);
     // monsters first: a long or wide weapon can catch more than one
@@ -798,6 +841,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (act === 'torch') placeTorch();
     if (act === 'tent') pitchTent();
     if (act === 'interact') interact();
+    if (act === 'spell' && !e.repeat) nextSpell();
     onKey?.(e);
   };
   const up = (e) => keys.delete(e.code);
@@ -1296,6 +1340,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setCourts(list) { courts = list || []; for (const q of castles) { if (q.court && q.built) continue; seatCourt(q); } },
     attack,
     useSkill,
+    nextSpell,
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
     holdTorch() { setHolding(!holding); },

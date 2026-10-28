@@ -3,6 +3,7 @@ const db = require('./db');
 const { newCharacter } = require('../public/js/data/game-data.mjs');
 const { SKILLS } = require('../public/js/data/skills.mjs');
 const { ITEMS, EFFECTS } = require('../public/js/data/items.mjs');
+const { SPELLS } = require('../public/js/data/spells.mjs');
 
 function load(accountId) {
   const row = db.prepare('SELECT data FROM characters WHERE account_id = ?').get(accountId);
@@ -69,6 +70,11 @@ function saveProgress(accountId, p) {
       if (!EFFECTS[s.coat?.id] || int(s.coat?.hits, 1, 100) === null) return { error: 'Bad inventory item.' };
       item.coat = { id: s.coat.id, hits: s.coat.hits };
     }
+    // spells attached to a staff
+    if (s.spells !== undefined) {
+      if (!Array.isArray(s.spells) || s.spells.length > 5 || !s.spells.every((id) => typeof id === 'string' && SPELLS[id])) return { error: 'Bad inventory item.' };
+      item.spells = [...new Set(s.spells)];
+    }
     inventory.push(item);
   }
   const equipped = {};
@@ -129,11 +135,14 @@ function saveProgress(accountId, p) {
   const skillBar = (Array.isArray(p.skillBar) ? p.skillBar.slice(0, 6) : [])
     .filter((b) => skills.includes(b?.id) && (b.key === null || (typeof b.key === 'string' && /^[A-Za-z0-9]{1,20}$/.test(b.key))))
     .map((b) => ({ id: b.id, key: b.key }));
+  // Spells you know, and which one the attack key casts
+  const spells = [...new Set((Array.isArray(p.spells) ? p.spells.slice(0, 100) : []).filter((id) => typeof id === 'string' && SPELLS[id]))];
+  const spellPick = int(p.spellPick ?? 0, 0, 10) ?? 0;
   const skillPicks = int(p.skillPicks ?? 0, 0, 1000) ?? 0;
   const t = p.tent;
   const tent = t && Number.isFinite(t.x) && Number.isFinite(t.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6
     ? { x: t.x, z: t.z, heading: Number.isFinite(t.heading) ? t.heading : 0 } : null;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, torches, skills, skillBar, skillPicks, tent, potionMaker, trained, caves });
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };

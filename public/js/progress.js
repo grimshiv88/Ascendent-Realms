@@ -1,13 +1,14 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
-import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
-import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
+import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
+import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, rankOf, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
 import { gameTime, DAY_MS } from './data/clock.mjs';
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
 import { portalById, portalFee } from './data/portals.mjs';
 import { actionFor, FIXED_KEYS } from './data/controls.mjs';
 import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, randomSkill } from './data/skills.mjs';
+import { SPELLS, spellEvery, randomSpell, staffSlots } from './data/spells.mjs';
 
 const BAG_SLOTS = 30;
 const uid = () => `g${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
@@ -22,6 +23,15 @@ function giveSkill(c) {
     const key = DEFAULT_KEYS.find((k) => !c.skillBar.some((b) => b.key === k)) || null;
     c.skillBar.push({ id, key });
   }
+  return id;
+}
+
+// Spells due by now: a Mage starts with one and learns one every 10 levels, anyone else one every 20
+const spellsDue = (c) => (c.cls === 'mage' ? 1 : 0) + Math.floor(c.level / spellEvery(c.cls));
+function giveSpell(c) {
+  if (!c.elements?.length) c.elements = [RACES[c.race]?.element].filter(Boolean);
+  const id = randomSpell(c);
+  if (id) c.spells.push(id);
   return id;
 }
 
@@ -41,6 +51,10 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.skillPicks ??= Math.max(0, Math.floor(c.level / UPGRADE_EVERY) - c.skills.length);
   // skills are given, not chosen: any still waiting are handed out now
   while (c.skillPicks > 0 && giveSkill(c));
+  // Spells (cast with a staff): catch up on any due
+  c.spells = (c.spells || []).filter((id) => SPELLS[id]);
+  c.spellPick ??= 0;
+  while (c.spells.length < spellsDue(c) && giveSpell(c));
   // time away counts as rest: fatigue falls 2 points per real minute you were gone
   if (c.savedAt) c.fatigue = Math.max(0, c.fatigue - ((Date.now() - c.savedAt) / 60000) * 2);
   // Gear doesn't stack: each piece has its own id so it can be equipped and upgraded
@@ -88,7 +102,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves,
+    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves,
   });
 
   // worn gear doesn't take up room in the bag
@@ -178,6 +192,45 @@ export function createProgress(c, { save, onChange, onEvent }) {
       c.coins -= price;
       changed('coins');
       return 'ok';
+    },
+    // ---------- spells on a staff ----------
+    // the staff in your hand: its spells and how many it can hold
+    staff() {
+      const w = gearIn('weapon');
+      if (!w || w.type !== 'staff') return null;
+      const slots = staffSlots(rankOf(w, w.plus));
+      // a staff picked up for the first time comes with your first spells on it
+      w.entry.spells = w.entry.spells ? w.entry.spells.filter((id) => c.spells.includes(id)) : c.spells.slice(0, slots);
+      return { entry: w.entry, spells: w.entry.spells, slots };
+    },
+    attachSpell(id) {
+      const st = this.staff();
+      if (!st) return 'staff';
+      if (!c.spells.includes(id)) return 'pick';
+      if (st.spells.includes(id)) return 'have';
+      if (st.spells.length >= st.slots) return 'full';
+      st.entry.spells.push(id);
+      changed('gear');
+      return 'ok';
+    },
+    detachSpell(id) {
+      const st = this.staff();
+      if (!st) return 'staff';
+      st.entry.spells = st.spells.filter((x) => x !== id);
+      changed('gear');
+      return 'ok';
+    },
+    // the spell the attack key casts, and changing it
+    chosenSpell() {
+      const st = this.staff();
+      if (!st?.spells.length) return null;
+      return SPELLS[st.spells[c.spellPick % st.spells.length]];
+    },
+    nextSpell() {
+      const st = this.staff();
+      if (!st?.spells.length) return null;
+      c.spellPick = (c.spellPick + 1) % st.spells.length;
+      return SPELLS[st.spells[c.spellPick]];
     },
     // A tavern room: rented for a day of the realm. Sleeping in it restores everything.
     roomPrice: () => 20 + c.level * 2,
@@ -373,6 +426,10 @@ export function createProgress(c, { save, onChange, onEvent }) {
         c.uniquePoints += key ? 5 : 1;
         c.stats[CLASSES[c.cls].main] += 1;
         // every 10th level: a new skill at random, and (between evolutions) a little more of every stat
+        if (c.level % spellEvery(c.cls) === 0 && c.spells.length < spellsDue(c)) {
+          const sp = giveSpell(c);
+          if (sp) onEvent?.('spell', { id: sp });
+        }
         if (c.level % UPGRADE_EVERY === 0) {
           c.skillPicks += 1;
           const got = giveSkill(c);
