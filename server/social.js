@@ -141,8 +141,10 @@ function poll(me, after) {
 
 // Send to the general chat, or to a friend by username
 function send(me, body) {
-  const text = S.cleanText(body.text);
-  if (!text) return { error: 'Write something first.' };
+  const said = S.cleanText(body.text);
+  if (!said) return { error: 'Write something first.' };
+  // those who have had the cults' call can't speak of it
+  const text = cults.censor(me, said);
   const now = Date.now();
   if (now - (lastSent.get(me) || 0) < S.SEND_GAP_MS) return { error: 'Slow down a little.' };
   let channel = 'general';
@@ -155,7 +157,7 @@ function send(me, body) {
   }
   lastSent.set(me, now);
   // a cult member who gives the cult away in chat is stripped of its powers and money
-  cults.checkChat(me, text);
+  cults.checkChat(me, said);
   db.prepare('INSERT INTO chat (channel, from_id, from_name, text, at) VALUES (?, ?, ?, ?, ?)').run(channel, me, nameOf(me), text, now);
   // the general chat only keeps its most recent messages
   if (channel === 'general') db.prepare("DELETE FROM chat WHERE channel = 'general' AND id <= (SELECT id FROM chat WHERE channel = 'general' ORDER BY id DESC LIMIT 1 OFFSET ?)").run(S.KEEP_MESSAGES);

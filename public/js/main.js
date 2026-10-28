@@ -218,6 +218,9 @@ function startGame(character) {
   function takeCult(v) {
     if (!v) return;
     ui.cult = v;
+    // the Cult / Order window shows in the menu only for those who have had the call (or could found a cult)
+    const menu = v.cult ? 'Cult' : v.order ? 'The Order' : v.canFound ? 'Cult' : null;
+    if (menu !== (character.secretMenu || null)) { character.secretMenu = menu; drawHud(); }
     // gave the cult away: its powers and its coins are gone
     if (v.stripped && !ui.stripping) {
       ui.stripping = true;
@@ -225,11 +228,13 @@ function startGame(character) {
       showArea('You gave the cult away. Its dark powers and every coin it gave you are gone.');
       api.cultAct({ action: 'ack' }).then((r) => { ui.stripping = false; takeCult(r); }).catch(() => { ui.stripping = false; });
     }
-    // a cult has asked you to join: the offer comes to you at once
-    if (v.invited && !ui.cultOffered) { ui.cultOffered = true; openPanel('cult'); return; }
+    // the call comes out of nowhere: the message springs open at once
+    if (v.invited && !ui.cultOffered) { ui.cultOffered = true; world?.say('A voice speaks in the dark…', 'hurt'); openPanel('cult'); return; }
     if (overlay.dataset.panel === 'cult' && !overlay.classList.contains('hidden')) drawPanel();
   }
   function loadCult() { api.cultsView().then(takeCult).catch(() => {}); }
+  // Something done in the world that might bring the call (which deeds count is the server's secret)
+  function deed(id) { if (!ui.cult?.cult && !ui.cult?.order && !ui.cult?.choice) api.cultAct({ action: 'deed', deed: id }).then(takeCult).catch(() => {}); }
   const activeMissions = () => [...(ui.cult?.cult?.missions || []), ...(ui.cult?.order?.missions || [])];
   function missionStep(kind) {
     for (const m of activeMissions()) {
@@ -802,17 +807,16 @@ function startGame(character) {
     if ((v = t('data-cult')) != null) {
       const btn = e.target.closest('[data-cult]');
       const body = { action: v };
-      if (v === 'answer') body.accept = btn.dataset.accept === '1';
+      if (v === 'answer') body.choice = btn.dataset.choice;
       if (v === 'found') body.name = overlay.querySelector('[data-cult-found]')?.value;
-      if (v === 'invite') body.name = overlay.querySelector('[data-cult-name]')?.value;
       if (v === 'give') { body.name = btn.dataset.name; body.pick = Number(overlay.querySelector(`[data-cult-pick="${CSS.escape(btn.dataset.name)}"]`)?.value) || 0; }
       api.cultAct(body).then((r) => {
         if (r.reward) game.takePact(r.reward);
-        ui.cultMsg = { answer: body.accept ? 'You have joined. Tell no one.' : 'You refused. Holy power fills you.', order: 'You are sworn to the Order of the Dawn.', found: 'Your cult is founded. You are its Cult Leader.',
-          invite: 'They have been asked. They will never know it was you.', ask: 'A new mission.', give: 'The mission has gone down to them.' }[v] || '';
+        ui.cultMsg = { answer: { dark: 'You have joined the Dark Side. Tell no one.', light: 'You have become Light. Holy power fills you. Tell no one.', none: 'The voice fades. You must never speak of it.' }[body.choice], found: 'Your cult is founded. You are its Cult Leader.',
+          ask: 'A new mission.', give: 'The mission has gone down to them.' }[v] || '';
         takeCult(r);
-        drawPanel();
-      }).catch((err) => { ui.cultMsg = err.message; drawPanel(); });
+        if (v === 'answer' && body.choice === 'none') closePanel(); else drawPanel();
+      }).catch((err) => { ui.cultMsg = err.message; if (v === 'answer') loadCult(); drawPanel(); });
       return;
     }
     if ((v = t('data-answer-challenge')) != null) {
@@ -823,6 +827,7 @@ function startGame(character) {
     // Skill Stones: set into a piece of gear, or taken out again
     if ((v = t('data-set-stone')) != null) {
       const [u, st] = v.split('|'); const r = game.setStone(u, st);
+      if (r === 'ok') deed('stone_set');
       world?.say({ ok: 'The stone sinks into the metal. Its skill is yours while you wear it.', full: 'No room for another skill.', have: 'It already holds that skill.', rank: 'Only Rare or better gear can hold skills.' }[r] || 'That stone is gone.', r === 'ok' ? 'exp' : 'hurt');
       drawPanel(); return;
     }
@@ -856,6 +861,11 @@ function startGame(character) {
       const got = game.sell(v, n, overlay.dataset.panel === 'market' ? ui.market : null);
       ui.shopMsg = got ? `Sold ${all ? `${n} ` : ''}for ${got} coins.` : '';
       if (got) world?.say(`+${got} G`, 'exp');
+      // a Businessman's trade: a big sale, or a deal at a market stall in the dark
+      if (got && character.cls === 'businessman') {
+        if (got >= 2000) deed('big_sale');
+        if (overlay.dataset.panel === 'market' && realmTime().night) deed('night_trade');
+      }
       drawPanel(); return;
     }
     if (t('data-form') != null) {
@@ -874,6 +884,7 @@ function startGame(character) {
       const r = game.merge(...ui.pick);
       ui.smithMsg = r === 'new' ? `Merged into a new piece: the ${ITEMS[out.id].name}${out.plus ? ` +${out.plus}` : ''}!` : SMITH_SAYS[r];
       if (r === 'ok' || r === 'evolved' || r === 'new') {
+        if (out.plus >= 9) deed('merge_ascend'); else if (out.plus >= 6) deed('merge_awaken');
         ui.pick = [ui.pick[0]];
         playWork('smith', character, game.worn(), { pieces, result: { item: ITEMS[out.id], plus: out.plus }, doneText: ui.smithMsg }, drawPanel);
       }
@@ -917,6 +928,14 @@ function startGame(character) {
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       if (type === 'kill') for (const title of game.questKill(data.kind, data.level)) questReady(title);
+      if (type === 'kill') {
+        const t = realmTime();
+        if (data.chief) deed(t.night ? 'village_chief_night' : 'village_chief');
+        if (data.boss && data.depth) deed(t.night ? 'cave_boss_night' : 'cave_boss');
+        if (data.royal) deed('royal_guard');
+        if (data.level >= 50 && Math.floor(t.hour) === 0) deed('midnight_kill');
+      }
+      if (type === 'chest' && data.village) deed('village_loot');
       if (type === 'kill' && activeMissions().length) {
         const p = world?.position();
         if (p && nearTown(p, GATES_R)) missionStep('gates');

@@ -892,3 +892,5 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .cult-missions small, .cult-members small { display: block; opacity: 0.8; }
 .cult-members select { margin: 4px 6px 0 0; max-width: 60%; }
 .gold-button.cult-dark { background: linear-gradient(#6a3aa8, #3a1a5a); color: #f0e0ff; border-color: #8a5ad0; }
+.gold-button.cult-light { background: linear-gradient(#fff6d0, #e8c860); color: #3a2a00; border-color: #fff0a0; }
+.cult-choice { flex-wrap: wrap; gap: 8px; }

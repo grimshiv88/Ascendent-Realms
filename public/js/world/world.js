@@ -427,7 +427,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const extra = { keep: true, site: v.id, village: v.id, folk: i, angry: true };
     if (v.race === 'goblin') id = GOBLIN_LINE[stage];
     else if (stage) { extra.stage = stage; extra.title = EVOLUTIONS[v.race][stage]; }
-    if (stage === 2) extra.title = `${EVOLUTIONS[v.race][2]} (Chief)`;
+    if (stage === 2) { extra.title = `${EVOLUTIONS[v.race][2]} (Chief)`; extra.chief = true; }
     const at = q.built.homes[i];
     creatures.spawnAt(id, level, at.x, at.z, extra);
   }
@@ -479,7 +479,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     game.gainCoins(loot.coins);
     q.built.openChest();
     say(`+${loot.coins} G and treasure! The village is abandoned`, 'exp');
-    onEvent?.('chest', { coins: loot.coins, items: loot.items.map(([id, n]) => `${n > 1 ? `${n} ` : ''}${ITEMS[id].name}`) });
+    onEvent?.('chest', { village: true, coins: loot.coins, items: loot.items.map(([id, n]) => `${n > 1 ? `${n} ` : ''}${ITEMS[id].name}`) });
     // the village is gone; another springs up somewhere else later
     game.lootVillage(q.v.id, VILLAGE_RETURNS_MS);
     setTimeout(() => dropVillage(q), 2500);
@@ -875,6 +875,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (reward) {
       m.onDeath?.();
       if (m.village) villageFallen(m);
+      // what kind of foe it was (a village chief, a cave boss, a royal guard), for whoever is watching
+      Object.assign(reward, { chief: !!m.chief, boss: !!m.boss, depth: !!m.depth, royal: !!m.kind.royal });
       // monsters far below your level teach you little
       reward.exp = Math.max(1, Math.round(reward.exp * killExpScale(game.character.level - m.level)));
       floatText(`+${reward.exp} EXP`, new THREE.Vector3(m.x, m.y + m.height + 0.7, m.z), 'exp');

@@ -72,7 +72,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
         <button type="button" data-open="bag">Bag <kbd>I</kbd></button>
         <button type="button" data-open="map">Map <kbd>M</kbd></button>
         <button type="button" data-open="quests">Quests <kbd>Q</kbd></button>
-        <button type="button" data-open="cult">${RACES[c.race]?.side === 'monster' ? 'Cult' : 'The Order'}</button>
+        ${c.secretMenu ? `<button type="button" data-open="cult">${c.secretMenu}</button>` : ''}
         <button type="button" data-open="options">Controls <kbd>Esc</kbd></button>
         <button type="button" data-signout>Log out</button>
       </div>

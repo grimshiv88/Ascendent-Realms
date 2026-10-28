@@ -1,6 +1,6 @@
-// The Cult window (monsters) and the Order of the Dawn (anyone who refused a cult, and players).
+// The Cult window and the Order of the Dawn, and the call that brings you to one of them.
 // Everything here is secret: only you see it, and a cult member sees only their own rank and below.
-import { CULT_RANKS, CULT_FOUND_LEVEL, ORDER_NAME, MISSIONS, JOIN_COINS, HOLY_STR, PACT_PCT, RECRUIT_RANK } from './data/cults.mjs';
+import { CULT_RANKS, CULT_FOUND_LEVEL, ORDER_NAME, MISSIONS, JOIN_COINS, HOLY_STR, PACT_PCT, ACCEPT_TEXT, REJECT_TEXT } from './data/cults.mjs';
 import { RACES } from './data/game-data.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -18,11 +18,13 @@ export function renderCult(el, c, v, { message = '', counts = () => 0 } = {}) {
   if (!v) body = '<p class="bag-hint">Loading…</p>';
   else if (v.invited) {
     body = `<div class="cult-offer">
-      <p>A hooded figure finds you alone. <i>"We have watched you. The ${esc(RACES[c.race].name)} cult would have you. Join us, and the dark will make you strong and rich. Refuse, and walk your own road."</i></p>
-      <p class="bag-hint"><b>Join:</b> dark powers (+${PACT_PCT}% attack, for good) and ${JOIN_COINS(c.level)} coins. You may never say you are in the cult. If you give it away, you lose the powers and every coin it gave you.<br>
-      <b>Refuse:</b> holy powers (+${PACT_PCT}% defence, for good) and +${HOLY_STR} Strength. The ${ORDER_NAME}, which works against the cults, will then take you.</p>
-      <div class="bag-actions"><button type="button" class="gold-button cult-dark" data-cult="answer" data-accept="1">Join the cult</button>
-      <button type="button" class="gold-button" data-cult="answer" data-accept="0">Refuse</button></div></div>`;
+      <p><i>A voice speaks out of the dark, meant for you alone. "We have watched you. Few are ever called. The Dark Side would have you: power beyond your kind, and gold. Or turn from us and fight the Evil, and the Light will take you instead. Choose."</i></p>
+      <p class="bag-hint"><b>The Dark Side:</b> dark powers (+${PACT_PCT}% attack, for good) and ${JOIN_COINS(c.level)} coins. You may never say you serve it. If you give it away, you lose the powers and every coin it gave you.<br>
+      <b>The Light:</b> holy powers (+${PACT_PCT}% defence, for good) and +${HOLY_STR} Strength, sworn to the ${ORDER_NAME}, which fights the cults in secret.<br>
+      Whatever you choose, this call is a secret. Speak of it and your words are blotted out.</p>
+      <div class="bag-actions cult-choice"><button type="button" class="gold-button cult-dark" data-cult="answer" data-choice="dark">${ACCEPT_TEXT}</button>
+      <button type="button" class="gold-button cult-light" data-cult="answer" data-choice="light">${REJECT_TEXT}</button></div>
+      <button type="button" class="link-button" data-cult="answer" data-choice="none">Walk away from both</button></div>`;
   } else if (v.cult) {
     const k = v.cult;
     const lower = k.members.filter((m) => m.rank > k.rank);
@@ -35,9 +37,7 @@ export function renderCult(el, c, v, { message = '', counts = () => 0 } = {}) {
       <ul class="cult-members">${k.members.map((m) => `<li><span>${esc(m.name)}</span> <small>${esc(m.rankName)}</small>
         ${m.rank > k.rank ? `<select data-cult-pick="${esc(m.name)}">${MISSIONS.cult.map((t, i) => `<option value="${i}">${esc(t.text.split(':')[0])}</option>`).join('')}</select><button type="button" class="link-button" data-cult="give" data-name="${esc(m.name)}">Give mission</button>` : ''}</li>`).join('')}</ul>
       ${lower.length ? '' : '<p class="bag-hint">Nobody below you yet.</p>'}
-      ${k.rank <= RECRUIT_RANK ? `<h3 class="bag-sub">Bring someone in</h3>
-      <p class="bag-hint">Only ${esc(RACES[k.race].name)} monsters. They never learn who asked.</p>
-      <div class="room-form"><label>Name <input type="text" data-cult-name maxlength="16" autocomplete="off"></label><button type="button" class="gold-button small" data-cult="invite">Ask them</button></div>` : '<p class="bag-hint">Earn favour with missions to rise. From Acolyte up you can bring others in.</p>'}
+      <p class="bag-hint">Nobody can be brought in by name. The dark calls those it chooses, and only as many as the cult's strength can hold.</p>
       <p class="bag-hint">Ranks: ${CULT_RANKS.join(' › ')}.</p>`;
   } else if (v.order) {
     body = `<p class="cult-rank">${ORDER_NAME} <small>(${v.order.members} sworn)</small></p>
@@ -46,20 +46,16 @@ export function renderCult(el, c, v, { message = '', counts = () => 0 } = {}) {
       ${missionRows(v.order.missions, counts)}
       <button type="button" class="gold-button small" data-cult="ask">Ask for a mission</button>`;
   } else {
-    const canOrder = !monster || v.choice === 'refused';
-    body = `${v.choice === 'refused' ? '<p class="bag-hint">You refused the cult. Holy power runs in you.</p>' : ''}
-      ${canOrder ? `<p>The <b>${ORDER_NAME}</b> works in secret against the cults, keeping the roads and towns safe.</p>
-        <button type="button" class="gold-button" data-cult="order">Swear to the Order</button>
-        ${v.choice ? '' : `<p class="bag-hint">Joining brings holy powers (+${PACT_PCT}% defence) and +${HOLY_STR} Strength.</p>`}` : ''}
+    body = `${v.choice === 'silent' ? '<p class="bag-hint">You walked away from the voice. Never speak of it.</p>' : ''}
       ${monster ? (v.canFound ? `<h3 class="bag-sub">Found your race's cult</h3>
-        <p class="bag-hint">There can be only one cult for each race, and yours has none. Found it and you are its Cult Leader.</p>
+        <p class="bag-hint">There can be only one cult for each race, and yours has none. Found it and you are its Cult Leader. Nobody joins by asking: the dark calls those it chooses, and the stronger you and your cult grow, the more it can hold.</p>
         <div class="room-form"><label>Cult name <input type="text" data-cult-found maxlength="28" autocomplete="off"></label><button type="button" class="gold-button small cult-dark" data-cult="found">Found it</button></div>`
-        : `<p class="bag-hint">${c.level < CULT_FOUND_LEVEL ? `Strong monsters (level ${CULT_FOUND_LEVEL}) can found a cult, one for each race.` : 'Your race already has its cult.'} A cult may yet come to you.</p>`) : ''}`;
+        : `<p class="bag-hint">${c.level < CULT_FOUND_LEVEL ? `Strong monsters (level ${CULT_FOUND_LEVEL}) can found a cult, one for each race.` : 'Your race already has its cult.'}</p>`) : ''}`;
   }
   el.innerHTML = `
-    <div class="status-window cult-window" role="dialog" aria-label="${monster ? 'Cult' : ORDER_NAME}">
+    <div class="status-window cult-window" role="dialog" aria-label="${v?.order ? ORDER_NAME : 'Cult'}">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>${v?.cult ? 'The Cult' : v?.order ? ORDER_NAME : monster ? 'Cults and the Order' : ORDER_NAME}</h2>
+      <h2>${v?.invited ? 'A Voice in the Dark' : v?.cult ? 'The Cult' : v?.order ? ORDER_NAME : 'The Cult'}</h2>
       <p class="shop-msg" role="status">${esc(message)}</p>
       ${body}
     </div>`;

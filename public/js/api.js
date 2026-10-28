@@ -622,8 +622,10 @@ export async function chatSend(text, to = null, after = 0) {
     // a cult member who gives the cult away in chat is stripped of its powers and money
     const C = await import('./data/cults.mjs');
     if (d.cults && C.givesAway(C.cultOf(d.cults, me.username), clean)) { C.strip(d.cults, me.username); d.cults.t = Date.now(); }
+    // those who have had the cults' call can't speak of it
+    const said = d.cults ? C.censor(d.cults, me.username, clean) : clean;
     const n = (d.messages.at(-1)?.n || 0) + 1;
-    d.messages.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n, channel: room ? 'x' : to ? 'dm' : 'general', key: room ? room.channel : undefined, to: to && !room ? to.toLowerCase() : null, from: me.username, text: clean, at: Date.now() });
+    d.messages.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n, channel: room ? 'x' : to ? 'dm' : 'general', key: room ? room.channel : undefined, to: to && !room ? to.toLowerCase() : null, from: me.username, text: said, at: Date.now() });
     previewSocial.save(d);
     return { ok: true, ...(await socialPoll(after)) };
   }
@@ -648,11 +650,14 @@ export async function cultsView() {
     await previewSocial.sync();
     const w = await previewWho(previewMe());
     if (!w) throw new Error('No character yet.');
-    return C.view(previewSocial.load().cults || C.emptyCults(), w);
+    const d = previewSocial.load();
+    const s = d.cults || C.emptyCults();
+    if (C.touch(s, w)) { s.t = Date.now(); d.cults = s; previewSocial.save(d); }
+    return C.view(s, w);
   }
   return request('api/cults');
 }
-// body: { action: 'found'|'invite'|'answer'|'order'|'ask'|'give'|'done'|'ack', name, accept, id, pick }
+// body: { action: 'found'|'deed'|'answer'|'ask'|'give'|'done'|'ack', name, deed, choice, id, pick }
 export async function cultAct(body) {
   if (await isPreviewMode()) {
     const C = await import('./data/cults.mjs');
@@ -661,21 +666,22 @@ export async function cultAct(body) {
     const s = d.cults || C.emptyCults();
     const w = await previewWho(previewMe());
     if (!w) throw new Error('No character yet.');
+    C.touch(s, w);
     let r;
     switch (body.action) {
       case 'found': r = C.found(s, w, body.name); break;
-      case 'invite': r = C.invite(s, w.name, await previewWho(previewSocial.find(body.name))); break;
-      case 'answer': r = C.answer(s, w, body.accept === true); break;
-      case 'order': r = C.joinOrder(s, w); break;
+      case 'deed': r = C.deed(s, w, String(body.deed || '')); break;
+      case 'answer': r = C.answer(s, w, ['dark', 'light', 'none'].includes(body.choice) ? body.choice : 'none'); break;
       case 'ask': r = C.askMission(s, w); break;
       case 'give': r = C.giveMission(s, w, String(body.name || ''), body.pick, (await previewWho(previewSocial.find(body.name)))?.level); break;
       case 'done': r = C.finishMission(s, w, Number(body.id)); break;
       case 'ack': r = C.ackStrip(s, w.name); break;
       default: throw new Error('Do what?');
     }
-    if (r.error) throw new Error(r.error);
+    if (r.error && body.action !== 'answer') throw new Error(r.error);
     s.t = Date.now();
     d.cults = s;
+    if (r.error) { previewSocial.save(d); throw new Error(r.error); }
     previewSocial.save(d);
     return { ...r, ...C.view(s, w) };
   }

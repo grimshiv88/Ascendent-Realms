@@ -16,26 +16,28 @@ function whoByName(name) { const a = byName(name); return a ? who(a.id) : null; 
 function list(me) {
   const w = who(me);
   if (!w) return { error: 'No character yet.' };
-  return C.view(load(), w);
+  const s = load();
+  if (C.touch(s, w)) save(s);
+  return C.view(s, w);
 }
-// body: { action: 'found'|'invite'|'answer'|'order'|'ask'|'give'|'done'|'ack', name, accept, id, pick }
+// body: { action: 'found'|'deed'|'answer'|'ask'|'give'|'done'|'ack', name, deed, choice, id, pick }
 function act(me, body = {}) {
   const w = who(me);
   if (!w) return { error: 'No character yet.' };
   const s = load();
+  C.touch(s, w);
   let r;
   switch (body.action) {
     case 'found': r = C.found(s, w, body.name); break;
-    case 'invite': r = C.invite(s, w.name, whoByName(body.name)); break;
-    case 'answer': r = C.answer(s, w, body.accept === true); break;
-    case 'order': r = C.joinOrder(s, w); break;
+    case 'deed': r = C.deed(s, w, String(body.deed || '')); break;
+    case 'answer': r = C.answer(s, w, ['dark', 'light', 'none'].includes(body.choice) ? body.choice : 'none'); break;
     case 'ask': r = C.askMission(s, w); break;
     case 'give': r = C.giveMission(s, w, String(body.name || ''), Number.isInteger(body.pick) ? body.pick : undefined, whoByName(body.name)?.level); break;
     case 'done': r = C.finishMission(s, w, Number(body.id)); break;
     case 'ack': r = C.ackStrip(s, w.name); break;
     default: return { error: 'Do what?' };
   }
-  if (r.error) return r;
+  if (r.error) { if (body.action === 'answer') save(s); return r; }
   save(s);
   return { ...r, ...C.view(s, w) };
 }
@@ -48,6 +50,11 @@ function checkChat(accountId, text) {
   C.strip(s, w.name);
   save(s);
 }
+// Those who have had the call can't speak of it: the words are blotted out
+function censor(accountId, text) {
+  const w = who(accountId);
+  return w ? C.censor(load(), w.name, text) : text;
+}
 const seenBy = (viewer, target) => C.seenBy(load(), viewer, target);
 
-module.exports = { list, act, checkChat, seenBy };
+module.exports = { list, act, checkChat, censor, seenBy };

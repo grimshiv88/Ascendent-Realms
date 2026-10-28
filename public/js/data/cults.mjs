@@ -8,26 +8,66 @@
 // rank and below, never who is above them. A member who gives the cult away (in chat) is stripped of
 // the cult's powers and of every coin the cult gave them.
 //
-// Being asked to join is a choice with a reward either way: join, and you get dark powers and money;
-// refuse, and you get holy powers and strength, and the Order of the Dawn (which works against the
-// cults) will take you. Neither side is ever given a mission that names a player, or says who is on
-// the other side.
+// Nobody asks to join, and members don't recruit. The call comes out of nowhere, to a chosen few:
+// doing certain things in the world (slaying a monster village's chief, beating a cave boss by night,
+// a Businessman's trade at a market stall in the dark, and so on) may bring it. Which deeds count is
+// secret even from the code: the server picks a few from the pool below at random, keeps them in its
+// own records and picks again every month, and even then a deed only brings the call now and then.
 //
-// State: { cults: [{ race, name, founded, members: [{ name, rank, joined, gained, favour }],
-//   invites: [{ to, at }], missions: [...] }], order: [{ name, joined }], choices: { name: 'joined'|'refused' },
-//   stripped: [{ name, coins, at }], next }
+// The call offers both sides: join the Dark Side (dark powers and money), or reject it and become
+// Light (holy powers and strength, sworn to the Order of the Dawn, which works against the cults).
+// Or walk away from both. Whatever you choose, the call is a secret: anyone who has had it can't
+// speak of it in chat (the words are blotted out), and a cult member who gives the cult away loses
+// its powers and its coins. Neither side is ever given a mission that names a player.
+//
+// A cult can only hold as many as its strength allows: a few, plus more for a stronger leader and
+// for every level its members hold between them (see capacity).
+//
+// State: { cults: [{ race, name, founded, members: [{ name, rank, joined, gained, favour, level }],
+//   invites: [{ to, at }], missions: [...] }], order: [{ name, joined }],
+//   choices: { name: 'joined'|'refused'|'order'|'silent' }, stripped: [{ name, coins, at }], keys: { deeds, until }, next }
 import { cleanText } from './social.mjs';
 
 export const CULT_FOUND_LEVEL = 200;
 export const CULT_RANKS = ['Cult Leader', 'High Priest', 'Zealot', 'Acolyte', 'Initiate'];
 export const INITIATE = CULT_RANKS.length - 1;
-export const RECRUIT_RANK = 3;               // Acolytes and above may bring in new members
 export const PROMOTE_AT = [Infinity, 15, 8, 3, 0]; // favour that lifts a member to each rank
 export const ORDER_NAME = 'Order of the Dawn';
-export const INVITE_MS = 3 * 24 * 3600 * 1000;
+export const INVITE_MS = 3 * 24 * 3600 * 1000; // the call waits this long for an answer
 export const JOIN_COINS = (level) => 1000 + level * 5; // the cult's welcome purse
 export const HOLY_STR = 5;                    // Strength the refusal grants, for good
 export const PACT_PCT = 15;                   // dark: +ATK; holy: +DEF (as a lasting boost)
+
+// the two answers to the call, as the message words them
+export const ACCEPT_TEXT = 'Accept and join the Dark Side';
+export const REJECT_TEXT = 'Reject and fight the Evil, Become Light!';
+
+// ---------- the hidden deeds that may bring the call ----------
+// The pool. Only a few are live at a time (chosen at random by the server, kept secret), and a live
+// deed brings the call only one time in DEED_CHANCE.
+export const DEEDS = ['village_chief', 'village_chief_night', 'village_loot', 'cave_boss', 'cave_boss_night', 'royal_guard',
+  'merge_awaken', 'merge_ascend', 'stone_set', 'big_sale', 'night_trade', 'midnight_kill'];
+export const LIVE_DEEDS = 4;
+export const DEED_CHANCE = 3;
+export const KEYS_MS = 30 * 24 * 3600 * 1000;
+function liveDeeds(s, now, rnd) {
+  if (!s.keys || s.keys.until < now) {
+    const pool = [...DEEDS];
+    const deeds = [];
+    while (deeds.length < LIVE_DEEDS && pool.length) deeds.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+    s.keys = { deeds, until: now + KEYS_MS };
+  }
+  return s.keys.deeds;
+}
+
+// How many a cult can hold: 2, plus 1 for every 40 levels of its leader, plus 1 for every 500
+// levels its other members hold between them (a level 200 leader alone: 7)
+export function capacity(cult) {
+  const leader = cult.members.find((m) => m.rank === 0);
+  const others = cult.members.filter((m) => m !== leader).reduce((a, m) => a + (m.level || 1), 0);
+  return 2 + Math.floor((leader?.level || 1) / 40) + Math.floor(others / 500);
+}
+export const hasRoom = (cult) => cult.members.length + cult.invites.length < capacity(cult);
 
 export const emptyCults = () => ({ cults: [], order: [], choices: {}, stripped: [], next: 1 });
 const same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
@@ -73,49 +113,53 @@ export function found(s, me, rawName, now = Date.now()) {
   if (s.cults.some((c) => c.race === me.race)) return { error: 'Your race already has its cult. There can only be one.' };
   const check = checkCultName(s, rawName);
   if (check.error) return check;
-  const cult = { id: s.next++, race: me.race, name: check.name, founded: now, members: [{ name: me.name, rank: 0, joined: now, gained: 0, favour: 0 }], invites: [], missions: [] };
+  const cult = { id: s.next++, race: me.race, name: check.name, founded: now, members: [{ name: me.name, rank: 0, joined: now, gained: 0, favour: 0, level: me.level }], invites: [], missions: [] };
   s.cults.push(cult);
   s.choices[me.name.toLowerCase()] = 'joined';
   return { ok: true };
 }
-// A member of Acolyte rank or higher asks a monster of their race to join. The one asked never
-// learns who asked.
-export function invite(s, me, target) {
-  const cult = cultOf(s, me);
-  const m = memberOf(cult, me);
-  if (!m) return { error: 'You serve no cult.' };
-  if (m.rank > RECRUIT_RANK) return { error: 'Initiates cannot bring in new members yet.' };
-  if (!target) return { error: 'There is no one by that name.' };
-  if (target.side !== 'monster' || target.race !== cult.race) return { error: 'Only monsters of your own race can be asked.' };
-  if (cultOf(s, target.name) || inOrder(s, target.name) || choiceOf(s, target.name)) return { error: 'They cannot be asked.' };
-  if (cult.invites.some((i) => same(i.to, target.name))) return { error: 'They have already been asked.' };
-  cult.invites.push({ to: target.name, at: Date.now() });
+// Keep a member's level up to date (it decides how many the cult can hold)
+export function touch(s, me) {
+  const m = memberOf(cultOf(s, me.name), me.name);
+  if (m && m.level !== me.level) { m.level = me.level; return true; }
+  return false;
+}
+
+// Someone did something in the world. If it is one of the live deeds, the call may come to them:
+// from their own race's cult (a monster) or from any cult with room (a player). Answers nothing
+// either way, so a deed can't be found out by trying.
+export function deed(s, me, id, now = Date.now(), rnd = Math.random) {
+  if (!DEEDS.includes(id)) return { ok: true };
+  const live = liveDeeds(s, now, rnd);
+  if (!live.includes(id) || choiceOf(s, me.name) || cultOf(s, me.name) || inOrder(s, me.name)) return { ok: true };
+  if (s.cults.some((c) => c.invites.some((i) => same(i.to, me.name) && now - i.at < INVITE_MS))) return { ok: true };
+  if (rnd() * DEED_CHANCE >= 1) return { ok: true };
+  for (const c of s.cults) c.invites = c.invites.filter((i) => now - i.at < INVITE_MS);
+  const open = s.cults.filter((c) => hasRoom(c) && (me.side === 'monster' ? c.race === me.race : true));
+  if (!open.length) return { ok: true };
+  open[Math.floor(rnd() * open.length)].invites.push({ to: me.name, at: now });
   return { ok: true };
 }
-// The one asked answers. Returns the reward to give: { pact: 'dark', coins } or { pact: 'holy', str }.
-export function answer(s, me, accept, now = Date.now()) {
+// The answer to the call: 'dark' joins the cult, 'light' joins the Order of the Dawn, 'none' walks
+// away from both. Returns the reward to give: { pact: 'dark', coins } or { pact: 'holy', str }.
+export function answer(s, me, choice, now = Date.now()) {
   const cult = s.cults.find((c) => c.invites.some((i) => same(i.to, me.name) && now - i.at < INVITE_MS));
-  if (!cult) return { error: 'Nobody has asked you anything.' };
+  if (!cult) return { error: 'The voice is gone.' };
   cult.invites = cult.invites.filter((i) => !same(i.to, me.name));
-  if (accept) {
+  if (choice === 'dark') {
+    if (cult.members.length >= capacity(cult)) { s.choices[me.name.toLowerCase()] = 'silent'; return { error: 'The voice falls silent. The dark has no room for you.' }; }
     const coins = JOIN_COINS(me.level);
-    cult.members.push({ name: me.name, rank: INITIATE, joined: now, gained: coins, favour: 0 });
+    cult.members.push({ name: me.name, rank: INITIATE, joined: now, gained: coins, favour: 0, level: me.level });
     s.choices[me.name.toLowerCase()] = 'joined';
     return { ok: true, reward: { pact: 'dark', coins } };
   }
-  s.choices[me.name.toLowerCase()] = 'refused';
-  return { ok: true, reward: { pact: 'holy', str: HOLY_STR } };
-}
-// The Order of the Dawn takes any player, and any monster who refused a cult
-export function joinOrder(s, me, now = Date.now()) {
-  if (cultOf(s, me.name)) return { error: 'The Order will not take you.' };
-  if (inOrder(s, me.name)) return { error: 'You already serve the Order.' };
-  if (me.side === 'monster' && choiceOf(s, me.name) !== 'refused') return { error: 'The Order takes only monsters who have refused the cults.' };
-  s.order.push({ name: me.name, joined: now, gained: 0 });
-  // a player who joins the Order gets its blessing (a monster already had it from refusing)
-  const fresh = !choiceOf(s, me.name);
-  if (fresh) s.choices[me.name.toLowerCase()] = 'order';
-  return { ok: true, reward: fresh ? { pact: 'holy', str: HOLY_STR } : null };
+  if (choice === 'light') {
+    s.order.push({ name: me.name, joined: now, gained: 0 });
+    s.choices[me.name.toLowerCase()] = 'order';
+    return { ok: true, reward: { pact: 'holy', str: HOLY_STR } };
+  }
+  s.choices[me.name.toLowerCase()] = 'silent';
+  return { ok: true, reward: null };
 }
 
 // Giving the cult away: the member is thrown out and loses every coin the cult gave them
@@ -135,6 +179,20 @@ export function strip(s, name, now = Date.now()) {
 }
 // Does this chat message give the cult away? (its name, or the word "cult")
 export const givesAway = (cult, text) => !!cult && (/\bcults?\b/i.test(text) || String(text).toLowerCase().includes(cult.name.toLowerCase()));
+// Anyone who has had the call (whatever they answered) can't speak of it: the words that would
+// give it away are blotted out of their chat
+const SECRET = [/\bcults?\b/gi, /\bcultists?\b/gi, /\bdark\s+side\b/gi, /\bbecome\s+light\b/gi, /\border\s+of\s+the\s+dawn\b/gi, /\bthe\s+order\b/gi, /\bhooded\s+(figure|voice|stranger)\b/gi, /\bthe\s+call\b/gi];
+const blot = (w) => w.replace(/[^\s]/g, '#');
+export function censor(s, name, text) {
+  if (!choiceOf(s, name) && !cultOf(s, name) && !inOrder(s, name)) return text;
+  let out = String(text);
+  for (const re of SECRET) out = out.replace(re, blot);
+  for (const c of s.cults) {
+    const esc = c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(esc, 'gi'), blot);
+  }
+  return out;
+}
 
 // ---------- missions ----------
 function newMission(s, side, level, from, to, pick) {
@@ -202,6 +260,8 @@ export function view(s, me, now = Date.now()) {
     } : null,
     order: order ? { name: ORDER_NAME, members: s.order.length, missions: mine(s.missions) } : null,
     invited,
+    // whether you have had the call (the Cult / Order window shows only to those who have)
+    called: !!choiceOf(s, me.name) || !!m || order,
     choice: choiceOf(s, me.name),
     // whether this monster could found their race's cult
     canFound: !m && !order && me.side === 'monster' && me.level >= CULT_FOUND_LEVEL && !raceCult,
