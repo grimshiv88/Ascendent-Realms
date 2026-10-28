@@ -6,6 +6,7 @@ const characters = require('./characters');
 const land = require('./land');
 const kings = require('./kings');
 const admin = require('./admin');
+const social = require('./social');
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -78,6 +79,20 @@ app.post('/api/caves/buy', requireAccount, (req, res) => {
   const result = land.buyCave(req.account.id, req.body || {});
   res.status(result.error ? 400 : 200).json(result);
 });
+
+// Friends, chat and Status privacy
+app.get('/api/players', requireAccount, (req, res) => res.json(social.search(req.account.id, req.query.q)));
+app.get('/api/players/:name', requireAccount, (req, res) => {
+  const result = social.profile(req.account.id, req.params.name);
+  res.status(result.error ? 404 : 200).json(result);
+});
+app.get('/api/social', requireAccount, (req, res) => res.json(social.poll(req.account.id, req.query.after)));
+for (const [route, fn] of [['friends/request', social.request], ['friends/respond', social.respond], ['friends/remove', social.remove], ['chat', social.send], ['privacy', social.setPrivacy]]) {
+  app.post(`/api/${route}`, requireAccount, (req, res) => {
+    const result = fn(req.account.id, req.body || {});
+    res.status(result.error ? 400 : 200).json(result);
+  });
+}
 
 // The admin board (admin.html): only for accounts listed in ADMIN_EMAILS
 function requireAdmin(req, res, next) {

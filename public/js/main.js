@@ -23,6 +23,7 @@ import { wearGear } from './characters/gear.js';
 import { fillIcons } from './characters/icons.js';
 import { renderSkills, renderSkillBar, updateSkillBar } from './skillsui.js';
 import { SKILLS } from './data/skills.mjs';
+import { createSocial } from './social.js';
 
 paintCloudBanks();
 
@@ -119,6 +120,7 @@ function openCreation(username) {
 }
 
 let world = null;
+let social = null; // friends and chat
 const settings = (() => {
   try { return { camera: 'free', ...JSON.parse(localStorage.getItem('ar-settings') || '{}') }; } catch { return { camera: 'free' }; }
 })();
@@ -379,6 +381,7 @@ function startGame(character) {
     if (switchAccount) { try { sessionStorage.setItem('ar.switch', '1'); } catch { /* blocked */ } }
     await Promise.resolve(game.saveNow()).catch(() => {});
     world?.stop();
+    social?.dispose();
     await api.signOut();
     location.reload();
   }
@@ -532,6 +535,12 @@ function startGame(character) {
     if (t('data-tent') != null) { closePanel(); world?.pitchTent(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
+    if ((v = t('data-privacy')) != null) {
+      const before = character.privacy;
+      character.privacy = v; drawPanel();
+      api.setPrivacy(v).catch((err) => { character.privacy = before; drawPanel(); showArea(err.message); });
+      return;
+    }
     if (t('data-confirm-points') != null) { game.spendPoints(ui.pending); ui.pending = {}; drawPanel(); return; }
     if (t('data-reset-points') != null) { ui.pending = {}; drawPanel(); return; }
     if ((v = t('data-equip')) != null) { game.equip(v); return; }
@@ -627,11 +636,14 @@ function startGame(character) {
       if (e.code === 'KeyG') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); }
       if (e.code === 'KeyL') toggleLand();
+      if (e.code === 'Enter') { e.preventDefault(); social?.focusChat(); }
       // Esc opens the options; Esc again (or on any window) closes it
       if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }
     },
   });
   window.addEventListener('pagehide', () => game.saveNow());
+  // Friends and chat: search at the top right, chat at the bottom left
+  social = createSocial($('game'));
   // Everyone's land: posts on owned plots, and levelled ground
   api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
   loadCaves();

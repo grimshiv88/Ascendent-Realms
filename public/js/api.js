@@ -420,3 +420,148 @@ export async function kingSlain(race) {
   }
   return request('api/kings/slain', { method: 'POST', body: { race } });
 }
+
+// ---------- friends, chat and Status privacy ----------
+// Preview mode keeps these in this browser (and the cloud, when there is one), between the
+// accounts saved here: enough to try it out with two accounts on one device.
+const previewSocial = {
+  load() { try { return { friends: [], messages: [], ...JSON.parse(storage.get('ar.preview.social')) }; } catch { return { friends: [], messages: [] }; } },
+  save(d) {
+    d.messages = d.messages.slice(-400);
+    storage.set('ar.preview.social', JSON.stringify(d));
+    cloudPush('world/social', d);
+  },
+  // bring in what other devices wrote
+  async sync() {
+    if (!cloud) return;
+    try {
+      const snap = await cloud.doc('world/social').get();
+      if (!snap.exists) return;
+      const remote = snap.data(), d = this.load();
+      const ids = new Set(d.messages.map((m) => m.id));
+      for (const m of remote.messages || []) if (!ids.has(m.id)) d.messages.push(m);
+      d.messages.sort((a, b) => a.at - b.at);
+      d.messages.forEach((m, i) => { m.n = i + 1; });
+      const links = new Map(d.friends.map((f) => [`${f.a}|${f.b}`, f]));
+      for (const f of remote.friends || []) { const k = `${f.a}|${f.b}`; if (!links.has(k) || (f.t || 0) > (links.get(k).t || 0)) links.set(k, f); }
+      d.friends = [...links.values()].filter((f) => !f.gone);
+      storage.set('ar.preview.social', JSON.stringify(d));
+    } catch { /* stay with what this browser has */ }
+  },
+  me() { const email = (token.get() || '').replace(/^preview:/, ''); return preview.accounts().find((a) => a.email === email); },
+  find(name) { return preview.accounts().find((a) => a.username.toLowerCase() === String(name || '').trim().toLowerCase()); },
+  key(x, y) { const [a, b] = [x, y].map((n) => n.toLowerCase()).sort(); return { a, b }; },
+  link(d, x, y) { const { a, b } = this.key(x, y); return d.friends.find((f) => f.a === a && f.b === b && !f.gone); },
+  relation(d, me, other) {
+    if (me.toLowerCase() === other.toLowerCase()) return 'self';
+    const l = this.link(d, me, other);
+    if (!l) return 'none';
+    return l.accepted ? 'friend' : l.by === me.toLowerCase() ? 'sent' : 'received';
+  },
+  lists(d, me) {
+    const out = { friends: [], received: [], sent: [] };
+    for (const f of d.friends) {
+      if (f.gone || (f.a !== me.toLowerCase() && f.b !== me.toLowerCase())) continue;
+      const other = this.find(f.a === me.toLowerCase() ? f.b : f.a);
+      if (!other) continue;
+      const entry = { name: other.username, online: false };
+      if (f.accepted) out.friends.push(entry); else (f.by === me.toLowerCase() ? out.sent : out.received).push(entry);
+    }
+    return out;
+  },
+};
+const socialRules = () => import('./data/social.mjs');
+function previewMe() { const me = previewSocial.me(); if (!me) throw new Error('Please sign in again.'); return me; }
+
+export async function playerSearch(q) {
+  if (await isPreviewMode()) {
+    const me = previewMe(), d = previewSocial.load();
+    q = String(q || '').trim().toLowerCase();
+    if (q.length < 2) return { players: [] };
+    return { players: preview.accounts().filter((a) => a.username.toLowerCase().startsWith(q) && a.username !== me.username).slice(0, 8)
+      .map((a) => ({ name: a.username, relation: previewSocial.relation(d, me.username, a.username), online: false })) };
+  }
+  return request(`api/players?q=${encodeURIComponent(q)}`);
+}
+export async function playerProfile(name) {
+  if (await isPreviewMode()) {
+    const S = await socialRules();
+    const me = previewMe(), other = previewSocial.find(name), d = previewSocial.load();
+    if (!other) throw new Error('There is no player with that username.');
+    const rel = previewSocial.relation(d, me.username, other.username);
+    const c = other.character;
+    const visible = !!c && S.canSeeStatus(c, { self: rel === 'self', friend: rel === 'friend' });
+    return { player: { name: other.username, relation: rel, online: false, privacy: S.privacyOf(c), status: visible ? S.statusSummary(c) : null } };
+  }
+  return request(`api/players/${encodeURIComponent(name)}`);
+}
+export async function socialPoll(after = 0) {
+  if (await isPreviewMode()) {
+    await previewSocial.sync();
+    const me = previewMe(), d = previewSocial.load(), my = me.username.toLowerCase();
+    const mine = d.messages.filter((m) => m.channel === 'general' || m.to === my || m.from.toLowerCase() === my);
+    const list = after ? mine.filter((m) => m.n > after) : mine.slice(-40);
+    return {
+      messages: list.map((m) => ({ id: m.n, channel: m.channel === 'general' ? 'general' : (m.from.toLowerCase() === my ? previewSocial.find(m.to)?.username : m.from), from: m.from, mine: m.from.toLowerCase() === my, text: m.text, at: m.at })),
+      ...previewSocial.lists(d, me.username),
+    };
+  }
+  return request(`api/social?after=${Number(after) || 0}`);
+}
+async function previewFriend(name, change) {
+  const me = previewMe(), other = previewSocial.find(name), d = previewSocial.load();
+  if (!other) throw new Error('There is no player with that username.');
+  change(d, me.username, other.username, previewSocial.relation(d, me.username, other.username));
+  previewSocial.save(d);
+  return { ok: true, ...previewSocial.lists(d, me.username) };
+}
+export async function friendRequest(name) {
+  if (await isPreviewMode()) {
+    return previewFriend(name, (d, me, other, rel) => {
+      if (rel === 'self') throw new Error("You can't add yourself.");
+      if (rel === 'friend') throw new Error('You are already friends.');
+      if (rel === 'sent') throw new Error('You already asked. Waiting for them to accept.');
+      if (rel === 'received') { const l = previewSocial.link(d, me, other); l.accepted = true; l.t = Date.now(); return; }
+      d.friends.push({ ...previewSocial.key(me, other), by: me.toLowerCase(), accepted: false, t: Date.now() });
+    });
+  }
+  return request('api/friends/request', { method: 'POST', body: { name } });
+}
+export async function friendRespond(name, accept) {
+  if (await isPreviewMode()) {
+    return previewFriend(name, (d, me, other, rel) => {
+      if (rel !== 'received') throw new Error('There is no friend request from that player.');
+      const l = previewSocial.link(d, me, other);
+      if (accept) l.accepted = true; else l.gone = true;
+      l.t = Date.now();
+    });
+  }
+  return request('api/friends/respond', { method: 'POST', body: { name, accept } });
+}
+export async function friendRemove(name) {
+  if (await isPreviewMode()) {
+    return previewFriend(name, (d, me, other) => { const l = previewSocial.link(d, me, other); if (l) { l.gone = true; l.t = Date.now(); } });
+  }
+  return request('api/friends/remove', { method: 'POST', body: { name } });
+}
+// Send to the general chat, or (with `to`) to a friend
+export async function chatSend(text, to = null, after = 0) {
+  if (await isPreviewMode()) {
+    const S = await socialRules();
+    const me = previewMe(), d = previewSocial.load();
+    const clean = S.cleanText(text);
+    if (!clean) throw new Error('Write something first.');
+    if (to && previewSocial.relation(d, me.username, to) !== 'friend') throw new Error('You can only send private messages to friends.');
+    const n = (d.messages.at(-1)?.n || 0) + 1;
+    d.messages.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n, channel: to ? 'dm' : 'general', to: to ? to.toLowerCase() : null, from: me.username, text: clean, at: Date.now() });
+    previewSocial.save(d);
+    return { ok: true, ...(await socialPoll(after)) };
+  }
+  return request('api/chat', { method: 'POST', body: { text, to, after } });
+}
+export async function setPrivacy(privacy) {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => { acc.character.privacy = privacy; return { ok: true, privacy }; });
+  }
+  return request('api/privacy', { method: 'POST', body: { privacy } });
+}

@@ -712,3 +712,52 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .map-basket[hidden] { display: none; }
 .map-basket span { flex: 1; min-width: 160px; }
 .land-actions { gap: 10px; flex-wrap: wrap; }
+.sw-privacy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+.sw-privacy button { padding: 3px 10px; font: 600 0.78rem 'Oswald', sans-serif; letter-spacing: 0.06em; color: inherit; background: rgba(61, 155, 255, 0.08); border: 1px solid rgba(61, 155, 255, 0.4); cursor: pointer; }
+.sw-privacy button[aria-checked="true"] { background: rgba(61, 155, 255, 0.35); border-color: #9fd4ff; color: #fff; }
+.sw-privacy small { flex-basis: 100%; opacity: 0.75; }
+
+/* ---------- friends and chat ---------- */
+#social-top { position: absolute; top: 12px; right: 70px; z-index: 2; width: min(280px, calc(100vw - 300px)); min-width: 180px; font: 0.9rem Georgia, serif; }
+.so-search { display: flex; gap: 6px; }
+.so-search input { flex: 1; min-width: 0; height: 46px; padding: 0 12px; color: #f5ebd0; background: rgba(8, 6, 3, 0.72); border: 1px solid var(--gold-3); border-radius: 6px; font: inherit; }
+.so-search input:focus { outline: none; border-color: var(--gold-2); }
+.so-friends-btn { position: relative; width: 46px; height: 46px; font-size: 1.2rem; background: rgba(8, 6, 3, 0.72); border: 1px solid var(--gold-3); border-radius: 6px; cursor: pointer; }
+.so-friends-btn[aria-expanded="true"] { background: rgba(60, 44, 10, 0.85); }
+.so-badge { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; font: 700 0.7rem sans-serif; line-height: 18px; color: #fff; background: #d8343e; border-radius: 9px; }
+.so-drop { margin-top: 6px; max-height: 60vh; overflow-y: auto; padding: 10px; color: #f5ebd0; background: rgba(14, 10, 4, 0.94); border: 1px solid var(--gold-3); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); }
+.so-drop h4 { margin: 6px 0 4px; font: 600 0.85rem 'Cinzel', serif; color: var(--gold-2); }
+.so-list { list-style: none; margin: 0; padding: 0; }
+.so-list li { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid rgba(200, 146, 26, 0.15); }
+.so-name { flex: 1; text-align: left; color: inherit; background: none; border: 0; font: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so-drop i, .so-profile h4 i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: #6b6355; }
+.so-drop i.on { background: #5fe08a; }
+.so-drop button:not(.so-name), .so-chat .so-form button { padding: 4px 10px; font: 600 0.75rem 'Oswald', sans-serif; letter-spacing: 0.06em; text-transform: uppercase; color: #1a1205; background: var(--gold-2); border: 0; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.so-drop button.ghost { color: var(--gold-2); background: none; border: 1px solid var(--gold-3); }
+.so-drop button:disabled { opacity: 0.6; cursor: default; }
+.so-profile dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 6px 0; }
+.so-profile dt { color: var(--gold-2); }
+.so-profile dd { margin: 0; }
+.so-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.so-empty { margin: 4px 0; opacity: 0.75; }
+
+.so-chat { position: absolute; left: 12px; bottom: 12px; z-index: 2; width: min(360px, calc(100vw - 140px)); display: flex; flex-direction: column; font: 0.85rem Georgia, serif; color: #f5ebd0; }
+.so-tabs { display: flex; gap: 4px; overflow-x: auto; }
+.so-tabs button { padding: 3px 9px; font: 600 0.72rem 'Oswald', sans-serif; letter-spacing: 0.05em; color: #d8cba8; background: rgba(8, 6, 3, 0.6); border: 1px solid rgba(200, 146, 26, 0.4); border-bottom: 0; border-radius: 5px 5px 0 0; cursor: pointer; white-space: nowrap; }
+.so-tabs button[aria-selected="true"] { color: #1a1205; background: var(--gold-2); }
+.so-tabs b { padding: 0 4px; color: #fff; background: #d8343e; border-radius: 6px; }
+.so-tabs span { margin-left: 6px; opacity: 0.7; }
+.so-log { height: 150px; overflow-y: auto; padding: 6px 8px; background: rgba(8, 6, 3, 0.55); border: 1px solid rgba(200, 146, 26, 0.35); }
+.so-log p { margin: 0 0 3px; line-height: 1.3; overflow-wrap: anywhere; text-shadow: 0 1px 2px #000; }
+.so-log time { font-size: 0.7rem; opacity: 0.6; }
+.so-log b { color: var(--gold-2); cursor: pointer; }
+.so-log p.me b { color: #9fd4ff; }
+.so-log .so-note { color: #ff9a8a; }
+.so-form { display: flex; gap: 4px; margin-top: 4px; }
+.so-form input { flex: 1; min-width: 0; padding: 6px 8px; color: #f5ebd0; background: rgba(8, 6, 3, 0.75); border: 1px solid rgba(200, 146, 26, 0.45); border-radius: 4px; font: inherit; }
+.so-form input:focus { outline: none; border-color: var(--gold-2); }
+@media (max-width: 700px) {
+  #social-top { right: 64px; width: auto; left: auto; min-width: 150px; }
+  .so-chat { width: calc(100vw - 130px); }
+  .so-log { height: 90px; }
+}

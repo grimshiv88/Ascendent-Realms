@@ -336,12 +336,11 @@ export function createProgress(c, { save, onChange, onEvent }) {
 
     // Stat Points: place them, then confirm. Once confirmed they can't be taken back.
     spendPoints(add) {
-      const total = Object.values(add).reduce((a, b) => a + b, 0);
+      // only the main stats take points (HP, ATK, DEF and the rest grow from them)
+      const main = Object.entries(add).filter(([k, v]) => v > 0 && k in c.stats);
+      const total = main.reduce((a, [, v]) => a + v, 0);
       if (total <= 0 || total > c.unspentPoints) return;
-      for (const [k, v] of Object.entries(add)) {
-        if (v > 0 && k in c.stats) c.stats[k] += v;
-        else if (v > 0 && k in c.trained) c.trained[k] += v;
-      }
+      for (const [k, v] of main) c.stats[k] += v;
       c.unspentPoints -= total;
       changed('stats');
     },
