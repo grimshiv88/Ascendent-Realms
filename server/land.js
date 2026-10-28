@@ -1,7 +1,7 @@
 // Land plots: who owns which square of the Heartland, what it is for, and whether it has been levelled.
 const db = require('./db');
 const characters = require('./characters');
-const { PURPOSES, PURPOSE_FEE, checkPurchase, prepareCost, levelHeight } = require('../public/js/data/land.mjs');
+const { PURPOSES, PURPOSE_FEE, checkPurchase, prepareCost, levelHeight, clearCost } = require('../public/js/data/land.mjs');
 const { setPreparedPlots } = require('../public/js/data/world-layout.mjs');
 const { caveById, cavePrice } = require('../public/js/data/depths.mjs');
 const B = require('../public/js/data/building.mjs');
@@ -21,9 +21,11 @@ db.exec(`
 
 // what's built on each plot (pieces, see building.mjs)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('lands') WHERE name = 'build'").get()) db.exec('ALTER TABLE lands ADD COLUMN build TEXT');
+// cleared of trees, rocks and grass, keeping the ground's shape
+if (!db.prepare("SELECT 1 FROM pragma_table_info('lands') WHERE name = 'cleared'").get()) db.exec('ALTER TABLE lands ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0');
 
-const all = () => db.prepare('SELECT ix, iz, owner, purpose, flat, account_id, build FROM lands').all()
-  .map((r) => ({ ix: r.ix, iz: r.iz, owner: r.owner, purpose: r.purpose, flat: r.flat, accountId: r.account_id, pieces: r.build ? JSON.parse(r.build) : [] }));
+const all = () => db.prepare('SELECT ix, iz, owner, purpose, flat, cleared, account_id, build FROM lands').all()
+  .map((r) => ({ ix: r.ix, iz: r.iz, owner: r.owner, purpose: r.purpose, flat: r.flat, cleared: !!r.cleared || r.flat !== null, accountId: r.account_id, pieces: r.build ? JSON.parse(r.build) : [] }));
 // keep the server's copy of the levelled ground in step, so prices and checks see it too
 const sync = () => setPreparedPlots(all());
 sync();
@@ -84,11 +86,20 @@ function prepare(accountId, body) {
   const at = plotArgs(body);
   const plot = at && ownPlot(accountId, at.ix, at.iz);
   if (!plot) return { error: 'That is not your plot.' };
-  if (plot.flat !== null) return { error: 'This plot is already cleared and level.' };
   const c = characters.load(accountId);
+  // 'clear' takes away trees, rocks and grass but keeps the ground's shape; 'flatten' also levels it
+  if (body.how === 'clear') {
+    if (plot.cleared || plot.flat !== null) return { error: 'This plot is already cleared.' };
+    const paid = spend(accountId, clearCost(c?.cls));
+    if (paid.error) return paid;
+    db.prepare('UPDATE lands SET cleared = 1 WHERE ix = ? AND iz = ?').run(at.ix, at.iz);
+    sync();
+    return { ok: true, coins: paid.coins, ...list(accountId) };
+  }
+  if (plot.flat !== null) return { error: 'This plot is already cleared and level.' };
   const paid = spend(accountId, prepareCost(at.ix, at.iz, c?.cls));
   if (paid.error) return paid;
-  db.prepare('UPDATE lands SET flat = ? WHERE ix = ? AND iz = ?').run(levelHeight(at.ix, at.iz), at.ix, at.iz);
+  db.prepare('UPDATE lands SET flat = ?, cleared = 1 WHERE ix = ? AND iz = ?').run(levelHeight(at.ix, at.iz), at.ix, at.iz);
   sync();
   return { ok: true, coins: paid.coins, ...list(accountId) };
 }

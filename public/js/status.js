@@ -142,6 +142,11 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
         ${opt('free', 'Free camera', 'You turn the camera yourself (drag the mouse, or drag on the right of the screen). Your character walks the way you push, relative to the camera.')}
         ${opt('follow', 'Follow your body', 'The camera stays behind your character. Left and right turn your body, forward walks the way you face.')}
       </div>
+      <h3 class="bag-sub">Mouse</h3>
+      <div class="setting-opts">
+        <button type="button" class="setting-opt" data-mouse="locked" aria-pressed="${settings.mouse !== 'free'}"><b>Connected</b><span>Click the game and the mouse is captured: moving it turns the camera, clicking attacks. Esc lets it go.</span></button>
+        <button type="button" class="setting-opt" data-mouse="free" aria-pressed="${settings.mouse === 'free'}"><b>Free Move</b><span>The mouse stays free, so you can click the chat and windows while you walk. Drag on the game to turn the camera.</span></button>
+      </div>
       <h3 class="bag-sub">Controls</h3>
       <p class="bag-hint">Click an action, then press the key you want for it. If another action had that key, they swap. The arrow keys always move you and Esc always opens the options.</p>
       <p class="shop-msg" role="status">${esc(keys.message || '')}</p>
@@ -232,6 +237,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Jump</dt><dd>Space</dd></div>
       <div class="sw-row"><dt>Camera</dt><dd>Click the game once, then move the mouse to look around and steer; scroll to zoom</dd></div>
       <div class="sw-row"><dt>Attack / punch</dt><dd>Click, or F (touch: the fist button)</dd></div>
+      <div class="sw-row"><dt>Open / pick up</dt><dd>E opens a chest in front of you, picks up a torch, or packs up your tent</dd></div>
       <div class="sw-row"><dt>Trees</dt><dd>Young and dead trees, bushes: by hand. Pines: an axe and 15 STR (or 40 STR). Oaks: an axe and 22 STR (or 50). Swamp and fae trees: an axe and 28 to 32 STR. Great trees: a War Axe and 60 STR. Hitting a tree also tells you what it needs.</dd></div>
       <div class="sw-row"><dt>Options</dt><dd>Esc shows every window and its key (also frees the mouse)</dd></div>
       <div class="sw-row"><dt>Status</dt><dd>C</dd></div>
@@ -241,7 +247,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Sleep</dt><dd>Z, inside your tent, by a campfire or by a torch (lowers Fatigue; fastest in a tent)</dd></div>
       <div class="sw-row"><dt>Tent</dt><dd>P pitches your tent in front of you (buy one in the shop, or craft it from 8 logs). Press P beside it to pack it up</dd></div>
       <div class="sw-row"><dt>Torches</dt><dd>T places one (buy them in the shop; they keep monsters away at night). Press T beside one to pick it back up</dd></div>
-      <div class="sw-row"><dt>Caves</dt><dd>Walk into the dark shaft at the back of a cave to go down. Underground, T lights a torch in your hand. Swing at glowing veins to mine ore, break nests, beat the boss for its chest, then buy the cave. The shaft of daylight takes you back up</dd></div>
+      <div class="sw-row"><dt>Caves</dt><dd>Walk into the dark shaft at the back of a cave to go down. Underground, T lights a torch in your hand. Swing at glowing veins to mine ore, break nests, beat the boss and open its chest with E, then buy the cave. The shaft of daylight takes you back up</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
       <div class="sw-row"><dt>Portals</dt><dd>Stand on a portal stone (purple rings on the map) and press G. Pick where to go on the map, see the fee, then pay. Portals only reach other portals on the same continent</dd></div>
       <div class="sw-row"><dt>Land</dt><dd>L shows the grid of plots; tap a square to buy it or manage it</dd></div>

@@ -355,8 +355,8 @@ export function sample(x, z, out = {}, withLakes = true) {
   // land that players have bought and prepared is level, with a short slope around its edge
   if (PREPARED.size) {
     let best = Infinity, flat = 0;
-    for (let ix = Math.floor((x - PLOT_RAMP) / PLOT); ix <= Math.floor((x + PLOT_RAMP) / PLOT); ix++) {
-      for (let iz = Math.floor((z - PLOT_RAMP) / PLOT); iz <= Math.floor((z + PLOT_RAMP) / PLOT); iz++) {
+    for (let ix = Math.floor((x - PLOT_RAMP_MAX) / PLOT); ix <= Math.floor((x + PLOT_RAMP_MAX) / PLOT); ix++) {
+      for (let iz = Math.floor((z - PLOT_RAMP_MAX) / PLOT); iz <= Math.floor((z + PLOT_RAMP_MAX) / PLOT); iz++) {
         const f = PREPARED.get(`${ix},${iz}`);
         if (f === undefined) continue;
         const dx = Math.max(ix * PLOT - x, 0, x - (ix + 1) * PLOT);
@@ -365,8 +365,10 @@ export function sample(x, z, out = {}, withLakes = true) {
         if (d < best) { best = d; flat = f; }
       }
     }
-    if (best < PLOT_RAMP) {
-      h = lerp(flat, h, smoothstep(best, 0, PLOT_RAMP));
+    // the slope down (or up) to the natural ground is long enough to walk, never a sudden drop
+    const ramp = Math.min(PLOT_RAMP_MAX, Math.max(PLOT_RAMP, Math.abs(h - flat) * 2));
+    if (best < ramp) {
+      h = lerp(flat, h, smoothstep(best, 0, ramp));
       if (best === 0) forest = 0;
     }
   }
@@ -395,22 +397,45 @@ function placeBaseHeight(p) {
 // ---------- land plots ----------
 // The land is divided into square plots that players can buy. Prepared plots are cleared and levelled.
 export const PLOT = 20;
-const PLOT_RAMP = 6;
+const PLOT_RAMP = 8;      // the shortest slope around a levelled plot
+const PLOT_RAMP_MAX = 20; // the longest (for a plot set far above or below its surroundings)
 const PREPARED = new Map(); // "ix,iz" -> level height
 export const plotOf = (x, z) => ({ ix: Math.floor(x / PLOT), iz: Math.floor(z / PLOT) });
+const CLEARED = new Set(); // plots cleared of trees, rocks and grass but keeping their shape
 const FIXED = new Map(); // ground levelled for good (under the Monster Kings' castles)
 export function setPreparedPlots(plots) {
   PREPARED.clear();
+  CLEARED.clear();
   for (const [k, f] of FIXED) PREPARED.set(k, f);
-  for (const p of plots) if (Number.isFinite(p.flat)) PREPARED.set(`${p.ix},${p.iz}`, p.flat);
+  for (const p of plots) {
+    if (Number.isFinite(p.flat)) PREPARED.set(`${p.ix},${p.iz}`, p.flat);
+    if (p.cleared) CLEARED.add(`${p.ix},${p.iz}`);
+  }
 }
 export function addFixedFlats(plots) {
   for (const p of plots) { FIXED.set(`${p.ix},${p.iz}`, p.flat); PREPARED.set(`${p.ix},${p.iz}`, p.flat); }
 }
-export const isPrepared = (x, z) => PREPARED.has(`${Math.floor(x / PLOT)},${Math.floor(z / PLOT)}`);
+// the level a plot was set to, if it was levelled
+export const plotLevel = (ix, iz) => PREPARED.get(`${ix},${iz}`);
+// cleared of trees and rocks (levelled plots are cleared too)
+export const isPrepared = (x, z) => { const k = `${Math.floor(x / PLOT)},${Math.floor(z / PLOT)}`; return PREPARED.has(k) || CLEARED.has(k); };
 
 export function heightAt(x, z) {
   return sample(x, z, _tmp).h;
+}
+// The height of the ground as it is drawn up close: the land is drawn as triangles between points
+// every SURFACE_STEP metres, so walking on this (not the exact height between those points) keeps
+// feet on the ground you see, without floating or sinking.
+export const SURFACE_STEP = 4;
+export function surfaceAt(x, z) {
+  const S = SURFACE_STEP;
+  const gx = Math.floor(x / S), gz = Math.floor(z / S);
+  const fx = x / S - gx, fz = z / S - gz;
+  const h = (i, j) => sample((gx + i) * S, (gz + j) * S, _tmp).h;
+  // each square is split along the same diagonal as the drawn land
+  if (fx + fz <= 1) { const h00 = h(0, 0); return h00 + (h(1, 0) - h00) * fx + (h(0, 1) - h00) * fz; }
+  const h11 = h(1, 1);
+  return h11 + (h(0, 1) - h11) * (1 - fx) + (h(1, 0) - h11) * (1 - fz);
 }
 const _tmp = {};
 

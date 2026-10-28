@@ -1,5 +1,6 @@
 // Friends and chat on screen: a username search with friend requests at the top right, and the
-// chat at the bottom left (the general chat, plus a tab for each friend you talk to).
+// chat in a side panel on the left that hides away behind a small button (General, or Friends with
+// a tab for each friend you talk to).
 import * as api from './api.js';
 import { cleanText, MAX_MESSAGE } from './data/social.mjs';
 import { RACES, CLASSES } from './data/game-data.mjs';
@@ -17,7 +18,9 @@ export function createSocial(host, { onError } = {}) {
       </div>
       <div class="so-drop" hidden></div>
     </div>
+    <button type="button" class="so-chat-toggle" aria-label="Open the chat" aria-expanded="false">💬<b class="so-badge" hidden></b></button>
     <div id="chat" class="so-chat">
+      <div class="so-modes"><button type="button" data-mode="general" aria-pressed="true">General</button><button type="button" data-mode="friends" aria-pressed="false">Friends<b hidden></b></button><button type="button" class="so-hide" aria-label="Hide the chat">⟨</button></div>
       <div class="so-tabs" role="tablist"></div>
       <div class="so-log" aria-live="polite"></div>
       <form class="so-form">
@@ -28,12 +31,44 @@ export function createSocial(host, { onError } = {}) {
   const $ = (s) => host.querySelector(s);
   const search = $('.so-search input'), drop = $('.so-drop'), friendsBtn = $('.so-friends-btn'), badge = $('.so-badge');
   const tabsEl = $('.so-tabs'), log = $('.so-log'), form = $('.so-form'), input = $('.so-form input');
+  const panel = $('#chat'), toggle = $('.so-chat-toggle'), toggleBadge = toggle.querySelector('.so-badge'), modes = $('.so-modes');
+  let open = false;
+  function setOpen(v) {
+    open = v;
+    panel.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Hide the chat' : 'Open the chat');
+    if (open) { unread.delete(active); drawTabs(); }
+    else input.blur();
+    drawBadges();
+  }
+  // unread messages show on the button while the chat is hidden, and on the Friends switch
+  function drawBadges() {
+    const total = [...unread.values()].reduce((a, b) => a + b, 0);
+    toggleBadge.hidden = open || !total;
+    toggleBadge.textContent = total || '';
+    const fr = [...unread].filter(([ch]) => ch !== 'general').reduce((a, [, n]) => a + n, 0);
+    const fb = modes.querySelector('[data-mode="friends"] b');
+    fb.hidden = !fr; fb.textContent = fr || '';
+  }
+  toggle.addEventListener('click', () => setOpen(!open));
+  modes.addEventListener('click', (e) => {
+    if (e.target.closest('.so-hide')) { setOpen(false); return; }
+    const m = e.target.closest('[data-mode]')?.dataset.mode;
+    if (!m) return;
+    if (m === 'general') openTab('general');
+    else {
+      const ch = [...tabs.keys()].find((k) => k !== 'general');
+      if (ch) openTab(ch); else { active = 'friends'; drawTabs(); drawLog(); }
+    }
+  });
 
   const tabs = new Map([['general', []]]); // channel -> messages
   const unread = new Map();
   const seen = new Set(); // messages already shown (by sender, time and text)
   let active = 'general';
   let lastId = 0;
+  let loaded = false; // the first look has been taken
   let lists = { friends: [], received: [], sent: [] };
   let dropMode = null; // 'search' | 'friends' | 'profile'
   let alive = true;
@@ -41,9 +76,21 @@ export function createSocial(host, { onError } = {}) {
   // ---------- chat ----------
   const time = (at) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   function drawTabs() {
-    tabsEl.innerHTML = [...tabs.keys()].map((ch) => `<button type="button" role="tab" data-tab="${esc(ch)}" aria-selected="${ch === active}">${ch === 'general' ? 'General' : esc(ch)}${unread.get(ch) ? ` <b>${unread.get(ch)}</b>` : ''}${ch !== 'general' ? `<span data-close-tab="${esc(ch)}" aria-label="Close">×</span>` : ''}</button>`).join('');
+    const friendsMode = active !== 'general';
+    for (const b of modes.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String((b.dataset.mode === 'friends') === friendsMode));
+    tabsEl.hidden = !friendsMode;
+    tabsEl.innerHTML = [...tabs.keys()].filter((ch) => ch !== 'general').map((ch) => `<button type="button" role="tab" data-tab="${esc(ch)}" aria-selected="${ch === active}">${ch === 'general' ? 'General' : esc(ch)}${unread.get(ch) ? ` <b>${unread.get(ch)}</b>` : ''}${ch !== 'general' ? `<span data-close-tab="${esc(ch)}" aria-label="Close">×</span>` : ''}</button>`).join('');
   }
   function drawLog() {
+    drawBadges();
+    if (active === 'friends') {
+      // no private chat open yet: pick a friend to talk to
+      log.innerHTML = lists.friends.length
+        ? `<p class="so-empty">Pick a friend to chat with:</p>${lists.friends.map((p) => `<p><button type="button" class="so-name" data-chat-with="${esc(p.name)}">${p.online ? '<i class="on"></i>' : '<i></i>'}${esc(p.name)}</button></p>`).join('')}`
+        : '<p class="so-empty">No friends yet. Search a username at the top right to add one.</p>';
+      input.placeholder = 'Pick a friend first…';
+      return;
+    }
     const list = tabs.get(active) || [];
     log.innerHTML = list.length
       ? list.map((m) => `<p class="${m.mine ? 'me' : ''}"><time>${time(m.at)}</time> <b data-player="${esc(m.from)}">${esc(m.from)}</b> ${esc(cleanText(m.text))}</p>`).join('')
@@ -68,10 +115,12 @@ export function createSocial(host, { onError } = {}) {
       const list = tabs.get(m.channel);
       list.push(m);
       if (list.length > KEEP) list.splice(0, list.length - KEEP);
-      if (m.channel !== active && !m.mine) unread.set(m.channel, (unread.get(m.channel) || 0) + 1);
+      // the history shown when the game starts isn't counted as new
+      if ((m.channel !== active || !open) && !m.mine && loaded) unread.set(m.channel, (unread.get(m.channel) || 0) + 1);
       fresh = true;
     }
     if (fresh) { drawTabs(); drawLog(); }
+    drawBadges();
   }
   function takeLists(r) {
     lists = { friends: r.friends || [], received: r.received || [], sent: r.sent || [] };
@@ -85,6 +134,7 @@ export function createSocial(host, { onError } = {}) {
       const r = await api.socialPoll(lastId);
       take(r.messages || []);
       takeLists(r);
+      loaded = true;
     } catch { /* try again next time */ }
     if (alive) setTimeout(poll, POLL_MS);
   }
@@ -103,11 +153,15 @@ export function createSocial(host, { onError } = {}) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); input.blur(); } });
   tabsEl.addEventListener('click', (e) => {
     const close = e.target.closest('[data-close-tab]')?.dataset.closeTab;
-    if (close) { tabs.delete(close); unread.delete(close); if (active === close) active = 'general'; drawTabs(); drawLog(); return; }
+    if (close) { tabs.delete(close); unread.delete(close); if (active === close) active = 'friends'; drawTabs(); drawLog(); return; }
     const t = e.target.closest('[data-tab]')?.dataset.tab;
     if (t) openTab(t);
   });
-  log.addEventListener('click', (e) => { const n = e.target.closest('[data-player]')?.dataset.player; if (n) showProfile(n); });
+  log.addEventListener('click', (e) => {
+    const w = e.target.closest('[data-chat-with]')?.dataset.chatWith;
+    if (w) { openTab(w); input.focus(); return; }
+    const n = e.target.closest('[data-player]')?.dataset.player; if (n) showProfile(n);
+  });
   function say(text) {
     const p = document.createElement('p');
     p.className = 'so-note';
@@ -195,7 +249,7 @@ export function createSocial(host, { onError } = {}) {
     if ((n = d('decline'))) return act(() => api.friendRespond(n, false), drawFriends);
     if ((n = d('unsend'))) return act(() => api.friendRemove(n), drawFriends);
     if ((n = d('unfriend'))) return act(() => api.friendRemove(n), () => showProfile(n));
-    if ((n = d('chat'))) { closeDrop(); openTab(n); input.focus(); }
+    if ((n = d('chat'))) { closeDrop(); setOpen(true); openTab(n); input.focus(); }
   });
   // a click anywhere else closes the drop-down
   const away = (e) => { if (!e.target.closest('#social-top')) closeDrop(); };
@@ -206,12 +260,12 @@ export function createSocial(host, { onError } = {}) {
 
   return {
     // Enter in the world starts typing
-    focusChat() { input.focus(); },
+    focusChat() { setOpen(true); if (active === 'friends') openTab('general'); input.focus(); },
     get typing() { return document.activeElement === input || document.activeElement === search; },
     dispose() {
       alive = false;
       document.removeEventListener('pointerdown', away);
-      $('#social-top')?.remove(); $('#chat')?.remove();
+      $('#social-top')?.remove(); $('#chat')?.remove(); toggle.remove();
     },
   };
 }

@@ -6,7 +6,7 @@ import { buildSpawn } from './spawn.js';
 import { buildCave } from './caves.js';
 import { createCreatures, KINDS, monsterHit } from './creatures.js';
 import { createSkillFx } from './skillfx.js';
-import { codeFor, actionFor } from '../data/controls.mjs';
+import { codeFor, actionFor, keyName } from '../data/controls.mjs';
 import { buildDepths } from './depths.js';
 import { buildPortal } from './portal.js';
 import { buildPieces, pieceColliders, storeyY } from './buildings.js';
@@ -17,7 +17,7 @@ import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
-import { heightAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground } from '../data/world-layout.mjs';
+import { heightAt, surfaceAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime } from '../data/clock.mjs';
 import { RACES, restCap } from '../data/game-data.mjs';
@@ -168,13 +168,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let heading = loc.heading ?? Math.PI;
   let velY = 0;
   let airborne = false;
+  let fallFrom = 0; // the height a fall started from
+  let depth = null; // { cave, built, back, leftExit } while you're underground
+  const FALL_SAFE = 4; // metres you can drop without getting hurt
   let creatures = null; // made below; caves built before then get their guards later
   updateSites(pos.x, pos.z);
   land.update(pos.x, pos.z, Infinity); // build the land around you before the clouds part
 
   // The ground under a point, counting the shrine platforms
   function groundAt(x, z) {
-    let g = heightAt(x, z);
+    // underground, the cave floor is exact; up top, the ground as drawn (see surfaceAt)
+    let g = depth ? heightAt(x, z) : surfaceAt(x, z);
     for (const s of sites) {
       if (!s.built || s.place.cave) continue;
       if (Math.hypot(x - s.place.x, z - s.place.z) < 7.4) g = Math.max(g, s.place.y + 0.45);
@@ -389,7 +393,6 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
 
   // ---------- the depths below each cave ----------
-  let depth = null; // { cave, built, back, leftExit } while you're underground
   let holding = false; // a lit torch in your hand
   const skyEnv = scene.environment;
   const heldTorch = (() => {
@@ -544,6 +547,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     onEvent?.('chest', { coins: loot.coins, items: loot.items.map(([id, n]) => `${n > 1 ? `${n} ` : ''}${ITEMS[id].name}`) });
   }
 
+  // The use key (E): open a chest, pick up a torch or pack up your tent, whichever is closest at hand
+  function interact() {
+    if (!game || dead) return;
+    const chest = colliders.near(pos.x, pos.z, 3).find((e) => e.kind === 'chest' && Math.hypot(e.x - pos.x, e.z - pos.z) - e.r < 1.6);
+    if (chest) { openChest(chest); return; }
+    if (!depth) {
+      const took = game.takeTorch(pos.x, pos.z);
+      if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
+      if (nearTent(pos.x, pos.z, TENT_IN + 1)) { pitchTent(); return; }
+    }
+    say('Nothing here to open or pick up', 'note');
+  }
+
   // ---------- the Potion-Maker a Businessman hires: walks a few steps behind you ----------
   let helper = null;
   function refreshHelper() {
@@ -685,14 +701,29 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     c.sp = Math.max(0, c.sp - sk.sp);
     game.touch('sp');
-    if (sk.type !== 'heal' && sk.type !== 'buff') { attackT = 0; swingDone = true; } // swing for show
+    // the body acts it out: a swing for strikes, a spin for sweeps, hands forward to cast, arms up to heal or rally
+    if (sk.type === 'strike') { attackT = 0; swingDone = true; } else skillPose = { kind: sk.type === 'bolt' ? 'cast' : sk.type, t: 0, dur: sk.type === 'sweep' ? 0.6 : sk.type === 'dash' ? 0.4 : 0.7 };
     skillFx.play(sk, look);
     say(sk.name, 'exp');
     return 'ok';
   }
 
+  // A mage with a staff casts a spell in one of their elements (taking turns) instead of swinging
+  let spellTurn = 0;
+  const SPELL_REACH = 14;
+  function castSpell() {
+    const els = character.elements?.length ? character.elements : [RACES[character.race].element];
+    const element = els[spellTurn++ % els.length];
+    const from = new THREE.Vector3(pos.x + Math.sin(heading) * 0.5, pos.y + bodyH * 0.7, pos.z + Math.cos(heading) * 0.5);
+    const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
+    let to;
+    if (m) { to = new THREE.Vector3(m.x, m.y + m.height * 0.6, m.z); damageMonster(m, 1, true); }
+    else to = new THREE.Vector3(pos.x + Math.sin(heading) * SPELL_REACH, pos.y + bodyH * 0.6, pos.z + Math.cos(heading) * SPELL_REACH);
+    skillFx.spell(element, from, to);
+  }
   function resolveSwing() {
     const w = game?.weapon();
+    if (w?.magic && character.cls === 'mage') { castSpell(); return; }
     const r = weaponReach(w);
     const reach = bodyR + r.reach * Math.max(0.8, bodyH / 1.8);
     // monsters first: a long or wide weapon can catch more than one
@@ -708,7 +739,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!best) return;
     if (best.kind === 'vein') { mineVein(best); return; }
     if (best.kind === 'nest') { hitNest(best); return; }
-    if (best.kind === 'chest') { openChest(best); return; }
+    // with a keyboard a chest opens with the use key; on a touch screen a tap of the attack button does it
+    if (best.kind === 'chest') { if (matchMedia('(pointer: coarse)').matches) openChest(best); else say(`Press ${keyName(codeFor('interact'))} to open the chest`, 'note'); return; }
     const info = BREAKABLE[best.kind];
     if (!info) {
       say(best.built ? 'Change buildings in the Builder View (V)' : best.kind === 'rock' ? 'Too hard to break' : best.kind === 'wall' ? 'Solid rock' : 'Too big to break by hand');
@@ -743,23 +775,23 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (act === 'sleep') toggleSleep();
     if (act === 'torch') placeTorch();
     if (act === 'tent') pitchTent();
+    if (act === 'interact') interact();
     onKey?.(e);
   };
   const up = (e) => keys.delete(e.code);
   const held = (action) => keys.has(codeFor(action));
-  // Let go of every key and the touch stick. A key let go while the game wasn't listening (Esc,
-  // another window or tab, a chat box) never sends its keyup, and you'd keep walking.
+  // Let go of every key and the touch stick when the game stops hearing the keyboard (another window
+  // or tab): a key let go meanwhile never sends its keyup, and you'd keep walking. Opening a window
+  // in the game doesn't: keep holding a movement key and you keep moving, let go and you stop.
   const letGoKeys = () => {
     keys.clear();
     if (stick.id !== null || stick.x || stick.y) { stick.id = null; stick.x = 0; stick.y = 0; stickEl.classList.add('hidden'); }
   };
   const hidden = () => { if (document.hidden) letGoKeys(); };
-  const focusIn = (e) => { if (e.target.closest?.('input, textarea, select')) letGoKeys(); };
   window.addEventListener('keydown', down);
   window.addEventListener('keyup', up);
   window.addEventListener('blur', letGoKeys);
   document.addEventListener('visibilitychange', hidden);
-  document.addEventListener('focusin', focusIn);
 
   // Mouse: drag to turn the camera, click to attack. Touch: a stick appears where your left thumb
   // lands and moves you in any direction; dragging on the right turns the camera.
@@ -775,9 +807,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const locked = () => document.pointerLockElement === canvas;
   let letGo = false; // the game released the mouse itself (a window opened), not the player's Esc
   let noLock = false; // some pages can't capture the mouse: then you drag to look, as before
+  let freeMouse = view?.mouse === 'free'; // Settings: the mouse stays free (drag to look) instead of being captured
   document.addEventListener('pointerlockerror', () => { noLock = true; });
   document.addEventListener('pointerlockchange', () => {
-    if (!locked()) letGoKeys();
     if (!locked() && !letGo) onMouseFreed?.();
     letGo = false;
   });
@@ -788,7 +820,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   });
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && locked()) { if (e.button === 0) attack(); return; }
-    if (e.pointerType === 'mouse' && e.button === 0 && !plots.on && !noLock && canvas.requestPointerLock) {
+    if (e.pointerType === 'mouse' && e.button === 0 && !plots.on && !noLock && !freeMouse && canvas.requestPointerLock) {
       try { const r = canvas.requestPointerLock(); r?.catch?.(() => { noLock = true; }); } catch { noLock = true; }
       if (!noLock) return;
     }
@@ -878,6 +910,25 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   resize();
 
   // The arm swing: punch straight ahead, or a downward slash with a weapon
+  let skillPose = null; // { kind, t, dur } while a skill is being acted out
+  function poseSkill(rig, p) {
+    const k = Math.min(1, p.t / p.dur), up = Math.sin(k * Math.PI);
+    const arms = rig.arms || [];
+    if (p.kind === 'sweep') {
+      // spin round once with the weapon arm held out
+      avatar.rotation.y = heading + k * Math.PI * 2;
+      for (const a of arms) { a.shoulder.rotation.z = a.side * 1.3 * up; a.shoulder.rotation.x = -0.4 * up; }
+    } else if (p.kind === 'cast') {
+      for (const a of arms) { a.shoulder.rotation.x = -1.45 * up; a.elbow.rotation.x = -0.2 * (1 - up); }
+    } else if (p.kind === 'heal' || p.kind === 'buff') {
+      for (const a of arms) { a.shoulder.rotation.x = -2.7 * up; a.shoulder.rotation.z = a.side * 0.35 * up; }
+      if (rig.spine) rig.spine.rotation.x = -0.15 * up;
+    } else if (p.kind === 'dash') {
+      if (rig.spine) rig.spine.rotation.x = 0.45 * up;
+      for (const a of arms) a.shoulder.rotation.x = 0.8 * up;
+    }
+    if (!arms.length) rig.root.position.z = up * bodyH * 0.2;
+  }
   function poseAttack(rig, k, armed) {
     const arm = rig.arms?.[0];
     if (arm) {
@@ -981,10 +1032,30 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const floatAt = water - bodyH * 0.7;
     swimming = ground < floatAt;
     if (swimming) ground = floatAt;
-    if (held('jump') && !airborne && !swimming && !dead) { velY = 4.2; airborne = true; }
-    velY -= 9.81 * dt;
-    pos.y += velY * dt;
-    if (pos.y <= ground) { pos.y = ground; velY = 0; airborne = false; }
+    if (held('jump') && !airborne && !swimming && !dead) { velY = 4.2; airborne = true; fallFrom = pos.y; }
+    // walking down a slope keeps your feet on it; only a real drop (a cliff, a ledge) is a fall
+    const drop = pos.y - ground;
+    if (!airborne && drop < 0.35 + speedNow * dt * 2.2) { pos.y = ground; velY = 0; } else {
+      if (!airborne && drop > 0) { airborne = true; fallFrom = pos.y; }
+      velY -= 9.81 * dt;
+      pos.y += velY * dt;
+      if (pos.y <= ground) {
+        // landing hard hurts: past a 4 m drop, more the further you fell (water breaks the fall)
+        const fell = fallFrom - ground;
+        pos.y = ground; velY = 0; airborne = false;
+        if (fell > FALL_SAFE && !swimming && game && !dead) {
+          const dmg = Math.round(game.stats().hp * Math.min(1.2, (fell - FALL_SAFE) * 0.07));
+          if (dmg > 0) {
+            floatText(`-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
+            say(fell > 12 ? 'A hard landing!' : 'Ouch!', 'hurt');
+            lastHurt = clock.elapsedTime;
+            if (game.damage(dmg)) defeated({ kind: { name: 'long fall' } });
+          }
+        }
+        fallFrom = pos.y;
+      }
+    }
+    if (!airborne) fallFrom = pos.y;
 
     avatar.position.copy(pos);
     avatar.rotation.y = heading;
@@ -995,6 +1066,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 1.6);
     moveHelper(dt, t);
 
+    if (skillPose) { skillPose.t += dt; poseSkill(rig, skillPose); if (skillPose.t >= skillPose.dur) skillPose = null; }
     // Attacks
     cooldown = Math.max(0, cooldown - dt);
     if (attackT >= 0) {
@@ -1213,18 +1285,20 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     here: () => here(),
     setLands(list) {
       const before = new Set(prepared);
-      prepared = new Set(list.filter((p) => Number.isFinite(p.flat)).map((p) => `${p.ix},${p.iz}`));
+      // a plot redraws when it is cleared or flattened
+      prepared = new Set(list.filter((p) => Number.isFinite(p.flat) || p.cleared).map((p) => `${p.ix},${p.iz}${Number.isFinite(p.flat) ? `,${p.flat}` : ''}`));
       setPreparedPlots(list);
       for (const k of prepared) {
         if (before.has(k)) continue;
         const [ix, iz] = k.split(',').map(Number);
-        land.refreshAt((ix + 0.5) * PLOT, (iz + 0.5) * PLOT);
+        land.refreshAt((ix + 0.5) * PLOT, (iz + 0.5) * PLOT, 30);
       }
       plots.setLands(list);
       showStructures(list);
     },
     // let the mouse go (a window is opening)
-    releaseMouse() { letGoKeys(); if (locked()) { letGo = true; document.exitPointerLock(); } },
+    releaseMouse() { if (locked()) { letGo = true; document.exitPointerLock(); } },
+    setMouseMode(mode) { freeMouse = mode === 'free'; if (freeMouse && locked()) { letGo = true; document.exitPointerLock(); } },
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     stop() {
       saveNow();
@@ -1240,7 +1314,6 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', letGoKeys);
       document.removeEventListener('visibilitychange', hidden);
-      document.removeEventListener('focusin', focusIn);
       window.removeEventListener('resize', resize);
       window.removeEventListener('pagehide', saveNow);
       renderer.dispose();

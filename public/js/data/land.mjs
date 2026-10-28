@@ -1,6 +1,6 @@
 // Land you can buy: square plots of the Heartland (the central forest continent).
 // Shared by the game and the server, so both agree on what can be bought and what it costs.
-import { PLOT, sample, placesWithPositions, riverDistance } from './world-layout.mjs';
+import { PLOT, sample, placesWithPositions, riverDistance, plotLevel } from './world-layout.mjs';
 
 export { PLOT };
 export const PURPOSE_FEE = 50; // to change what a plot is for
@@ -104,10 +104,17 @@ export function prepareCost(ix, iz, cls) {
   return cls === 'builder' ? Math.round(cost / 2) : cost;
 }
 
-// The level a prepared plot is set to: the average of its ground
-// (a river plot is filled in to just above the water)
+// The level a plot is flattened to: the average of its ground (land under water stays under water).
+// Beside a plot that is already level, it takes the same level, so the two join without a step.
 export function levelHeight(ix, iz) {
   const hs = plotHeights(ix, iz);
   const avg = hs.reduce((a, p) => a + p.h, 0) / hs.length;
-  return Math.round(Math.max(avg, Math.max(...hs.map((p) => p.water)) + 0.6) * 100) / 100;
+  let best = null;
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const f = plotLevel(ix + dx, iz + dz);
+    if (Number.isFinite(f) && (best === null || Math.abs(f - avg) < Math.abs(best - avg))) best = f;
+  }
+  return Math.round((best ?? avg) * 100) / 100;
 }
+// Clearing (trees, rocks and grass only; the ground keeps its shape) costs a little
+export const clearCost = (cls) => (cls === 'builder' ? 15 : 30);

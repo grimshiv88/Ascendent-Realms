@@ -4,6 +4,8 @@ import { buildCharacter, animateCharacter } from './characters/model.js';
 import { RACES, EVOLUTIONS, EVOLUTION_LEVELS, ADVANCEMENTS } from './data/game-data.mjs';
 import { makeStage } from './characters/stage.js';
 import { loadSculpts } from './characters/sculpt.js';
+import { wearGear } from './characters/gear.js';
+import { ITEMS } from './data/items.mjs';
 
 await loadSculpts();
 
@@ -24,6 +26,9 @@ function rebuild() {
   const only = params.get('stage');
   const stages = names.map((_, i) => i).filter((i) => only === null || String(i) === only);
   const chars = stages.map((stage) => buildCharacter({ race, form: isMonster ? form : 'humanoid', stage }));
+  // ?weapon=item_id puts a weapon in every hand
+  const weapon = ITEMS[params.get('weapon')];
+  if (weapon) chars.forEach((c) => wearGear(c, { weapon: { ...weapon, plus: 0 } }));
   // spread them out so each has room
   let x = 0;
   const xs = [];

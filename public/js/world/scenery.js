@@ -368,6 +368,7 @@ export function scenery() {
     const list = [];
     for (let n = 0; n < 2600; n++) {
       const x = cx * size + rand() * size, z = cz * size + rand() * size;
+      if (isPrepared(x, z)) continue; // cleared land has no grass
       sample(x, z, s);
       if (s.h < s.water + 0.4) continue;
       if (s.region !== 'heart' && s.region !== 'fae' && s.region !== 'mire') continue;

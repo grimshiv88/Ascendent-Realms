@@ -358,17 +358,25 @@ export async function landPurpose(ix, iz, purpose) {
   return request('api/land/purpose', { method: 'POST', body: { ix, iz, purpose } });
 }
 
-export async function landPrepare(ix, iz) {
+// how: 'clear' (trees, rocks and grass go; the ground keeps its shape) or 'flatten' (also levelled)
+export async function landPrepare(ix, iz, how = 'flatten') {
   if (await isPreviewMode()) {
     return previewLand.run((plots, acc, spend, R) => {
       const p = plots.find((q) => q.ix === ix && q.iz === iz && q.owner === acc.character.name);
       if (!p) throw new Error('That is not your plot.');
+      if (how === 'clear') {
+        if (p.cleared || p.flat != null) throw new Error('This plot is already cleared.');
+        spend(R.clearCost(acc.character.cls));
+        p.cleared = true;
+        return;
+      }
       if (p.flat != null) throw new Error('This plot is already cleared and level.');
       spend(R.prepareCost(ix, iz, acc.character.cls));
       p.flat = R.levelHeight(ix, iz);
+      p.cleared = true;
     });
   }
-  return request('api/land/prepare', { method: 'POST', body: { ix, iz } });
+  return request('api/land/prepare', { method: 'POST', body: { ix, iz, how } });
 }
 
 // Build on your land: { add, remove } pieces, or { building: { type, x, z, r, how } }

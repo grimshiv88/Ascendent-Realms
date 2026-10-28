@@ -343,11 +343,13 @@ export function createLand(scene) {
   scene.add(water);
 
   // inland lakes, each with its own water surface
+  const lakeMats = [];
   for (const L of lakesWithLevels()) {
     const n = normals.clone();
     n.repeat.set((L.r * 2.6) / 14, (L.r * 2.6) / 14);
     const lakeMat = waterMat.clone();
     lakeMat.normalMap = n;
+    lakeMats.push(lakeMat);
     const disc = new THREE.Mesh(new THREE.CircleGeometry(L.r * 1.3, 64), lakeMat);
     disc.rotation.x = -Math.PI / 2;
     disc.position.set(L.x, L.level, L.z);
@@ -485,8 +487,10 @@ export function createLand(scene) {
     colliders,
     breakThing,
     animate(t) {
-      normals.offset.x += 0.00002;
-      normals.offset.y += 0.000013;
+      // the ripples drift and swell, so the water looks like it moves (each repeat is 14 m)
+      normals.offset.set(t * 0.03, t * 0.019);
+      waterMat.normalScale.setScalar(0.3 + Math.sin(t * 0.7) * 0.08);
+      for (const L of lakeMats) { L.normalMap.offset.set(t * 0.024, -t * 0.016); L.normalScale.copy(waterMat.normalScale); }
       veg.animate?.(t);
     },
     dispose() {

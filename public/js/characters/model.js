@@ -586,6 +586,7 @@ const PLAYER_RACES = ['elf', 'dwarf', 'hobbit', 'giant', 'beastkin'];
 // taller and more muscular, the hair grows, and the clothing gets richer. The last stage wears a crown.
 
 // The Goblin line, stage by stage (h = monster-form height, hh = humanoid-form height, in metres).
+// Each evolution is clearly bigger than the one before.
 const GOBLIN_STAGES = [
   { // Goblin: small, skinny and crouched, bald, huge ears, a rag skirt and a strap
     h: 1.0, hh: 1.55, bulk: 0.85, muscle: 0.05, belly: 0.3, head: 1.7, hunch: 0.22, bend: 0.6, spread: 0.12, arm: 0.45, leg: 0.4,
@@ -593,12 +594,12 @@ const GOBLIN_STAGES = [
     outfit: { skirt: { color: '#5b5a34', height: 0.1, tears: 0.9 }, strap: '#4a3424' },
   },
   { // Hobgoblin: taller and lean with shaggy hair, a red skirt and cloth wraps
-    h: 1.45, hh: 1.65, bulk: 0.88, muscle: 0.45, head: 1.2, hunch: 0.14, bend: 0.2, arm: 0.42, leg: 0.45,
+    h: 1.55, hh: 1.9, bulk: 0.88, muscle: 0.45, head: 1.2, hunch: 0.14, bend: 0.2, arm: 0.42, leg: 0.45,
     ears: 1.3, nose: 0.38, hand: 1.15, fingers: 1.1, hair: { volume: 1, length: 0.8, spiky: 1.3, swept: true },
     outfit: { skirt: { color: '#7d2a20', height: 0.15 }, belt: { color: '#4a2a1a' }, wraps: { color: '#6b2f22' } },
   },
   { // Goblin Chieftain: muscular, war paint, fur mantle, fang necklace and a skull on the belt
-    h: 1.75, hh: 1.75, bulk: 1.0, muscle: 0.75, head: 1.02, hunch: 0.08, bend: 0.12, arm: 0.4, leg: 0.46,
+    h: 1.9, hh: 2.1, bulk: 1.0, muscle: 0.75, head: 1.02, hunch: 0.08, bend: 0.12, arm: 0.4, leg: 0.46,
     ears: 1.2, nose: 0.34, hand: 1.1, hair: { volume: 1.1, length: 2.2, spiky: 1.2, swept: true },
     outfit: {
       skirt: { color: '#7a2a1e', height: 0.18 }, belt: { color: '#4a2a1a', buckle: 'skull' },
@@ -606,7 +607,7 @@ const GOBLIN_STAGES = [
     },
   },
   { // Goblin Lord: tall and upright, long hair, a purple loincloth with a gold buckle
-    h: 2.1, hh: 1.9, bulk: 1.02, muscle: 0.85, head: 0.92, hunch: 0.03, bend: 0.05, arm: 0.39, leg: 0.48,
+    h: 2.25, hh: 2.3, bulk: 1.02, muscle: 0.85, head: 0.92, hunch: 0.03, bend: 0.05, arm: 0.39, leg: 0.48,
     ears: 1.1, nose: 0.3, hand: 1.05, hair: { volume: 1.1, length: 3.2, swept: true },
     outfit: {
       skirt: { color: '#2e2234', height: 0.12 }, front: { color: '#43304f', length: 0.3 }, back: { color: '#43304f', length: 0.2 },
@@ -614,14 +615,14 @@ const GOBLIN_STAGES = [
     },
   },
   { // Ogre Lord: a huge, heavy body, small head, tusks and a darker, greyer skin
-    h: 2.55, hh: 2.2, bulk: 1.42, muscle: 1.0, belly: 0.2, chestBroad: 1.12, head: 0.92, hunch: 0.12, bend: 0.08, arm: 0.41, leg: 0.42,
+    h: 2.65, hh: 2.55, bulk: 1.42, muscle: 1.0, belly: 0.2, chestBroad: 1.12, head: 0.92, hunch: 0.12, bend: 0.08, arm: 0.41, leg: 0.42,
     ears: 0.75, broadNose: true, tusks: true, hand: 1.15, hair: { volume: 0.8, length: 0.5, spiky: 0.7, swept: true },
     skinShift: ['#6b7559', 0.4],
     outfit: { skirt: { color: '#2a2018', height: 0.2, tears: 0.3 }, front: { color: '#2a2018', length: 0.32 }, belt: { color: '#5a3a22', thick: 1.8 } },
   },
   { // Goblin Emperor: the tallest, lean and powerful, long flowing hair, a spiked gold crown,
     // black loincloth with gold trim, brighter skin
-    h: 2.7, hh: 2.3, bulk: 1.08, muscle: 0.95, head: 0.84, hunch: 0, bend: 0, arm: 0.39, leg: 0.5,
+    h: 2.85, hh: 2.75, bulk: 1.08, muscle: 0.95, head: 0.84, hunch: 0, bend: 0, arm: 0.39, leg: 0.5,
     ears: 1.15, nose: 0.3, hand: 1.0, hair: { volume: 1.2, length: 5, swept: true },
     skinShift: ['#7aa83c', 0.25],
     outfit: {
@@ -634,11 +635,11 @@ const GOBLIN_STAGES = [
 // The same pattern for the other monster races' humanoid forms, relative to their stage-0 body.
 const MONSTER_TIERS = [
   { h: 1.0, muscle: 0.1, bulk: 0.92, hunch: 0.12, outfit: 'rag' },
-  { h: 1.08, muscle: 0.4, bulk: 0.97, hunch: 0.06, outfit: 'wrap' },
-  { h: 1.16, muscle: 0.65, bulk: 1.02, hunch: 0.03, outfit: 'tribal' },
-  { h: 1.26, muscle: 0.82, bulk: 1.04, hunch: 0, outfit: 'lord' },
-  { h: 1.4, muscle: 1.0, bulk: 1.35, hunch: 0.08, belly: 0.25, chestBroad: 1.12, outfit: 'brute' },
-  { h: 1.46, muscle: 0.92, bulk: 1.08, hunch: 0, outfit: 'emperor' },
+  { h: 1.2, muscle: 0.4, bulk: 0.97, hunch: 0.06, outfit: 'wrap' },
+  { h: 1.36, muscle: 0.65, bulk: 1.02, hunch: 0.03, outfit: 'tribal' },
+  { h: 1.52, muscle: 0.82, bulk: 1.04, hunch: 0, outfit: 'lord' },
+  { h: 1.7, muscle: 1.0, bulk: 1.35, hunch: 0.08, belly: 0.25, chestBroad: 1.12, outfit: 'brute' },
+  { h: 1.85, muscle: 0.92, bulk: 1.08, hunch: 0, outfit: 'emperor' },
 ];
 
 const RACE_CLOTH = {

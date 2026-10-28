@@ -206,6 +206,28 @@ export function mergeResult(a, b) {
   return Math.min(MAX_PLUS, (a.plus || 0) + 1 + (sameType ? b.plus || 0 : 0));
 }
 
+// What kind of thing an item is, for the shop and the Blacksmith: weapons merge with weapons (the
+// same type, a sword with a sword, also carries the upgrades over), armour with armour for the same
+// part of the body.
+const TYPE_NAMES = { sword: 'Sword', axe: 'Axe', club: 'Club', dagger: 'Dagger', mace: 'Mace', spear: 'Spear', staff: 'Staff' };
+const SLOT_NAMES = { head: 'Helmet', body: 'Chest armour', legs: 'Leg armour', feet: 'Boots', shield: 'Shield' };
+export function categoryOf(it) {
+  if (it.kind === 'weapon') return { cat: 'Weapon', sub: TYPE_NAMES[it.type] || 'Weapon' };
+  if (it.kind === 'armour') return { cat: 'Armour', sub: SLOT_NAMES[it.slot] || 'Armour' };
+  if (it.kind === 'coating') return { cat: 'Coating', sub: 'For weapons' };
+  if (it.kind === 'food') return { cat: it.heal || it.sp ? 'Food & drink' : 'Potion', sub: null };
+  if (it.kind === 'seed') return { cat: 'Seeds', sub: null };
+  return { cat: 'Material', sub: it.rank != null ? 'Ore' : null };
+}
+
+// Forging: a Blacksmith makes weapons and armour from ore and coins. Better and higher-ranked
+// pieces cost a lot more, and need rarer ore.
+const FORGE_ORE = ['iron_ore', 'iron_ore', 'silver_ore', 'gold_ore', 'ruby', 'dragonite'];
+export function forgeCost(it) {
+  const r = it.rank || 0;
+  return { coins: Math.round((it.price * 0.45 * (1 + r * 0.6)) / 5) * 5, needs: [[FORGE_ORE[r], 2 + r * 2], ...(r >= 2 ? [['iron_ore', 3]] : [])] };
+}
+
 // Things you can make from what you carry
 export const RECIPES = [
   { makes: 'wooden_club', needs: [['log', 3]] },
@@ -216,13 +238,15 @@ export const RECIPES = [
 export const STARTER_ITEMS = {
   swordsman: [['rusty_sword', 1]], assassin: [['iron_dagger', 1]], tank: [['wooden_club', 1]], mage: [['oak_staff', 1]],
   healer: [['oak_staff', 1]], blacksmith: [['hand_axe', 1]], builder: [['hand_axe', 1]], farmer: [['hand_axe', 1]],
-  businessman: [['wooden_club', 1]],
+  businessman: [['wooden_club', 1]], potion_maker: [['oak_staff', 1], ['herb', 5]],
 };
 
-// The Potion-Maker: a Businessman can hire one for a fee. While hired they brew any potion for
-// less than the shop charges (the Businessman pays for the herbs), and two elixirs no shop sells.
+// Brewing: only the Potion Maker class brews. Each potion needs herbs and a few coins (far less
+// than the shop asks), and two elixirs can't be bought anywhere. (fee and minutes are no longer used.)
 export const POTION_MAKER = { fee: 150, minutes: 30, queue: 5, share: 0.45 };
 export const BREWS = ['potion', 'big_potion', 'sp_potion', 'calm_draught', 'strength_potion', 'stone_potion', 'swift_potion',
   'poison_potion', 'fire_oil', 'frost_oil', 'elixir_might', 'elixir_life'];
 export const brewCost = (id) => Math.round(ITEMS[id].price * POTION_MAKER.share);
+// herbs each brew needs (the Potion Maker's raw material)
+export const brewHerbs = (id) => (ITEMS[id].brewOnly ? 6 : ITEMS[id].price >= 150 ? 4 : ITEMS[id].price >= 60 ? 2 : 1);
 export const brewSeconds = (id) => (ITEMS[id].brewOnly ? 90 : 20);

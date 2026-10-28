@@ -98,6 +98,8 @@ function axeHead(z, size, m, { double = false, beard = 0.4 } = {}) {
   g.add(mesh(new THREE.BoxGeometry(0.05, 0.05, size * 0.45), m));
   if (!double) g.add(mesh(new THREE.BoxGeometry(0.06, 0.04, size * 0.16), m, (o) => { o.position.x = -0.05; }));
   g.position.z = z;
+  // stand the blade up so its edge leads the swing (forward and down), not flat like a wall ornament
+  g.rotation.z = -Math.PI / 2;
   return g;
 }
 
@@ -224,7 +226,8 @@ export function wearGear(character, worn) {
     const w = tag(weaponModel(worn.weapon, worn.weapon.plus));
     w.scale.setScalar(Math.max(0.55, scale));
     w.position.y = -H * 0.045;
-    w.rotation.x = 0.25;
+    // held ready: the business end forward and raised, as if about to strike
+    w.rotation.x = -0.85;
     rig.arms[0].hand.add(w);
   }
   if (worn.shield) {

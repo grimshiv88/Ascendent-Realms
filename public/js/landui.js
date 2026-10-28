@@ -1,6 +1,6 @@
 // The Land window: shows the plot you picked on the grid (press L), and lets you buy it,
 // choose what it is for, and clear and level it.
-import { PURPOSES, PURPOSE_FEE, prepareCost, PLOT, REACH } from './data/land.mjs';
+import { PURPOSES, PURPOSE_FEE, prepareCost, clearCost, PLOT, REACH } from './data/land.mjs';
 import { THEMES, SIZES, cavePrice } from './data/depths.mjs';
 import { ITEMS } from './data/items.mjs';
 
@@ -32,13 +32,15 @@ export function renderLand(el, plot, game, { choice = 'house', message = '', bus
   } else if (!mine) {
     body = `<p class="sys-top">Owned by <b>${esc(owned.owner)}</b> <span>·</span> ${PURPOSES[owned.purpose]?.name || 'Land'}</p>`;
   } else {
-    const cost = prepareCost(plot.ix, plot.iz, c.cls);
+    const cost = prepareCost(plot.ix, plot.iz, c.cls), clear = clearCost(c.cls);
+    const level = Number.isFinite(owned.flat), cleared = level || owned.cleared;
+    const btn = (how, price, label) => `<button type="button" class="sys-button${how === 'clear' ? ' ghost' : ''}" data-land-prepare="${how}" ${busy || c.coins < price ? 'disabled' : ''}>${c.coins < price ? `Needs ${price} G` : `${label} for ${price} G`}</button>`;
     body = `<p class="sys-top">Your land <span>·</span> <b>${PURPOSES[owned.purpose]?.name}</b></p>
-      <h3 class="sys-sub">Clear and level</h3>
-      ${Number.isFinite(owned.flat)
-        ? '<p class="sys-hint">✓ Cleared of trees and levelled, ready to build on. Building walls, floors and roofs comes next.</p>'
-        : `<p class="sys-hint">Cuts down the trees and makes the ground flat so you can build.${c.cls === 'builder' ? ' Builders pay half.' : ''}</p>
-           <div class="land-actions"><button type="button" class="sys-button" data-land-prepare ${busy || c.coins < cost ? 'disabled' : ''}>${c.coins < cost ? `Needs ${cost} G` : `Clear and level for ${cost} G`}</button></div>`}
+      <h3 class="sys-sub">Clear and flatten</h3>
+      ${level ? '<p class="sys-hint">✓ Cleared and flattened, ready to build on. Its edges slope gently down (or up) to the land around it.</p>'
+        : `<p class="sys-hint">${cleared ? '✓ Cleared of trees, rocks and grass. The ground keeps its shape.' : '<b>Clear</b> takes away the trees, rocks and grass; the ground keeps its shape.'}
+           <b>Flatten</b> also makes the whole plot one level, with a gentle slope at its edges (beside land you've already flattened, it takes the same level). You need flat land to build.${c.cls === 'builder' ? ' Builders pay half.' : ''}</p>
+           <div class="land-actions">${cleared ? '' : btn('clear', clear, 'Clear')}${btn('flatten', cost, 'Flatten')}</div>`}
       <h3 class="sys-sub">Change what it is for <small>${PURPOSE_FEE} G</small></h3>${purposeCards(owned.purpose)}
       <div class="land-actions"><button type="button" class="sys-button ghost" data-land-change ${busy || choice === owned.purpose || c.coins < PURPOSE_FEE ? 'disabled' : ''}>Change to ${PURPOSES[choice].name}</button></div>`;
   }

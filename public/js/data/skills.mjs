@@ -38,6 +38,7 @@ const BY_CLASS = {
   farmer: ['harvest_swing', 'hearty_meal', 'charge', 'second_wind'],
   businessman: ['coin_toss', 'haggle', 'second_wind', 'power_strike'],
   builder: ['quick_wall', 'ground_slam', 'hammer_blow', 'iron_skin'],
+  potion_maker: ['mend', 'frost_nova', 'second_wind', 'fire_bolt'],
 };
 const GENERAL = ['power_strike', 'second_wind', 'battle_cry', 'iron_skin', 'whirlwind', 'charge'];
 

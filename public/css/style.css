@@ -742,7 +742,20 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .so-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .so-empty { margin: 4px 0; opacity: 0.75; }
 
-.so-chat { position: absolute; left: 12px; bottom: 12px; z-index: 2; width: min(360px, calc(100vw - 140px)); display: flex; flex-direction: column; font: 0.85rem Georgia, serif; color: #f5ebd0; }
+.so-chat { position: absolute; left: 0; top: 50%; z-index: 3; width: min(340px, calc(100vw - 70px)); height: min(440px, 70vh); display: flex; flex-direction: column; padding: 8px; font: 0.85rem Georgia, serif; color: #f5ebd0;
+  background: rgba(10, 8, 4, 0.82); border: 1px solid rgba(200, 146, 26, 0.45); border-left: 0; border-radius: 0 10px 10px 0;
+  transform: translate(-105%, -50%); transition: transform 0.25s ease; }
+.so-chat.open { transform: translate(0, -50%); }
+.so-chat .so-log { flex: 1; height: auto; }
+.so-chat-toggle { position: absolute; left: 0; top: 50%; z-index: 2; transform: translateY(-50%); width: 34px; height: 54px; padding: 0; font-size: 1.15rem; color: #fff; cursor: pointer;
+  background: rgba(10, 8, 4, 0.78); border: 1px solid rgba(200, 146, 26, 0.55); border-left: 0; border-radius: 0 10px 10px 0; }
+.so-chat-toggle .so-badge { position: absolute; top: -6px; right: -6px; }
+.so-modes { display: flex; gap: 4px; margin-bottom: 6px; }
+.so-modes button { flex: 1; padding: 5px 8px; font: 600 0.78rem 'Oswald', sans-serif; letter-spacing: 0.06em; text-transform: uppercase; color: #d8cba8; background: rgba(8, 6, 3, 0.6); border: 1px solid rgba(200, 146, 26, 0.4); border-radius: 5px; cursor: pointer; }
+.so-modes button[aria-pressed="true"] { color: #1a1205; background: var(--gold-2); }
+.so-modes button b { margin-left: 4px; padding: 0 4px; color: #fff; background: #d8343e; border-radius: 6px; }
+.so-modes .so-hide { flex: 0 0 34px; font-size: 1rem; }
+.so-log .so-name { background: none; border: 0; color: var(--gold-2); font: inherit; cursor: pointer; padding: 2px 0; }
 .so-tabs { display: flex; gap: 4px; overflow-x: auto; }
 .so-tabs button { padding: 3px 9px; font: 600 0.72rem 'Oswald', sans-serif; letter-spacing: 0.05em; color: #d8cba8; background: rgba(8, 6, 3, 0.6); border: 1px solid rgba(200, 146, 26, 0.4); border-bottom: 0; border-radius: 5px 5px 0 0; cursor: pointer; white-space: nowrap; }
 .so-tabs button[aria-selected="true"] { color: #1a1205; background: var(--gold-2); }
@@ -759,8 +772,7 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .so-form input:focus { outline: none; border-color: var(--gold-2); }
 @media (max-width: 700px) {
   #social-top { right: 64px; width: auto; left: auto; min-width: 150px; }
-  .so-chat { width: calc(100vw - 130px); }
-  .so-log { height: 90px; }
+  .so-chat { width: calc(100vw - 70px); height: min(360px, 60vh); }
 }
 
 /* Settings → Controls */
@@ -768,3 +780,7 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .ctl-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 4px 14px; }
 .ctl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
 .ctl-row .sk-key { min-width: 76px; }
+
+/* what an item is (and so what it merges with) */
+.cat-tag { display: inline-block; padding: 0 5px; margin-right: 3px; border: 1px solid rgba(242, 181, 30, 0.5); border-radius: 4px; color: #f2c95e; font: 600 0.72rem 'Oswald', sans-serif; letter-spacing: 0.03em; }
+.shop-row.locked { opacity: 0.55; }

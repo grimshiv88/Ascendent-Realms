@@ -1,7 +1,7 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
 import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
-import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds } from './data/items.mjs';
+import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost } from './data/items.mjs';
 import { fillBoard, progressOf } from './quests.js';
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
 import { portalById, portalFee } from './data/portals.mjs';
@@ -234,6 +234,23 @@ export function createProgress(c, { save, onChange, onEvent }) {
       }
       return 'ok';
     },
+    // Blacksmiths forge weapons and armour from ore and coins
+    forge(id) {
+      if (c.cls !== 'blacksmith') return 'class';
+      const it = ITEMS[id];
+      const row = SHOP.find(([sid]) => sid === id);
+      if (!it || !isGear(it) || !row) return 'pick';
+      if (c.level < row[1]) return 'level';
+      const cost = forgeCost(it);
+      if (c.coins < cost.coins) return 'coins';
+      if (!cost.needs.every(([n, k]) => count(n) >= k)) return 'parts';
+      if (used() >= BAG_SLOTS) return 'full';
+      c.coins -= cost.coins;
+      for (const [n, k] of cost.needs) removeItem(n, k);
+      addItem(id, 1);
+      changed('gear');
+      return 'ok';
+    },
     // Blacksmiths can brush a coating (Poison Potion, Fire Oil, Frost Oil) onto a weapon
     coat(weaponKey, coatId) {
       if (c.cls !== 'blacksmith') return 'class';
@@ -258,9 +275,10 @@ export function createProgress(c, { save, onChange, onEvent }) {
     caveCleared: (id) => !!c.caves[id],
     clearCave(id) { c.caves[id] = Date.now(); changed('caves'); },
 
-    // The Potion-Maker: only a Businessman can hire one
-    canHire: () => c.cls === 'businessman',
-    makerHired: () => !!c.potionMaker && c.potionMaker.until > Date.now(),
+    // Brewing: only a Potion Maker brews (no more hiring one)
+    canBrew: () => c.cls === 'potion_maker',
+    canHire: () => c.cls === 'potion_maker',
+    makerHired: () => false,
     // Pay a portal's fee to go to another portal on the same continent
     usePortal(fromId, toId) {
       const from = portalById(fromId), to = portalById(toId);
@@ -272,23 +290,16 @@ export function createProgress(c, { save, onChange, onEvent }) {
       changed('coins');
       return 'ok';
     },
-    hireMaker() {
-      if (c.cls !== 'businessman') return 'class';
-      if (c.coins < POTION_MAKER.fee) return 'coins';
-      c.coins -= POTION_MAKER.fee;
-      const from = Math.max(Date.now(), c.potionMaker?.until || 0);
-      c.potionMaker = { until: from + POTION_MAKER.minutes * 60000, queue: c.potionMaker?.queue || [] };
-      changed('coins');
-      return 'ok';
-    },
     brew(id) {
-      const pm = c.potionMaker;
-      if (!pm || pm.until <= Date.now()) return 'hire';
+      if (c.cls !== 'potion_maker') return 'class';
+      const pm = (c.potionMaker ||= { until: 0, queue: [] });
       if (!BREWS.includes(id)) return 'pick';
       if (pm.queue.length >= POTION_MAKER.queue) return 'busy';
-      const cost = brewCost(id);
+      const cost = brewCost(id), herbs = brewHerbs(id);
       if (c.coins < cost) return 'coins';
+      if (count('herb') < herbs) return 'herbs';
       c.coins -= cost;
+      removeItem('herb', herbs);
       // each potion starts when the one before it is done
       const start = Math.max(Date.now(), pm.queue.at(-1)?.ready || 0);
       pm.queue.push({ id, ready: start + brewSeconds(id) * 1000 });

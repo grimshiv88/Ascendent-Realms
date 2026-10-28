@@ -109,6 +109,7 @@ const CLASS_LOOT = {
   blacksmith: [['iron_ore', 1], ['war_axe', 25], ['moonstone', 40]],
   farmer: [['hand_axe', 1], ['big_potion', 15], ['war_axe', 35]],
   businessman: [['gold_ore', 1], ['ruby', 15], ['sapphire', 30]],
+  potion_maker: [['herb', 1], ['big_potion', 12], ['elixir_life', 35]],
   builder: [['iron_mace', 1], ['iron_helm', 10], ['steel_plate', 30]],
 };
 // [item, how many] for the chest, plus coins

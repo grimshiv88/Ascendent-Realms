@@ -42,6 +42,7 @@ export const CLASSES = {
   blacksmith:  { name: 'Blacksmith',  bonus: { str: 4, sta: 4, dex: 2 }, main: 'str', blurb: 'Crafts and upgrades items 25% cheaper, and can open a shop.' },
   businessman: { name: 'Businessman', bonus: { int: 7, agi: 3 },         main: 'int', blurb: 'Can own trading buildings. Shops pay a Businessman far more for what he sells (70% of the price, not 40%).' },
   builder:     { name: 'Builder',     bonus: { str: 4, sta: 4, int: 2 }, main: 'sta', blurb: 'Builds 30% faster with 20% less material.' },
+  potion_maker: { name: 'Potion Maker', bonus: { int: 5, dex: 3, sta: 2 }, main: 'int', blurb: 'Brews potions and elixirs from herbs for far less than the shop asks. The only class with a Potion-Maker\'s kit.' },
   farmer:      { name: 'Farmer',      bonus: { sta: 6, str: 4 },         main: 'sta', blurb: 'Grows crops and raises animals. Food made removes 50% more Fatigue.' },
 };
 
@@ -65,10 +66,11 @@ export const ADVANCEMENTS = {
   blacksmith:  ['Blacksmith', 'Smith', 'Master Smith', 'Runesmith', 'Grand Artisan', 'Legendary Forger'],
   businessman: ['Businessman', 'Merchant', 'Trader', 'Guild Master', 'Tycoon', 'Merchant Sovereign'],
   builder:     ['Builder', 'Mason', 'Architect', 'Master Architect', 'City Builder', 'World Builder'],
+  potion_maker: ['Potion Maker', 'Apothecary', 'Alchemist', 'Master Alchemist', 'Grand Alchemist', 'Elixir Sovereign'],
   farmer:      ['Farmer', 'Rancher', 'Harvest Master', 'Land Steward', 'Grand Steward', 'Lord of Harvest'],
 };
 
-export const CLASS_ELEMENT = { assassin: 'Dark', healer: 'Light', blacksmith: 'Fire', builder: 'Earth', farmer: 'Nature' };
+export const CLASS_ELEMENT = { assassin: 'Dark', healer: 'Light', blacksmith: 'Fire', builder: 'Earth', farmer: 'Nature', potion_maker: 'Water' };
 export const ELEMENTS = ['Fire', 'Water', 'Earth', 'Wind', 'Lightning', 'Nature', 'Light', 'Dark'];
 
 export const UNIQUE_SKILLS = [

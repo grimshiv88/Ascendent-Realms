@@ -7,7 +7,8 @@ import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
 import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
-import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml } from './bag.js';
+import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass } from './bag.js';
+import { ITEMS } from './data/items.mjs';
 import { renderQuests } from './quests.js';
 import { renderLand, renderCave } from './landui.js';
 import { caveById } from './data/depths.mjs';
@@ -184,11 +185,9 @@ function startGame(character) {
   });
   setInterval(() => updateSkillBar(skillBar, game, cooling), 100);
   // the Potion-Maker's brewing: finished potions go into the bag
-  let hadHelper = false; // the first tick brings back a Potion-Maker still hired from last time
   setInterval(() => {
     const got = game.collectBrews();
     if (got.length) world?.say(`Brewed: ${got.join(', ')}`, 'exp');
-    if (hadHelper !== game.makerHired()) { hadHelper = game.makerHired(); world?.refreshHelper?.(); if (!hadHelper) showArea('Your Potion-Maker\'s time is up. Hire them again from the Potion-Maker tab.'); }
     if (overlay.dataset.panel === 'potions' && !overlay.classList.contains('hidden')) drawPanel();
   }, 1000);
   // choosing a key for a skill: the next key pressed is the one
@@ -419,7 +418,9 @@ function startGame(character) {
   $('attack-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.attack(); });
 
   const SHOP_SAYS = { ok: 'Bought. It is in your bag.', locked: 'You need a higher level for that.', coins: 'Not enough coins.', full: 'Your bag is full.' };
-  const BREW_SAYS = { ok: 'Your Potion-Maker gets to work.', hire: 'Hire a Potion-Maker first.', class: 'Only a Businessman can hire a Potion-Maker.', coins: 'Not enough coins.', busy: 'They are already brewing as much as they can.', pick: '' };
+  const BREW_SAYS = { ok: 'Brewing…', class: 'Only a Potion Maker can brew.', coins: 'Not enough coins.', herbs: 'Not enough Healing Herbs. Buy them in the shop or find them on monsters.', busy: 'You are already brewing as much as you can.', pick: '' };
+  const FORGE_SAYS = { ok: 'Forged! It is in your bag.', class: 'Only a Blacksmith can forge.', level: 'You are not high enough level for that yet.', coins: 'Not enough coins.', parts: 'You need more ore.', full: 'Your bag is full.', pick: '' };
+  setTabsClass(character.cls);
   const SMITH_SAYS = { ok: 'Merged! The item is stronger.', evolved: 'Merged, and the weapon evolved! It climbed a rank.', coins: 'Not enough coins to pay for the merge.', parts: 'You need more monster parts for this merge.', class: 'Only a Blacksmith can merge.', pick: 'Pick two items.', kind: 'Those two are different kinds.', max: 'That item is already at its strongest.' };
   // Portals: after picking where to go on the portal's map, the fee shows before you pay
   function showTrip(to, message = '') {
@@ -519,7 +520,7 @@ function startGame(character) {
     if (t('data-land-open') != null) { overlay.dataset.panel = 'land'; drawPanel(); return; }
     if (t('data-land-open-basket') != null && ui.basket.length) { ui.plot = world.selectPlot(ui.basket[0]); ui.landMsg = ''; drawPanel(); return; }
     if (t('data-land-change') != null) { landAction(() => api.landPurpose(ui.plot.ix, ui.plot.iz, ui.landChoice), 'Purpose changed.'); return; }
-    if (t('data-land-prepare') != null) { landAction(() => api.landPrepare(ui.plot.ix, ui.plot.iz), 'Cleared and levelled. Ready to build on.'); return; }
+    if ((v = t('data-land-prepare')) != null) { landAction(() => api.landPrepare(ui.plot.ix, ui.plot.iz, v), v === 'clear' ? 'Cleared. The trees, rocks and grass are gone; the ground keeps its shape.' : 'Flattened. Ready to build on.'); return; }
     if (t('data-signout') != null) { logOut(); return; }
     if (t('data-switch') != null) { logOut(true); return; }
     if (t('data-show-pw') != null) {
@@ -552,6 +553,7 @@ function startGame(character) {
     if (t('data-tent') != null) { closePanel(); world?.pitchTent(); return; }
     if ((v = t('data-control')) != null) { ui.bindingControl = v; ui.controlMsg = ''; drawPanel(); return; }
     if (e.target.closest('[data-controls-reset]')) { resetKeys(); ui.controlMsg = 'Every key is back to how it started.'; drawPanel(); return; }
+    if ((v = t('data-mouse')) != null) { settings.mouse = v; saveSettings(); world?.setMouseMode(v); drawPanel(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if ((v = t('data-privacy')) != null) {
@@ -587,15 +589,10 @@ function startGame(character) {
       if (r === 'ok' || r === 'evolved') ui.pick = [ui.pick[0]];
       drawPanel(); return;
     }
+    if ((v = t('data-forge')) != null) { const r = game.forge(v); ui.smithMsg = r === 'ok' ? `Forged a ${ITEMS[v].name}! It is in your bag.` : FORGE_SAYS[r]; drawPanel(); return; }
     if ((v = t('data-coat')) != null) {
       const r = game.coat(game.gearIn('weapon')?.entry.uid, v);
       ui.smithMsg = r === 'ok' ? 'Your weapon is coated.' : r === 'class' ? 'Only a Blacksmith can coat weapons.' : 'Equip a weapon first.';
-      drawPanel(); return;
-    }
-    if (t('data-hire') != null) {
-      const r = game.hireMaker();
-      ui.potionMsg = r === 'ok' ? 'The Potion-Maker joins you.' : BREW_SAYS[r];
-      world?.refreshHelper?.();
       drawPanel(); return;
     }
     if ((v = t('data-brew')) != null) { ui.potionMsg = BREW_SAYS[game.brew(v)]; drawPanel(); return; }
@@ -603,7 +600,7 @@ function startGame(character) {
 
   world = startWorld($('world'), character, {
     game,
-    view: { camera: settings.camera },
+    view: { camera: settings.camera, mouse: settings.mouse },
     onArea: (name) => showArea(name),
     onPlot(info) {
       tapPlot(info.ix, info.iz);

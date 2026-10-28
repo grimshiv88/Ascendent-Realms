@@ -238,6 +238,47 @@ export function createSkillFx(scene) {
     if (hit) flash(hit, '#ffffff');
   }
 
+  // A mage's spell in their own element, thrown from `from` to `to` (both Vector3)
+  const ELEMENT_LOOK = {
+    Fire: { core: '#ff7a1a', trail: '#ff9a3a', hit: '#ffb040' },
+    Water: { core: '#3aa8ff', trail: '#8fd4ff', hit: '#bfe8ff' },
+    Earth: { core: '#a07a4a', trail: '#7a5a3a', hit: '#c09a6a', rock: true },
+    Wind: { core: '#d8f8e8', trail: '#e8fff4', hit: '#c8f0e0', swirl: true },
+    Lightning: { core: '#fff27a', trail: '#ffffff', hit: '#fff8b0', zap: true },
+    Nature: { core: '#6ad04a', trail: '#9aff7a', hit: '#c0ff9a' },
+    Light: { core: '#fff2c0', trail: '#ffffff', hit: '#fff6d8' },
+    Dark: { core: '#7a3aa8', trail: '#3a1a5a', hit: '#a060d0' },
+  };
+  function spell(element, from, to) {
+    const L = ELEMENT_LOOK[element] || ELEMENT_LOOK.Light;
+    if (L.zap) {
+      // lightning: a jagged bolt that's there at once and flickers out
+      const pts = [];
+      for (let i = 0; i <= 10; i++) {
+        const q = from.clone().lerp(to, i / 10);
+        if (i > 0 && i < 10) q.add(new THREE.Vector3((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6));
+        pts.push(q);
+      }
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: L.core, transparent: true, blending: THREE.AdditiveBlending }));
+      line.userData.disposeGeo = true;
+      add(line, 0.25, (k) => { line.material.opacity = (1 - k) * (Math.random() > 0.3 ? 1 : 0.3); });
+      flash(to, L.hit, 0.9);
+      burst(to, L.hit, 10, 3, 0.4);
+      return;
+    }
+    const g = new THREE.Group();
+    const core = mesh(L.rock ? geo.shard : geo.ball, L.core, 1);
+    core.scale.setScalar(L.rock ? 0.3 : 0.28);
+    g.add(core);
+    if (L.swirl) { const r = mesh(geo.ring, L.core, 0.8); r.scale.setScalar(0.45); g.add(r); }
+    else { const halo = mesh(geo.ball, L.trail, 0.35); halo.scale.setScalar(0.45); g.add(halo); }
+    shot(g, from, to, L.rock ? 22 : 28, (q) => puff(q, L.trail, 0.18, 0.35, L.rock ? -0.5 : 0.3), () => {
+      flash(to, L.hit, 1);
+      burst(to, L.hit, 12, 3, 0.6);
+      if (L.rock) burst(to, '#6a5a4a', 8, 2.5, 0.7, 3);
+    });
+  }
+
   function update(dt) {
     for (let i = live.length - 1; i >= 0; i--) {
       const e = live[i];
@@ -253,5 +294,5 @@ export function createSkillFx(scene) {
   }
   function clear() { for (const e of live) scene.remove(e.obj); live.length = 0; }
 
-  return { play, update, clear };
+  return { play, spell, update, clear };
 }

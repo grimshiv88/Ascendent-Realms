@@ -11,6 +11,7 @@ export const CONTROLS = [
   ['run', 'Run (hold)', 'ShiftLeft', 'Moving'],
   ['jump', 'Jump', 'Space', 'Moving'],
   ['attack', 'Attack', 'KeyF', 'Doing'],
+  ['interact', 'Open / pick up', 'KeyE', 'Doing'],
   ['sleep', 'Sleep / wake', 'KeyZ', 'Doing'],
   ['torch', 'Torch', 'KeyT', 'Doing'],
   ['tent', 'Pitch / pack tent', 'KeyP', 'Doing'],
