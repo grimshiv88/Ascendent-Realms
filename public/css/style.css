@@ -492,7 +492,11 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 #attack-btn svg { width: 100%; height: 100%; }
 #attack-btn.armed { border-color: #c8ccd2; color: #e8eef5; }
 #attack-btn:active { transform: scale(0.92); }
-@media (pointer: coarse) { #attack-btn:not(.hidden) { display: grid; } }
+@media (pointer: coarse) { #attack-btn:not(.hidden), #jump-btn:not(.hidden) { display: grid; } }
+/* the jump button, beside the attack button on touch screens */
+#jump-btn { position: absolute; right: 124px; bottom: 34px; width: 64px; height: 64px; display: none; place-items: center; padding: 14px; border-radius: 50%; border: 2px solid var(--gold-2); background: radial-gradient(circle at 40% 35%, #2a2414, #0d0905); color: var(--gold-1); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6); touch-action: none; cursor: pointer; }
+#jump-btn svg { width: 100%; height: 100%; }
+#jump-btn:active { transform: scale(0.92); }
 
 /* Settings */
 .settings-window { text-transform: none; }
@@ -630,7 +634,7 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .rankings small { font: 0.8rem Georgia, serif; color: #b9ab8a; }
 .sys-sell-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 
-/* Skill bar: bottom middle on desktop, above the attack button on touch screens */
+/* Skill bar: bottom middle, on desktop and on touch screens */
 #skill-bar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 8px; z-index: 2; }
 .sk-btn { position: relative; width: 56px; height: 56px; border-radius: 10px; border: 2px solid var(--gold-2); background: radial-gradient(circle at 40% 35%, #2a2414, #0d0905); color: #fff3cf; font-size: 1.6rem; cursor: pointer; overflow: hidden; touch-action: none; padding: 0; }
 .sk-btn kbd { position: absolute; right: 3px; bottom: 2px; font: 700 0.7rem 'Oswald', sans-serif; color: #f2b51e; text-shadow: 0 0 3px #000; }
@@ -638,8 +642,11 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .sk-btn .sk-time { position: absolute; inset: 0; display: grid; place-items: center; font: 700 1.05rem 'Oswald', sans-serif; color: #fff; text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: none; }
 .sk-btn.no-sp { filter: grayscale(0.8) brightness(0.7); }
 @media (pointer: coarse) {
-  #skill-bar { left: auto; right: 18px; bottom: 128px; transform: none; display: grid; grid-template-columns: repeat(2, 56px); direction: rtl; }
+  #skill-bar { gap: 6px; bottom: 14px; }
+  #skill-bar .sk-btn { width: 48px; height: 48px; font-size: 1.35rem; }
 }
+/* on narrow phones the bottom row belongs to the attack and jump buttons, so the skills sit just above it */
+@media (pointer: coarse) and (max-width: 700px) { #skill-bar { bottom: 112px; } }
 
 /* Skills window */
 .skills-window { text-transform: none; }
@@ -831,3 +838,17 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 /* the welcome when you come into the realm */
 .welcome-window { max-width: 420px; text-align: center; }
 .welcome-window .gold-button { margin: 10px auto 6px; min-width: 160px; }
+.welcome-warn { margin: 8px 0; padding: 8px 10px; color: #ffd0c8; background: rgba(120, 20, 16, 0.35); border: 1px solid rgba(210, 72, 58, 0.6); border-radius: 6px; font-size: 0.9rem; }
+.fallen-window h2 { color: #e05a4a; }
+
+/* the status card can be dragged by its grip and hidden behind a small button */
+.hud-card { position: relative; }
+.hud-tools { position: absolute; top: 4px; right: 6px; display: flex; gap: 4px; align-items: center; }
+.hud-grip { cursor: grab; color: var(--gold-3); font-size: 1rem; padding: 0 4px; touch-action: none; user-select: none; }
+.hud-grip:active { cursor: grabbing; }
+.hud-hide { width: 22px; height: 22px; padding: 0; line-height: 18px; color: var(--gold-2); background: rgba(0, 0, 0, 0.4); border: 1px solid var(--gold-3); border-radius: 4px; cursor: pointer; }
+.hud-show { align-self: flex-start; padding: 7px 10px; font: 0.85rem 'Cinzel', serif; color: var(--ink); background: rgba(8, 6, 3, 0.72); border: 1px solid var(--gold-3); border-radius: 6px; cursor: pointer; }
+.hud-show b { color: var(--gold-2); }
+.hud-show span { color: #e07a6a; font: 600 0.75rem 'Oswald', sans-serif; margin-left: 4px; }
+.hud-name { padding-right: 50px; }
+.sw-form { margin-left: 6px; padding: 2px 8px; font: 0.75rem 'Cinzel', serif; color: var(--gold-1); background: #2a1e08; border: 1px solid var(--gold-3); border-radius: 4px; cursor: pointer; }

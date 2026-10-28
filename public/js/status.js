@@ -2,7 +2,7 @@
 import { CASTLES, castleOf, KING_RETURNS_MS } from './data/kings.mjs';
 import { CONTROLS, codeFor, keyName } from './data/controls.mjs';
 import {
-  RACES, CLASSES, CLASS_GUIDE, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor,
+  RACES, CLASSES, CLASS_GUIDE, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor, mayChangeForm, FORM_SWITCH_LEVEL,
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
 import { PRIVACY, privacyOf } from './data/social.mjs';
@@ -15,13 +15,42 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 let menuOpen = false;
 export const toggleMenu = (open = !menuOpen) => { menuOpen = open; };
 
+// The status card in the top left can be dragged anywhere by its grip, or hidden behind a small
+// button like the chat. Where it is, and whether it's hidden, is kept in this browser.
+const hudView = (() => { try { return { hidden: false, x: 0, y: 0, ...JSON.parse(localStorage.getItem('ar-hud') || '{}') }; } catch { return { hidden: false, x: 0, y: 0 }; } })();
+const saveHudView = () => { try { localStorage.setItem('ar-hud', JSON.stringify(hudView)); } catch { /* private window */ } };
+export function bindHud(el, redraw) {
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('[data-hud-hide]')) { hudView.hidden = true; saveHudView(); redraw(); }
+    else if (e.target.closest('[data-hud-show]')) { hudView.hidden = false; saveHudView(); redraw(); }
+  });
+  el.addEventListener('pointerdown', (e) => {
+    const grip = e.target.closest('[data-hud-drag]');
+    if (!grip) return;
+    e.preventDefault();
+    const card = el.querySelector('.hud-card');
+    const sx = e.clientX - hudView.x, sy = e.clientY - hudView.y;
+    const move = (ev) => {
+      const r = card.getBoundingClientRect();
+      const baseX = r.left - hudView.x, baseY = r.top - hudView.y;
+      hudView.x = Math.max(-baseX, Math.min(window.innerWidth - r.width - baseX, ev.clientX - sx));
+      hudView.y = Math.max(-baseY, Math.min(window.innerHeight - r.height - baseY, ev.clientY - sy));
+      el.querySelector('.hud-card').style.transform = `translate(${hudView.x}px, ${hudView.y}px)`;
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); saveHudView(); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
+}
+
 // `d` is the stats including gear; without it the base stats are shown
 // `cave` is the cave you're standing in up top, if any
 export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null, portal = null) {
   const hp = Math.round(c.hp ?? d.hp);
   const need = expToNext(c.level, c.race);
   el.innerHTML = `
-    <div class="hud-card">
+    ${hudView.hidden ? `<button type="button" class="hud-show" data-hud-show aria-label="Show your status">👤 <b>${esc(c.name)}</b> <span>HP ${hp}</span></button>` : `<div class="hud-card" style="transform: translate(${hudView.x}px, ${hudView.y}px)">
+      <div class="hud-tools"><span class="hud-grip" data-hud-drag title="Drag to move" aria-label="Drag to move">⠿</span><button type="button" class="hud-hide" data-hud-hide aria-label="Hide your status">‹</button></div>
       <p class="hud-name">${esc(c.name)} <span>LVL ${c.level} · ${rankFor(c.level)}</span></p>
       <p class="hud-clock">${(() => { const t = gameTime(); return `${t.night ? '🌙' : '☀️'} ${clockText(t)}${t.night ? ' · Night: stay near light' : ''}`; })()}</p>
       <div class="hud-bar hp" title="HP"><span style="width:${(hp / d.hp) * 100}%"></span><b>HP ${hp} / ${d.hp}</b></div>
@@ -31,7 +60,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
       ${portal ? `<button type="button" class="hud-points portal" data-act="portal">${esc(portal.name)}: travel (G)</button>` : ''}
       ${cave ? `<button type="button" class="hud-points" data-open="cave">${esc(cave.name)}: about this cave</button>` : ''}
-    </div>
+    </div>`}
     <div class="hud-menu">
       <button type="button" class="menu-btn" data-menu aria-label="Menu" aria-expanded="${menuOpen}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -48,7 +77,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
     </div>`;
 }
 
-// the next 10th level that isn't an evolution
+// the next upgrade level that isn't an evolution
 const nextUpgrade = (level) => { let l = (Math.floor(level / UPGRADE_EVERY) + 1) * UPGRADE_EVERY; while (KEY_LEVELS.includes(l)) l += UPGRADE_EVERY; return l; };
 
 // `pending` holds Stat Points placed with the + buttons but not yet confirmed
@@ -72,7 +101,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
       <div class="sw-grid">
         <dl>
           ${row('Name', esc(c.name))}
-          ${row('Race', `${race.name}${c.stage > 0 && EVOLUTIONS[c.race]?.[c.stage] ? ` (${esc(EVOLUTIONS[c.race][c.stage])})` : ''}${isMonster ? ` <small>(${c.form === 'humanoid' ? 'humanoid form' : 'monster form'})</small>` : ''}`)}
+          ${row('Race', `${race.name}${c.stage > 0 && EVOLUTIONS[c.race]?.[c.stage] ? ` (${esc(EVOLUTIONS[c.race][c.stage])})` : ''}${isMonster ? ` <small>(${c.form === 'humanoid' ? 'humanoid form' : 'monster form'})</small>` : ''}${isMonster ? (mayChangeForm(c) ? ` <button type="button" class="sw-form" data-form>Change to ${c.form === 'humanoid' ? 'monster' : 'humanoid'} form</button>` : ` <small>· humanoid form opens at Lv ${FORM_SWITCH_LEVEL}</small>`) : ''}`)}
           ${row('Class', className)}
           ${row('EXP', `${c.exp} / ${need}`)}
           ${row('Coins', c.coins)}
@@ -234,6 +263,7 @@ export function renderWelcome(el, name, back = true) {
       <h2>${back ? 'Welcome back' : 'Welcome'}, ${esc(name)}</h2>
       <p>The realm awaits you.</p>
       <button type="button" class="gold-button" data-close>Start</button>
+      <p class="welcome-warn">Be careful out there: <b>death is final</b>. If you die, you start again from nothing and choose a new race and class. Only your Unique Skill stays with you.</p>
       <p class="bag-hint">All the controls are under <b>Controls</b> in the ☰ menu at the top of the screen (or press Esc).</p>
     </div>`;
 }

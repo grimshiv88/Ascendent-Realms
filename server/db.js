@@ -29,6 +29,11 @@ db.exec(`
     data       TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  -- What a fallen character passes on to the next one: their Unique Skill, and how many lives so far
+  CREATE TABLE IF NOT EXISTS fallen (
+    account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    data       TEXT NOT NULL
+  );
 `);
 
 module.exports = db;

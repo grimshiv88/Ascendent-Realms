@@ -1,6 +1,6 @@
 // Talks to the game server. If no server is reachable (for example, a static preview page),
 // it falls back to a preview mode that keeps accounts in this browser only.
-import { newCharacter } from './data/game-data.mjs';
+import { newCharacter, fallenKeep, rebornWith } from './data/game-data.mjs';
 import { setServerNow } from './data/clock.mjs';
 
 const TOKEN_KEY = 'ar.token';
@@ -250,11 +250,25 @@ export async function createCharacter(choice) {
       if (acc.character) throw new Error('This account already has a character.');
       const result = newCharacter(acc.username, choice);
       if (result.error) throw new Error(result.error);
+      if (acc.fallen) { rebornWith(result.character, acc.fallen); delete acc.fallen; }
       acc.character = result.character;
       return result;
     });
   }
   return request('api/character', { method: 'POST', body: choice });
+}
+
+// Death is final: the character is gone, and only their Unique Skill passes to the next one
+export async function fall() {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => {
+      if (!acc.character) return { error: 'No character yet.' };
+      acc.fallen = fallenKeep(acc.character);
+      acc.character = null;
+      return { ok: true, kept: acc.fallen };
+    });
+  }
+  return request('api/character/fall', { method: 'POST' });
 }
 
 export async function saveLocation(loc) {

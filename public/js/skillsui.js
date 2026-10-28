@@ -1,6 +1,6 @@
 // The Skills window (K): put your skills on keys, keep spare ones in storage.
 // Also the skill bar at the bottom of the screen, which works by key on desktop and by tap on touch.
-import { SKILLS, SKILL_BAR, keyLabel } from './data/skills.mjs';
+import { SKILLS, SKILL_BAR, UPGRADE_EVERY, keyLabel } from './data/skills.mjs';
 import { SPELLS, KIND_TEXT, spellEvery } from './data/spells.mjs';
 import { keyName, codeFor } from './data/controls.mjs';
 
@@ -24,7 +24,7 @@ export function renderSkills(el, game, { binding = null, message = '' } = {}) {
     <div class="status-window skills-window" role="dialog" aria-label="Skills">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       <h2>Skills</h2>
-      <p class="bag-hint">Every 10 levels you grow a little stronger and learn a new skill, given at random. Up to ${SKILL_BAR} are ready at once, each on a key of your choice; on a phone or iPad they are buttons above the attack button.</p>
+      <p class="bag-hint">Every ${UPGRADE_EVERY} levels you grow a little stronger and learn a new skill, given at random. Up to ${SKILL_BAR} are ready at once, each on a key of your choice; on a phone or iPad they are buttons at the bottom middle of the screen.</p>
       <p class="shop-msg" role="status">${esc(message)}</p>
       <h3 class="bag-sub">Ready <small>(${c.skillBar.length} of ${SKILL_BAR})</small></h3>
       ${bar}

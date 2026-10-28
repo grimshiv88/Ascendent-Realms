@@ -1,4 +1,4 @@
-// Skills learned at every 10th level. Each one costs SP and then needs a short rest (cooldown).
+// Skills learned at every 25th level (an upgrade). Each one costs SP and then needs a short rest (cooldown).
 // type: strike (one foe in front), sweep (every foe around you), bolt (a foe further away, in front),
 // dash (charge forward and hit what you reach), heal (restore part of your HP), buff (raise ATK or DEF
 // for a while). mult multiplies your ATK (or MATK when magic).
@@ -42,8 +42,8 @@ const BY_CLASS = {
 };
 const GENERAL = ['power_strike', 'second_wind', 'battle_cry', 'iron_skin', 'whirlwind', 'charge'];
 
-// Every 10th level is an upgrade: a little stronger, and a new skill, given at random
-export const UPGRADE_EVERY = 10;
+// Every 25th level is an upgrade: a little stronger, and a new skill, given at random
+export const UPGRADE_EVERY = 25;
 export const UPGRADE_STATS = 2; // added to every stat
 export const SKILL_BAR = 6;     // skills you can have ready at once; the rest are kept in storage
 export const DEFAULT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'];

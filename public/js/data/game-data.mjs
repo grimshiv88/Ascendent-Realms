@@ -119,8 +119,8 @@ export const SECOND_ELEMENT_CHANCE = { default: 0.2, mage: 0.35 };
 export const TRAINED = { atk: 3, def: 2, matk: 3, mdef: 2, hp: 6 };
 export function derivedStats(s, level = 1, t = {}) {
   const d = {
-    // kept low at the start so even goblins are a real fight; grows with Stamina, Strength and level
-    hp: Math.round(20 + s.sta * 3 + s.str * 0.5 + level * 4),
+    // grows with Stamina, Strength and level (death is final, so there's a good amount of it)
+    hp: Math.round(50 + s.sta * 10 + s.str * 2 + level * 5),
     sp: Math.round(10 + s.int * 2 + level),
     atk: Math.round(s.str * 2 + s.dex * 0.5),
     matk: Math.round(s.int * 2 + s.dex * 0.5),
@@ -202,6 +202,20 @@ function cleanLook(raceId, look = {}) {
   const size = Number(look.size);
   out.size = Number.isFinite(size) ? Math.min(1.1, Math.max(0.9, Math.round(size * 100) / 100)) : 1;
   return out;
+}
+
+// Monster players can switch between their monster form and a humanoid form from level 100
+export const FORM_SWITCH_LEVEL = 100;
+export const mayChangeForm = (c) => c.side === 'monster' && (c.level || 1) >= FORM_SWITCH_LEVEL;
+
+// Death is final. What a fallen character passes on: their Unique Skill (its seals close again, to
+// be opened anew by evolving) and a count of the lives lived so far.
+export const fallenKeep = (c) => ({ uniqueSkill: { ...c.uniqueSkill, sealsOpen: 0 }, lives: (c.lives || 1) + 1, fell: new Date().toISOString() });
+export function rebornWith(character, keep) {
+  const skill = UNIQUE_SKILLS.find((u) => u.name === keep?.uniqueSkill?.name);
+  if (skill) character.uniqueSkill = { ...skill, sealsOpen: 0 };
+  character.lives = Math.max(2, Number(keep?.lives) || 2);
+  return character;
 }
 
 // Returns { character } or { error }.

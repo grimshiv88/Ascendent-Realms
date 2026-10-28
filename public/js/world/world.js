@@ -20,7 +20,7 @@ import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
-import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, homePlace, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
+import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime } from '../data/clock.mjs';
 import { RACES, restCap } from '../data/game-data.mjs';
@@ -195,8 +195,20 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let lastArea = -10;
 
   const agiSpeed = 1 + Math.min(character.stats.agi * 0.003, 0.6);
-  const bodyH = avatar.userData.height;
-  const bodyR = Math.max(0.25, Math.min(bodyH * 0.18, 0.9));
+  let bodyH = avatar.userData.height;
+  let bodyR = Math.max(0.25, Math.min(bodyH * 0.18, 0.9));
+  // A monster player switching between monster and humanoid form: a new body in the same spot
+  function rebuildAvatar() {
+    const was = avatar;
+    avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look });
+    if (game) wearGear(avatar, game.worn());
+    avatar.position.copy(was.position);
+    avatar.rotation.copy(was.rotation);
+    scene.remove(was);
+    scene.add(avatar);
+    bodyH = avatar.userData.height;
+    bodyR = Math.max(0.25, Math.min(bodyH * 0.18, 0.9));
+  }
 
   // Camera orbit
   let yaw = heading + Math.PI;
@@ -378,26 +390,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   for (const s of sites) if (s.built && s.place.cave) postGuards(s); // caves built before the monsters existed
 
+  // Death is final: the game shows what happened and the player begins again (see main.js)
   function defeated(m) {
     dead = true;
-    onEvent?.('defeated', { by: m.kind.name, shrine: !!myShrine() });
-    setTimeout(() => {
-      // wake up at your Spawn Shrine if you've built one, or else at your home waystone
-      const shrine = myShrine();
-      if (shrine) pos.set(shrine.x, 0, shrine.z);
-      else {
-        const home = homePlace(RACES[character.race].home);
-        const hp = placesWithPositions().find((p) => p.id === home.id);
-        pos.set(hp.x, 0, hp.z + 6);
-      }
-      updateSites(pos.x, pos.z);
-      land.update(pos.x, pos.z, Infinity);
-      pos.y = Math.max(groundAt(pos.x, pos.z), shrine?.y ?? -Infinity);
-      velY = 0;
-      game.respawn();
-      dead = false;
-      onEvent?.('respawned');
-    }, 3500);
+    onEvent?.('defeated', { by: m.kind.name });
   }
 
   // ---------- the depths below each cave ----------
@@ -994,6 +990,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   };
   const up = (e) => keys.delete(e.code);
   const held = (action) => keys.has(codeFor(action));
+  let jumpQueued = false; // the jump button on touch screens
   // Let go of every key and the touch stick when the game stops hearing the keyboard (another window
   // or tab): a key let go meanwhile never sends its keyup, and you'd keep walking. Opening a window
   // in the game doesn't: keep holding a movement key and you keep moving, let go and you stop.
@@ -1257,7 +1254,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const floatAt = water - bodyH * 0.7;
     swimming = ground < floatAt;
     if (swimming) ground = floatAt;
-    if (held('jump') && !airborne && !swimming && !dead) { velY = 4.2; airborne = true; fallFrom = pos.y; }
+    if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = 4.2; airborne = true; fallFrom = pos.y; }
+    jumpQueued = false;
     // walking down a slope keeps your feet on it; only a real drop (a cliff, a ledge) is a fall
     const drop = pos.y - ground;
     if (!airborne && drop < 0.35 + speedNow * dt * 2.2) { pos.y = ground; velY = 0; } else {
@@ -1459,16 +1457,6 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // What everyone has built on their land; redrawn when it changes or a hired builder finishes
   const structures = new Map(); // "ix,iz" -> { group, solid, sig }
   let lastLands = [];
-  // Your finished Spawn Shrine, if you have one: where to stand when you wake (just in front of it)
-  function myShrine() {
-    const now = Date.now();
-    for (const p of lastLands) {
-      if (!p.mine || !Number.isFinite(p.flat)) continue;
-      const s = (p.pieces || []).find((q) => q.t === 'spawn' && !(q.u > now));
-      if (s) return { x: (s.x + 0.5) * CELL, z: (s.z + 0.5) * CELL + 1.4, y: storeyY(p.flat, s.l) };
-    }
-    return null;
-  }
   // your own finished anvil close by, if any
   function myAnvilNear(x, z, r = 2.6) {
     const now = Date.now();
@@ -1518,6 +1506,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
 
   return {
+    rebuildAvatar,
+    jump() { jumpQueued = true; },
     position: () => ({ x: pos.x, z: pos.z, heading }),
     // for testing: where you and the camera are
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },

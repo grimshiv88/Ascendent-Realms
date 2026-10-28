@@ -5,7 +5,7 @@ import { paintCloudBanks } from './clouds.js';
 import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
-import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, renderWelcome, HELP_HTML } from './status.js';
+import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
@@ -127,6 +127,7 @@ function openCreation(username) {
 }
 
 let world = null;
+const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
 const settings = (() => {
   try { return { camera: 'free', ...JSON.parse(localStorage.getItem('ar-settings') || '{}') }; } catch { return { camera: 'free' }; }
@@ -147,6 +148,7 @@ function startGame(character) {
       // HP ticks often while resting, so the HUD redraws at most once a frame
       if (!hudQueued) { hudQueued = true; requestAnimationFrame(() => { hudQueued = false; drawHud(); }); }
       if (what === 'gear') world?.refreshGear();
+      if (what === 'form') world?.rebuildAvatar();
       if (what !== 'hp' && what !== 'fatigue' && what !== 'sp' && !overlay.classList.contains('hidden')) drawPanel();
       if (what === 'skills') drawSkillBar();
     },
@@ -399,6 +401,24 @@ function startGame(character) {
     drawPanel();
     overlay.classList.remove('hidden');
   };
+  // Death is final: the character is gone. Only the Unique Skill passes on to the next one.
+  async function fallen(by) {
+    game.saveNow?.();
+    let kept = character.uniqueSkill;
+    try { const r = await api.fall(); kept = r.kept?.uniqueSkill || kept; } catch { /* still show the screen */ }
+    world?.releaseMouse();
+    overlay.dataset.panel = 'fallen';
+    overlay.innerHTML = `
+      <div class="status-window welcome-window fallen-window" role="dialog" aria-label="You have fallen">
+        <h2>You have fallen</h2>
+        <p>${esc(character.name)} was defeated by a ${esc(by)} at level ${character.level}.</p>
+        <p>Your journey begins again from the very start: choose your race and class anew.</p>
+        <p>Your Unique Skill stays with you: <b>${esc(kept?.name || '')}</b>.</p>
+        <button type="button" class="gold-button" data-begin-again>Begin again</button>
+      </div>`;
+    overlay.classList.remove('hidden');
+    overlay.querySelector('[data-begin-again]').addEventListener('click', () => location.reload());
+  }
   const closePanel = () => { overlay.classList.add('hidden'); overlay.dataset.shown = ''; preview.unmount(); };
 
   // Your character in the bag, turning slowly, wearing what you have on
@@ -468,6 +488,8 @@ function startGame(character) {
   });
   $('attack-btn').classList.remove('hidden');
   $('attack-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.attack(); });
+  $('jump-btn').classList.remove('hidden');
+  $('jump-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.jump(); });
 
   const SHOP_SAYS = { ok: 'Bought. It is in your bag.', locked: 'You need a higher level for that.', coins: 'Not enough coins.', full: 'Your bag is full.' };
   const BREW_SAYS = { ok: 'Brewing…', class: 'Only a Potion Maker can brew.', coins: 'Not enough coins.', herbs: 'Not enough Healing Herbs. Buy them in the shop or find them on monsters.', busy: 'You are already brewing as much as you can.', pick: '' };
@@ -697,6 +719,10 @@ function startGame(character) {
       if (got) world?.say(`+${got} G`, 'exp');
       drawPanel(); return;
     }
+    if (t('data-form') != null) {
+      if (game.changeForm() === 'ok') showArea(`You take your ${character.form} form.`);
+      drawPanel(); return;
+    }
     if ((v = t('data-pick')) != null) {
       if (ui.pick.includes(v)) ui.pick = ui.pick.filter((k) => k !== v);
       else ui.pick = [...ui.pick, v].slice(-2);
@@ -796,7 +822,7 @@ function startGame(character) {
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
       if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
-      if (type === 'defeated') showArea(`Defeated by a ${data.by}. You wake up ${data.shrine ? 'at your Spawn Shrine' : 'back home'}.`);
+      if (type === 'defeated') fallen(data.by);
     },
     onKey(e) {
       const act = actionFor(e.code);
@@ -835,6 +861,13 @@ function startGame(character) {
     if ((character.quests || []).length > before) { showArea('A new quest was posted on the board (Q).'); if (overlay.dataset.panel === 'quests' && !overlay.classList.contains('hidden')) drawPanel(); }
   }, 10000);
   drawSkillBar();
+  bindHud($('hud'), drawHud);
+  // death is final, so warn when HP runs low
+  let warnedAt = 0;
+  setInterval(() => {
+    const max = game.stats().hp, hp = character.hp ?? max;
+    if (hp > 0 && hp < max * 0.25 && Date.now() - warnedAt > 60000) { warnedAt = Date.now(); world?.say('Low HP! Death is final: heal or run', 'hurt'); }
+  }, 1000);
   // the minimap in the corner follows you; tap it for the world map
   createMinimap($('minimap'), () => world?.position(), () => openPanel('map'));
   openPanel('welcome');

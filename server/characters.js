@@ -1,6 +1,6 @@
 // Character creation and saving. The rules live in the shared game-data module.
 const db = require('./db');
-const { newCharacter } = require('../public/js/data/game-data.mjs');
+const { newCharacter, fallenKeep, rebornWith, mayChangeForm } = require('../public/js/data/game-data.mjs');
 const { SKILLS } = require('../public/js/data/skills.mjs');
 const { ITEMS, EFFECTS } = require('../public/js/data/items.mjs');
 const { SPELLS } = require('../public/js/data/spells.mjs');
@@ -14,8 +14,23 @@ function create(accountId, username, body) {
   if (load(accountId)) return { error: 'This account already has a character.' };
   const result = newCharacter(username, body);
   if (result.error) return result;
+  // a character who fell before passes their Unique Skill on
+  const kept = db.prepare('SELECT data FROM fallen WHERE account_id = ?').get(accountId);
+  if (kept) rebornWith(result.character, JSON.parse(kept.data));
   db.prepare('INSERT INTO characters (account_id, data) VALUES (?, ?)').run(accountId, JSON.stringify(result.character));
+  db.prepare('DELETE FROM fallen WHERE account_id = ?').run(accountId);
   return result;
+}
+
+// Death is final: the character is gone and the player starts again from the beginning, choosing
+// a race and class anew. Only the Unique Skill is kept for the next character.
+function fall(accountId) {
+  const character = load(accountId);
+  if (!character) return { error: 'No character yet.' };
+  const keep = fallenKeep(character);
+  db.prepare('INSERT OR REPLACE INTO fallen (account_id, data) VALUES (?, ?)').run(accountId, JSON.stringify(keep));
+  db.prepare('DELETE FROM characters WHERE account_id = ?').run(accountId);
+  return { ok: true, kept: keep };
 }
 
 function saveLocation(accountId, loc) {
@@ -142,6 +157,8 @@ function saveProgress(accountId, p) {
   const t = p.tent;
   const tent = t && Number.isFinite(t.x) && Number.isFinite(t.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6
     ? { x: t.x, z: t.z, heading: Number.isFinite(t.heading) ? t.heading : 0 } : null;
+  // monster players from level 100 can switch to their humanoid form and back
+  if ((p.form === 'monster' || p.form === 'humanoid') && mayChangeForm({ ...character, level: fields.level ?? character.level })) character.form = p.form;
   Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
@@ -162,4 +179,4 @@ function top(limit = 10) {
     .slice(0, limit);
 }
 
-module.exports = { create, load, store, saveLocation, saveProgress, top };
+module.exports = { create, fall, load, store, saveLocation, saveProgress, top };

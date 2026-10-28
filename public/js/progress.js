@@ -1,6 +1,6 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
-import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
+import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } from './data/game-data.mjs';
 import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
@@ -103,7 +103,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves,
+    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, form: c.form,
   });
 
   // worn gear doesn't take up room in the bag
@@ -436,7 +436,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
         c.coins += (key ? 5 : 1) * (10 + c.level * 5);
         c.uniquePoints += key ? 5 : 1;
         c.stats[CLASSES[c.cls].main] += 1;
-        // every 10th level: a new skill at random, and (between evolutions) a little more of every stat
+        // every 25th level (an upgrade): a new skill at random, and (between evolutions) a little more of every stat
         if (c.level % spellEvery(c.cls) === 0 && c.spells.length < spellsDue(c)) {
           const sp = giveSpell(c);
           if (sp) onEvent?.('spell', { id: sp });
@@ -570,6 +570,13 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (!addItem('torch', 1)) return 'full';
       c.torches.splice(best, 1);
       changed('torches');
+      return 'ok';
+    },
+    // Monster players from level 100: switch between monster and humanoid form
+    changeForm() {
+      if (!mayChangeForm(c)) return 'level';
+      c.form = c.form === 'humanoid' ? 'monster' : 'humanoid';
+      changed('form');
       return 'ok';
     },
     saveNow() { clearTimeout(saveTimer); saveTimer = null; return save?.(snapshot()); },

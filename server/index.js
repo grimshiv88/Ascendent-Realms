@@ -46,6 +46,11 @@ app.post('/api/character', requireAccount, (req, res) => {
   res.status(result.error ? 400 : 201).json(result);
 });
 
+app.post('/api/character/fall', requireAccount, (req, res) => {
+  const result = characters.fall(req.account.id);
+  res.status(result.error ? 400 : 200).json(result);
+});
+
 app.post('/api/character/location', requireAccount, (req, res) => {
   const result = characters.saveLocation(req.account.id, req.body || {});
   res.status(result.error ? 400 : 200).json(result);
