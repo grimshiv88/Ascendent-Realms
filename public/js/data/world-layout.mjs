@@ -17,7 +17,7 @@ export const WORLD_BOUNDS = {
 
 export const REGIONS = [
   { id: 'heart', name: 'The Verdant Heartland', who: 'All player races', land: { x: 800, y: 520, r: 300, seed: 3, stretch: [1.25, 0.95] },
-    text: 'The central continent. Everyone playing a Player race starts here, in the Central Forest. Land here is bought with coins and can grow into countries.', size: 'About 75 km across' },
+    text: 'The central continent. Everyone playing a Player race starts here, in the Central City. Land here is bought with coins and can grow into countries.', size: 'About 75 km across' },
   { id: 'peaks', name: 'Dragon Peaks', who: 'Dragonewts', land: { x: 790, y: 120, r: 190, seed: 11, stretch: [1.5, 0.55] },
     text: 'Volcanic mountains in the far north. Dragonewts hatch in nests high on the cliffs. The hardest homeland to survive in.', size: 'About 55 km wide' },
   { id: 'warrens', name: 'Ashen Wastes', who: 'Goblins and Slimes', land: { x: 230, y: 470, r: 190, seed: 7, stretch: [0.85, 1.35] },
@@ -34,10 +34,10 @@ export const REGIONS = [
 
 // Named places on the map. `home` places are where monster races start.
 export const PLACES = [
-  { id: 'central', name: 'Central Forest', px: 800, py: 520, region: 'heart', spawn: true },
-  { id: 'crossroads', name: 'Old Crossroads', px: 690, py: 470, region: 'heart' },
-  { id: 'riverhold', name: 'Riverhold', px: 950, py: 606, region: 'heart' },
-  { id: 'hills', name: 'Eastern Hills', px: 980, py: 380, region: 'heart' },
+  { id: 'central', name: 'Central City', px: 800, py: 520, region: 'heart', spawn: true, city: true },
+  { id: 'crossroads', name: 'Old Crossroads', px: 690, py: 470, region: 'heart', village: true },
+  { id: 'riverhold', name: 'Riverhold', px: 950, py: 606, region: 'heart', village: true },
+  { id: 'hills', name: 'Eastern Hills', px: 980, py: 380, region: 'heart', village: true },
   { id: 'nests', name: 'Dragon Nests', px: 800, py: 150, region: 'peaks', home: 'Dragon Peaks' },
   { id: 'warrens', name: 'Goblin Warrens', px: 250, py: 420, region: 'warrens', home: 'Goblin Warrens' },
   { id: 'slimecaves', name: 'Slime Caves (Gloomhollow)', px: 200, py: 610, region: 'warrens', home: 'Slime Caves' },
@@ -446,8 +446,11 @@ export function placesWithPositions() {
 
 // Safe zones: the ground around every waystone, where players spawn and monsters can't go
 export const SAFE_R = 60;
+// The Central City: owned by no one, walled, on levelled ground, and safe all the way to its walls
+export const CITY_R = 110;
+export const safeRadius = (p) => (p.city ? CITY_R + 8 : SAFE_R);
 export function safeZoneAt(x, z) {
-  for (const p of placesWithPositions()) if (!p.cave && (p.x - x) ** 2 + (p.z - z) ** 2 < SAFE_R * SAFE_R) return p;
+  for (const p of placesWithPositions()) if (!p.cave && (p.x - x) ** 2 + (p.z - z) ** 2 < safeRadius(p) ** 2) return p;
   return null;
 }
 
@@ -463,4 +466,20 @@ export function waterLevelAt(x, z) {
 
 export function regionName(id) {
   return REGIONS.find((r) => r.id === id)?.name || 'The Open Sea';
+}
+
+// Level the ground under the Central City for good (it also keeps trees and rocks out)
+{
+  const city = PLACES.find((p) => p.city);
+  const { x, z } = toWorld(city.px, city.py);
+  const flat = Math.round(heightAt(x, z) * 10) / 10;
+  const flats = [];
+  const n = Math.ceil((CITY_R + 12) / PLOT);
+  for (let ix = Math.floor(x / PLOT) - n; ix <= Math.floor(x / PLOT) + n; ix++) {
+    for (let iz = Math.floor(z / PLOT) - n; iz <= Math.floor(z / PLOT) + n; iz++) {
+      const dx = Math.max(ix * PLOT - x, 0, x - (ix + 1) * PLOT), dz = Math.max(iz * PLOT - z, 0, z - (iz + 1) * PLOT);
+      if (Math.hypot(dx, dz) < CITY_R + 12) flats.push({ ix, iz, flat });
+    }
+  }
+  addFixedFlats(flats);
 }

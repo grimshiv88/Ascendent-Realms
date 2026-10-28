@@ -1,6 +1,6 @@
 // The Bag (inventory with your character and equipment), the Shop and the Blacksmith's merging.
 // They share one window with the Status Window, with tabs along the top.
-import { ITEMS, SHOP, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds, brewHerbs, categoryOf, forgeCost, forgeOres, FORGE, FORGE_RANK_LEVEL, MARKETS, marketStock } from './data/items.mjs';
+import { ITEMS, SHOP, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds, brewHerbs, categoryOf, forgeCost, forgeOres, FORGE, FORGE_RANK_LEVEL, MARKETS, marketStock, marketPrice } from './data/items.mjs';
 import { codeFor, keyName } from './data/controls.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -118,11 +118,12 @@ export function renderShop(el, game, message = '', market = null) {
   const group = (title, kind) => {
     const cards = open.filter(([id]) => ITEMS[id].kind === kind).map(([id]) => {
       const it = ITEMS[id];
-      const poor = c.coins < it.price;
+      const price = mk ? marketPrice(market, id) : it.price;
+      const poor = c.coins < price;
       return `<div class="sys-card${poor ? ' poor' : ''}">
         <div class="sys-pic">${pic(id, 0, 'sys-emoji')}</div>
         <b>${esc(it.name)}</b><small>${describe(it)}</small>
-        <div class="sys-buy"><span class="sys-price">${it.price} G</span>
+        <div class="sys-buy"><span class="sys-price">${price} G</span>
         <button type="button" class="sys-button" data-buy="${id}" ${poor ? 'disabled' : ''}>${poor ? 'Not enough' : 'Buy'}</button></div></div>`;
     }).join('');
     return cards ? `<h3 class="sys-sub">${title}</h3><div class="sys-grid">${cards}</div>` : '';
@@ -131,25 +132,35 @@ export function renderShop(el, game, message = '', market = null) {
   const sell = sellable.length ? sellable.map((e) => {
     const it = ITEMS[e.id];
     return `<div class="sys-row"><span class="sys-mini">${pic(e.id, e.plus)}</span><span class="sys-name"><b>${esc(nameOf(e))}</b><small>You have ${e.n} · shop price ${it.price} G</small></span>
-      <span class="sys-price">${game.sellPrice(e)} G</span><span class="sys-sell-btns"><button type="button" class="sys-button ghost" data-sell="${keyOf(e)}">Sell one</button>${e.n > 1 ? `<button type="button" class="sys-button" data-sell-all="${keyOf(e)}">Sell all ${e.n} · ${game.sellPrice(e) * e.n} G</button>` : ''}</span></div>`;
+      <span class="sys-price">${game.sellPrice(e, market)} G</span><span class="sys-sell-btns"><button type="button" class="sys-button ghost" data-sell="${keyOf(e)}">Sell one</button>${e.n > 1 ? `<button type="button" class="sys-button" data-sell-all="${keyOf(e)}">Sell all ${e.n} · ${game.sellPrice(e, market) * e.n} G</button>` : ''}</span></div>`;
   }).join('') : '<p class="sys-hint">Nothing to sell yet. Gather wood and berries, or defeat monsters for their drops. Take gear off before selling it.</p>';
-  const bad = /not|need|full/i.test(message);
+  const bad = /\bnot\b|\bneed|bag is full/i.test(message);
   el.innerHTML = `
     <div class="system-window" role="dialog" aria-label="${mk ? esc(mk.name) : 'Shop'}">
       <button type="button" class="sys-close" data-close aria-label="Close">×</button>
       ${mk ? '' : tabsHtml('shop')}
       <div class="sys-title"><span class="sys-bang">!</span><h2>${mk ? esc(mk.name) : 'Shop'}</h2></div>
-      ${mk ? `<p class="sys-hint">${esc(mk.text)}</p>` : ''}
+      ${mk ? `<p class="sys-hint">${esc(mk.text)}${mk.bot ? ' City shops charge more and pay less than player shops.' : ''}</p>` : ''}
       <p class="sys-top">Coins <b>${c.coins} G</b> <span>·</span> Level <b>${c.level}</b>${next < Infinity ? ` <span>·</span> New items at level <b>${next}</b>` : ''}</p>
       <p class="sys-msg${bad ? ' bad' : ''}" role="status">${esc(message)}</p>
+      ${market === 'tavern' ? roomHtml(game) : ''}
       ${group('Weapons', 'weapon')}
-      ${group('Armour', 'armour')}
-      ${group('Potions and food', 'food')}
+      ${group(market === 'city_tailor' ? 'Clothes' : 'Armour', 'armour')}
+      ${group(mk?.bot && market !== 'city_potions' ? 'Food and drink (all halal)' : 'Potions and food', 'food')}
       ${group('Coatings for weapons', 'coating')}
       ${group('Tools', 'material')}
       <h3 class="sys-sub">Sell <small>for less than the shop price</small></h3>
       ${sell}
     </div>`;
+}
+
+// A tavern room: rent it for a day of the realm (one real hour), sleep in it to wake rested
+function roomHtml(game) {
+  const room = game.room();
+  const price = game.roomPrice();
+  return `<h3 class="sys-sub">Rooms</h3>
+    <div class="sys-row"><span class="sys-name"><b>${room ? `Your room: ${room.minutes} min left` : 'A room for the day'}</b><small>${room ? 'Sleep here to wake with full HP and SP and no Fatigue.' : 'No land or money for a house? Rent a room for a day of the realm (one real hour). Sleep in it to wake fully rested.'}</small></span>
+      ${room ? '<button type="button" class="sys-button" data-room="sleep">Sleep in your room</button>' : `<button type="button" class="sys-button" data-room="rent" ${game.character.coins < price ? 'disabled' : ''}>Rent · ${price} G</button>`}</div>`;
 }
 
 // Merging: pick the item to strengthen, then one of the same kind to melt into it

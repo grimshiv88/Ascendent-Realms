@@ -1,10 +1,10 @@
 // A waystone shrine: a ring of standing stones around a glowing crystal, with a campfire and signpost.
-// The spawn point in the Central Forest is one; every homeland has its own.
+// The spawn point in the Central City is one; every village and homeland has its own.
 import * as THREE from 'three';
 import { heightAt, SAFE_R } from '../data/world-layout.mjs';
 import { MARKETS } from '../data/items.mjs';
 
-export function buildSpawn(place = { x: 0, z: 0, name: 'Central Forest' }) {
+export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { market: withMarket = true, lanterns = true } = {}) {
   const g = new THREE.Group();
   const cx = place.x, cz = place.z;
   const baseY = heightAt(cx, cz);
@@ -126,7 +126,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central Forest' }) {
 
   // The safe zone's edge: a ring of lantern posts. Monsters never cross it.
   const lanternMat = new THREE.MeshStandardMaterial({ color: '#ffe2a0', emissive: '#ffb84a', emissiveIntensity: 1.4 });
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < (lanterns ? 24 : 0); i++) {
     const a = (i / 24) * Math.PI * 2, x = Math.cos(a) * SAFE_R, z = Math.sin(a) * SAFE_R;
     const lp = new THREE.Group();
     lp.position.set(x, heightAt(cx + x, cz + z) - baseY, z);
@@ -139,7 +139,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central Forest' }) {
   }
 
   // The game's market for this place: a stall with an awning, inside the safe zone
-  const market = MARKETS[place.id];
+  const market = withMarket && MARKETS[place.id];
   let marketAt = null;
   if (market) {
     const mx = 14, mz = 8;
@@ -186,7 +186,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central Forest' }) {
   };
 }
 
-function textTexture(text) {
+export function textTexture(text) {
   const c = document.createElement('canvas');
   c.width = 640;
   c.height = 128;

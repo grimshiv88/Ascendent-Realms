@@ -9,7 +9,7 @@ import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, re
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
-import { renderQuests } from './quests.js';
+import { renderQuests, renderGuild } from './quests.js';
 import { renderLand, renderCave } from './landui.js';
 import { caveById } from './data/depths.mjs';
 import { portalFee, portalKm } from './data/portals.mjs';
@@ -306,6 +306,7 @@ function startGame(character) {
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
+    else if (name === 'guild') renderGuild(overlay, game, ui.questMsg);
     else if (name === 'map') renderMap(overlay, () => world?.position(), (character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })),
       { plots: ui.myPlots || [], others: ui.otherPlots || [], chosen: () => ui.basket, reach: REACH, caves: (ui.caves || []).filter((q) => q.mine).map((q) => { const cv = caveById(q.cave); return cv && { x: cv.place.x, z: cv.place.z, name: cv.name }; }).filter(Boolean) },
       world?.landMode ? (x, z) => {
@@ -491,10 +492,21 @@ function startGame(character) {
       } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : 'That portal is across the sea.');
       return;
     }
-    if ((v = t('data-quest-accept')) != null) { const r = game.questAccept(Number(v)); ui.questMsg = r === 'ok' ? 'Quest accepted.' : r === 'limit' ? 'You have taken on 3 quests today. Come back tomorrow (a day of the realm is one real hour).' : ''; drawPanel(); return; }
-    if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here()); ui.questMsg = 'Quest given up. A new quest is posted every 20 minutes.'; drawPanel(); return; }
+    if ((v = t('data-room')) != null) {
+      const r = v === 'rent' ? game.rentRoom() : game.sleepInRoom();
+      ui.shopMsg = { ok: v === 'rent' ? 'The room is yours for a day of the realm (one real hour).' : 'You sleep in your room and wake fully rested.', coins: 'Not enough coins.', have: 'You already have a room.', none: 'Rent a room first.' }[r];
+      if (v === 'sleep' && r === 'ok') { world?.say('Fully rested', 'exp'); drawHud(); }
+      drawPanel(); return;
+    }
+    const board = t('data-board') || 'quests';
+    if ((v = t('data-quest-accept')) != null) {
+      const r = game.questAccept(Number(v), board);
+      ui.questMsg = { ok: board === 'guild' ? 'Guild request accepted.' : 'Quest accepted.', limit: 'You have taken on 3 quests today. Come back tomorrow (a day of the realm is one real hour).', one: 'You can hold only one guild request at a time.', pick: '' }[r];
+      drawPanel(); return;
+    }
+    if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here(), board); ui.questMsg = 'Given up. A new one is posted every 20 minutes.'; drawPanel(); return; }
     if ((v = t('data-quest-claim')) != null) {
-      const r = game.questClaim(Number(v), here());
+      const r = game.questClaim(Number(v), here(), board);
       if (r) { ui.questMsg = `Quest complete: +${r.exp} EXP, +${r.coins} G${r.item ? `, ${r.item.replace(/_/g, ' ')}` : ''}.`; world?.say('Quest complete!', 'exp'); }
       drawPanel(); return;
     }
@@ -574,7 +586,7 @@ function startGame(character) {
     if ((v = t('data-sell')) != null || (v = t('data-sell-all')) != null) {
       const all = t('data-sell-all') != null;
       const n = all ? game.entry(v)?.n : 1;
-      const got = game.sell(v, n);
+      const got = game.sell(v, n, overlay.dataset.panel === 'market' ? ui.market : null);
       ui.shopMsg = got ? `Sold ${all ? `${n} ` : ''}for ${got} coins.` : '';
       if (got) world?.say(`+${got} G`, 'exp');
       drawPanel(); return;
@@ -639,6 +651,7 @@ function startGame(character) {
         }).catch(() => {});
       }
       if (type === 'market') { ui.market = data; openPanel('market'); }
+      if (type === 'guild') { game.fillQuests(here(), 'guild'); openPanel('guild'); }
       if (type === 'chest') showArea(`The chest held ${data.coins} G, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();
       if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
@@ -677,6 +690,7 @@ function startGame(character) {
   setInterval(() => {
     const before = (character.quests || []).length;
     game.fillQuests(here());
+    if (character.guildQuests) game.fillQuests(here(), 'guild');
     if ((character.quests || []).length > before) { showArea('A new quest was posted on the board (Q).'); if (overlay.dataset.panel === 'quests' && !overlay.classList.contains('hidden')) drawPanel(); }
   }, 10000);
   drawSkillBar();

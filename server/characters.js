@@ -93,26 +93,34 @@ function saveProgress(accountId, p) {
     : null;
   // Quests are kept as plain data: only known types, small numbers and short text
   const str = (v, n) => (typeof v === 'string' && v.length <= n ? v : null);
-  const quests = [];
-  for (const q of Array.isArray(p.quests) ? p.quests.slice(0, 4) : []) {
-    if (!['hunt', 'slay', 'gather', 'explore'].includes(q?.type)) continue;
-    const r = q.reward || {};
-    const clean = {
-      type: q.type, need: int(q.need, 1, 100), have: int(q.have, 0, 100), accepted: q.accepted === true,
-      title: str(q.title, 120), text: str(q.text, 300),
-      reward: { exp: int(r.exp, 0, 1e9), coins: int(r.coins, 0, 1e9), ...(r.item ? { item: str(r.item, 32) } : {}) },
-    };
-    if (q.type === 'hunt') clean.kind = str(q.kind, 32);
-    if (q.type === 'slay') clean.min = int(q.min, 1, 10000);
-    if (q.type === 'gather') clean.item = str(q.item, 32);
-    if (q.type === 'explore') clean.place = { x: int(q.place?.x, -1e6, 1e6), z: int(q.place?.z, -1e6, 1e6), r: int(q.place?.r, 1, 1000) };
-    const flat = JSON.stringify(clean);
-    if (flat.includes('null')) continue;
-    quests.push(clean);
-  }
+  const cleanQuests = (list, max) => {
+    const quests = [];
+    for (const q of Array.isArray(list) ? list.slice(0, max) : []) {
+      if (!['hunt', 'slay', 'gather', 'explore'].includes(q?.type)) continue;
+      const r = q.reward || {};
+      const clean = {
+        type: q.type, need: int(q.need, 1, 100), have: int(q.have, 0, 100), accepted: q.accepted === true,
+        title: str(q.title, 120), text: str(q.text, 300),
+        reward: { exp: int(r.exp, 0, 1e9), coins: int(r.coins, 0, 1e9), ...(r.item ? { item: str(r.item, 32) } : {}) },
+      };
+      if (q.type === 'hunt') clean.kind = str(q.kind, 32);
+      if (q.type === 'slay') clean.min = int(q.min, 1, 10000);
+      if (q.type === 'gather') clean.item = str(q.item, 32);
+      if (q.type === 'explore') clean.place = { x: int(q.place?.x, -1e6, 1e6), z: int(q.place?.z, -1e6, 1e6), r: int(q.place?.r, 1, 1000) };
+      const flat = JSON.stringify(clean);
+      if (flat.includes('null')) continue;
+      if (q.guild === true) clean.guild = true;
+      quests.push(clean);
+    }
+    return quests;
+  };
+  const quests = cleanQuests(p.quests, 4);
+  const guildQuests = cleanQuests(p.guildQuests, 3);
+  const guildNext = int(p.guildNext ?? 0, 0, 1e15) ?? 0;
   // the quest board's clock: when the next quest is posted, and how many were taken on today
   const questNext = int(p.questNext ?? 0, 0, 1e15) ?? 0;
   const questDay = p.questDay && int(p.questDay.day, 0, 1e9) !== null && int(p.questDay.n, 0, 100) !== null ? { day: p.questDay.day, n: p.questDay.n } : null;
+  const room = p.room && int(p.room.until, 0, 1e15) !== null ? { until: p.room.until } : null;
   const torches = (Array.isArray(p.torches) ? p.torches.slice(0, 10) : [])
     .filter((t) => Number.isFinite(t?.x) && Number.isFinite(t?.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6)
     .map((t) => ({ x: t.x, z: t.z }));
@@ -125,7 +133,7 @@ function saveProgress(accountId, p) {
   const t = p.tent;
   const tent = t && Number.isFinite(t.x) && Number.isFinite(t.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6
     ? { x: t.x, z: t.z, heading: Number.isFinite(t.heading) ? t.heading : 0 } : null;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, torches, skills, skillBar, skillPicks, tent, potionMaker, trained, caves });
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, torches, skills, skillBar, skillPicks, tent, potionMaker, trained, caves });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };

@@ -26,7 +26,7 @@ const GATHER_REGION = { log: null, berries: null, reed: 'mire', cactus_flesh: 's
 const MINE = [['copper_ore', 1], ['iron_ore', 1], ['crystal_shard', 10], ['silver_ore', 15], ['gold_ore', 25], ['emerald', 30], ['sapphire', 35], ['ruby', 50], ['moonstone', 80], ['dragonite', 100]];
 const SUPPLY = [['bread', 1], ['water_flask', 1], ['apple', 1], ['herbal_tea', 1], ['honey_cake', 3], ['roast_meat', 4], ['potion', 5], ['sp_potion', 5], ['stew', 12], ['big_potion', 20]];
 
-function rewardFor(c, effort) {
+function baseReward(c, effort) {
   // effort 1 is a quick job; a level's worth of EXP takes several quests
   const need = expToNext(c.level, c.race);
   const exp = Math.max(3, Math.round(need * (0.12 + Math.random() * 0.1) * effort));
@@ -35,15 +35,16 @@ function rewardFor(c, effort) {
   return { exp, coins, ...(item ? { item } : {}) };
 }
 
-export function makeQuest(c, here, type = pick(['hunt', 'hunt', 'slay', 'gather', 'mine', 'supply', 'explore'])) {
+export function makeQuest(c, here, type = pick(['hunt', 'hunt', 'slay', 'gather', 'mine', 'supply', 'explore']), hard = 1) {
   const region = sample(here.x, here.z, {}).region;
-  const k = scale(c);
+  const k = scale(c) * hard;
+  const rewardFor = (cc, effort) => baseReward(cc, effort * hard);
   if (type === 'hunt') {
     // monsters of this region, near your level if possible
     const local = [...new Set(BY_REGION[region] || BY_REGION.heart)];
     const fit = local.filter((id) => KINDS[id].levels[0] <= c.level + 4 && KINDS[id].levels[1] >= c.level - 10);
     // nothing here near your level: ask for strong monsters anywhere instead
-    if (!fit.length) return makeQuest(c, here, 'slay');
+    if (!fit.length) return makeQuest(c, here, 'slay', hard);
     let kind = pick(fit);
     // goblins near an evolved player are evolved too
     if (GOBLIN_LINE.includes(kind)) kind = GOBLIN_LINE[Math.min(5, Math.max(GOBLIN_LINE.indexOf(kind), c.stage || 0))];
@@ -79,7 +80,7 @@ export function makeQuest(c, here, type = pick(['hunt', 'hunt', 'slay', 'gather'
     const d = Math.hypot(p.x - here.x, p.z - here.z);
     return d > 300 && d < far;
   });
-  if (!spots.length) return makeQuest(c, here, 'slay');
+  if (!spots.length) return makeQuest(c, here, 'slay', hard);
   const p = pick(spots);
   const d = Math.hypot(p.x - here.x, p.z - here.z);
   const name = p.cave ? `the cave in ${regionName(sample(p.x, p.z, {}).region)}` : p.name;
@@ -93,19 +94,29 @@ function compass(dx, dz) {
   return ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(((a + 360) % 360) / 45) % 8];
 }
 
-// Fill the board: a new board starts full; after that one quest is posted every NEW_QUEST_MS.
-export function fillBoard(c, here) {
-  c.quests ||= [];
+// The boards: the quest board (Q) and the guild board in the Main Guild Hall. Guild requests are
+// harder and pay more, and you can hold only one at a time.
+export const BOARDS = {
+  quests: { list: 'quests', next: 'questNext', size: BOARD, hard: 1 },
+  guild: { list: 'guildQuests', next: 'guildNext', size: 3, hard: 1.6 },
+};
+// Fill a board: a new board starts full; after that one quest is posted every NEW_QUEST_MS.
+export function fillBoard(c, here, board = 'quests') {
+  const B = BOARDS[board];
+  c[B.list] ||= [];
+  const list = c[B.list];
+  const post = () => {
+    const q = { ...makeQuest(c, here, undefined, B.hard), accepted: false };
+    if (board === 'guild') { q.guild = true; q.title = `Guild ${q.title}`; }
+    list.push(q);
+  };
   const t = now();
-  if (!c.quests.length && !c.questNext) { while (c.quests.length < BOARD) c.quests.push({ ...makeQuest(c, here), accepted: false }); return; }
-  if (c.quests.length >= BOARD) { c.questNext = 0; return; }
-  if (!c.questNext) { c.questNext = t + NEW_QUEST_MS; return; }
-  while (c.quests.length < BOARD && t >= c.questNext) {
-    c.quests.push({ ...makeQuest(c, here), accepted: false });
-    c.questNext += NEW_QUEST_MS;
-  }
-  if (c.quests.length >= BOARD) c.questNext = 0;
-  else if (c.questNext < t) c.questNext = t + NEW_QUEST_MS;
+  if (!list.length && !c[B.next]) { while (list.length < B.size) post(); return; }
+  if (list.length >= B.size) { c[B.next] = 0; return; }
+  if (!c[B.next]) { c[B.next] = t + NEW_QUEST_MS; return; }
+  while (list.length < B.size && t >= c[B.next]) { post(); c[B.next] += NEW_QUEST_MS; }
+  if (list.length >= B.size) c[B.next] = 0;
+  else if (c[B.next] < t) c[B.next] = t + NEW_QUEST_MS;
 }
 // how many quests you have taken on today (a day of the realm)
 export function questsToday(c) {
@@ -121,18 +132,21 @@ export function progressOf(q, game) {
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-export function renderQuests(el, game, tabsHtml, message = '') {
+function questCards(game, board) {
   const c = game.character;
-  const cards = c.quests.map((q, i) => {
+  const list = c[BOARDS[board].list] || [];
+  const blocked = board === 'guild' ? list.some((q) => q.accepted) : questsToday(c) >= QUESTS_PER_DAY;
+  return list.map((q, i) => {
     const have = progressOf(q, game);
     const done = q.accepted && have >= q.need;
     const r = q.reward;
     const reward = [`${r.exp} EXP`, `${r.coins} G`, r.item ? ITEMS[r.item].name : null].filter(Boolean).join(' · ');
+    const at = `data-board="${board}"`;
     const action = !q.accepted
-      ? `<button type="button" class="sys-button" data-quest-accept="${i}" ${questsToday(c) >= QUESTS_PER_DAY ? 'disabled' : ''}>Accept</button>`
+      ? `<button type="button" class="sys-button" data-quest-accept="${i}" ${at} ${blocked ? 'disabled' : ''}>Accept</button>`
       : done
-        ? `<button type="button" class="sys-button" data-quest-claim="${i}">Claim reward</button>`
-        : `<button type="button" class="sys-button ghost" data-quest-drop="${i}">Give up</button>`;
+        ? `<button type="button" class="sys-button" data-quest-claim="${i}" ${at}>Claim reward</button>`
+        : `<button type="button" class="sys-button ghost" data-quest-drop="${i}" ${at}>Give up</button>`;
     return `<div class="quest${q.accepted ? ' on' : ''}${done ? ' done' : ''}">
       <div class="quest-head"><b>${esc(q.title)}</b>${q.accepted ? `<span class="quest-count">${have} / ${q.need}</span>` : ''}</div>
       <p>${esc(q.text)}</p>
@@ -140,14 +154,39 @@ export function renderQuests(el, game, tabsHtml, message = '') {
       <div class="quest-foot"><span class="quest-reward">Reward: ${esc(reward)}</span>${action}</div>
     </div>`;
   }).join('');
+}
+const nextIn = (c, board) => { const B = BOARDS[board]; return (c[B.list] || []).length < B.size && c[B.next] ? Math.max(1, Math.ceil((c[B.next] - now()) / 60000)) : 0; };
+
+export function renderQuests(el, game, tabsHtml, message = '') {
+  const c = game.character;
+  const cards = questCards(game, 'quests');
+  const mins = nextIn(c, 'quests');
+  const guild = (c.guildQuests || []).find((q) => q.accepted);
   el.innerHTML = `
     <div class="system-window quest-window" role="dialog" aria-label="Quests">
       <button type="button" class="sys-close" data-close aria-label="Close">×</button>
       ${tabsHtml('quests')}
       <div class="sys-title"><span class="sys-bang">!</span><h2>Quests</h2></div>
-      <p class="sys-top">Taken today: <b>${questsToday(c)} / ${QUESTS_PER_DAY}</b>${c.quests.length < BOARD && c.questNext ? ` <span>·</span> Next quest posted in <b>${Math.max(1, Math.ceil((c.questNext - now()) / 60000))} min</b>` : ''}</p>
+      <p class="sys-top">Taken today: <b>${questsToday(c)} / ${QUESTS_PER_DAY}</b>${mins ? ` <span>·</span> Next quest posted in <b>${mins} min</b>` : ''}</p>
       <p class="sys-hint">You can take on ${QUESTS_PER_DAY} quests a day. A new one is posted every 8 hours of the realm (20 minutes). They grow harder, and pay more, as you level.</p>
       <p class="sys-msg" role="status">${esc(message)}</p>
       <div class="quest-list">${cards || '<p class="sys-hint">The board is empty. Come back when a new quest is posted.</p>'}</div>
+      ${guild ? `<h3 class="sys-sub">Your guild request</h3><p class="sys-hint">${esc(guild.title)}: ${progressOf(guild, game)} / ${guild.need}. Claim it at the Main Guild Hall in the Central City.</p>` : ''}
+    </div>`;
+}
+
+// The Main Guild Hall: every guild's requests are posted here. One guild request at a time.
+export function renderGuild(el, game, message = '') {
+  const c = game.character;
+  const mins = nextIn(c, 'guild');
+  el.innerHTML = `
+    <div class="system-window quest-window" role="dialog" aria-label="Main Guild Hall">
+      <button type="button" class="sys-close" data-close aria-label="Close">×</button>
+      <div class="sys-title"><span class="sys-bang">!</span><h2>Main Guild Hall</h2></div>
+      <p class="sys-top">Guild requests are harder than the quest board and pay more. You can hold <b>one</b> at a time.${mins ? ` <span>·</span> Next request in <b>${mins} min</b>` : ''}</p>
+      <p class="sys-msg" role="status">${esc(message)}</p>
+      <div class="quest-list">${questCards(game, 'guild') || '<p class="sys-hint">No requests right now. A new one is posted every 20 minutes.</p>'}</div>
+      <h3 class="sys-sub">Parties</h3>
+      <p class="sys-hint">Players will be able to invite you to their parties here. Parties are coming in a later update.</p>
     </div>`;
 }

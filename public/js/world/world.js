@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { createLand } from './land.js';
 import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
+import { buildCity, buildVillage } from './city.js';
 import { buildCave } from './caves.js';
 import { createCreatures, KINDS, monsterHit } from './creatures.js';
 import { createSkillFx } from './skillfx.js';
@@ -130,7 +131,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const s of sites) {
       const d = Math.hypot(x - s.place.x, z - s.place.z);
       if (d < 1000 && !s.built) {
-        s.built = s.place.cave ? buildCave(s.place) : buildSpawn(s.place);
+        s.built = s.place.cave ? buildCave(s.place) : s.place.city ? buildCity(s.place) : s.place.village ? buildVillage(s.place) : buildSpawn(s.place);
         scene.add(s.built.group);
         if (s.built.solid) colliders.add(s.built.solid);
         if (s.place.cave) postGuards(s);
@@ -549,6 +550,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   // The use key (E): open a chest, pick up a torch or pack up your tent, whichever is closest at hand
   let inZone = null, atStall = null;
+  // the shop door or market stall you're standing at, if any
+  function shopNear(x, z) {
+    for (const s of sites) {
+      const list = s.built?.shops || (s.built?.market ? [{ ...s.built.market, name: MARKETS[s.built.market.id].name }] : []);
+      for (const shop of list) if (Math.hypot(shop.x - x, shop.z - z) < 4.5) return shop;
+    }
+    return null;
+  }
   function interact() {
     if (!game || dead) return;
     const chest = colliders.near(pos.x, pos.z, 3).find((e) => e.kind === 'chest' && Math.hypot(e.x - pos.x, e.z - pos.z) - e.r < 1.6);
@@ -557,8 +566,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const took = game.takeTorch(pos.x, pos.z);
       if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
       if (nearTent(pos.x, pos.z, TENT_IN + 1)) { pitchTent(); return; }
-      const stall = sites.find((s) => s.built?.market && Math.hypot(s.built.market.x - pos.x, s.built.market.z - pos.z) < 5);
-      if (stall) { onEvent?.('market', stall.built.market.id); return; }
+      const shop = shopNear(pos.x, pos.z);
+      if (shop) { onEvent?.(shop.id === 'guild' ? 'guild' : 'market', shop.id); return; }
     }
     say('Nothing here to open or pick up', 'note');
   }
@@ -1176,8 +1185,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (nowPortal !== atPortal) { atPortal = nowPortal; onEvent?.('portal', atPortal); }
         const zone = safeZoneAt(pos.x, pos.z);
         if ((zone?.id || null) !== inZone) { inZone = zone?.id || null; if (zone) say(`Safe zone: monsters can't come in here`, 'note'); }
-        const stall = sites.find((s) => s.built?.market && Math.hypot(s.built.market.x - pos.x, s.built.market.z - pos.z) < 5)?.built.market.id || null;
-        if (stall !== atStall) { atStall = stall; if (stall) say(`Press ${keyName(codeFor('interact'))} to shop at the ${MARKETS[stall].name}`, 'note'); }
+        const shop = shopNear(pos.x, pos.z);
+        if ((shop?.name || null) !== atStall) { atStall = shop?.name || null; if (shop) setTimeout(() => say(`Press ${keyName(codeFor('interact'))}: ${shop.name}`, 'note'), 1200); }
       }
       if (here !== area) { area = here; onArea?.(area, { x: pos.x, z: pos.z }); }
     }

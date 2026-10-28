@@ -77,6 +77,24 @@ export const ITEMS = {
   tower_shield: { name: 'Tower Shield', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 3, def: 18, price: 1200, look: { color: '#b0b6be', metal: true }, text: 'A wall you can carry.' },
   knight_helm: { name: 'Knight\'s Helm', icon: '👑', kind: 'armour', slot: 'head', rank: 4, def: 20, mdef: 5, price: 1800, look: { color: '#d9c27a', metal: true }, text: 'Gold-trimmed and plumed.' },
   knight_plate: { name: 'Knight\'s Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 4, def: 34, mdef: 8, price: 3000, look: { color: '#d9c27a', metal: true }, text: 'Armour of the realm\'s knights.' },
+  // Central City food hall and tavern: all halal. Meals heal and give a short buff.
+  lentil_soup: { name: 'Lentil Soup', icon: '🥣', kind: 'food', heal: 60, rest: 10, price: 18, text: 'Warm and filling. Restores 60 HP and eases Fatigue a little.' },
+  falafel_wrap: { name: 'Falafel Wrap', icon: '🌯', kind: 'food', heal: 90, buff: { stat: 'speed', pct: 10, minutes: 5 }, price: 30, text: 'Restores 90 HP and +10% speed for 5 minutes.' },
+  lamb_kebab: { name: 'Lamb Kebab', icon: '🍢', kind: 'food', heal: 140, buff: { stat: 'atk', pct: 10, minutes: 5 }, price: 45, text: 'Grilled halal lamb. Restores 140 HP and +10% ATK for 5 minutes.' },
+  chicken_rice: { name: 'Spiced Chicken and Rice', icon: '🍛', kind: 'food', heal: 220, buff: { stat: 'def', pct: 10, minutes: 5 }, price: 70, text: 'Halal chicken on saffron rice. Restores 220 HP and +10% DEF for 5 minutes.' },
+  date_bowl: { name: 'Dates and Honey', icon: '🍯', kind: 'food', sp: 40, heal: 20, price: 22, text: 'Sweet and quick. Restores 40 SP and 20 HP.' },
+  mint_tea: { name: 'Mint Tea', icon: '🫖', kind: 'food', sp: 25, rest: 15, price: 10, text: 'Fresh mint tea. Restores 25 SP and eases Fatigue.' },
+  fruit_juice: { name: 'Fresh Fruit Juice', icon: '🧃', kind: 'food', sp: 30, heal: 30, price: 14, text: 'Pressed this morning. Restores 30 SP and 30 HP.' },
+  ayran: { name: 'Ayran', icon: '🥛', kind: 'food', heal: 35, rest: 20, price: 9, text: 'A cool salted yogurt drink. Restores 35 HP and eases Fatigue.' },
+  // clothes: worn for looks, not protection (a little DEF at most)
+  linen_shirt: { name: 'Linen Shirt', icon: '👕', kind: 'armour', slot: 'body', rank: 0, def: 1, fashion: true, price: 35, look: { color: '#e8e0cc' }, text: 'Light, clean linen.' },
+  embroidered_tunic: { name: 'Embroidered Tunic', icon: '👘', kind: 'armour', slot: 'body', rank: 1, def: 1, fashion: true, price: 120, look: { color: '#7a2a3a' }, text: 'Gold thread at the collar and cuffs.' },
+  silk_robe: { name: 'Silk Robe', icon: '🥻', kind: 'armour', slot: 'body', rank: 2, def: 1, fashion: true, price: 380, look: { color: '#2a4a8a', robe: true }, text: 'Long, flowing and very fine.' },
+  wide_trousers: { name: 'Wide Trousers', icon: '👖', kind: 'armour', slot: 'legs', rank: 0, def: 1, fashion: true, price: 30, look: { color: '#4a4038' }, text: 'Loose and comfortable.' },
+  felt_hat: { name: 'Felt Hat', icon: '🎩', kind: 'armour', slot: 'head', rank: 0, def: 0, fashion: true, price: 25, look: { color: '#5a3a2a', hat: true }, text: 'A soft felt hat.' },
+  turban: { name: 'Turban', icon: '👳', kind: 'armour', slot: 'head', rank: 1, def: 0, fashion: true, price: 60, look: { color: '#f0ece0' }, text: 'Neatly wound white cloth.' },
+  sandals: { name: 'Sandals', icon: '🩴', kind: 'armour', slot: 'feet', rank: 0, def: 0, fashion: true, price: 15, look: { color: '#8a6a4a' }, text: 'For warm days in the city.' },
+  riding_boots: { name: 'Riding Boots', icon: '👢', kind: 'armour', slot: 'feet', rank: 1, def: 1, fashion: true, price: 90, look: { color: '#2a1e16' }, text: 'Tall, polished leather.' },
   // weapons
   // forged only: blacksmiths make these, no shop sells them. `model` borrows another weapon's shape.
   crude_dagger: { name: 'Crude Dagger', icon: '🔪', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 5, speed: 0.38, chop: 0.5, rank: 0, price: 30, forged: true, text: 'A sharpened iron spike with a leather grip.' },
@@ -290,10 +308,25 @@ export const MARKETS = {
   marsh: { name: 'Marsh Market', text: 'Scale armour and spears.', kinds: ['armour', 'weapon'], only: (it) => it.kind === 'armour' || it.type === 'spear', extra: ['lizard_scale', 'reed', 'herb'] },
   nests: { name: 'Peak Forge', text: 'The finest weapons and armour, for those who can afford them.', kinds: ['weapon', 'armour'], extra: ['drake_horn', 'gold_ore', 'ruby'] },
 };
-// What a market sells to a character of `level`: [id, price]
+// The Central City's shops are run by the city (bots), not players: everything costs more there
+// and they buy for less. Every dish and drink is halal.
+export const BOT_MARKUP = 1.4, BOT_BUY_SHARE = 0.7;
+const basicGear = (kind) => SHOP.filter(([id]) => ITEMS[id].kind === kind && (ITEMS[id].rank || 0) <= 1 && !ITEMS[id].fashion).map(([id]) => id);
+Object.assign(MARKETS, {
+  city_potions: { bot: true, name: 'The Green Vial', text: 'Small potions and remedies, run by the city.', items: ['potion', 'sp_potion', 'calm_draught', 'herb', 'big_potion', 'strength_potion', 'stone_potion', 'swift_potion'] },
+  city_smith: { bot: true, name: 'City Forge', text: 'Basic weapons and tools, run by the city.', items: [...basicGear('weapon'), 'poison_potion', 'fire_oil', 'frost_oil', 'torch', 'tent'] },
+  city_armoury: { bot: true, name: 'City Armoury', text: 'Plain armour and shields, run by the city.', items: basicGear('armour') },
+  city_tailor: { bot: true, name: 'The Silk Thread', text: 'Clothes to wear for looks, not for battle.', items: ['linen_shirt', 'wide_trousers', 'felt_hat', 'sandals', 'embroidered_tunic', 'turban', 'riding_boots', 'silk_robe'] },
+  city_food: { bot: true, name: 'The Olive Tree', text: 'Halal meals that heal and give a short boost.', items: ['bread', 'apple', 'lentil_soup', 'falafel_wrap', 'lamb_kebab', 'chicken_rice', 'date_bowl', 'stew'] },
+  tavern: { bot: true, name: 'Tavern', text: 'Halal food, fresh drinks and rooms to rent. No alcohol is served here.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask', 'herbal_tea', 'lentil_soup', 'bread'] },
+});
+// what a market charges for an item, and pays for one
+export const marketPrice = (marketId, id) => Math.round(ITEMS[id].price * (MARKETS[marketId]?.bot ? BOT_MARKUP : 1));
+// What a market sells to a character of `level`
 export function marketStock(marketId, level) {
   const m = MARKETS[marketId];
   if (!m) return [];
+  if (m.items) return m.items.filter((id) => ITEMS[id] && level >= (SHOP.find(([sid]) => sid === id)?.[1] ?? 1) - 5);
   const out = SHOP.filter(([id, lvl]) => m.kinds.includes(ITEMS[id].kind) && (!m.only || m.only({ ...ITEMS[id], id })) && level >= Math.max(1, lvl - 5)).map(([id]) => id);
   for (const id of m.extra) if (ITEMS[id] && !out.includes(id)) out.push(id);
   return out;

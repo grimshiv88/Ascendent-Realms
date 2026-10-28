@@ -1,9 +1,9 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
 import { CLASSES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
-import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, marketStock } from './data/items.mjs';
-import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY } from './quests.js';
-import { gameTime } from './data/clock.mjs';
+import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
+import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
+import { gameTime, DAY_MS } from './data/clock.mjs';
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
 import { portalById, portalFee } from './data/portals.mjs';
 import { actionFor, FIXED_KEYS } from './data/controls.mjs';
@@ -87,7 +87,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
+    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
     skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves,
   });
 
@@ -172,19 +172,40 @@ export function createProgress(c, { save, onChange, onEvent }) {
       const unlock = SHOP.find(([sid]) => sid === id)?.[1] ?? Infinity;
       const it = ITEMS[id];
       if (market ? !marketStock(market, c.level).includes(id) : c.level < unlock) return 'locked';
-      if (c.coins < it.price) return 'coins';
+      const price = market ? marketPrice(market, id) : it.price;
+      if (c.coins < price) return 'coins';
       if (!addItem(id, 1)) return 'full';
-      c.coins -= it.price;
+      c.coins -= price;
       changed('coins');
       return 'ok';
     },
-    sellPrice: (e) => sellPrice(ITEMS[e.id], e.plus || 0, c.cls),
+    // A tavern room: rented for a day of the realm. Sleeping in it restores everything.
+    roomPrice: () => 20 + c.level * 2,
+    room: () => (c.room?.until > Date.now() ? { minutes: Math.ceil((c.room.until - Date.now()) / 60000) } : null),
+    rentRoom() {
+      if (this.room()) return 'have';
+      const price = this.roomPrice();
+      if (c.coins < price) return 'coins';
+      c.coins -= price;
+      c.room = { until: Date.now() + DAY_MS };
+      changed('coins');
+      return 'ok';
+    },
+    sleepInRoom() {
+      if (!this.room()) return 'none';
+      const s = this.stats();
+      c.hp = s.hp; c.sp = s.sp; c.fatigue = 0;
+      changed('hp');
+      return 'ok';
+    },
+    // the city's own shops (bots) pay less than ordinary shops
+    sellPrice: (e, market = null) => Math.max(1, Math.floor(sellPrice(ITEMS[e.id], e.plus || 0, c.cls) * (MARKETS[market]?.bot ? BOT_BUY_SHARE : 1))),
     // sells `n` of an item (all of them when n is left out); returns the coins earned
-    sell(key, n = 1) {
+    sell(key, n = 1, market = null) {
       const e = entry(key);
       if (!e) return 0;
       n = Math.min(n ?? e.n, e.n);
-      const price = sellPrice(ITEMS[e.id], e.plus || 0, c.cls);
+      const price = this.sellPrice(e, market);
       if (!removeItem(key, n)) return 0;
       c.coins += price * n;
       changed('coins');
@@ -375,26 +396,36 @@ export function createProgress(c, { save, onChange, onEvent }) {
       c.unspentPoints -= total;
       changed('stats');
     },
-    // Quests. `here` is where you stand, so new quests fit the area.
-    fillQuests(here) { const before = (c.quests || []).length, next = c.questNext; fillBoard(c, here); if (c.quests.length !== before || c.questNext !== next) changed('quests'); },
-    // returns 'ok', or 'limit' when today's quests are used up
-    questAccept(i) {
-      const q = c.quests[i];
+    // Quests. `here` is where you stand, so new quests fit the area. `board` is 'quests' (the quest
+    // board, 3 a day) or 'guild' (the Main Guild Hall, one at a time).
+    fillQuests(here, board = 'quests') {
+      const B = BOARDS[board], before = (c[B.list] || []).length, next = c[B.next];
+      fillBoard(c, here, board);
+      if (c[B.list].length !== before || c[B.next] !== next) changed('quests');
+    },
+    // returns 'ok', 'limit' when today's quests are used up, or 'one' when you already hold a guild request
+    questAccept(i, board = 'quests') {
+      const list = c[BOARDS[board].list] || [];
+      const q = list[i];
       if (!q || q.accepted) return 'pick';
-      if (questsToday(c) >= QUESTS_PER_DAY) return 'limit';
-      c.questDay = { day: gameTime().day, n: questsToday(c) + 1 };
+      if (board === 'guild') { if (list.some((x) => x.accepted)) return 'one'; }
+      else {
+        if (questsToday(c) >= QUESTS_PER_DAY) return 'limit';
+        c.questDay = { day: gameTime().day, n: questsToday(c) + 1 };
+      }
       q.accepted = true;
       changed('quests');
       return 'ok';
     },
-    questDrop(i, here) { c.quests.splice(i, 1); fillBoard(c, here); changed('quests'); },
+    questDrop(i, here, board = 'quests') { c[BOARDS[board].list].splice(i, 1); fillBoard(c, here, board); changed('quests'); },
     // Returns the reward if the quest was finished
-    questClaim(i, here) {
-      const q = c.quests[i];
+    questClaim(i, here, board = 'quests') {
+      const list = c[BOARDS[board].list] || [];
+      const q = list[i];
       if (!q?.accepted || progressOf(q, this) < q.need) return null;
       if (q.type === 'gather') removeItem(q.item, q.need);
-      c.quests.splice(i, 1);
-      fillBoard(c, here);
+      list.splice(i, 1);
+      fillBoard(c, here, board);
       if (q.reward.item) addItem(q.reward.item, 1);
       this.gainCoins(q.reward.coins);
       this.gainExp(q.reward.exp);
@@ -404,15 +435,15 @@ export function createProgress(c, { save, onChange, onEvent }) {
     questKill(kind, level = 0) {
       const ready = [];
       const counts = (q) => q.accepted && ((q.type === 'hunt' && q.kind === kind) || (q.type === 'slay' && level >= q.min));
-      for (const q of c.quests || []) {
+      for (const q of [...(c.quests || []), ...(c.guildQuests || [])]) {
         if (counts(q) && q.have < q.need) { q.have += 1; if (q.have >= q.need) ready.push(q.title); }
       }
-      if (ready.length || (c.quests || []).some(counts)) changed('quests');
+      if (ready.length || [...(c.quests || []), ...(c.guildQuests || [])].some(counts)) changed('quests');
       return ready;
     },
     questVisit(x, z) {
       const ready = [];
-      for (const q of c.quests || []) {
+      for (const q of [...(c.quests || []), ...(c.guildQuests || [])]) {
         if (q.accepted && q.type === 'explore' && !q.have && Math.hypot(x - q.place.x, z - q.place.z) < q.place.r) { q.have = 1; ready.push(q.title); }
       }
       if (ready.length) changed('quests');

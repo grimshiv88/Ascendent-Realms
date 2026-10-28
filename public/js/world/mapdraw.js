@@ -195,7 +195,7 @@ function paint(ctx, W, H) {
   regionLabel(330, 955, 'Sunscar Desert', 18);
 
   const LABEL = {
-    central: { star: true, bold: true, size: 17, label: 'Central Forest (spawn)' },
+    central: { star: true, bold: true, size: 17, label: 'Central City (spawn)' },
     crossroads: { color: '#5a3a14', size: 13, align: 'right' },
     riverhold: { color: '#5a3a14', size: 13 },
     hills: { color: '#5a3a14', size: 13 },
