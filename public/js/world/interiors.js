@@ -7,6 +7,7 @@ import { DEPTHS_X } from '../data/world-layout.mjs';
 import { MEETING_ROOMS, CASTLE_ROOMS } from '../data/interiors.mjs';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { textTexture } from './spawn.js';
+import { buildWork, WORKER_Z } from './work.js';
 
 // where the insides are laid out: past the caves, one at a time
 const OX = DEPTHS_X + 150000, OZ = 0;
@@ -26,6 +27,7 @@ export function buildInterior(shop) {
   const seats = [];
   const lights = [];
   const people = [];
+  const workers = []; // { station, body }: people doing their jobs
   const rooms = [];
   const mats = [];
   const mat = (color, extra = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra }); mats.push(m); return m; };
@@ -132,12 +134,23 @@ export function buildInterior(shop) {
     box(w, 1.05, 0.9, wood, x, 0, z);
     box(w + 0.2, 0.08, 1.05, darkWood, x, 1.05, z);
     for (let s = -w / 2 + 0.4; s <= w / 2; s += 0.8) block(x + s, z, 0.5, 0, 1.2);
-    const races = ['dwarf', 'elf', 'hobbit', 'beastkin'];
+    // keepers who work at the counter are tall enough to be seen over it
+    const job = { tavern: 'juice', potions: 'brew', food: 'cook', tailor: 'sew', armoury: 'polish' }[kind];
+    const races = job ? ['elf', 'beastkin'] : ['dwarf', 'elf', 'hobbit', 'beastkin'];
     const keeper = buildCharacter({ race: races[(shop.name || '').length % races.length], form: 'humanoid', look: {} });
     keeper.position.set(x, 0, z + 1.1);
     keeper.rotation.y = Math.PI;
     g.add(keeper);
     people.push(keeper);
+    // the keeper works at the counter: juices in the tavern, potions, food, sewing, polishing
+    if (job) {
+      const station = buildWork(job, { top: 1.13 });
+      station.group.position.set(x, 0, z + 1.1 - WORKER_Z); // the keeper keeps their place behind the counter
+      g.add(station.group);
+      station.group.add(keeper);
+      people.pop();
+      workers.push({ station, body: keeper });
+    }
     // the sign on the wall behind
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(W - 2, 7), 1), new THREE.MeshBasicMaterial({ map: textTexture(label), transparent: true }));
     sign.position.set(x, 3.1, D - 0.2);
@@ -314,11 +327,15 @@ export function buildInterior(shop) {
       block(-2.5, D - 1.5, 0.55, 0, 1);
       lamp(0, H - 0.8, D / 2);
     } else if (kind === 'smith') {
-      // anvil and forge
-      box(0.5, 0.5, 0.5, darkWood, -3, 0, 5);
-      box(0.9, 0.3, 0.4, mat('#3a3a3e', { metalness: 0.8, roughness: 0.4 }), -3, 0.5, 5);
-      block(-3, 5, 0.6, 0, 1);
-      hearth(-W / 2 + 1, 7.5);
+      // the smith at the forge, anvil and mould along the left wall, merging pieces all day
+      const station = buildWork('smith', {});
+      station.group.position.set(-W / 2 + 1.5, 0, 4.6);
+      station.group.rotation.y = Math.PI / 2;
+      g.add(station.group);
+      const smith = buildCharacter({ race: 'dwarf', form: 'humanoid', look: {} });
+      station.group.add(smith);
+      workers.push({ station, body: smith });
+      for (const lz of [-1.7, 0, 1.7]) block(-W / 2 + 1.1, 4.6 + lz, 0.7, 0, 1.5);
       for (let i = 0; i < 4; i++) box(0.08, 1.4, 0.08, mat('#9aa0a8', { metalness: 0.9, roughness: 0.3 }), W / 2 - 0.5, 0.4, 3 + i * 0.6);
       box(0.1, 0.1, 2.8, darkWood, W / 2 - 0.4, 1.5, 3.9);
       lamp(2, H - 0.8, 4);
@@ -361,7 +378,10 @@ export function buildInterior(shop) {
       return v;
     },
     upstairs: (p) => kind === 'guild' && p.z - OZ > D,
-    update(t) { for (const p of people) animateCharacter(p, t, 0); },
-    dispose() { g.traverse((o) => { o.geometry?.dispose(); if (o.material?.map) o.material.map.dispose(); }); for (const m of mats) m.dispose(); },
+    update(t) {
+      for (const p of people) animateCharacter(p, t, 0);
+      for (const w of workers) w.station.play(w.body, t);
+    },
+    dispose() { for (const w of workers) w.station.dispose(); g.traverse((o) => { o.geometry?.dispose(); if (o.material?.map) o.material.map.dispose(); }); for (const m of mats) m.dispose(); },
   };
 }

@@ -1,7 +1,8 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
 import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext } from './data/game-data.mjs';
-import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeResult, mergeCost, evolveStage, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, rankOf, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
+import { ITEMS, SHOP, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
+import { mergeOutcome } from './data/merges.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
 import { gameTime, DAY_MS } from './data/clock.mjs';
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
@@ -278,45 +279,55 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return c.boosts.reduce((n, x) => (x.stat === stat && x.until > now ? n + x.pct : n), 0);
     },
 
-    // Blacksmiths merge two pieces of the same kind: the first gets stronger, the second is used up.
-    // Every merge costs coins (and monster parts from Uncommon up), more for higher ranks and upgrades.
+    // Blacksmiths merge two pieces of the same sub-category (see the merge book in merges.mjs): the
+    // first becomes what the pair makes, the second is used up. Every merge costs coins (and monster
+    // parts from Uncommon up), priced by what comes out.
     canMerge: () => c.cls === 'blacksmith',
-    mergeCost: (key) => { const a = entry(key); return a ? mergeCost(ITEMS[a.id], a.plus || 0) : null; },
+    mergeCost(aKey, bKey) {
+      const a = entry(aKey), b = bKey ? entry(bKey) : null;
+      if (!a) return null;
+      const out = b && a !== b ? mergeOutcome(a, b) : null;
+      return out ? mergeCost(ITEMS[out.id], Math.max(0, out.plus - 1)) : mergeCost(ITEMS[a.id], a.plus || 0);
+    },
     canPay: (cost) => c.coins >= cost.coins && cost.needs.every(([id, n]) => count(id) >= n),
     mergePreview(aKey, bKey) {
       const a = entry(aKey), b = entry(bKey);
       if (!a || !b || a === b) return null;
-      return mergeResult(a, b);
+      return mergeOutcome(a, b);
     },
     merge(aKey, bKey) {
       if (c.cls !== 'blacksmith') return 'class';
       const a = entry(aKey), b = entry(bKey);
       if (!a || !b || a === b) return 'pick';
-      const plus = mergeResult(a, b);
-      if (plus == null) return 'kind';
-      if (plus === (a.plus || 0)) return 'max';
-      const cost = mergeCost(ITEMS[a.id], a.plus || 0);
+      const out = mergeOutcome(a, b);
+      if (!out) return 'kind';
+      if (out.id === a.id && out.plus === (a.plus || 0)) return 'max';
+      const cost = this.mergeCost(aKey, bKey);
       if (c.coins < cost.coins) return 'coins';
       if (!cost.needs.every(([id, n]) => count(id) >= n)) return 'parts';
       c.coins -= cost.coins;
       for (const [id, n] of cost.needs) removeItem(id, n);
-      const before = evolveStage(a.plus || 0);
-      a.plus = plus;
+      const before = rankOf(ITEMS[a.id], a.plus || 0), was = a.id;
+      a.id = out.id;
+      if (out.plus) a.plus = out.plus; else delete a.plus;
       removeItem(b.uid, 1);
       changed('gear');
-      if (ITEMS[a.id].kind === 'weapon' && evolveStage(plus) > before) {
-        onEvent?.('evolved', { name: evolvedName(ITEMS[a.id], plus) });
+      if (out.id !== was) { onEvent?.('merged', { name: evolvedName(ITEMS[a.id], out.plus) }); return 'new'; }
+      if (ITEMS[a.id].kind === 'weapon' && rankOf(ITEMS[a.id], out.plus) > before) {
+        onEvent?.('evolved', { name: evolvedName(ITEMS[a.id], out.plus) });
         return 'evolved';
       }
       return 'ok';
     },
     // Blacksmiths forge weapons and armour from ore and coins. Each rank unlocks at a class
     // advancement; a better metal than the rank needs makes the piece +1 or +2 stronger.
-    forge(id, ore = null) {
+    // At their own anvil (`workshop`) a Blacksmith can forge the workshop pieces too.
+    forge(id, ore = null, workshop = false) {
       if (c.cls !== 'blacksmith') return 'class';
       const it = ITEMS[id];
-      if (!it || !isGear(it) || forgeLevel(id) === Infinity) return 'pick';
-      if (c.level < forgeLevel(id)) return 'level';
+      const need = workshop ? workshopLevel(id) : forgeLevel(id);
+      if (!it || !isGear(it) || need === Infinity) return 'pick';
+      if (c.level < need) return 'level';
       const cost = forgeCost(it, ore);
       if (!cost) return 'pick';
       if (c.coins < cost.coins) return 'coins';

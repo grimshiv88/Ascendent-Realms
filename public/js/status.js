@@ -41,7 +41,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
         <button type="button" data-open="bag">Bag <kbd>I</kbd></button>
         <button type="button" data-open="map">Map <kbd>M</kbd></button>
         <button type="button" data-open="quests">Quests <kbd>Q</kbd></button>
-        <button type="button" data-open="options">Options <kbd>Esc</kbd></button>
+        <button type="button" data-open="options">Controls <kbd>Esc</kbd></button>
         <button type="button" data-signout>Log out</button>
       </div>
     </div>
@@ -212,13 +212,13 @@ const OPTIONS = [
   ['Torch', 'torch', 'act:torch', 'Place a torch, or pick one back up'],
   ['Top players', 'rankings', 'rankings', 'The highest-level characters'],
   ['Settings', 'settings', 'settings', 'Camera, keys, password and accounts'],
-  ['Controls', 'help', 'help', 'How to move, fight and more'],
+  ['Key guide', 'help', 'help', 'How to move, fight and more'],
 ];
 export function renderOptions(el) {
   el.innerHTML = `
-    <div class="status-window options-window" role="dialog" aria-label="Options">
+    <div class="status-window options-window" role="dialog" aria-label="Controls">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>Options</h2>
+      <h2>Controls</h2>
       <p class="bag-hint">Press a key to open a window from anywhere, or tap it here. You can change any key in Settings.</p>
       <div class="options-grid">
         ${OPTIONS.map(([label, action, go, what]) => `<button type="button" class="option-btn" ${go.startsWith('act:') ? `data-act="${go.slice(4)}"` : `data-open="${go}"`}><kbd>${esc(keyName(codeFor(action)))}</kbd><b>${label}</b><small>${what}</small></button>`).join('')}
@@ -227,10 +227,21 @@ export function renderOptions(el) {
     </div>`;
 }
 
+// What you see when you come into the realm: a short welcome and a Start button
+export function renderWelcome(el, name, back = true) {
+  el.innerHTML = `
+    <div class="status-window welcome-window" role="dialog" aria-label="Welcome">
+      <h2>${back ? 'Welcome back' : 'Welcome'}, ${esc(name)}</h2>
+      <p>The realm awaits you.</p>
+      <button type="button" class="gold-button" data-close>Start</button>
+      <p class="bag-hint">All the controls are under <b>Controls</b> in the ☰ menu at the top of the screen (or press Esc).</p>
+    </div>`;
+}
+
 export const HELP_HTML = `
-  <div class="status-window help-window" role="dialog" aria-label="Controls">
+  <div class="status-window help-window" role="dialog" aria-label="Key guide">
     <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-    <h2>Controls</h2>
+    <h2>Key Guide</h2>
     <p class="bag-hint">These are the keys the game starts with. Change any of them in Settings (O) → Controls.</p>
     <dl>
       <div class="sw-row"><dt>Move</dt><dd>W A S D or arrow keys. Hold W and press A or D to curve gently left or right, even while sprinting. S turns you round to face behind you. Tap W (or ↑) twice quickly to keep walking on your own; tap W or S to stop</dd></div>
@@ -240,7 +251,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Attack / punch</dt><dd>Click, or F (touch: the fist button)</dd></div>
       <div class="sw-row"><dt>Open / pick up</dt><dd>E opens a chest in front of you, picks up a torch, or packs up your tent</dd></div>
       <div class="sw-row"><dt>Trees</dt><dd>Young and dead trees, bushes: by hand. Pines: an axe and 15 STR (or 40 STR). Oaks: an axe and 22 STR (or 50). Swamp and fae trees: an axe and 28 to 32 STR. Great trees: a War Axe and 60 STR. Hitting a tree also tells you what it needs.</dd></div>
-      <div class="sw-row"><dt>Options</dt><dd>Esc shows every window and its key (also frees the mouse)</dd></div>
+      <div class="sw-row"><dt>Controls</dt><dd>Esc shows every window and its key (also frees the mouse)</dd></div>
       <div class="sw-row"><dt>Status</dt><dd>C</dd></div>
       <div class="sw-row"><dt>Bag and shop</dt><dd>I and B</dd></div>
       <div class="sw-row"><dt>Quests</dt><dd>Q</dd></div>

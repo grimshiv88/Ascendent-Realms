@@ -132,6 +132,35 @@ export const ITEMS = {
   iron_spear: { name: 'Iron Spear', icon: '🔱', kind: 'weapon', type: 'spear', power: 10, speed: 0.6, chop: 0.6, rank: 2, price: 140, text: 'A long ash shaft with an iron head. Keeps foes at a distance.' },
   steel_glaive: { name: 'Steel Glaive', icon: '🔱', kind: 'weapon', type: 'spear', power: 22, speed: 0.65, chop: 1, rank: 3, effect: { id: 'bleed', chance: 0.2 }, price: 1000, text: 'A curved blade on a long pole: the longest, widest reach in the shop.' },
   dragonbone_sword: { name: 'Dragonbone Sword', icon: '🐉', kind: 'weapon', type: 'sword', power: 60, speed: 0.5, chop: 1.2, rank: 5, effect: { id: 'burn', chance: 0.35 }, price: 15000, text: 'Carved from an ancient dragon\'s bone.' },
+  // Workshop pieces: only a Blacksmith at their own anvil can forge these (see FORGE_WORKSHOP), and
+  // merging two pieces of the same sub-category can make them too (see merges.mjs).
+  woodsman_hatchet: { name: 'Woodsman\'s Hatchet', icon: '🪓', kind: 'weapon', type: 'axe', model: 'hand_axe', power: 5, speed: 0.65, chop: 2.5, rank: 0, price: 35, workshop: true, text: 'A small axe for kindling and young trees.' },
+  bearded_axe: { name: 'Bearded Axe', icon: '🪓', kind: 'weapon', type: 'axe', model: 'war_axe', power: 34, speed: 0.7, chop: 3.5, rank: 3, effect: { id: 'bleed', chance: 0.25 }, price: 1400, workshop: true, text: 'Its long lower edge hooks shields aside.' },
+  dragonbite_axe: { name: 'Dragonbite Axe', icon: '🪓', kind: 'weapon', type: 'axe', model: 'war_axe', power: 82, speed: 0.75, chop: 4.5, rank: 5, effect: { id: 'burn', chance: 0.35 }, price: 22000, workshop: true, text: 'Its edge stays hot long after the forge.' },
+  emberfang: { name: 'Emberfang', icon: '🗡️', kind: 'weapon', type: 'sword', model: 'dragonbone_sword', power: 70, speed: 0.5, chop: 1.2, rank: 5, effect: { id: 'burn', chance: 0.45 }, price: 20000, workshop: true, text: 'A blade quenched in dragon fire.' },
+  winged_spear: { name: 'Winged Spear', icon: '🔱', kind: 'weapon', type: 'spear', model: 'steel_glaive', power: 44, speed: 0.62, chop: 1.2, rank: 4, effect: { id: 'bleed', chance: 0.3 }, price: 4500, workshop: true, text: 'Steel wings below the point stop a foe from closing in.' },
+  bronze_dirk: { name: 'Bronze Dirk', icon: '🔪', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 6, speed: 0.36, chop: 0.6, rank: 1, price: 50, workshop: true, text: 'A short bronze blade.' },
+  steel_stiletto: { name: 'Steel Stiletto', icon: '🔪', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 16, speed: 0.33, chop: 0.6, rank: 3, effect: { id: 'poison', chance: 0.25 }, price: 800, workshop: true, text: 'Thin enough to find any gap in armour.' },
+  venom_fang: { name: 'Venom Fang', icon: '🔪', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 30, speed: 0.32, chop: 0.6, rank: 4, effect: { id: 'poison', chance: 0.4 }, price: 3500, workshop: true, text: 'A hollow blade that carries poison.' },
+  shadow_kris: { name: 'Shadow Kris', icon: '🔪', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 52, speed: 0.3, chop: 0.6, rank: 5, effect: { id: 'drain', chance: 1 }, price: 16000, workshop: true, text: 'A wavy dark blade that drinks from every cut.' },
+  knotted_club: { name: 'Knotted Club', icon: '🏏', kind: 'weapon', type: 'club', model: 'wooden_club', power: 7, speed: 0.62, chop: 1.5, rank: 1, price: 45, workshop: true, text: 'Hard oak with knots left on for weight.' },
+  studded_club: { name: 'Studded Club', icon: '🏏', kind: 'weapon', type: 'club', model: 'wooden_club', power: 12, speed: 0.64, chop: 1.6, rank: 2, price: 200, workshop: true, text: 'Iron studs hammered into the head.' },
+  spiked_cudgel: { name: 'Spiked Cudgel', icon: '🏏', kind: 'weapon', type: 'club', model: 'wooden_club', power: 22, speed: 0.66, chop: 1.7, rank: 3, effect: { id: 'frost', chance: 0.15 }, price: 800, workshop: true, text: 'Steel spikes through a heavy head.' },
+  ogre_club: { name: 'Ogre Club', icon: '🏏', kind: 'weapon', type: 'club', model: 'wooden_club', power: 42, speed: 0.7, chop: 2, rank: 4, effect: { id: 'frost', chance: 0.25 }, price: 4000, workshop: true, text: 'Big enough for an ogre, bound in iron.' },
+  earthshaker: { name: 'Earthshaker', icon: '🏏', kind: 'weapon', type: 'club', model: 'wooden_club', power: 68, speed: 0.72, chop: 2.2, rank: 5, effect: { id: 'frost', chance: 0.35 }, price: 18000, workshop: true, text: 'The ground shakes where it lands.' },
+  flanged_mace: { name: 'Flanged Mace', icon: '🔨', kind: 'weapon', type: 'mace', model: 'iron_mace', power: 45, speed: 0.76, chop: 1.8, rank: 4, effect: { id: 'frost', chance: 0.2 }, price: 5000, workshop: true, text: 'Steel flanges that crack plate.' },
+  dawn_hammer: { name: 'Dawn Hammer', icon: '🔨', kind: 'weapon', type: 'mace', model: 'iron_mace', power: 74, speed: 0.78, chop: 2, rank: 5, effect: { id: 'burn', chance: 0.35 }, price: 21000, workshop: true, text: 'Its head glows like the rising sun.' },
+  ash_staff: { name: 'Ash Staff', icon: '🪄', kind: 'weapon', type: 'staff', model: 'oak_staff', power: 7, speed: 0.6, chop: 0.7, magic: true, rank: 1, price: 70, workshop: true, text: 'Straight ash wood. Channels magic: uses MATK.' },
+  runed_staff: { name: 'Runed Staff', icon: '🪄', kind: 'weapon', type: 'staff', model: 'oak_staff', power: 16, speed: 0.6, chop: 0.8, magic: true, rank: 3, effect: { id: 'burn', chance: 0.2 }, price: 900, workshop: true, text: 'Runes burned down its length. Uses MATK.' },
+  starwood_staff: { name: 'Starwood Staff', icon: '🔮', kind: 'weapon', type: 'staff', model: 'crystal_staff', power: 46, speed: 0.6, chop: 0.8, magic: true, rank: 5, effect: { id: 'drain', chance: 0.35 }, price: 20000, workshop: true, text: 'Wood from a tree struck by a falling star. Uses MATK.' },
+  studded_leggings: { name: 'Studded Leggings', icon: '👖', kind: 'armour', slot: 'legs', rank: 1, def: 5, price: 110, workshop: true, look: { color: '#5e4430' }, text: 'Leather with iron studs.' },
+  knight_greaves: { name: 'Knight\'s Greaves', icon: '👖', kind: 'armour', slot: 'legs', rank: 4, def: 24, mdef: 5, price: 2400, workshop: true, look: { color: '#d9c27a', metal: true }, text: 'Gold-trimmed leg plates.' },
+  dragonscale_greaves: { name: 'Dragonscale Greaves', icon: '👖', kind: 'armour', slot: 'legs', rank: 5, def: 42, mdef: 14, price: 17000, workshop: true, look: { color: '#7a2a24', metal: true }, text: 'Dragon scales over steel.' },
+  studded_boots: { name: 'Studded Boots', icon: '🥾', kind: 'armour', slot: 'feet', rank: 1, def: 3, price: 70, workshop: true, look: { color: '#4a3020' }, text: 'Boots with iron toe caps.' },
+  knight_sabatons: { name: 'Knight\'s Sabatons', icon: '🥾', kind: 'armour', slot: 'feet', rank: 4, def: 14, mdef: 4, price: 1500, workshop: true, look: { color: '#d9c27a', metal: true }, text: 'Jointed steel shoes, trimmed in gold.' },
+  dragonscale_boots: { name: 'Dragonscale Boots', icon: '🥾', kind: 'armour', slot: 'feet', rank: 5, def: 26, mdef: 10, price: 12000, workshop: true, look: { color: '#7a2a24', metal: true }, text: 'Light, and they never burn.' },
+  buckler: { name: 'Buckler', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 1, def: 6, price: 110, workshop: true, look: { color: '#8a6a4a' }, text: 'A small round shield for the fist.' },
+  dragonscale_shield: { name: 'Dragonscale Shield', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 5, def: 46, mdef: 16, price: 20000, workshop: true, look: { color: '#7a2a24', metal: true }, text: 'One great scale, rimmed in dragonite.' },
 };
 for (const [id, it] of Object.entries(ITEMS)) it.id = id;
 
@@ -238,19 +267,8 @@ export const UPGRADE_STEP = 0.12;
 export const MAX_PLUS = 10;
 export const upgraded = (value, plus = 0) => Math.round(value * (1 + plus * UPGRADE_STEP));
 
-// Blacksmith merging: two items of the same category (both weapons, or armour for the same slot)
-// make the first one +1 stronger. If they are the same type too (a sword and a sword), the first
-// also keeps the second's upgrades.
-export function mergeResult(a, b) {
-  const A = ITEMS[a.id], B = ITEMS[b.id];
-  if (!isGear(A) || !isGear(B) || slotOf(A) !== slotOf(B)) return null;
-  const sameType = A.kind === 'weapon' ? A.type === B.type : a.id === b.id;
-  return Math.min(MAX_PLUS, (a.plus || 0) + 1 + (sameType ? b.plus || 0 : 0));
-}
-
-// What kind of thing an item is, for the shop and the Blacksmith: weapons merge with weapons (the
-// same type, a sword with a sword, also carries the upgrades over), armour with armour for the same
-// part of the body.
+// What kind of thing an item is, for the shop and the Blacksmith. Merging needs two pieces of the
+// same sub-category (see merges.mjs): a sword with a sword, a helmet with a helmet.
 const TYPE_NAMES = { sword: 'Sword', axe: 'Axe', club: 'Club', dagger: 'Dagger', mace: 'Mace', spear: 'Spear', staff: 'Staff' };
 const SLOT_NAMES = { head: 'Helmet', body: 'Chest armour', legs: 'Leg armour', feet: 'Boots', shield: 'Shield' };
 export function categoryOf(it) {
@@ -280,6 +298,12 @@ export const FORGE = [
   ...Object.entries(FORGE_ONLY_LEVEL).map(([id, lvl]) => [id, Math.max(lvl, FORGE_RANK_LEVEL[ITEMS[id].rank || 0])]),
 ].sort((a, b) => a[1] - b[1]);
 export const forgeLevel = (id) => FORGE.find(([f]) => f === id)?.[1] ?? Infinity;
+// At their own anvil (built on their land) a Blacksmith can forge more: the workshop pieces too.
+// Each still opens at the level its rank needs, a few levels into that rank.
+export const FORGE_WORKSHOP = Object.values(ITEMS).filter((it) => it.workshop)
+  .map((it) => [it.id, FORGE_RANK_LEVEL[it.rank || 0] + Math.min(40, Math.round(it.price / 600))])
+  .sort((a, b) => a[1] - b[1]);
+export const workshopLevel = (id) => FORGE_WORKSHOP.find(([f]) => f === id)?.[1] ?? forgeLevel(id);
 // the cost to forge `it` with `ore` (the rank's own metal when left out): coins, materials and the bonus
 const oreTier = (it) => Math.min(Math.max(0, (it.rank || 0) - 1), FORGE_ORES.length - 1);
 export function forgeCost(it, ore = null) {

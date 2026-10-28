@@ -1,7 +1,8 @@
 // The Bag (inventory with your character and equipment), the Shop and the Blacksmith's merging.
 // They share one window with the Status Window, with tabs along the top.
-import { ITEMS, SHOP, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds, brewHerbs, categoryOf, forgeCost, forgeOres, FORGE, FORGE_RANK_LEVEL, MARKETS, marketStock, marketPrice } from './data/items.mjs';
+import { ITEMS, SHOP, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds, brewHerbs, categoryOf, forgeCost, forgeOres, FORGE, FORGE_WORKSHOP, FORGE_RANK_LEVEL, MARKETS, marketStock, marketPrice } from './data/items.mjs';
 import { codeFor, keyName } from './data/controls.mjs';
+import { subOf, LADDERS, MERGES, MERGE_COUNT, mergesWith, ladderName } from './data/merges.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const keyOf = (e) => e.uid || e.id;
@@ -163,28 +164,46 @@ function roomHtml(game) {
       ${room ? '<button type="button" class="sys-button" data-room="sleep">Sleep in your room</button>' : `<button type="button" class="sys-button" data-room="rent" ${game.character.coins < price ? 'disabled' : ''}>Rent · ${price} G</button>`}</div>`;
 }
 
-// Merging: pick the item to strengthen, then one of the same kind to melt into it
-export function renderSmith(el, game, pick = [], message = '') {
+// Merging: pick a piece, then a second of the same sub-category; the merge book shows what each
+// pair makes. At their own anvil (`workshop`) a Blacksmith can forge the workshop pieces too.
+const KIND_SAYS = { same: 'the same piece, stronger', new: 'a new piece', up: 'the stronger piece, +1' };
+function mergeBook(game, a) {
+  const have = new Set(game.character.inventory.map((e) => e.id));
+  const line = (x, y, r) => `<li${have.has(x) && have.has(y) ? ' class="have"' : ''}>${ITEMS[x].icon} ${esc(ITEMS[x].name)} + ${ITEMS[y].icon} ${esc(ITEMS[y].name)} → <b>${esc(ITEMS[r.makes].name)}</b>${r.kind === 'new' ? ' <em class="forged-tag">new</em>' : r.kind === 'same' ? ' +1' : ' +1'}</li>`;
+  if (a) {
+    const list = mergesWith(a.id).map((r) => line(a.id, r.with, r)).join('');
+    return `<details class="merge-book" open><summary>What a ${esc(ITEMS[a.id].name)} merges with <small>(${ladderName(subOf(ITEMS[a.id])).sub})</small></summary><ul>${list}</ul></details>`;
+  }
+  const byLadder = Object.entries(LADDERS).map(([sub, ids]) => {
+    const rows = [];
+    for (const [k, r] of MERGES) { const [x, y] = k.split('|'); if (ids.includes(x)) rows.push(line(x, y, r)); }
+    const c = ladderName(sub);
+    return `<details class="merge-book"><summary>${c.cat} › ${c.sub} <small>(${rows.length})</small></summary><ul>${rows.join('')}</ul></details>`;
+  }).join('');
+  return `<h3 class="bag-sub">Merge Book <small>(${MERGE_COUNT} merges; gold lines are ones you can make with what you carry)</small></h3>${byLadder}`;
+}
+export function renderSmith(el, game, pick = [], message = '', { workshop = false } = {}) {
   const c = game.character;
   const can = game.canMerge();
   const gear = c.inventory.filter((e) => isGear(ITEMS[e.id]));
   const [a, b] = pick.map((k) => game.entry(k));
   const result = a && b ? game.mergePreview(keyOf(a), keyOf(b)) : null;
-  const cost = a ? game.mergeCost(keyOf(a)) : null;
+  const cost = a ? game.mergeCost(keyOf(a), b ? keyOf(b) : null) : null;
   const row = (e) => {
     const it = ITEMS[e.id];
     const which = a && keyOf(a) === keyOf(e) ? 'first' : b && keyOf(b) === keyOf(e) ? 'second' : '';
-    const fits = !a || which || (slotOf(ITEMS[a.id]) === slotOf(it));
+    const fits = !a || which || subOf(ITEMS[a.id]) === subOf(it);
     return `<button type="button" class="shop-row smith-row${which ? ` ${which}` : ''}" data-pick="${keyOf(e)}" ${fits ? '' : 'disabled'}>
       <span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(nameOf(e))}</b><small>${describe(it, e.plus)}${game.isEquipped(e) ? ' · equipped' : ''}</small></span>
-      <span class="smith-tag">${which === 'first' ? 'Strengthen' : which === 'second' ? 'Melt in' : ''}</span></button>`;
+      <span class="smith-tag">${which === 'first' ? 'Keep' : which === 'second' ? 'Melt in' : ''}</span></button>`;
   };
   const weapons = gear.filter((e) => ITEMS[e.id].kind === 'weapon'), armour = gear.filter((e) => ITEMS[e.id].kind !== 'weapon');
-  let summary = '<p class="bag-hint">To merge, pick the item to strengthen first, then a second of the same category (shown in gold on each item) to melt into it.</p>';
+  let summary = '<p class="bag-hint">To merge, pick a piece, then a second of the same sub-category (a sword with a sword, boots with boots) to melt into it. The Merge Book below shows what every pair makes.</p>';
   if (a && b) {
     summary = result == null
-      ? '<p class="shop-msg">These two are different categories. Merge weapons with weapons, or armour for the same part of the body.</p>'
-      : `<p class="smith-result">${esc(nameOf(a))} becomes <b>${esc(evolvedName(ITEMS[a.id], result))} +${result}</b>. ${esc(nameOf(b))} is used up.</p>
+      ? '<p class="shop-msg">These two are different sub-categories. Merge a sword with a sword, a helmet with a helmet, and so on.</p>'
+      : `<p class="smith-result">${esc(nameOf(a))} + ${esc(nameOf(b))} makes <b>${esc(evolvedName(ITEMS[result.id], result.plus))}${result.plus ? ` +${result.plus}` : ''}</b> (${KIND_SAYS[result.kind]}).</p>
+         <p class="bag-hint">${describe(ITEMS[result.id], result.plus)}</p>
          <p class="bag-hint">Cost: <b>${cost.coins} G</b>${cost.needs.map(([id, n]) => ` + <b>${n} ${esc(ITEMS[id].name)}</b> (you have ${game.count(id)})`).join('')}</p>
          <button type="button" class="gold-button small" data-merge ${can && game.canPay(cost) ? '' : 'disabled'}>${game.canPay(cost) ? 'Merge' : 'Not enough to pay'}</button>`;
   }
@@ -202,27 +221,28 @@ export function renderSmith(el, game, pick = [], message = '') {
     const opts = forgeOres(it).map((ore) => forgeCost(it, ore)).filter((fc, i) => i === 0 || game.count(fc.ore) >= fc.needs[0][1]);
     const btns = opts.map((fc) => {
       const pay = c.coins >= fc.coins && fc.needs.every(([n, k]) => game.count(n) >= k);
-      return `<button type="button" class="gold-button small" data-forge="${id}" data-ore="${fc.ore}" ${can && pay ? '' : 'disabled'}
+      return `<button type="button" class="gold-button small" data-forge="${id}" data-ore="${fc.ore}"${workshop ? ' data-workshop' : ''} ${can && pay ? '' : 'disabled'}
         title="${fc.needs.map(([n, k]) => `${k} ${ITEMS[n].name} (you have ${game.count(n)})`).join(', ')}">${fc.bonus ? `+${fc.bonus} with ${esc(ITEMS[fc.ore].name)}` : 'Forge'} · ${fc.coins} G</button>`;
     }).join('');
     const base = opts[0];
-    return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}${it.forged ? ' <em class="forged-tag">· forged only</em>' : ''}</b><small>${describe(it)}<br>Needs ${base.needs.map(([n, k]) => `${k} ${esc(ITEMS[n].name)} (you have ${game.count(n)})`).join(' + ')}</small></span>
+    return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}${it.forged ? ' <em class="forged-tag">· forged only</em>' : it.workshop ? ' <em class="forged-tag">· own anvil</em>' : ''}</b><small>${describe(it)}<br>Needs ${base.needs.map(([n, k]) => `${k} ${esc(ITEMS[n].name)} (you have ${game.count(n)})`).join(' + ')}</small></span>
       <span class="forge-btns">${btns}</span></div>`;
   };
-  const forgeable = FORGE.filter(([, lvl]) => c.level >= lvl);
+  const forgeable = [...FORGE, ...(workshop ? FORGE_WORKSHOP : [])].filter(([, lvl]) => c.level >= lvl).sort((x, y) => x[1] - y[1]);
   const forgeWeapons = forgeable.filter(([id]) => ITEMS[id].kind === 'weapon').map(forgeRow).join('');
   const forgeItems = forgeable.filter(([id]) => ITEMS[id].kind !== 'weapon').map(forgeRow).join('');
   const myRank = FORGE_RANK_LEVEL.filter((l) => c.level >= l).length - 1;
   const nextRank = FORGE_RANK_LEVEL[myRank + 1];
-  const nextPiece = FORGE.find(([, lvl]) => lvl > c.level);
+  const nextPiece = [...FORGE, ...(workshop ? FORGE_WORKSHOP : [])].sort((x, y) => x[1] - y[1]).find(([, lvl]) => lvl > c.level);
   const forgeNote = `You forge up to <b>${RANKS[Math.max(0, myRank)].name}</b>.${nextRank < Infinity ? ` ${RANKS[myRank + 1].name} pieces unlock at level ${nextRank}.` : ''}${nextPiece ? ` Next new piece at level ${nextPiece[1]}.` : ''} Mythic weapons can't be forged: only the Kings hold them.`;
   el.innerHTML = `
     <div class="status-window bag-window smith-window" role="dialog" aria-label="Blacksmith">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       ${tabsHtml('smith')}
-      <h2>Blacksmith</h2>
+      <h2>${workshop ? 'Your Anvil' : 'Blacksmith'}</h2>
       <p class="bag-top">${can ? '<span>As a Blacksmith you can merge, coat and forge.</span>' : '<span><b>Only the Blacksmith class can merge, coat and forge.</b> You can still see how it works here.</span>'}<span>Coins: <b>${c.coins} G</b></span></p>
-      <p class="bag-hint">Merging: the same category (two weapons, or two helmets) gives +1; the same type too (a sword and a sword) also carries the second item's upgrades over. Each + is 12% stronger, up to +10. Weapons evolve at +3, +6 and +9 and climb a rank.</p>
+      <p class="bag-hint">Merging: two pieces of the same sub-category. Two of the same piece make it +1 and keep both pieces' upgrades. Two different pieces of about the same strength make a new, stronger piece. A weak piece melted into a much stronger one makes the stronger one +1. Each + is 12% stronger, up to +10. Weapons evolve at +3, +6 and +9 and climb a rank.</p>
+      ${workshop ? `<p class="bag-hint"><b>Your own anvil:</b> here you can also forge the ${FORGE_WORKSHOP.length} workshop pieces (marked “own anvil”), which no shop sells.</p>` : `<p class="bag-hint">Build an Anvil on your own land to forge ${FORGE_WORKSHOP.length} more pieces there.</p>`}
       <p class="shop-msg" role="status">${esc(message)}</p>
       ${summary}
       <h3 class="bag-sub">Current Weapons <small>(${weapons.length})</small></h3>
@@ -237,6 +257,7 @@ export function renderSmith(el, game, pick = [], message = '') {
       <div class="smith-list">${forgeWeapons || '<p class="bag-hint">No weapons you can forge yet.</p>'}</div>
       <h4 class="bag-sub2">Items <small>(armour and shields)</small></h4>
       <div class="smith-list">${forgeItems || '<p class="bag-hint">No items you can forge yet.</p>'}</div>
+      ${mergeBook(game, a)}
     </div>`;
 }
 

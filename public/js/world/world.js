@@ -676,6 +676,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const took = game.takeTorch(pos.x, pos.z);
       if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
       if (nearTent(pos.x, pos.z, TENT_IN + 1)) { pitchTent(); return; }
+      if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
       const shop = shopNear(pos.x, pos.z);
       if (shop?.building) { enterBuilding(shop); return; }
       if (shop) { onEvent?.(shop.id === 'guild' ? 'guild' : 'market', shop.id); return; }
@@ -1465,6 +1466,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (!p.mine || !Number.isFinite(p.flat)) continue;
       const s = (p.pieces || []).find((q) => q.t === 'spawn' && !(q.u > now));
       if (s) return { x: (s.x + 0.5) * CELL, z: (s.z + 0.5) * CELL + 1.4, y: storeyY(p.flat, s.l) };
+    }
+    return null;
+  }
+  // your own finished anvil close by, if any
+  function myAnvilNear(x, z, r = 2.6) {
+    const now = Date.now();
+    for (const p of lastLands) {
+      if (!p.mine || !Number.isFinite(p.flat)) continue;
+      for (const q of p.pieces || []) {
+        if (q.t !== 'anvil' || q.u > now) continue;
+        if (Math.hypot((q.x + 0.5) * CELL - x, (q.z + 0.5) * CELL - z) < r) return q;
+      }
     }
     return null;
   }

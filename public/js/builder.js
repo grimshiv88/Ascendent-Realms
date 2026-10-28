@@ -12,7 +12,7 @@ import { buildPieces, storeyY } from './world/buildings.js';
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const ghost = (color) => new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false });
 const LOOKS = { ok: ghost('#5fe07a'), bad: ghost('#ff5040'), plan: ghost('#6ab4ff'), remove: ghost('#ff9a30') };
-const PIECE_ORDER = ['foundation', 'wall', 'door', 'window', 'pillar', 'floor', 'stairs', 'roof', 'spawn'];
+const PIECE_ORDER = ['foundation', 'wall', 'door', 'window', 'pillar', 'floor', 'stairs', 'roof', 'anvil', 'spawn'];
 
 // `opts`: { plots (everyone's, with mine/flat/pieces), cls, coins(), build(body) -> Promise<plots>, onClose, say(text) }
 export function openBuilder(host, opts) {

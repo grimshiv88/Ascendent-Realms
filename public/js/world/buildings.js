@@ -16,6 +16,8 @@ export const MATS = {
   keep: mat('#9a958a', { roughness: 0.95 }),
   keepTrim: mat('#6f6a60', { roughness: 0.95 }),
   slate: mat('#4a4f5a'),
+  iron: mat('#3e4046', { metalness: 0.8, roughness: 0.4 }),
+  coals: new THREE.MeshStandardMaterial({ color: '#ff6a18', emissive: '#ff4a08', emissiveIntensity: 2 }),
   crystal: new THREE.MeshStandardMaterial({ color: '#7fd8ff', emissive: '#3fb0ff', emissiveIntensity: 1.2, roughness: 0.2, transparent: true, opacity: 0.9 }),
 };
 const STONE = { plaster: MATS.keep, timber: MATS.keepTrim, roof: MATS.slate, floor: MATS.keepTrim };
@@ -90,6 +92,18 @@ function drawPiece(g, p, y0, look, stone) {
       c.position.set(cx, y0 + 1.75, cz);
       c.scale.set(0.35, 0.6, 0.35);
       g.add(c);
+      break;
+    }
+    case 'anvil': {
+      // a small stone forge with glowing coals, the anvil on its stump, and a mould on a block
+      const cx = X + CELL / 2, cz = Z + CELL / 2;
+      block(g, m('stone'), cx - 0.9, y0 + 0.45, cz - 0.5, 1.1, 0.9, 0.9);
+      block(g, look || MATS.coals, cx - 0.9, y0 + 0.93, cz - 0.5, 0.75, 0.06, 0.55);
+      block(g, m('stone'), cx - 0.9, y0 + 1.8, cz - 0.8, 0.9, 1.4, 0.4);
+      block(g, m('timber'), cx + 0.2, y0 + 0.25, cz, 0.45, 0.5, 0.45);
+      block(g, look || MATS.iron, cx + 0.2, y0 + 0.6, cz, 0.75, 0.2, 0.3);
+      block(g, m('stone'), cx + 1.0, y0 + 0.35, cz - 0.5, 0.6, 0.7, 0.5);
+      block(g, look || MATS.iron, cx + 1.0, y0 + 0.74, cz - 0.5, 0.5, 0.08, 0.3);
       break;
     }
     default:

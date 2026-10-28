@@ -5,10 +5,11 @@ import { paintCloudBanks } from './clouds.js';
 import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
-import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, HELP_HTML } from './status.js';
+import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, renderWelcome, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
+import { playWork } from './workscene.js';
 import { renderQuests, renderGuild } from './quests.js';
 import { renderLand, renderCave } from './landui.js';
 import { caveById } from './data/depths.mjs';
@@ -349,7 +350,7 @@ function startGame(character) {
     else if (name === 'groups') renderGroups(overlay, game, ui.groups, { message: ui.groupMsg, busy: ui.groupBusy });
     else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy, castle: !!ui.roomsCastle, emperor: !!ui.groups?.nation });
     else if (name === 'gate') renderIdCard(overlay, game, { monster: ui.gate?.monster, courts: ui.courts || [], nation: ui.groups?.nation?.name });
-    else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg);
+    else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg, { workshop: !!ui.workshop });
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'guild') renderGuild(overlay, game, ui.questMsg);
@@ -366,6 +367,7 @@ function startGame(character) {
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '' });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'options') renderOptions(overlay);
+    else if (name === 'welcome') renderWelcome(overlay, character.name, !(character.level === 1 && !character.exp));
     else if (name === 'portal' && world?.atPortal) {
       ui.trip = { from: world.atPortal, to: null, onPick: showTrip };
       renderMap(overlay, () => world?.position(), [], { plots: ui.myPlots || [], caves: [] }, null, ui.trip);
@@ -385,6 +387,7 @@ function startGame(character) {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
     world?.releaseMouse();
     overlay.dataset.panel = name;
+    ui.workshop = false;
     ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.skillMsg = ''; ui.binding = null;
     if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
     if (name === 'rankings') {
@@ -470,6 +473,7 @@ function startGame(character) {
   const BREW_SAYS = { ok: 'Brewing…', class: 'Only a Potion Maker can brew.', coins: 'Not enough coins.', herbs: 'Not enough Healing Herbs. Buy them in the shop or find them on monsters.', busy: 'You are already brewing as much as you can.', pick: '' };
   const FORGE_SAYS = { ok: 'Forged! It is in your bag.', class: 'Only a Blacksmith can forge.', level: 'You are not high enough level for that yet.', coins: 'Not enough coins.', parts: 'You need more ore.', full: 'Your bag is full.', pick: '' };
   setTabsClass(character.cls);
+  const ORE_COLORS = { iron_ore: '#5a5a60', silver_ore: '#c8ccd4', gold_ore: '#e0b040', ruby: '#c0202a', dragonite: '#7a2a24' };
   const SMITH_SAYS = { ok: 'Merged! The item is stronger.', evolved: 'Merged, and the weapon evolved! It climbed a rank.', coins: 'Not enough coins to pay for the merge.', parts: 'You need more monster parts for this merge.', class: 'Only a Blacksmith can merge.', pick: 'Pick two items.', kind: 'Those two are different kinds.', max: 'That item is already at its strongest.' };
   // Portals: after picking where to go on the portal's map, the fee shows before you pay
   function showTrip(to, message = '') {
@@ -513,7 +517,7 @@ function startGame(character) {
     if (ui.builder && world) world.paused = true;
     if (!ui.builder) showArea("You don't own any land yet. Press L for the land grid and buy a plot, then build on it here.");
   }
-  // actions the menu and the Options window can run, like their keys do
+  // actions the menu and the Controls window can run, like their keys do
   function runAct(act) {
     if (act === 'sleep') world?.sleep();
     if (act === 'tent') world?.pitchTent();
@@ -699,16 +703,24 @@ function startGame(character) {
       ui.smithMsg = ''; drawPanel(); return;
     }
     if (t('data-merge') != null) {
+      // remember the two pieces for the work scene before they're merged
+      const pieces = ui.pick.map((k) => game.entry(k)).map((e) => e && { item: ITEMS[e.id], plus: e.plus || 0 });
+      const out = game.mergePreview(...ui.pick);
       const r = game.merge(...ui.pick);
-      ui.smithMsg = SMITH_SAYS[r];
-      if (r === 'ok' || r === 'evolved') ui.pick = [ui.pick[0]];
+      ui.smithMsg = r === 'new' ? `Merged into a new piece: the ${ITEMS[out.id].name}${out.plus ? ` +${out.plus}` : ''}!` : SMITH_SAYS[r];
+      if (r === 'ok' || r === 'evolved' || r === 'new') {
+        ui.pick = [ui.pick[0]];
+        playWork('smith', character, game.worn(), { pieces, result: { item: ITEMS[out.id], plus: out.plus }, doneText: ui.smithMsg }, drawPanel);
+      }
       drawPanel(); return;
     }
     if ((v = t('data-forge')) != null) {
       const ore = t('data-ore') || null;
-      const r = game.forge(v, ore);
-      const bonus = r === 'ok' ? forgeCost(ITEMS[v], ore).bonus : 0;
+      const r = game.forge(v, ore, t('data-workshop') != null);
+      const fc = forgeCost(ITEMS[v], ore);
+      const bonus = r === 'ok' ? fc.bonus : 0;
       ui.smithMsg = r === 'ok' ? `Forged a ${ITEMS[v].name}${bonus ? ` +${bonus}` : ''}! It is in your bag.` : FORGE_SAYS[r];
+      if (r === 'ok') playWork('smith', character, game.worn(), { ore: true, oreColor: ORE_COLORS[fc.ore], result: { item: ITEMS[v], plus: bonus }, doneText: `${ITEMS[v].name}${bonus ? ` +${bonus}` : ''}, forged!` }, drawPanel);
       drawPanel(); return;
     }
     if ((v = t('data-coat')) != null) {
@@ -716,7 +728,12 @@ function startGame(character) {
       ui.smithMsg = r === 'ok' ? 'Your weapon is coated.' : r === 'class' ? 'Only a Blacksmith can coat weapons.' : 'Equip a weapon first.';
       drawPanel(); return;
     }
-    if ((v = t('data-brew')) != null) { ui.potionMsg = BREW_SAYS[game.brew(v)]; drawPanel(); return; }
+    if ((v = t('data-brew')) != null) {
+      const r = game.brew(v);
+      ui.potionMsg = BREW_SAYS[r];
+      if (r === 'ok') playWork('brew', character, game.worn(), {}, drawPanel);
+      drawPanel(); return;
+    }
   });
 
   world = startWorld($('world'), character, {
@@ -761,6 +778,13 @@ function startGame(character) {
       }
       if (type === 'outdoors') $('minimap').classList.remove('hidden');
       if (type === 'castle') { ui.roomsCastle = true; ui.roomPick = null; ui.roomMsg = ''; loadRooms(); openPanel('rooms'); }
+      if (type === 'anvil') {
+        // your own anvil: the Blacksmith window, with the workshop pieces to forge too
+        openPanel('smith');
+        ui.workshop = true;
+        if (character.cls !== 'blacksmith') ui.smithMsg = 'Only a Blacksmith can work an anvil. You can see what one could make here.';
+        drawPanel();
+      }
       if (type === 'castle-denied') showArea(data.day === 'council' ? "Today is a council day: only Emperors and Guild Masters may enter the Emperors' Castle." : "Today is a trade day: only Emperors and the guests they invited may enter the Emperors' Castle.");
       if (type === 'meeting-room') { ui.roomsCastle = data.id.startsWith('castle'); ui.roomPick = data.id; ui.roomMsg = ''; loadRooms(); if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'rooms') openPanel('rooms'); }
       if (type === 'room-ended') { showArea('Your time in the meeting room is up. You are back in the hallway.'); loadRooms(); }
@@ -813,7 +837,7 @@ function startGame(character) {
   drawSkillBar();
   // the minimap in the corner follows you; tap it for the world map
   createMinimap($('minimap'), () => world?.position(), () => openPanel('map'));
-  openPanel('help');
+  openPanel('welcome');
 }
 
 // The region name fades in at the top of the screen when you enter a new area
