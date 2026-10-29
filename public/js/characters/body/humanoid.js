@@ -17,6 +17,7 @@ export const BASE = {
   chest: 1,         // ribcage size
   bulk: 1,          // thickness of the limbs and body
   muscle: 0.3,      // 0 soft and slim .. 1 heavily muscled
+  fat: 0.5,         // 0 lean .. 1 heavy: a soft layer over the whole body (a healthy amount by default)
   belly: 0,         // 0 .. 1
   neck: 1,          // neck thickness
   hands: 1, feet: 1,
@@ -56,7 +57,8 @@ export function humanoidPlan(opts = {}) {
   const pos = {};
   const bone = (name, parent, p, bind = null) => { bones.push({ name, parent, pos: p, bind }); pos[name] = p; };
   const put = (name, s) => { s.bone = name; shapes.push(s); return s; };
-  const b = P.bulk, m = P.muscle;
+  const fat = P.fat;
+  const b = P.bulk * (1 + 0.14 * fat), m = P.muscle;
   const add = (p, q) => [p[0] + q[0], p[1] + q[1], p[2] + q[2]];
   const mix = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
 
@@ -77,10 +79,10 @@ export function humanoidPlan(opts = {}) {
   const headO = pos.head;
   const H = (x, y, z) => [headO[0] + x * hd, headO[1] + y * hd, headO[2] + z * hd]; // a point on the head
 
-  const sw = P.shoulders, hw = P.hips, ww = P.waist, ch = P.chest;
+  const sw = P.shoulders, hw = P.hips * (1 + 0.08 * fat), ww = P.waist * (1 + 0.18 * fat), ch = P.chest;
   // The trunk, drawn slice by slice from the hips to the base of the neck: the seat behind, a flat
   // belly, a waist narrower than the ribs, the chest deepest at the front and widest under the arms
-  const bl = P.belly;
+  const bl = P.belly + 0.15 * fat;
   const R = (k, rx, f, bk, cz = 0) => [T(k), rx * b, f * b, bk * b, cz];
   put('hips', loft([
     R(-0.1, 0.112 * hw, 0.066, 0.072),
@@ -97,7 +99,7 @@ export function humanoidPlan(opts = {}) {
   ], { blend: 0.02, span: [['hips', T(0.02)], ['spine', T(0.15)], ['chest', T(0.29)], ['upperChest', T(0.42)]] }));
   // The muscles over the trunk, more defined the more muscled (def 0 soft .. 1 cut): each lies on
   // the skin with a soft edge, and the grooves between them are carved
-  const def = Math.min(1, Math.max(0, (m - 0.15) / 0.6));
+  const def = Math.min(1, Math.max(0, (m - 0.15) / 0.6)) * (1 - 0.3 * fat); // (fat softens the muscles' edges)
   const front = (k) => { // how far forward the trunk's front is at height k (roughly)
     const ks = [[0.07, 0.081], [0.15, 0.08], [0.23, 0.085], [0.3, 0.093], [0.37, 0.098], [0.44, 0.094]];
     for (let i = 1; i < ks.length; i++) if (k <= ks[i][0]) { const t = (k - ks[i - 1][0]) / (ks[i][0] - ks[i - 1][0]); return (ks[i - 1][1] + (ks[i][1] - ks[i - 1][1]) * Math.max(0, t)) * b; }
@@ -169,7 +171,9 @@ export function humanoidPlan(opts = {}) {
   // middle], from under the chin up to the brow. Its outline from the front: straight down from the
   // temples past the cheekbones, then a clean slant in to a narrow chin; from the side: a flat brow,
   // the eyes set in, and a firm chin a little behind the mouth.
-  const F = (y, rx, f, bk, cz, wx = 1) => [headO[1] + y * hd, rx * hd * wx, f * hd, bk * hd, headO[2] + cz * hd];
+  // (full cheeks widen the face most at the cheeks and jaw, less at the chin and brow)
+  const fw = (y) => 1 + 0.17 * P.cheeks * Math.max(0, 1 - Math.abs(y - 0.02) / 0.075);
+  const F = (y, rx, f, bk, cz, wx = 1) => [headO[1] + y * hd, rx * hd * wx * fw(y), f * hd, bk * hd, headO[2] + cz * hd];
   put('head', loft([
     F(-0.027, 0.009, 0.012, 0.012, 0.054, cn),
     F(-0.018, 0.019, 0.022, 0.04, 0.049, cn),
@@ -189,6 +193,8 @@ export function humanoidPlan(opts = {}) {
     put('head', ell(H(s * 0.047, 0.058, 0.052), [0.012, 0.007, 0.01], { m: rotXYZ(0, s * 0.5, s * -0.2), blend: 0.026 }));
   }
   put('head', ell(H(0, -0.017, 0.064), [0.012 * cn, 0.009, 0.008], { blend: 0.012 })); // the point of the chin
+  // soft, full cheeks over the cheekbones and down towards the jaw
+  for (const s of [-1, 1]) put('head', ell(H(s * 0.044, 0.038, 0.048), [0.024 * P.cheeks, 0.026, 0.022 * P.cheeks], { blend: 0.05 }));
   for (const s of [-1, 1]) {
     put('head', ell(H(s * 0.034, 0.063, 0.094), [0.021 * P.eyes, 0.012 * P.eyes, 0.0055], { sub: true, blend: 0.014 })); // a shallow bed for the eye
   }
