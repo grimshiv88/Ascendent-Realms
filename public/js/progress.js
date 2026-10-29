@@ -8,7 +8,14 @@ import { ageOf, childStatShare, classOdds, SCHOOLS, TRAIN_FULL_MS } from './data
 import { PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, BOOK_ID, bookStops, spellStrength } from './data/cults.mjs';
 import { GUILD_HALL_LEVEL, CARD_FEE, assess, mayTake } from './data/guildcard.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
+import { rankProofs, TRIAL_LEVEL, UNIQUE_RANKS } from './data/unique.mjs';
 import { gameTime, DAY_MS } from './data/clock.mjs';
+
+export const INJURY = {
+  leg: { name: 'Broken leg', effect: 'You walk and run at 60% speed and can barely jump.' },
+  arm: { name: 'Broken arm', effect: 'ATK and MATK are 30% lower.' },
+  ribs: { name: 'Broken ribs', effect: 'Your SP is 30% lower.' },
+};
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
 import { portalById, portalFee } from './data/portals.mjs';
 import { actionFor, FIXED_KEYS } from './data/controls.mjs';
@@ -100,13 +107,22 @@ export function createProgress(c, { save, onChange, onEvent }) {
     const base = share === 1 ? c.stats : Object.fromEntries(Object.entries(c.stats).map(([k, v]) => [k, Math.max(1, Math.round(v * share))]));
     const d = derivedStats(base, c.level, c.trained);
     const b = bonus();
-    return { ...d, sp: d.sp + b.sp, atk: d.atk + b.atk, matk: d.matk + b.matk, def: d.def + b.def, mdef: d.mdef + b.mdef, bonus: b, base: d };
+    // a broken arm weakens your blows; broken ribs leave you short of breath (less SP)
+    const arm = c.injury?.part === 'arm' ? 0.7 : 1, ribs = c.injury?.part === 'ribs' ? 0.7 : 1;
+    return { ...d, sp: Math.round((d.sp + b.sp) * ribs), atk: Math.round((d.atk + b.atk) * arm), matk: Math.round((d.matk + b.matk) * arm), def: d.def + b.def, mdef: d.mdef + b.mdef, bonus: b, base: d };
   }
   if (c.hp == null || c.hp > stats().hp) c.hp = stats().hp;
   if (c.sp == null || c.sp > stats().sp) c.sp = stats().sp;
 
   let saveTimer = null;
   // not enough coins: the game says so on screen
+  // Proofs of growth for the Unique Skill's rank (see rankProofs): honest work adds up here
+  c.growth = { work: 0, trials: 0, ...(c.growth || {}) };
+  function work(n) {
+    c.growth.work += n;
+    const u = c.uniqueSkill;
+    if (u && rankProofs(c).total > (u.raised || 0) && UNIQUE_RANKS.indexOf(u.born || u.rank) + (u.raised || 0) < UNIQUE_RANKS.length - 1) onEvent?.('rank-due');
+  }
   const poor = (need) => { onEvent?.('no-funds', { need, have: c.coins }); return 'coins'; };
   function changed(what) {
     onChange?.(what);
@@ -116,7 +132,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
+    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth,
     spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null,
   });
 
@@ -277,6 +293,56 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return SPELLS[st.spells[c.spellPick]];
     },
     // A tavern room: rented for a day of the realm. Sleeping in it restores everything.
+    // ---- Falls and broken bones ----
+    // A fall hurts past a safe height that grows with your size. Big, high-level and high-DEF bodies
+    // take much less from the same drop. A bad one can break a bone, which needs treating at
+    // The Green Vial once a day until it mends (a leg: 3 treatments, an arm or ribs: 2).
+    fall(fell, bodyH = 1.75) {
+      const s = stats();
+      const safe = Math.max(4, bodyH * 2.3);
+      if (fell <= safe) return null;
+      const tough = (bodyH / 1.75) ** 1.5 * (1 + c.level / 150) * (1 + s.def / 150);
+      const frac = Math.min(1.2, ((fell - safe) * 0.035) / tough);
+      const dmg = Math.round(s.hp * frac);
+      let broke = null;
+      if (frac >= 0.25 && Math.random() < Math.min(0.9, frac * 1.5)) {
+        if (c.injury) c.injury.left = Math.min(5, c.injury.left + 1); // landing on it again sets it back
+        else {
+          const r = Math.random();
+          const part = r < 0.6 ? 'leg' : r < 0.85 ? 'arm' : 'ribs';
+          c.injury = { part, left: part === 'leg' ? 3 : 2, lastTreat: 0 };
+          broke = part;
+        }
+        changed('hp');
+      }
+      return { dmg, broke };
+    },
+    injury() {
+      const j = c.injury;
+      if (!j) return null;
+      const wait = Math.max(0, j.lastTreat + DAY_MS - Date.now());
+      return { ...j, name: INJURY[j.part].name, effect: INJURY[j.part].effect, price: this.treatPrice(), waitMin: Math.ceil(wait / 60000) };
+    },
+    treatPrice: () => 150 + c.level * 8,
+    // one treatment a day of the realm; the last one mends the bone
+    treat() {
+      const j = c.injury;
+      if (!j) return 'none';
+      if (j.lastTreat + DAY_MS > Date.now()) return 'wait';
+      const price = this.treatPrice();
+      if (c.coins < price) return poor(price);
+      c.coins -= price;
+      j.left -= 1; j.lastTreat = Date.now();
+      if (j.left <= 0) c.injury = null;
+      if (c.hp > stats().hp) c.hp = stats().hp;
+      changed('coins');
+      return c.injury ? 'treated' : 'healed';
+    },
+    // a broken leg slows you down
+    // a seal just broke, or something else may have earned a proof: see if a rank climb is due
+    checkRank() { work(0); },
+    injurySpeed: () => (c.injury?.part === 'leg' ? 0.6 : 1),
+
     roomPrice: () => 20 + c.level * 2,
     room: () => (c.room?.until > Date.now() ? { minutes: Math.ceil((c.room.until - Date.now()) / 60000), n: c.room.n || 1 } : null),
     rentRoom() {
@@ -326,6 +392,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       const price = this.sellPrice(e, market);
       if (!removeItem(key, n)) return 0;
       c.coins += price * n;
+      work(3 * n);
       changed('coins');
       return price * n;
     },
@@ -428,6 +495,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       a.id = out.id;
       if (out.plus) a.plus = out.plus; else delete a.plus;
       removeItem(b.uid, 1);
+      work(30);
       changed('gear');
       if (out.id !== was) { onEvent?.('merged', { name: evolvedName(ITEMS[a.id], out.plus) }); return 'new'; }
       if (ITEMS[a.id].kind === 'weapon' && rankOf(ITEMS[a.id], out.plus) > before) {
@@ -453,6 +521,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       c.coins -= cost.coins;
       for (const [n, k] of cost.needs) removeItem(n, k);
       addItem(id, 1, cost.bonus);
+      work(40);
       changed('gear');
       return 'ok';
     },
@@ -524,6 +593,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       // each potion starts when the one before it is done
       const start = Math.max(Date.now(), pm.queue.at(-1)?.ready || 0);
       pm.queue.push({ id, ready: start + brewSeconds(id) * 1000 });
+      work(25);
       changed('coins');
       return 'ok';
     },
@@ -562,6 +632,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
         c.exp -= expToNext(c.level, c.race);
         c.level += 1;
         levels += 1;
+        if (KEY_LEVELS.includes(c.level)) work(0); // a seal may have broken: a proof of growth
         // each level: 3 free Stat Points (10 at key levels), +1 to the class's main stat, Unique Points
         // and a purse of coins
         const key = KEY_LEVELS.includes(c.level);
@@ -634,6 +705,9 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (q.reward.item) addItem(q.reward.item, 1);
       this.gainCoins(q.reward.coins);
       this.gainExp(q.reward.exp);
+      // a guild request done at a high level is a Rank Trial for the Unique Skill
+      if (board === 'guild' && c.level >= TRIAL_LEVEL) c.growth.trials += 1;
+      work(board === 'guild' ? 60 : 40);
       return q.reward;
     },
     // Called when you defeat a monster or move: returns titles of quests that just became complete

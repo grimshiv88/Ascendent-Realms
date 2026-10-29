@@ -4,6 +4,7 @@ import { fallenKeep, rebornWith, growUp } from './data/game-data.mjs';
 import { moneyWords } from './data/money.mjs';
 import * as birthData from './data/birth.mjs';
 import { setServerNow } from './data/clock.mjs';
+import * as uniqueData from './data/unique.mjs';
 
 const TOKEN_KEY = 'ar.token';
 
@@ -305,6 +306,25 @@ export async function ceremony() {
     });
   }
   return request('api/character/ceremony', { method: 'POST' });
+}
+
+// Raise the Unique Skill a rank once a proof of growth is earned (see rankProofs in unique.mjs).
+// `live` is the character as the game has it now, for the preview.
+export async function rankUp(live) {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => {
+      const c = acc.character;
+      if (!c?.uniqueSkill || uniqueData.isAppraisal(c)) return { error: 'No ranks to climb.' };
+      const u = c.uniqueSkill, raised = u.raised || 0;
+      if (uniqueData.rankProofs(live || c).total <= raised) return { error: 'Not yet.' };
+      const born = u.born || uniqueData.rankOf(u);
+      const next = uniqueData.climbedRank(born, raised + 1);
+      if (next === uniqueData.rankOf(u)) return { error: 'It is already as high as it can go.' };
+      c.uniqueSkill = { ...u, rank: next, born, raised: raised + 1 };
+      return { ok: true, uniqueSkill: c.uniqueSkill };
+    });
+  }
+  return request('api/character/rankup', { method: 'POST' });
 }
 
 // Death is final: the character is gone, and only their Unique Skill passes to the next one

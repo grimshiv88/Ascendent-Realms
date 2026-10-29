@@ -1,6 +1,7 @@
 // The playable world: the whole map as streamed 3D land, your character, monsters, and a third-person camera.
 import * as THREE from 'three';
 import { createLand } from './land.js';
+import { pickQuality } from './quality.js';
 import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
 import { buildCity, buildVillage } from './city.js';
@@ -44,8 +45,9 @@ const STEER_RUN = 0.9;
 // defeat and level-ups to the page.
 export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onMouseFreed, onView, windowOpen, view } = {}) {
   allCastles(); // levels the ground under the Monster Kings' castles before any land is built
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // sharper costs a lot of speed on iPads
+  let quality = pickQuality(view?.graphics);
+  // (smoothing the edges is chosen once, as the page starts: it can't change later)
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.key !== 'low', logarithmicDepthBuffer: true });
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -53,7 +55,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   renderer.toneMappingExposure = 1.0;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(HORIZON, 0.00024);
+  scene.fog = new THREE.FogExp2(HORIZON, quality.fog);
   const camera = new THREE.PerspectiveCamera(60, 1, 0.2, 40000);
 
   // Light: warm afternoon sun, sky fill, and a sun shadow that follows the player
@@ -71,6 +73,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   scene.add(sun, sun.target);
 
   const land = createLand(scene);
+  // Graphics quality (see quality.js): sharpness, shadows, how far you see, and a frame cap on phones
+  function applyQuality(q) {
+    quality = q;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pixelRatio));
+    sun.castShadow = q.shadows;
+    if (sun.shadow.mapSize.x !== q.shadowSize) { sun.shadow.mapSize.set(q.shadowSize, q.shadowSize); sun.shadow.map?.dispose(); sun.shadow.map = null; }
+    if (!depth && !inside) scene.fog.density = q.fog;
+    land.setQuality(q);
+  }
   const colliders = land.colliders;
 
   // Waystone shrines (the spawn and each homeland) and caves, built when you come near
@@ -220,6 +231,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let inside = null; // { built, back, shop, leftExit } while you're inside a building
   const FALL_SAFE = 4; // metres you can drop without getting hurt
   let creatures = null; // made below; caves built before then get their guards later
+  applyQuality(quality);
   updateSites(pos.x, pos.z);
   land.update(pos.x, pos.z, Infinity); // build the land around you before the clouds part
 
@@ -661,7 +673,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     depth = null;
     pos.set(back.x, heightAt(back.x, back.z), back.z);
     heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; snapCam = true;
-    scene.fog.density = 0.00024;
+    scene.fog.density = quality.fog;
     scene.environment = skyEnv;
     scene.background = null;
     sky.setVisible(true);
@@ -722,7 +734,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     inside = null;
     pos.set(back.x, heightAt(back.x, back.z), back.z);
     heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; snapCam = true;
-    scene.fog.density = 0.00024;
+    scene.fog.density = quality.fog;
     scene.environment = skyEnv;
     scene.background = null;
     sky.setVisible(true);
@@ -1448,8 +1460,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   let walkBuild = null; // building from your character (see buildwalk.js)
   let paused = false; // the Builder View covers the world, so it stops drawing meanwhile
-  renderer.setAnimationLoop(() => {
+  let lastFrame = 0;
+  renderer.setAnimationLoop((now) => {
     if (paused) { clock.getDelta(); return; }
+    // a frame cap (phones): fewer frames keep the device cooler and save battery
+    if (quality.fps && now - lastFrame < 1000 / quality.fps - 2) return;
+    lastFrame = now;
     const dt = Math.min(clock.getDelta(), 0.1); // a slow frame still moves you the full distance
     const t = clock.elapsedTime;
     // a window or the chat is open: the mouse is always free to use it, even while you keep walking
@@ -1494,7 +1510,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (Math.abs(fz) > 0.05) {
         const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
         move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
-        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
+        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1);
       }
       if (!look) {
         const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
@@ -1514,7 +1530,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       if (!fp) heading += diff * Math.min(1, dt * TURN);
       // move the way you want to go, even while still turning to face it
-      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
+      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
@@ -1561,7 +1577,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const floatAt = water - bodyH * 0.7;
     swimming = ground < floatAt;
     if (swimming) ground = floatAt;
-    if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = 4.2; airborne = true; fallFrom = pos.y; }
+    if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = game?.injurySpeed() < 1 ? 1.6 : 4.2; airborne = true; fallFrom = pos.y; }
     jumpQueued = false;
     // walking down a slope keeps your feet on it; only a real drop (a cliff, a ledge) is a fall
     const drop = pos.y - ground;
@@ -1574,14 +1590,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         // landing hard hurts: past a 4 m drop, more the further you fell (water breaks the fall)
         const fell = fallFrom - ground;
         pos.y = ground; velY = 0; airborne = false;
-        if (fell > FALL_SAFE && !swimming && game && !dead) {
-          const dmg = Math.round(game.stats().hp * Math.min(1.2, (fell - FALL_SAFE) * 0.07));
-          if (dmg > 0) {
-            floatText(`-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
-            say(fell > 12 ? 'A hard landing!' : 'Ouch!', 'hurt');
-            lastHurt = clock.elapsedTime;
-            if (game.damage(dmg)) defeated({ kind: { name: 'long fall' } });
-          }
+        // (how much a fall hurts, and whether a bone breaks: see game.fall)
+        const hit = fell > FALL_SAFE && !swimming && game && !dead ? game.fall(fell, bodyH) : null;
+        if (hit?.dmg > 0) {
+          floatText(`-${hit.dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
+          say(hit.broke ? `You broke your ${hit.broke === 'ribs' ? 'ribs' : hit.broke}! Get it treated at The Green Vial.` : fell > 12 ? 'A hard landing!' : 'Ouch!', 'hurt');
+          lastHurt = clock.elapsedTime;
+          if (hit.broke) onEvent?.('injury', { part: hit.broke });
+          if (game.damage(hit.dmg)) defeated({ kind: { name: 'long fall' } });
         }
         fallFrom = pos.y;
       }
@@ -1948,6 +1964,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // let the mouse go (a window is opening)
     releaseMouse() { if (locked()) { letGo = true; document.exitPointerLock(); } },
     setMouseMode(mode) { freeMouse = mode === 'free'; if (freeMouse && locked()) { letGo = true; document.exitPointerLock(); } },
+    setGraphics(choice) { applyQuality(pickQuality(choice)); return quality.key; },
+    get graphics() { return quality.key; },
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     setView(mode) { setView(mode); },
     // order a drink in the tavern: `served` runs when the waiter brings it to you (wherever you are inside)

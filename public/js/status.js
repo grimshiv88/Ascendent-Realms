@@ -6,12 +6,13 @@ import {
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
 import { lifeRows } from './idcard.js';
-import { uniqueAbility, uniqueTier, TIER_NAMES } from './data/unique.mjs';
+import { uniqueAbility, uniqueTier, TIER_NAMES, rankProofs, isAppraisal, RANK_UP_MAX, TRIALS_PER_PROOF, WORK_PER_PROOF } from './data/unique.mjs';
 import { ageOf, CEREMONY_AGE, PARENT_JOBS } from './data/birth.mjs';
 import { PRIVACY, privacyOf } from './data/social.mjs';
 import { gameTime, clockText } from './data/clock.mjs';
 import { SKILLS, UPGRADE_EVERY } from './data/skills.mjs';
 import { money } from './data/money.mjs';
+import { INJURY } from './progress.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -61,6 +62,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
       <div class="hud-bar sp" title="SP"><span style="width:${((c.sp ?? d.sp) / d.sp) * 100}%"></span><b>SP ${Math.round(c.sp ?? d.sp)} / ${d.sp}</b></div>
       <div class="hud-bar fatigue" title="Fatigue: sleep (Z) by a fire or torch before it fills"><span style="width:${Math.min(100, c.fatigue || 0)}%"></span><b>FATIGUE ${Math.round(c.fatigue || 0)} / 100</b></div>
       <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
+      ${c.injury ? `<p class="hud-injury" title="${esc(INJURY[c.injury.part].effect)}">🩹 ${INJURY[c.injury.part].name}: treat at The Green Vial</p>` : ''}
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
       ${portal ? `<button type="button" class="hud-points portal" data-act="portal">${esc(portal.name)}: travel (G)</button>` : ''}
       ${cave ? `<button type="button" class="hud-points" data-open="cave">${esc(cave.name)}: about this ${cave.dungeon ? 'dungeon' : 'cave'}</button>` : ''}
@@ -118,6 +120,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('LVL', c.level)}
           ${row('Rank', rankFor(c.level))}
           ${row('Unique', `<span class="sw-unique" title="${esc(uniqueAbility(c).text)}">${esc(c.uniqueSkill.name)}</span> <b class="u-rank u-${esc(uniqueAbility(c).rank)}">${esc(uniqueAbility(c).rank)}</b> <small>(${esc(TIER_NAMES[uniqueTier(c.level)])}${c.child && CLASSES[uniqueAbility(c).fit] ? ` · suits a ${esc(CLASSES[uniqueAbility(c).fit].name)}` : ''})</small>`)}
+          ${c.uniqueSkill && !isAppraisal(c) ? (() => { const p = rankProofs(c), up = c.uniqueSkill.raised || 0; return row('Rank growth', `${up} of ${RANK_UP_MAX} climbs <small title="Each climb needs one proof: a broken seal (the 2nd and 4th), ${TRIALS_PER_PROOF} guild requests at level 150+, or ${WORK_PER_PROOF} work (merging, forging, brewing, selling, quests)">· seals ${p.seals} · trials ${(c.growth?.trials || 0)} · work ${Math.round(c.growth?.work || 0)}</small>`); })() : ''}
           ${row(isMonster ? 'Next evolution' : 'Next advancement', `??? <small>at Lv ${KEY_LEVELS.find((k) => k > c.level) ?? '—'}</small>`)}
           ${row('Next upgrade', `Lv ${nextUpgrade(c.level)} <small>(stronger, + a new skill)</small>`)}
         </dl>
@@ -139,6 +142,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('Stamina', stat('sta'))}
           ${row('Intelligence', stat('int'))}
           ${row('Fatigue', `${Math.round(c.fatigue || 0)} / 100`)}
+          ${c.injury ? row('Injury', `${INJURY[c.injury.part].name} (${c.injury.left} treatment${c.injury.left > 1 ? 's' : ''} left)`) : ''}
         </dl>
       </div>
       <hr>
@@ -181,6 +185,14 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
         <button type="button" class="setting-opt" data-view="first" aria-pressed="${settings.view === 'first'}"><b>First person</b><span>You see through your character's eyes, with your arms and weapon in front of you. Look down to see your body.</span></button>
       </div>
       <p class="bag-hint">Switch any time with ${esc(keyName(codeFor('view')))}, or scroll all the way in for first person and back out for third.</p>
+      <h3 class="bag-sub">Graphics</h3>
+      <div class="setting-opts">
+        ${[['auto', 'Automatic', `Picks for your device: ${settings.graphicsNow === 'low' ? 'Battery saver on this one' : 'Far view on this one'}.`],
+          ['low', 'Battery saver', 'For phones and tablets: shorter view, no shadows, 30 frames a second. Keeps the device cooler.'],
+          ['medium', 'Balanced', 'Shadows and a medium view distance.'],
+          ['high', 'Far view', 'For computers: sharp, with distant land, trees and grass drawn much further.']]
+          .map(([v, title, text]) => `<button type="button" class="setting-opt" data-graphics="${v}" aria-pressed="${(settings.graphics || 'auto') === v}"><b>${title}</b><span>${esc(text)}</span></button>`).join('')}
+      </div>
       <h3 class="bag-sub">Camera</h3>
       <div class="setting-opts">
         ${opt('free', 'Free camera', 'You turn the camera yourself (drag the mouse, or drag on the right of the screen). Your character walks the way you push, relative to the camera.')}

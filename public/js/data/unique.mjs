@@ -50,6 +50,28 @@ export function rollRank(held = {}, rnd = Math.random) {
 }
 export const rankOf = (u) => (UNIQUE_RANKS.includes(u?.rank) ? u.rank : 'C');
 
+// ---------- raising the rank ----------
+// A Unique Skill can climb at most two ranks above the one it was born with. Each climb needs one
+// proof of growth, from any of these:
+//   - breaking seals: the Second Seal, then the Fourth (one proof each)
+//   - Rank Trials: guild requests finished at level 150 or above (every 3 is one proof)
+//   - honest work: merging, forging, brewing, selling and finishing quests (every 1000 work is one proof)
+// SS and SSS still have their world limits: if those are full, the climb waits for a free place.
+export const RANK_UP_MAX = 2;
+export const TRIAL_LEVEL = 150;
+export const TRIALS_PER_PROOF = 3;
+export const WORK_PER_PROOF = 1000;
+export function rankProofs(c) {
+  const t = uniqueTier(c?.level || 1);
+  const g = c?.growth || {};
+  const seals = (t >= 2 ? 1 : 0) + (t >= 4 ? 1 : 0);
+  const trials = Math.floor((g.trials || 0) / TRIALS_PER_PROOF);
+  const work = Math.floor((g.work || 0) / WORK_PER_PROOF);
+  return { seals, trials, work, total: Math.min(RANK_UP_MAX, seals + trials + work) };
+}
+// the rank a skill reaches after `steps` climbs from the one it was born with
+export const climbedRank = (born, steps) => UNIQUE_RANKS[Math.min(UNIQUE_RANKS.length - 1, UNIQUE_RANKS.indexOf(born) + steps)];
+
 // The class each kind of power suits best (shown from birth, to help choose a school)
 const KIND_FIT = { strike: 'swordsman', sweep: 'tank', bolt: 'mage', dash: 'assassin', heal: 'healer', fury: 'blacksmith', ward: 'tank', freeze: 'potion_maker', devour: 'assassin' };
 

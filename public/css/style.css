@@ -997,3 +997,5 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .cp-room-label { fill: #f2e6c8; font-size: 0.9px; }
 .cp-you { fill: #ff5a3a; stroke: #fff; stroke-width: 0.2; }
 .cp-you-label { fill: #fff; font-size: 1.1px; font-weight: 700; }
+
+.hud-injury { margin: 4px 0 0; font-size: 12px; color: #f0b0a0; }

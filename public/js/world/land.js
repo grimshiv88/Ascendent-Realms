@@ -3,12 +3,13 @@
 // coarser; a low-detail "horizon" covers everything out to about 24 km so mountains show far off.
 import * as THREE from 'three';
 import { sample, vnoise, SEA_LEVEL, lakesWithLevels } from '../data/world-layout.mjs';
-import { scenery, hideInstance, BREAKABLE } from './scenery.js';
+import { scenery, hideInstance, BREAKABLE, setSceneryQuality } from './scenery.js';
 
 export const CHUNK = 256;                 // metres per terrain tile
-const LODS = [[1, 64], [3, 32], [6, 16], [11, 8]]; // [tile distance up to, grid segments]
-const VEG_RANGE = 3;                      // tiles with trees and rocks
-const GRASS_RANGE = 1;                    // tiles with grass
+// (these change with the graphics quality; see quality.js)
+let LODS = [[1, 64], [3, 32], [6, 16], [11, 8]]; // [tile distance up to, grid segments]
+let VEG_RANGE = 3;                      // tiles with trees and rocks
+let GRASS_RANGE = 1;                    // tiles with grass
 const UV_SCALE = 7;                       // metres per repeat of the ground detail texture
 const UV_WRAP = UV_SCALE * 1024;          // keeps texture coordinates small far from the centre
 const FAR_SIZE = 48000;                  // the horizon (distant forests are drawn into its colours)
@@ -377,7 +378,6 @@ export function createLand(scene) {
 
   const tkey = (cx, cz) => `${cx},${cz}`;
   const lodFor = (d) => { for (const [r, s] of LODS) if (d <= r) return s; return 0; };
-  const maxR = LODS[LODS.length - 1][0];
 
   function buildTile(cx, cz, segs, d) {
     const { geo, info, n, step } = buildTileGeometry(cx, cz, segs);
@@ -428,6 +428,7 @@ export function createLand(scene) {
     water.position.set(Math.round(x / 1400) * 1400, SEA_LEVEL, Math.round(z / 1400) * 1400);
 
     const pcx = Math.floor(x / CHUNK), pcz = Math.floor(z / CHUNK);
+    const maxR = LODS[LODS.length - 1][0];
     const jobs = [];
     const keep = new Set();
     for (let dz = -maxR; dz <= maxR; dz++) {
@@ -485,9 +486,17 @@ export function createLand(scene) {
     }
   }
 
+  // graphics quality: how far the land, trees and grass reach (tiles catch up on the next updates)
+  function setQuality(q) {
+    LODS = q.lods; VEG_RANGE = q.veg; GRASS_RANGE = q.grass;
+    setSceneryQuality(q);
+    for (const t of tiles.values()) if (t.grass) { root.remove(t.grass); t.grass.dispose(); t.grass = null; } // regrown at the new thickness
+  }
+
   return {
     update,
     refreshAt,
+    setQuality,
     colliders,
     breakThing,
     animate(t) {

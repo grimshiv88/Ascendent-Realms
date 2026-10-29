@@ -7,10 +7,11 @@ export const MAIN_STATS = ['str', 'agi', 'dex', 'sta', 'int'];
 export const STAT_NAMES = { str: 'Strength', agi: 'Agility', dex: 'Dexterity', sta: 'Stamina', int: 'Intelligence' };
 
 // Every race totals 50 base points.
+// skillGift (Elves): skills are ready 20% sooner and cost 15% less SP (magic belongs to the Dark Side)
 export const RACES = {
   // Player races
-  elf:       { side: 'player',  name: 'Elf',       stats: { str: 7,  agi: 12, dex: 12, sta: 7,  int: 12 }, element: 'Wind',      expMult: 1.0,
-               home: 'Central forest', blurb: 'Tall and graceful forest folk with long ears and bark-patterned skin. Quick, precise and gifted with magic.' },
+  elf:       { side: 'player',  name: 'Elf',       stats: { str: 7,  agi: 13, dex: 14, sta: 8,  int: 8  }, element: 'Wind',      expMult: 1.0, skillGift: true,
+               home: 'Central forest', blurb: 'Tall and graceful forest folk with long ears and bark-patterned skin. Quick, precise and gifted with skills: theirs are ready 20% sooner and cost 15% less SP.' },
   dwarf:     { side: 'player',  name: 'Dwarf',     stats: { str: 14, agi: 6,  dex: 10, sta: 13, int: 7  }, element: 'Earth',     expMult: 1.0,
                home: 'Central forest', blurb: 'Short, broad and stone-skinned, with heavy braided beards. Strong and hard to knock down.' },
   hobbit:    { side: 'player',  name: 'Hobbit',    stats: { str: 6,  agi: 13, dex: 13, sta: 8,  int: 10 }, element: 'Nature',    expMult: 1.0,

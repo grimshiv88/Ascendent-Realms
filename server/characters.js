@@ -2,7 +2,7 @@
 const db = require('./db');
 const { fallenKeep, rebornWith, mayChangeForm, growUp } = require('../public/js/data/game-data.mjs');
 const { SCHOOLS, BIRTH_CITY, BIRTH_CITIES, KIDS_PER_HOUSE, houseCount, rollBirth, bornCharacter, ceremonyDue, rollClass } = require('../public/js/data/birth.mjs');
-const { pickUnique, uniqueSlot, APPRAISAL_AWAY_MS } = require('../public/js/data/unique.mjs');
+const { pickUnique, uniqueSlot, APPRAISAL_AWAY_MS, rankProofs, climbedRank, rankOf, RANK_CAP, isAppraisal } = require('../public/js/data/unique.mjs');
 const { SKILLS } = require('../public/js/data/skills.mjs');
 const { ITEMS, EFFECTS } = require('../public/js/data/items.mjs');
 const { SPELLS } = require('../public/js/data/spells.mjs');
@@ -62,6 +62,24 @@ function ceremony(accountId) {
   growUp(character, cls);
   store(accountId, character);
   return { ok: true, character };
+}
+
+// Raise the Unique Skill one rank when the character has earned a proof of growth for it (see
+// rankProofs): at most two ranks above its birth rank, and SS and SSS only while there is room.
+function rankUp(accountId) {
+  const character = load(accountId);
+  if (!character?.uniqueSkill) return { error: 'No Unique Skill yet.' };
+  const u = character.uniqueSkill;
+  if (isAppraisal(character)) return { error: 'Appraisal has no ranks to climb.' };
+  const raised = u.raised || 0;
+  if (rankProofs(character).total <= raised) return { error: 'Not yet: it needs another proof of growth.' };
+  const born = u.born || rankOf(u);
+  const next = climbedRank(born, raised + 1);
+  if (next === rankOf(u)) return { error: 'It is already as high as it can go.' };
+  if (RANK_CAP[next] != null && (uniquesHeld().held[next] || 0) >= RANK_CAP[next]) return { error: `Every ${next} place in the world is held. It will climb when one is free.`, full: true };
+  character.uniqueSkill = { ...u, rank: next, born, raised: raised + 1 };
+  store(accountId, character);
+  return { ok: true, uniqueSkill: character.uniqueSkill };
 }
 
 // Appraisal is held by one person only. If they stay away for more than a month it leaves them
@@ -226,7 +244,11 @@ function saveProgress(accountId, p) {
   // the quest board's clock: when the next quest is posted, and how many were taken on today
   const questNext = int(p.questNext ?? 0, 0, 1e15) ?? 0;
   const questDay = p.questDay && int(p.questDay.day, 0, 1e9) !== null && int(p.questDay.n, 0, 100) !== null ? { day: p.questDay.day, n: p.questDay.n } : null;
-  const room = p.room && int(p.room.until, 0, 1e15) !== null ? { until: p.room.until } : null;
+  const room = p.room && int(p.room.until, 0, 1e15) !== null ? { until: p.room.until, n: int(p.room.n ?? 1, 1, 3) ?? 1 } : null;
+  const growth = { work: int(p.growth?.work ?? 0, 0, 1e9) ?? 0, trials: int(p.growth?.trials ?? 0, 0, 1e6) ?? 0 };
+  // a broken bone from a bad fall, and the treatments it has had (one a day)
+  const injury = p.injury && ['leg', 'arm', 'ribs'].includes(p.injury.part) && int(p.injury.left, 1, 5) !== null
+    ? { part: p.injury.part, left: p.injury.left, lastTreat: int(p.injury.lastTreat ?? 0, 0, 1e15) ?? 0 } : null;
   const torches = (Array.isArray(p.torches) ? p.torches.slice(0, 10) : [])
     .filter((t) => Number.isFinite(t?.x) && Number.isFinite(t?.z) && Math.abs(t.x) < 1e6 && Math.abs(t.z) < 1e6)
     .map((t) => ({ x: t.x, z: t.z }));
@@ -264,7 +286,7 @@ function saveProgress(accountId, p) {
   }
   // monster players from level 100 can switch to their humanoid form and back
   if ((p.form === 'monster' || p.form === 'humanoid') && mayChangeForm({ ...character, level: fields.level ?? character.level })) character.form = p.form;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, growth, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };
@@ -284,4 +306,4 @@ function top(limit = 10) {
     .slice(0, limit);
 }
 
-module.exports = { cleanItem, create, fall, load, store, saveLocation, saveProgress, top, ceremony, keepAppraisalHeld };
+module.exports = { cleanItem, create, fall, rankUp, load, store, saveLocation, saveProgress, top, ceremony, keepAppraisalHeld };

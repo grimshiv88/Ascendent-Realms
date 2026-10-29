@@ -195,6 +195,7 @@ export function renderShop(el, game, message = '', market = null) {
       <p class="sys-msg${bad ? ' bad' : ''}" role="status">${esc(message)}</p>
       <p class="sys-hint">Touch an item to see what it does.</p>
       ${market === 'tavern' ? roomHtml(game) : ''}
+      ${market === 'city_potions' ? treatHtml(game) : ''}
       ${group('Weapons', 'weapon')}
       ${group(market === 'city_tailor' ? 'Clothes' : 'Armour', 'armour')}
       ${group(mk?.bot && market !== 'city_potions' ? 'Food and drink (all halal)' : 'Potions and food', 'food')}
@@ -203,6 +204,15 @@ export function renderShop(el, game, message = '', market = null) {
       <h3 class="sys-sub">Sell <small>for less than the shop price</small></h3>
       ${sell}
     </div>`;
+}
+
+// Broken bones from a bad fall are set and treated here, once a day until they mend
+function treatHtml(game) {
+  const j = game.injury();
+  if (!j) return '';
+  return `<h3 class="sys-sub">Treatment</h3>
+    <div class="sys-row"><span class="sys-name"><b>${esc(j.name)} · ${j.left} treatment${j.left > 1 ? 's' : ''} left</b><small>${esc(j.effect)} One treatment a day of the realm (one real hour).${j.waitMin ? ` Next treatment in ${j.waitMin} min.` : ''}</small></span>
+      ${j.waitMin ? '' : `<button type="button" class="sys-button" data-treat>Treat · ${money(j.price)}</button>`}</div>`;
 }
 
 // A tavern room: rent it for a day of the realm (one real hour), sleep in it to wake rested

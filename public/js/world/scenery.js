@@ -1,7 +1,7 @@
 // Trees, rocks, reeds and grass for each terrain tile, chosen by region. Every model is one
 // merged mesh with its colours baked in, drawn many times at once (instancing).
 import * as THREE from 'three';
-import { sample, placesWithPositions, isPrepared } from '../data/world-layout.mjs';
+import { sample, placesWithPositions, isPrepared, surfaceAt } from '../data/world-layout.mjs';
 import { allPortals } from '../data/portals.mjs';
 
 // ---------- building the models ----------
@@ -222,7 +222,10 @@ export function breakNeeds(kind) {
   return `Needs ${n.chop >= 4 ? 'a War Axe' : 'an axe'} and ${n.str} STR (or ${n.bare} STR without one)`;
 }
 const ROCK_TINT = { heart: '#86817a', peaks: '#4a4440', warrens: '#a87a52', fae: '#8a9a90', mire: '#5e5a4a', frost: '#9aa0a8', sun: '#c09a68' };
-const NEAR_TREES = 110; // metres: trees closer than this are drawn in full and cast shadows
+let NEAR_TREES = 110; // metres: trees closer than this are drawn in full and cast shadows
+let grassDensity = 1;
+// how far full trees reach and how thick the grass is (from the graphics quality)
+export function setSceneryQuality(q) { NEAR_TREES = q.nearTrees; grassDensity = q.grassDensity; }
 const SOLID = { pine: 0.45, snowpine: 0.45, oak: 0.7, dead: 0.3, swamp: 0.9, glow: 0.4, cactus: 0.4, young: 0.15, great: 3.2, bush: 0.4 };
 
 function rng(seed) {
@@ -298,7 +301,7 @@ export function scenery() {
           if (s.h < s.water + 0.6 && kind !== 'reeds') break;
           if (kind === 'great' && s.forest < 0.5) break;
           if (BREAKABLE[kind] && isBroken(spotKey(kind, x, z))) break;
-          (spots[`${kind}|${(i >= per / 2 ? 1 : 0) + (j >= per / 2 ? 2 : 0)}`] ||= []).push({ x, z, y: s.h, region: s.region });
+          (spots[`${kind}|${(i >= per / 2 ? 1 : 0) + (j >= per / 2 ? 2 : 0)}`] ||= []).push({ x, z, y: surfaceAt(x, z), region: s.region }); // on the land as drawn, not floating over it
           break;
         }
       }
@@ -370,14 +373,14 @@ export function scenery() {
   function grassForTile(cx, cz, size) {
     const rand = rng((cx * 92837111) ^ (cz * 689287499) ^ 7);
     const list = [];
-    for (let n = 0; n < 2600; n++) {
+    for (let n = 0; n < 2600 * grassDensity; n++) {
       const x = cx * size + rand() * size, z = cz * size + rand() * size;
       if (isPrepared(x, z)) continue; // cleared land has no grass
       sample(x, z, s);
       if (s.h < s.water + 0.4) continue;
       if (s.region !== 'heart' && s.region !== 'fae' && s.region !== 'mire') continue;
       if (rand() > 0.85 - s.forest * 0.5) continue;
-      list.push([x, s.h, z]);
+      list.push([x, surfaceAt(x, z) - 0.05, z]); // (the drawn land, so tufts never hover on ridges)
     }
     if (!list.length) return null;
     const mesh = new THREE.InstancedMesh(grass, grassMat, list.length);

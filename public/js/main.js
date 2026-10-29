@@ -1,4 +1,5 @@
 // Front door flow: intro → title docks → Choose → Sign Up / Sign In → clouds → next screen.
+import { RACES } from './data/game-data.mjs';
 import { renderCastlePlan } from './castleplan.js';
 import { startIntro } from './intro.js';
 import * as api from './api.js';
@@ -162,6 +163,23 @@ function startGame(character) {
   const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '', plot: null, landChoice: 'house', landMsg: '', landBusy: false, basket: [] };
   let hudQueued = false;
 
+  // The Unique Skill climbs a rank when a proof of growth is earned (the server checks the proof
+  // and the SS / SSS world limits)
+  let climbing = false;
+  async function climbRank() {
+    if (climbing) return;
+    climbing = true;
+    try {
+      await game.saveNow();
+      const r = await api.rankUp(character);
+      if (r?.ok) {
+        character.uniqueSkill = r.uniqueSkill;
+        world?.say(`${r.uniqueSkill.name} rose to rank ${r.uniqueSkill.rank}!`, 'exp');
+        showArea(`Your Unique Skill grew: ${r.uniqueSkill.name} is now rank ${r.uniqueSkill.rank}.`);
+      }
+    } catch { /* not yet, or the rank is full: tried again on the next proof */ }
+    climbing = false;
+  }
   const game = createProgress(character, {
     save: (p) => api.saveProgress(p).catch(() => {}),
     onChange(what) {
@@ -176,6 +194,7 @@ function startGame(character) {
       if (type === 'level') { world?.say(`Level ${data}!`, 'exp'); showArea(`Level ${data}! New Stat Points and a purse of coins.`); }
       if (type === 'bag-full') world?.say('Your bag is full', 'hurt');
       if (type === 'no-funds') noFunds(data.need);
+      if (type === 'rank-due') climbRank();
       if (type === 'evolved') { world?.say('Your weapon evolved!', 'exp'); showArea(`Your weapon evolved into the ${data.name}!`); }
       if (type === 'spell') {
         const sp = SPELLS[data.id];
@@ -334,7 +353,9 @@ function startGame(character) {
   }
   const readyAt = {}; // skill id -> time (ms) it can be used again
   // the Unique Skill is used like a skill, at the strength its tier allows
-  const skillOf = (id) => (id === 'unique' ? uniqueAbility(character) : id === 'mythic' ? (game.mythic() || { cd: 40, sp: 0, name: 'Mythic skill' }) : SKILLS[id]);
+  const rawSkill = (id) => (id === 'unique' ? uniqueAbility(character) : id === 'mythic' ? (game.mythic() || { cd: 40, sp: 0, name: 'Mythic skill' }) : SKILLS[id]);
+  // Elves are gifted with skills: ready sooner and cheaper in SP
+  const skillOf = (id) => { const sk = rawSkill(id); return sk && RACES[character.race]?.skillGift ? { ...sk, cd: sk.cd * 0.8, sp: Math.round((sk.sp || 0) * 0.85) } : sk; };
   const cooling = (id) => Math.max(0, (readyAt[id] || 0) - performance.now()) / (skillOf(id).cd * 1000);
   function trySkill(id) {
     const sk = skillOf(id);
@@ -790,6 +811,11 @@ function startGame(character) {
       } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : 'That portal is across the sea.');
       return;
     }
+    if (t('data-treat') != null) {
+      const r = game.treat();
+      ui.shopMsg = { treated: 'The healer sets and binds it. Come back tomorrow for the next treatment.', healed: 'The bone has mended. You are whole again.', coins: 'Not enough coins.', wait: 'Too soon: one treatment a day.', none: 'Nothing to treat.' }[r];
+      drawHud(); drawPanel(); return;
+    }
     if ((v = t('data-room')) != null) {
       const r = v === 'rent' ? game.rentRoom() : game.sleepInRoom();
       ui.shopMsg = { ok: v === 'rent' ? 'The room is yours for a day of the realm (one real hour).' : 'You sleep in your room and wake fully rested.', coins: 'Not enough coins.', have: 'You already have a room.', none: 'Rent a room first.' }[r];
@@ -982,6 +1008,7 @@ function startGame(character) {
     if (e.target.closest('[data-controls-reset]')) { resetKeys(); ui.controlMsg = 'Every key is back to how it started.'; drawPanel(); return; }
     if ((v = t('data-mouse')) != null) { settings.mouse = v; saveSettings(); world?.setMouseMode(v); drawPanel(); return; }
     if ((v = t('data-view')) != null) { settings.view = v; saveSettings(); world?.setView(v); drawPanel(); return; }
+    if ((v = t('data-graphics')) != null) { settings.graphics = v; saveSettings(); settings.graphicsNow = world?.setGraphics(v); drawPanel(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if ((v = t('data-privacy')) != null) {
@@ -1072,7 +1099,7 @@ function startGame(character) {
 
   world = startWorld($('world'), character, {
     game,
-    view: { camera: settings.camera, mouse: settings.mouse, view: settings.view },
+    view: { camera: settings.camera, mouse: settings.mouse, view: settings.view, graphics: settings.graphics },
     onView(v) { settings.view = v; saveSettings(); showArea(v === 'first' ? 'First person view' : 'Third person view'); if (overlay.dataset.panel === 'settings' && !overlay.classList.contains('hidden')) drawPanel(); },
     onArea: (name) => showArea(name),
     onPlot(info) {
@@ -1190,6 +1217,7 @@ function startGame(character) {
       if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }
     },
   });
+  settings.graphicsNow = world.graphics; // what "Automatic" chose for this device
   if (ui.rentals) takeRentals(ui.rentals); else castleAccess(); // the world is here now
   if (/[?&]debug\b/.test(location.search)) { window.__world = world; window.__game = game; } // for tests
 

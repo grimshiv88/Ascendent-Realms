@@ -64,6 +64,10 @@ app.post('/api/character/fall', requireAccount, (req, res) => {
   res.status(result.error ? 400 : 200).json(result);
 });
 
+app.post('/api/character/rankup', requireAccount, (req, res) => {
+  const r = characters.rankUp(req.account.id);
+  res.status(r.error ? 400 : 200).json(r);
+});
 app.post('/api/character/location', requireAccount, (req, res) => {
   const result = characters.saveLocation(req.account.id, req.body || {});
   res.status(result.error ? 400 : 200).json(result);
