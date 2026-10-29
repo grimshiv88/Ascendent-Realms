@@ -11,6 +11,7 @@ const social = require('./social');
 const rooms = require('./rooms');
 const bounties = require('./bounties');
 const groups = require('./groups');
+const db = require('./db');
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -46,6 +47,15 @@ function requireAccount(req, res, next) {
 app.post('/api/character', requireAccount, (req, res) => {
   const result = characters.create(req.account.id, req.account.username, req.body || {});
   res.status(result.error ? 400 : 201).json(result);
+});
+
+// The bridges over the city moats (raised in war or when monsters attack; the admins set them)
+const cityGates = () => { const r = db.prepare("SELECT data FROM world_state WHERE key = 'city_gates'").get(); return r ? JSON.parse(r.data) : {}; };
+app.get('/api/cities', (req, res) => res.json({ raised: cityGates() }));
+
+app.post('/api/character/ceremony', requireAccount, (req, res) => {
+  const result = characters.ceremony(req.account.id);
+  res.status(result.error ? 400 : 200).json(result);
 });
 
 app.post('/api/character/fall', requireAccount, (req, res) => {
@@ -122,6 +132,10 @@ app.post('/api/caves/buy', requireAccount, (req, res) => {
 
 // Friends, chat and Status privacy
 app.get('/api/players', requireAccount, (req, res) => res.json(social.search(req.account.id, req.query.q)));
+app.get('/api/appraise/:name', requireAccount, (req, res) => {
+  const result = social.appraise(req.account.id, req.params.name);
+  res.status(result.error ? 400 : 200).json(result);
+});
 app.get('/api/players/:name', requireAccount, (req, res) => {
   const result = social.profile(req.account.id, req.params.name);
   res.status(result.error ? 404 : 200).json(result);
@@ -142,6 +156,14 @@ function requireAdmin(req, res, next) {
   next();
 }
 app.get('/api/admin/accounts', requireAdmin, (req, res) => res.json(admin.accounts()));
+app.post('/api/admin/gates', requireAdmin, (req, res) => {
+  const { city, raised } = req.body || {};
+  if (!['central', 'emberfall', 'ashgrave', 'lumenhollow', 'mirehaven'].includes(city)) return res.status(400).json({ error: 'No such city.' });
+  const all = cityGates();
+  if (raised) all[city] = true; else delete all[city];
+  db.prepare("INSERT INTO world_state (key, data) VALUES ('city_gates', ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data").run(JSON.stringify(all));
+  res.json({ ok: true, raised: all });
+});
 for (const [route, fn] of [['password', admin.setPassword], ['signout', admin.signOutEverywhere], ['delete', admin.remove]]) {
   app.post(`/api/admin/${route}`, requireAdmin, (req, res) => {
     const result = fn(req.body || {}, req.account);
@@ -155,4 +177,8 @@ app.post('/api/signout', (req, res) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
+// Appraisal leaves a holder who has been away more than a month (checked hourly)
+characters.keepAppraisalHeld();
+setInterval(() => characters.keepAppraisalHeld(), 3600 * 1000).unref();
+
 app.listen(port, () => console.log(`Ascendant Realms running at http://localhost:${port}`));

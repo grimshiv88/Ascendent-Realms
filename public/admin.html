@@ -68,6 +68,8 @@
         <tbody id="rows"></tbody>
       </table>
     </div>
+    <div class="card"><b>City bridges</b> <span class="note">Raise a city's bridges in a war or a monster attack: they stand up and shut the inner gates.</span>
+      <div class="actions" id="gates"></div></div>
     <p class="note">Passwords are stored scrambled (hashed), so they can't be shown, not even here. If a player forgets theirs, set a new one and tell them what it is; they are signed out everywhere until they use it.</p>
   </section>
 </main>
@@ -137,6 +139,18 @@ $('signin').addEventListener('submit', async (e) => {
 });
 $('logout').addEventListener('click', async () => { await call('api/signout', {}).catch(() => {}); token.set(null); location.reload(); });
 $('search').addEventListener('input', draw);
+// the bridges over the city moats
+const CITIES = [['central', 'Central City'], ['emberfall', 'Emberfall'], ['ashgrave', 'Ashgrave'], ['lumenhollow', 'Lumenhollow'], ['mirehaven', 'Mirehaven']];
+async function drawGates() {
+  const { raised } = await fetch('api/cities').then((r) => r.json()).catch(() => ({ raised: {} }));
+  $('gates').innerHTML = CITIES.map(([id, n]) => `<button type="button" data-gate="${id}" data-up="${raised[id] ? '' : '1'}">${raised[id] ? `Lower ${n}'s bridges` : `Raise ${n}'s bridges`}</button>`).join('');
+}
+$('gates').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-gate]');
+  if (!b) return;
+  try { await call('api/admin/gates', { city: b.dataset.gate, raised: !!b.dataset.up }); say('Done. Players see it within a minute.', true); drawGates(); } catch (err) { say(err.message); }
+});
+drawGates();
 
 $('rows').addEventListener('click', async (e) => {
   const b = e.target.closest('button');

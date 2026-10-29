@@ -5,6 +5,7 @@ import { makeStage } from './characters/stage.js';
 import { buildCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
 import { buildWork } from './world/work.js';
+import { ageOf } from './data/birth.mjs';
 
 let running = null;
 // kind: 'smith' | 'brew'; opts go to buildWork (pieces, result, ore). Calls onDone when it ends or
@@ -22,7 +23,7 @@ export function playWork(kind, character, worn, opts = {}, onDone = () => {}) {
   const { renderer, scene, camera, resize } = stage;
   scene.background = new THREE.Color('#1a130c');
   // the player, wearing their armour but with their hands free for the work
-  const body = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look });
+  const body = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look, age: ageOf(character) });
   wearGear(body, { ...worn, weapon: null, shield: null });
   const h = body.userData.height || 1.8;
   const work = buildWork(kind === 'brew' ? 'brew' : 'smith', { ...opts, top: 1.0, scale: Math.min(1.3, Math.max(0.6, h / 1.8)) });

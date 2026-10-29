@@ -3,6 +3,7 @@
 import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } from './data/game-data.mjs';
 import { ITEMS, shopFor, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, gearSkillSlots, mythicSkill, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
+import { ageOf, childStatShare, classOdds, SCHOOLS, TRAIN_FULL_MS } from './data/birth.mjs';
 import { PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, BOOK_ID, bookStops, spellStrength } from './data/cults.mjs';
 import { GUILD_HALL_LEVEL, CARD_FEE, assess, mayTake } from './data/guildcard.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
@@ -93,7 +94,10 @@ export function createProgress(c, { save, onChange, onEvent }) {
     return b;
   }
   function stats() {
-    const d = derivedStats(c.stats, c.level, c.trained);
+    // a child's body is still growing: only part of their stats count yet
+    const share = c.child ? childStatShare(ageOf(c)) : 1;
+    const base = share === 1 ? c.stats : Object.fromEntries(Object.entries(c.stats).map(([k, v]) => [k, Math.max(1, Math.round(v * share))]));
+    const d = derivedStats(base, c.level, c.trained);
     const b = bonus();
     return { ...d, sp: d.sp + b.sp, atk: d.atk + b.atk, matk: d.matk + b.matk, def: d.def + b.def, mdef: d.mdef + b.mdef, bonus: b, base: d };
   }
@@ -112,7 +116,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(),
-    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null,
+    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null,
   });
 
   // worn gear doesn't take up room in the bag
@@ -309,6 +313,24 @@ export function createProgress(c, { save, onChange, onEvent }) {
     darkSpellHit(dmg, casterInt, power) {
       if (!count(BOOK_ID)) return dmg;
       return Math.round(dmg * (1 - bookStops(c.stats.int, spellStrength(casterInt, power))));
+    },
+    // ---------- childhood ----------
+    age: () => ageOf(c),
+    // choose the school to train at (training already done at others is kept)
+    setSchool(cls) { if (c.child && SCHOOLS[cls]) { c.child.school = cls; changed('child'); } },
+    // time spent training at your school, while at the Academy
+    train(ms) {
+      if (!c.child?.school) return;
+      c.child.train ||= {};
+      c.child.train[c.child.school] = Math.min(TRAIN_FULL_MS, (c.child.train[c.child.school] || 0) + ms);
+      changed('child');
+    },
+    classOdds: () => classOdds(c),
+    // the Ceremony is over: the grown-up character from the server takes the child's place
+    grownUp(g) {
+      Object.assign(c, { cls: g.cls, stats: g.stats, elements: g.elements, inventory: g.inventory, grown: g.grown });
+      delete c.child;
+      changed('stats'); changed('bag'); changed('form');
     },
     // Joined the Dark Side and took the Mage class (the server has done the same)
     becameMage(cls, stats) {

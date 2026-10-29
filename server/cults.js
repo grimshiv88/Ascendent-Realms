@@ -64,6 +64,13 @@ function censor(accountId, text) {
   return w ? C.censor(load(), w.name, text) : text;
 }
 const seenBy = (viewer, target) => C.seenBy(load(), viewer, target);
+// For Appraisal: which secret side a player serves ({ cult, rank } / { order } / null)
+function allegiance(name) {
+  const s = load();
+  const cult = C.cultOf(s, name);
+  if (cult) return { cult: cult.name, rank: C.CULT_RANKS[C.memberOf(cult, name).rank] };
+  return C.inOrder(s, name) ? { order: C.ORDER_NAME } : null;
+}
 // A character has died: their place in a cult or the Order goes with them
 function forget(accountId) {
   const w = who(accountId);
@@ -73,4 +80,4 @@ function forget(accountId) {
   save(s);
 }
 
-module.exports = { list, act, checkChat, censor, seenBy, forget };
+module.exports = { list, act, checkChat, censor, seenBy, forget, allegiance };

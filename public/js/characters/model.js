@@ -3,6 +3,7 @@
 // body that keeps the monster's look). `stage` 0–5 is the evolution stage: each one makes the
 // body clearly bigger and adds new parts. `growth` 0–1 is the small growth between evolutions.
 import * as THREE from 'three';
+import { childSize } from '../data/birth.mjs';
 import { APPEARANCE } from '../data/game-data.mjs';
 import { hasSculpt, sculptedRig } from './sculpt.js';
 import {
@@ -251,6 +252,7 @@ function headFeatures(rig, mats, f) {
   }
   if (f.beard) {
     const beard = cone(r * 0.75, r * 1.9, mats.accent);
+    beard.name = 'beard';
     beard.rotation.x = Math.PI;
     beard.position.set(0, -r * 1.25, r * 0.55);
     head.add(beard);
@@ -984,7 +986,8 @@ export function bodyHeight(raceId, form) {
   return table[raceId] || 1.8;
 }
 
-export function buildCharacter({ race, form = 'monster', stage = 0, growth = 0, look = {} }) {
+// `age` is set for a child (4 to 7): a smaller body, and no beard yet
+export function buildCharacter({ race, form = 'monster', stage = 0, growth = 0, look = {}, age = null }) {
   const mats = makeMaterials(race, look, stage);
   const rig = BUILDERS[race](mats, stage, form);
   rig.race = race;
@@ -993,7 +996,8 @@ export function buildCharacter({ race, form = 'monster', stage = 0, growth = 0, 
   const baseHeight = rig.root.userData.height;
   if (rig.arms && !rig.sculpt && (PLAYER_RACES.includes(race) || rig.dressed)) dress(rig, race);
   applyEvolution(rig, race, form, stage, mats);
-  const size = scaleFor(race, form, stage, growth, !!rig.sculpted) * (look.size || 1);
+  const size = scaleFor(race, form, stage, growth, !!rig.sculpted) * (look.size || 1) * (age != null ? childSize(age) : 1);
+  if (age != null) rig.root.traverse((o) => { if (/beard/i.test(o.name)) o.visible = false; });
   const wrapper = new THREE.Group();
   wrapper.add(rig.root);
   wrapper.scale.setScalar(size);

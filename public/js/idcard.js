@@ -28,16 +28,16 @@ export function lifeRows(c) {
 }
 
 let photo = { key: '', url: null };
-export function renderIdCard(el, game, { monster = false, barredText = null, courts = [], nation = null, message = '' } = {}) {
+export function renderIdCard(el, game, { city = 'Central City', leaving = false, monster = false, barredText = null, courts = [], nation = null, message = '' } = {}) {
   const c = game.character;
   const key = JSON.stringify([c.race, c.form, c.stage, c.look, c.equipped]);
   if (photo.key !== key) photo = { key, url: characterPortrait(c, game.worn()) };
-  const cls = ADVANCEMENTS[c.cls]?.[c.stage || 0] || CLASSES[c.cls].name;
+  const cls = ADVANCEMENTS[c.cls]?.[c.stage || 0] || CLASSES[c.cls]?.name || c.cls;
   el.innerHTML = `
     <div class="status-window id-window" role="dialog" aria-label="City gate">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>Central City Gate</h2>
-      <p class="bag-hint">${monster ? esc(barredText || 'The guards cross their spears. "No monsters in the city."') : 'A guard holds out a hand. "Your ID, please."'}</p>
+      <h2>${esc(city || 'Central City')} Gate</h2>
+      <p class="bag-hint">${monster ? esc(barredText || 'The guards cross their spears. "No monsters in the city."') : leaving ? 'A guard holds out a hand. "Your ID before you leave, please."' : 'A guard holds out a hand. "Your ID, please."'}</p>
       <div class="id-card">
         ${photo.url ? `<img class="id-photo" src="${photo.url}" alt="Photo of ${esc(c.name)}">` : '<div class="id-photo"></div>'}
         <dl>

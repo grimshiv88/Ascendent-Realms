@@ -30,6 +30,7 @@ import { gameTime } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
+import { ageOf, isChild, ACADEMY_NAME } from '../data/birth.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -132,17 +133,36 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       king.onDeath = () => onEvent?.('king-slain', { race, name: court.king.name, title });
     }
   }
+  // your family's house (its parents stand at the door), and which cities have their bridges raised
+  const homeOf = () => { const f = character.child?.family || character.family; return f ? { city: f.city, house: f.house, race: f.race } : null; };
+  let cityRaised = {};
+  function setCityGates(raised = {}) {
+    cityRaised = { ...raised };
+    for (const s of sites) if (s.built?.setRaised) s.built.setRaised(!!cityRaised[s.place.id], colliders);
+  }
+  const builtCities = () => sites.filter((s) => s.place.city && s.built?.npcs);
+  // townsfolk close enough to talk to
+  function npcNear(x, z, r = 2.4) {
+    for (const s of builtCities()) for (const n of s.built.npcs) if (Math.hypot(n.x - x, n.z - z) < r) return n;
+    return null;
+  }
+  function nearAcademy() {
+    for (const s of builtCities()) { const a = s.built.shops.find((q) => q.id === 'academy'); if (a && Math.hypot(a.x - pos.x, a.z - pos.z) < 14) return true; }
+    return false;
+  }
   function updateSites(x, z) {
     updatePortals(x, z);
     updateCastles(x, z);
     for (const s of sites) {
       const d = Math.hypot(x - s.place.x, z - s.place.z);
       if (d < 1000 && !s.built) {
-        s.built = s.place.cave ? buildCave(s.place) : s.place.city ? buildCity(s.place) : s.place.village ? buildVillage(s.place) : buildSpawn(s.place);
+        s.built = s.place.cave ? buildCave(s.place) : s.place.city ? buildCity(s.place, { home: homeOf() }) : s.place.village ? buildVillage(s.place) : buildSpawn(s.place);
         scene.add(s.built.group);
         if (s.built.solid) colliders.add(s.built.solid);
+        if (cityRaised[s.place.id]) s.built.setRaised?.(true, colliders);
         if (s.place.cave) postGuards(s);
       } else if (d > 1400 && s.built) {
+        s.built.setRaised?.(false, colliders);
         scene.remove(s.built.group);
         if (s.built.solid) colliders.remove(s.built.solid);
         if (s.place.cave) creatures?.removeWhere((m) => m.site === s.place.id);
@@ -168,7 +188,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let prepared = new Set();
 
   // Your character, wearing your gear
-  let avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look });
+  let avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look, age: ageOf(character) });
   if (game) wearGear(avatar, game.worn());
   scene.add(avatar);
   const loc = character.location || {};
@@ -214,7 +234,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // A monster player switching between monster and humanoid form: a new body in the same spot
   function rebuildAvatar() {
     const was = avatar;
-    avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look });
+    avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look, age: ageOf(character) });
     if (game) wearGear(avatar, game.worn());
     avatar.position.copy(was.position);
     avatar.rotation.copy(was.rotation);
@@ -787,7 +807,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
       if (nearTent(pos.x, pos.z, TENT_IN + 1)) { pitchTent(); return; }
       if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
+      const npc = npcNear(pos.x, pos.z);
+      if (npc) { onEvent?.('npc', npc); return; }
       const shop = shopNear(pos.x, pos.z);
+      if (shop?.id === 'academy') { onEvent?.('academy'); return; }
       if (shop?.building) { enterBuilding(shop); return; }
       if (shop) { onEvent?.(shop.id === 'guild' ? 'guild' : 'market', shop.id); return; }
     }
@@ -907,6 +930,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // Use a skill (see data/skills.mjs). Returns 'ok', 'sp' (not enough SP), 'none' (nothing to hit) or 'busy'.
   function useSkill(sk) {
     if (!game || dead || resting()) return 'busy';
+    // Appraisal: look at whatever is in front of you (a monster, if one is near) and open the window
+    if (sk.type === 'appraise') {
+      const m = creatures.target(pos.x, pos.z, heading, 30);
+      onEvent?.('appraise', { monster: m ? { name: m.title || m.kind?.name || 'Monster', level: m.level, hp: Math.round(m.hp), maxHp: m.maxHp, atk: m.atk, def: m.def, boss: !!m.boss, chief: !!m.chief } : null });
+      return 'ok';
+    }
     const c = game.character;
     if (c.sp < sk.sp) return 'sp';
     const reachNear = bodyR + Math.max(1.8, weaponReach(game.weapon()).reach) * Math.max(0.8, bodyH / 1.8);
@@ -1019,7 +1048,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // ---------- the city gates: the guards check your ID on the way in ----------
   // Walking in from outside stops you at the gate until you show your ID; once let in you can come
   // and go freely until you wander far off. Arriving by waystone or portal needs no check.
-  const gate = { cleared: null, prev: null, asked: 0 };
+  const gate = { cleared: null, prev: null, asked: 0, out: false, leaving: false };
   function checkGates(t) {
     // the nearest city (the Central City, or a Monster City)
     const city = sites.filter((s) => s.place.city && s.built?.gates).sort((a, b) => Math.hypot(pos.x - a.place.x, pos.z - a.place.z) - Math.hypot(pos.x - b.place.x, pos.z - b.place.z))[0];
@@ -1028,8 +1057,25 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const d = Math.hypot(pos.x - cx, pos.z - cz);
     if (gate.cleared === null) gate.cleared = d < CITY_R; // starting inside the city
     if (d > CITY_R + 40) gate.cleared = false;
+    if (d < CITY_R - 30) gate.out = false; // back in town: leaving again means showing your ID again
     const prev = gate.prev;
     gate.prev = d;
+    // going out through the outer gate: the guards check your ID, and children may not leave at all
+    if (prev !== null && gate.cleared && !gate.out && prev < CITY_R - 1 && d >= CITY_R - 1 && d - prev < 3) {
+      const k = (CITY_R - 1.8) / d;
+      pos.x = cx + (pos.x - cx) * k; pos.z = cz + (pos.z - cz) * k;
+      gate.prev = CITY_R - 1.8;
+      autoWalk = false;
+      if (t - gate.asked > 4) {
+        gate.asked = t;
+        gate.city = city.place;
+        if (isChild(character)) { say('Guard: "Children stay inside the walls until their Ceremony."', 'hurt'); return; }
+        gate.leaving = true;
+        say('Guard: "Show your ID before you leave."', 'hurt');
+        onEvent?.('gate', { barred: false, monster: RACES[character.race].side === 'monster', city: city.place.name, leaving: true });
+      }
+      return;
+    }
     if (gate.cleared || prev === null || prev < CITY_R + 1 || d >= CITY_R + 1 || prev - d > 3) {
       if (prev !== null && prev - d > 3 && d < CITY_R) gate.cleared = true; // came in by magic
       return;
@@ -1045,11 +1091,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const monster = RACES[character.race].side === 'monster';
       const barred = monster !== !!city.place.monster;
       gate.city = city.place;
+      gate.leaving = false;
       say(barred ? (monster ? 'Guard: "Halt, monster! You may not enter."' : 'Guard: "Halt, outsider! This city is for monsters."') : 'Guard: "Halt! Show your ID."', 'hurt');
       onEvent?.('gate', { barred, monster, city: city.place.name });
     }
   }
   function passGate() {
+    if (gate.leaving) {
+      gate.leaving = false;
+      if (isChild(character)) return false;
+      gate.out = true;
+      say(`Guard: "All in order. Safe travels."`, 'exp');
+      return true;
+    }
     const monster = RACES[character.race].side === 'monster';
     if (monster !== !!gate.city?.monster) return false;
     gate.cleared = true;
@@ -1694,6 +1748,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     useSkill,
     nextSpell,
     passGate,
+    setCityGates,
+    nearAcademy,
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
     holdTorch() { setHolding(!holding); },

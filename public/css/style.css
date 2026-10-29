@@ -939,3 +939,19 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 #no-funds.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 #no-funds b { display: block; font: 700 1.6rem 'Oswald', sans-serif; letter-spacing: 0.06em; color: #ff7a5a; text-transform: uppercase; }
 #no-funds span { display: block; margin-top: 4px; font: 0.95rem Georgia, serif; color: #f6dccf; }
+
+/* Unique Skill ranks, D (plain) to SSS (blazing) */
+.u-rank { display: inline-block; min-width: 1.6em; padding: 0 5px; border-radius: 4px; font: 700 0.78rem 'Cinzel', serif; text-align: center; color: #1a1208; background: #8a8478; }
+.u-rank.u-C { background: #9ab0a0; }
+.u-rank.u-B { background: #7fb0e0; }
+.u-rank.u-A { background: #c890ff; }
+.u-rank.u-S { background: linear-gradient(90deg, #ffd66a, #ffb030); }
+.u-rank.u-SS { background: linear-gradient(90deg, #ff9a4a, #ff4a4a); color: #fff; }
+.u-rank.u-SSS { background: linear-gradient(90deg, #ff4ad0, #7a4aff, #4ad0ff); color: #fff; box-shadow: 0 0 8px #c08aff; }
+/* the Academy */
+.school-list { display: grid; gap: 4px; }
+.school-row.on { outline: 1px solid var(--gold-2); border-radius: 6px; }
+.school-here { font: 0.8rem 'Cinzel', serif; color: var(--gold-2); white-space: nowrap; }
+.appraise-bag { columns: 2; font-size: 0.85rem; padding-left: 18px; }
+.appraise-bag small { color: var(--ink-quiet); }
+@media (max-width: 600px) { .appraise-bag { columns: 1; } }

@@ -43,7 +43,7 @@ export function renderSkills(el, game, { binding = null, message = '' } = {}) {
 // Your Unique Skill: how much of it is let out so far
 export function uniqueHtml(c) {
   const u = uniqueAbility(c), next = nextTierLevel(c.level);
-  return `<h3 class="bag-sub">Unique Skill <small>(${esc(TIER_NAMES[u.tier])})</small></h3>
+  return `<h3 class="bag-sub">Unique Skill <b class="u-rank u-${esc(u.rank)}">${esc(u.rank)}-Rank</b> <small>(${esc(TIER_NAMES[u.tier])})</small></h3>
     <div class="sk-row sk-unique-row"><span class="sk-icon">${u.icon}</span><span class="sk-name"><b>${esc(u.name)}</b>
       <small>${esc(u.element)} · ${esc(u.text)} <span class="sk-cost">No SP · key ${esc(keyName(codeFor('unique')))}</span></small></span></div>
     <p class="bag-hint">${next ? `It is held back. Each evolution lets out more of it${next === UNBOUND_LEVEL ? '' : ` (next at level ${next})`}, and at level ${UNBOUND_LEVEL} it is Unbound, used to the full.` : 'Unbound: nothing holds it back any more.'} It stays yours even if you fall and begin again.</p>`;

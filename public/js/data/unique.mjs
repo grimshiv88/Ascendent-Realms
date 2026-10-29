@@ -29,7 +29,41 @@ const KINDS = {
 };
 export const UNIQUE_KINDS = Object.keys(KINDS);
 
-// The handmade ones
+// ---------- ranks ----------
+// Every Unique Skill is born with a rank, from D up to SSS. The higher the rank, the stronger it hits
+// and the sooner it is ready again, and the rarer it is: A comes to about 1 in 100, S to 1 in 1000,
+// and only a handful of people in the whole world can ever hold SS or SSS at once.
+export const UNIQUE_RANKS = ['D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
+export const RANK_POWER = { D: 0.8, C: 0.9, B: 1, A: 1.2, S: 1.45, SS: 1.75, SSS: 2.1 };
+// chance of each top rank (the rest share D, C and B), and how many may hold SS and SSS at once
+const TOP_ODDS = [['SSS', 0.00002], ['SS', 0.0001], ['S', 0.001], ['A', 0.01]];
+export const RANK_CAP = { SS: 10, SSS: 3 };
+// `held` counts the ranks already held, e.g. { SS: 2, SSS: 0 }
+export function rollRank(held = {}, rnd = Math.random) {
+  let r = rnd();
+  for (const [rank, p] of TOP_ODDS) {
+    if (r < p && (RANK_CAP[rank] == null || (held[rank] || 0) < RANK_CAP[rank])) return rank;
+    r -= p;
+  }
+  const low = rnd();
+  return low < 0.45 ? 'D' : low < 0.77 ? 'C' : 'B';
+}
+export const rankOf = (u) => (UNIQUE_RANKS.includes(u?.rank) ? u.rank : 'C');
+
+// The class each kind of power suits best (shown from birth, to help choose a school)
+const KIND_FIT = { strike: 'swordsman', sweep: 'tank', bolt: 'mage', dash: 'assassin', heal: 'healer', fury: 'blacksmith', ward: 'tank', freeze: 'potion_maker', devour: 'assassin' };
+
+// ---------- Appraisal ----------
+// One of a kind: only one person in the world holds it. It sees the true worth of anything (items,
+// weapons, buildings) and everything about a person, even whether they serve a cult or the Order of
+// the Dawn. If its holder stays away for more than a month it leaves them for someone new, and they
+// are given another Unique Skill instead.
+export const APPRAISAL = { name: 'Appraisal', kind: 'appraise', element: 'Light', fit: 'businessman', rank: 'SSS',
+  text: 'Eyes that see the truth of everything: the worth of any item, weapon or building, and all there is to know about a person, even the side they secretly serve.' };
+export const APPRAISAL_CHANCE = 0.02;          // a newborn's chance of it while nobody holds it
+export const APPRAISAL_AWAY_MS = 30 * 24 * 3600 * 1000;
+
+// The handmade ones: [name, kind, element, text, the class it suits (else its kind's)]
 const MADE = [
   ['Predator', 'devour', 'Dark', 'Devour your prey and take its life for your own.'],
   ['Shadow Legion', 'sweep', 'Dark', 'Shadows rise around you and tear at every foe.'],
@@ -43,6 +77,21 @@ const MADE = [
   ['Wild Bond', 'dash', 'Nature', 'Run with the beasts and strike as they do.'],
   ['All-Seeing Eye', 'bolt', 'Light', 'See the weak point, and pierce it from afar.'],
   ['Blink', 'dash', 'Wind', 'Vanish, and strike from where nobody looked.'],
+  ['Master Forger', 'fury', 'Fire', 'The heat of the forge runs in your arms.', 'blacksmith'],
+  ['Anvil Heart', 'ward', 'Earth', 'Struck a thousand times, never broken.', 'blacksmith'],
+  ['Golden Tongue', 'ward', 'Light', 'Your words turn even blades aside.', 'businessman'],
+  ['Merchant\'s Luck', 'dash', 'Wind', 'Always where the deal is, a step before anyone.', 'businessman'],
+  ['Stonemason', 'ward', 'Earth', 'Stone obeys your hands, and shelters you.', 'builder'],
+  ['Architect\'s Eye', 'bolt', 'Earth', 'You see where a thing will break, and strike there.', 'builder'],
+  ['Alchemist\'s Breath', 'freeze', 'Water', 'A cloud of your own brew stops foes where they stand.', 'potion_maker'],
+  ['Herb Whisperer', 'heal', 'Nature', 'Every leaf you touch gives up its cure.', 'potion_maker'],
+  ['Green Thumb', 'heal', 'Nature', 'Life grows wherever you walk.', 'farmer'],
+  ['Ox Strength', 'fury', 'Earth', 'The strength of a long day in the fields.', 'farmer'],
+  ['Blade Saint', 'strike', 'Light', 'One cut, perfect and final.', 'swordsman'],
+  ['Thousand Cuts', 'sweep', 'Wind', 'Your blade is everywhere at once.', 'swordsman'],
+  ['Unbreakable Wall', 'ward', 'Earth', 'Nothing passes you.', 'tank'],
+  ['Silent Death', 'dash', 'Dark', 'Nobody hears you come.', 'assassin'],
+  ['Saint\'s Grace', 'heal', 'Light', 'A light that closes every wound.', 'healer'],
 ];
 
 // The rest: every element word with every kind's name
@@ -74,11 +123,11 @@ const KIND_TEXT = {
 
 export const UNIQUE_SKILLS = [];
 const BY_NAME = new Map();
-function add(name, kind, element, text) {
-  const u = { name, kind, element, text };
+function add(name, kind, element, text, fit) {
+  const u = { name, kind, element, text, fit: fit || KIND_FIT[kind] };
   UNIQUE_SKILLS.push(u); BY_NAME.set(name.toLowerCase(), u);
 }
-for (const [name, kind, element, text] of MADE) add(name, kind, element, text);
+for (const [name, kind, element, text, fit] of MADE) add(name, kind, element, text, fit);
 for (const [element, words] of Object.entries(WORDS)) {
   for (const word of words) {
     for (const [kind, nouns] of Object.entries(NOUNS)) {
@@ -90,17 +139,20 @@ for (const [element, words] of Object.entries(WORDS)) {
   }
 }
 export const UNIQUE_COUNT = UNIQUE_SKILLS.length;
-export const uniqueByName = (name) => BY_NAME.get(String(name || '').toLowerCase()) || null;
+export const uniqueByName = (name) => (String(name || '').toLowerCase() === 'appraisal' ? APPRAISAL : BY_NAME.get(String(name || '').toLowerCase()) || null);
 
-// Pick one at random, leaving out names already held (by anyone) while any are left
-export function pickUnique(taken = new Set(), rnd = Math.random) {
+// Pick one at random, leaving out names already held (by anyone) while any are left.
+// `opts.appraisal` says nobody holds Appraisal (so it may come up); `opts.held` counts the ranks held.
+export function pickUnique(taken = new Set(), rnd = Math.random, opts = {}) {
+  if (opts.appraisal && rnd() < APPRAISAL_CHANCE) return { ...APPRAISAL };
   const lower = new Set([...taken].map((n) => String(n).toLowerCase()));
   const free = lower.size ? UNIQUE_SKILLS.filter((u) => !lower.has(u.name.toLowerCase())) : UNIQUE_SKILLS;
   const pool = free.length ? free : UNIQUE_SKILLS;
-  return pool[Math.floor(rnd() * pool.length)];
+  return { ...pool[Math.floor(rnd() * pool.length)], rank: rollRank(opts.held, rnd) };
 }
-// What a character keeps of it: its name (everything else comes from this file)
-export const uniqueSlot = (u) => ({ name: u.name, kind: u.kind, element: u.element, text: u.text });
+// What a character keeps of it: its name and rank (everything else comes from this file)
+export const uniqueSlot = (u) => ({ name: u.name, kind: u.kind, element: u.element, text: u.text, rank: u.kind === 'appraise' ? APPRAISAL.rank : rankOf(u), fit: u.fit });
+export const isAppraisal = (c) => String(c?.uniqueSkill?.name || '').toLowerCase() === 'appraisal';
 
 // How far it has been let out: one tier for each evolution (20, 50, 100, 200, 500), and the last,
 // Unbound, at level 1000
@@ -114,14 +166,31 @@ const ELEMENT_EFFECT = { Fire: 'burn', Dark: 'poison', Nature: 'poison', Water: 
 // The skill as the world uses it (the same shape as data/skills.mjs skills), at this character's tier
 export function uniqueAbility(c) {
   const u = uniqueByName(c?.uniqueSkill?.name) || UNIQUE_SKILLS[0];
-  const k = KINDS[u.kind];
+  const rank = u.kind === 'appraise' ? APPRAISAL.rank : rankOf(c?.uniqueSkill);
   const t = uniqueTier(c?.level || 1);
+  // Appraisal isn't a blow: it opens the Appraisal window
+  if (u.kind === 'appraise') {
+    return { id: 'unique', unique: true, name: u.name, kind: u.kind, element: u.element, icon: '👁️', type: 'appraise', sp: 0, cd: 2, tier: t, rank, fit: u.fit,
+      text: `${u.text} Use it to appraise what is around you, or anyone by name.` };
+  }
+  const k = KINDS[u.kind];
+  const p = RANK_POWER[rank];
   const at = (arr) => (Array.isArray(arr) ? arr[t] : arr);
+  const r1 = (v) => (v == null ? v : Math.round(v * 10) / 10);
   const sk = {
-    id: 'unique', unique: true, name: u.name, kind: u.kind, element: u.element, icon: k.icon, type: k.type, sp: 0, cd: CD[t], tier: t,
-    mult: at(k.mult), radius: at(k.radius), reach: at(k.reach), dist: at(k.dist), pct: at(k.pct), secs: at(k.secs), stat: k.stat,
+    id: 'unique', unique: true, name: u.name, kind: u.kind, element: u.element, icon: k.icon, type: k.type, sp: 0, cd: Math.round(CD[t] / Math.sqrt(p)), tier: t, rank, fit: u.fit,
+    mult: r1(at(k.mult) && at(k.mult) * p), radius: at(k.radius), reach: at(k.reach), dist: at(k.dist), pct: at(k.pct) && Math.min(k.type === 'heal' ? 100 : Infinity, Math.round(at(k.pct) * p)), secs: at(k.secs), stat: k.stat,
     hold: at(k.hold), drain: at(k.drain), effect: ELEMENT_EFFECT[u.element] || null,
   };
   sk.text = `${u.text} Now: ${k.what(sk)}. Rests ${sk.cd} s.`;
   return sk;
 }
+
+// What Appraisal sees in a person: everything, even the secret side they serve (`side` is
+// { cult, rank } / { order } / null, from the cults' records)
+export const appraisalOf = (c, side = null) => ({
+  name: c.name, race: c.race, side: c.side, cls: c.cls, level: c.level || 1, stage: c.stage || 0, stats: c.stats, elements: c.elements || [],
+  coins: c.coins || 0, lives: c.lives || 1, child: c.child ? { family: c.child.family, school: c.child.school } : null,
+  unique: { name: c.uniqueSkill?.name, rank: c.uniqueSkill?.kind === 'appraise' ? APPRAISAL.rank : rankOf(c.uniqueSkill) },
+  allegiance: side,
+});

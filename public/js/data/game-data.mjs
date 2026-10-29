@@ -42,14 +42,16 @@ export const CLASSES = {
   assassin:    { name: 'Assassin',    bonus: { agi: 6, dex: 4 },         main: 'agi', blurb: 'Stealth. +20% critical damage from behind.' },
   healer:      { name: 'Healer',      bonus: { int: 6, sta: 4 },         main: 'int', blurb: 'Healing skills are 20% stronger.' },
   blacksmith:  { name: 'Blacksmith',  bonus: { str: 4, sta: 4, dex: 2 }, main: 'str', blurb: 'Crafts and upgrades items 25% cheaper, and can open a shop.' },
-  businessman: { name: 'Businessman', bonus: { int: 7, agi: 3 },         main: 'int', blurb: 'Can own trading buildings. Shops pay a Businessman far more for what he sells (70% of the price, not 40%).' },
+  businessman: { name: 'Businessman', bonus: { int: 7, agi: 3 },         main: 'int', blurb: 'Can own trading buildings. Shops pay a Businessman far more for what they sell (70% of the price, not 40%).' },
   builder:     { name: 'Builder',     bonus: { str: 4, sta: 4, int: 2 }, main: 'sta', blurb: 'Builds 30% faster with 20% less material.' },
   potion_maker: { name: 'Potion Maker', bonus: { int: 5, dex: 3, sta: 2 }, main: 'int', blurb: 'Brews potions and elixirs from herbs for far less than the shop asks. The only class with a Potion-Maker\'s kit.' },
   farmer:      { name: 'Farmer',      bonus: { sta: 6, str: 4 },         main: 'sta', blurb: 'Grows crops and raises animals. Food made removes 50% more Fatigue.' },
+  // every character is a Child from birth (age 4) until the Ceremony of Revealing at 7 (see birth.mjs)
+  child:       { name: 'Child',       bonus: {},                         main: 'int', blurb: 'Your class is revealed at the Ceremony, at the age of 7.', hidden: true },
 };
 
 // The classes a new character can start with (the Mage is the Dark Side's alone)
-export const STARTER_CLASSES = Object.keys(CLASSES).filter((id) => !CLASSES[id].dark);
+export const STARTER_CLASSES = Object.keys(CLASSES).filter((id) => !CLASSES[id].dark && !CLASSES[id].hidden);
 // Someone who joined the Dark Side may become a Mage: their old class's bonus points go and the
 // Mage's come in their place (a stat never drops below 1). For good.
 export function becomeMage(c) {
@@ -62,6 +64,8 @@ export function becomeMage(c) {
 
 // What each class can do and what to aim for: shown when you pick a class, and in Status.
 export const CLASS_GUIDE = {
+  child: { can: ['See your stats and your Unique Skill', 'Train at a school in the Academy: it raises the odds of that class', 'Explore your city (children may not leave it)'],
+    goals: ['Choose the school that suits you and your Unique Skill', 'Grow up: at 7 the Ceremony of Revealing tells you your class'] },
   mage: { can: ['Cast spells in your elements with a staff (attack from a distance)', 'Spells cost 10% less SP', 'Learn new skills as you level'],
     goals: ['Clear caves other classes can\'t reach', 'Protect farmers and builders from monsters', 'Rise through the six Mage ranks and become the Mage King'] },
   swordsman: { can: ['Hit harder with swords (+10% ATK)', 'Fight at the front, up close', 'Merge and evolve your sword with a Blacksmith'],
@@ -106,6 +110,7 @@ export const ADVANCEMENTS = {
   builder:     ['Builder', 'Mason', 'Architect', 'Master Architect', 'City Builder', 'World Builder'],
   potion_maker: ['Potion Maker', 'Apothecary', 'Alchemist', 'Master Alchemist', 'Grand Alchemist', 'Elixir Sovereign'],
   farmer:      ['Farmer', 'Rancher', 'Harvest Master', 'Land Steward', 'Grand Steward', 'Lord of Harvest'],
+  child:       ['Child', 'Child', 'Child', 'Child', 'Child', 'Child'],
 };
 
 export const CLASS_ELEMENT = { assassin: 'Dark', healer: 'Light', blacksmith: 'Fire', builder: 'Earth', farmer: 'Nature', potion_maker: 'Water' };
@@ -198,7 +203,7 @@ export const APPEARANCE = {
 
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
-function rollElements(raceId, classId) {
+export function rollElements(raceId, classId) {
   const elements = [RACES[raceId].element];
   const classElement = CLASS_ELEMENT[classId];
   if (classElement && !elements.includes(classElement)) elements.push(classElement);
@@ -207,7 +212,7 @@ function rollElements(raceId, classId) {
   return elements;
 }
 
-function cleanLook(raceId, look = {}) {
+export function cleanLook(raceId, look = {}) {
   const pal = APPEARANCE[raceId];
   const out = {};
   for (const key of ['skin', 'accent', 'eyes']) {
@@ -229,10 +234,11 @@ export const mayChangeForm = (c) => c.side === 'monster' && (c.level || 1) >= FO
 // weaker; one sworn to the Light starts it stronger.
 export const PAST_LIFE_STATS = 2; // taken from (sinner) or added to (blessed) every main stat
 export const pastLifeOf = (c) => (c.pact === 'dark' ? 'sinner' : c.pact === 'holy' ? 'blessed' : null);
-export const fallenKeep = (c) => ({ uniqueSkill: { name: c.uniqueSkill?.name }, lives: (c.lives || 1) + 1, soul: pastLifeOf(c), fell: new Date().toISOString() });
+export const fallenKeep = (c) => ({ uniqueSkill: { name: c.uniqueSkill?.name, rank: c.uniqueSkill?.rank }, lives: (c.lives || 1) + 1, soul: pastLifeOf(c), fell: new Date().toISOString() });
 export function rebornWith(character, keep) {
   const skill = uniqueByName(keep?.uniqueSkill?.name);
-  if (skill) character.uniqueSkill = uniqueSlot(skill);
+  // Appraisal is kept only while nobody else has been given it (the server checks)
+  if (skill && !(skill.kind === 'appraise' && keep?.appraisalGone)) character.uniqueSkill = uniqueSlot({ ...skill, rank: keep.uniqueSkill.rank });
   character.lives = Math.max(2, Number(keep?.lives) || 2);
   const soul = keep?.soul === 'sinner' ? -1 : keep?.soul === 'blessed' ? 1 : 0;
   if (soul) {
@@ -243,11 +249,11 @@ export function rebornWith(character, keep) {
 }
 
 // Returns { character } or { error }.
-export function newCharacter(name, { side, race: raceId, cls: classId, form, look }, { takenUniques } = {}) {
+export function newCharacter(name, { side, race: raceId, cls: classId, form, look }, { takenUniques, held, appraisal } = {}) {
   const race = RACES[raceId];
   if (!race) return { error: 'Please choose a race.' };
   if (!CLASSES[classId]) return { error: 'Please choose a class.' };
-  if (CLASSES[classId].dark) return { error: 'That class can\'t be chosen.' };
+  if (CLASSES[classId].dark || (CLASSES[classId].hidden && classId !== 'child')) return { error: 'That class can\'t be chosen.' };
   if (side && side !== race.side) return { error: 'That race is not on the side you chose.' };
   return {
     character: {
@@ -268,7 +274,7 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
       titles: [],
       elements: rollElements(raceId, classId),
       // one nobody else holds, while there are any left (the server says which are taken)
-      uniqueSkill: uniqueSlot(pickUnique(takenUniques)),
+      uniqueSkill: uniqueSlot(pickUnique(takenUniques, Math.random, { held, appraisal })),
       skills: [],
       // A new character starts at a random safe zone (waystone) on their home continent
       location: startLocation(race.home),
@@ -280,7 +286,24 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
   };
 }
 
-function startLocation(homeName) {
+// The Ceremony of Revealing: a child of 7 becomes `cls`. The class's bonus points are added, its
+// element (and maybe another) joins the race's, and its starting kit is handed over.
+export function growUp(c, cls) {
+  if (c.cls !== 'child' || !CLASSES[cls] || CLASSES[cls].hidden) return false;
+  for (const [k, v] of Object.entries(CLASSES[cls].bonus)) c.stats[k] = (c.stats[k] || 0) + v;
+  c.cls = cls;
+  for (const e of rollElements(c.race, cls)) if (!c.elements.includes(e)) c.elements.push(e);
+  for (const [id, n] of STARTER_ITEMS[cls] || []) {
+    const have = c.inventory.find((x) => x.id === id && !x.uid);
+    if (have) have.n += n; else c.inventory.push({ id, n });
+  }
+  if (c.child?.family) c.family = c.child.family;
+  c.grown = { cls, at: new Date().toISOString(), school: c.child?.school || null };
+  delete c.child;
+  return true;
+}
+
+export function startLocation(homeName) {
   // Player races start in the Central City; monster races at a spawn point in their homeland
   const home = homePlace(homeName);
   const choices = home.id === 'central' ? [home] : PLACES.filter((p) => p.region === home.region && !p.village && !p.city);

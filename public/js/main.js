@@ -45,6 +45,10 @@ document.addEventListener('contextmenu', (e) => { if (!typing(e)) e.preventDefau
 document.addEventListener('selectstart', (e) => { if (!typing(e)) e.preventDefault(); });
 document.addEventListener('dragstart', (e) => { if (!typing(e)) e.preventDefault(); });
 import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } from './data/controls.mjs';
+import { ageOf, isChild, ceremonyDue, SCHOOLS, PARENT_JOBS } from './data/birth.mjs';
+import { renderAcademy, renderCeremony } from './schoolui.js';
+import { renderAppraise } from './appraiseui.js';
+import { piecesCost } from './data/building.mjs';
 
 paintCloudBanks();
 
@@ -129,8 +133,8 @@ function openCreation(username) {
   $('creator-root').classList.remove('hidden');
   creator = openCreator($('creator-root'), {
     username,
-    async onCreate(choice) {
-      const { character } = await api.createCharacter(choice);
+    async onBorn() { return (await api.createCharacter({})).character; },
+    async onEnter(character) {
       await cloudTransition(async () => {
         creator.close();
         $('creator-root').classList.add('hidden');
@@ -469,7 +473,10 @@ function startGame(character) {
     else if (name === 'market' && ui.market) renderShop(overlay, game, ui.shopMsg, ui.market);
     else if (name === 'groups') renderGroups(overlay, game, ui.groups, { message: ui.groupMsg, busy: ui.groupBusy });
     else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy, castle: !!ui.roomsCastle, emperor: !!ui.groups?.nation });
-    else if (name === 'gate') renderIdCard(overlay, game, { monster: ui.gate?.barred, barredText: ui.gate?.barred && !ui.gate?.monster ? 'The guards bare their fangs. "No outsiders in a monster city."' : null, courts: ui.courts || [], nation: ui.groups?.nation?.name });
+    else if (name === 'appraise') renderAppraise(overlay, game, ui.appraise || {});
+    else if (name === 'academy') renderAcademy(overlay, game, { message: ui.academyMsg || '' });
+    else if (name === 'ceremony') renderCeremony(overlay, game, { result: ui.grown, busy: ui.ceremonyBusy, message: ui.ceremonyMsg || '' });
+    else if (name === 'gate') renderIdCard(overlay, game, { city: ui.gate?.city, leaving: ui.gate?.leaving, monster: ui.gate?.barred, barredText: ui.gate?.barred && !ui.gate?.monster ? 'The guards bare their fangs. "No outsiders in a monster city."' : null, courts: ui.courts || [], nation: ui.groups?.nation?.name });
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg, { workshop: !!ui.workshop });
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
@@ -537,7 +544,7 @@ function startGame(character) {
       <div class="status-window welcome-window fallen-window" role="dialog" aria-label="You have fallen">
         <h2>You have fallen</h2>
         <p>${esc(character.name)} was defeated by a ${esc(by)} at level ${character.level}.</p>
-        <p>Your journey begins again from the very start: choose your race and class anew.</p>
+        <p>Your journey begins again from the very start: you will be born anew, into a new family, as whatever life gives you.</p>
         <p>Your Unique Skill stays with you: <b>${esc(kept?.name || '')}</b>.</p>
         ${character.pact === 'dark' ? '<p>You served the dark and die a <b>sinner</b>. Your next life begins weaker.</p>' : character.pact === 'holy' ? '<p>You die in the Light. Your next life begins <b>stronger</b>.</p>' : ''}
         <button type="button" class="gold-button" data-begin-again>Begin again</button>
@@ -558,7 +565,7 @@ function startGame(character) {
       if (model && k === key) return;
       key = k;
       if (model) stage.scene.remove(model);
-      model = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look });
+      model = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look, age: ageOf(character) });
       wearGear(model, worn);
       stage.scene.add(model);
       const h = model.userData.height;
@@ -839,6 +846,25 @@ function startGame(character) {
       })();
       return;
     }
+    if (t('data-appraise') != null) {
+      const name = overlay.querySelector('[data-appraise-name]')?.value.trim();
+      if (!name) return;
+      ui.appraise = { ...(ui.appraise || {}), busy: true, message: '' }; drawPanel();
+      api.appraise(name).then((r) => { ui.appraise.person = r.player; }).catch((err) => { ui.appraise.message = err.message; ui.appraise.person = null; })
+        .then(() => { ui.appraise.busy = false; drawPanel(); });
+      return;
+    }
+    if ((v = t('data-school')) != null) { game.setSchool(v); ui.academyMsg = `You now train at the ${SCHOOLS[v].name}. Stay near the Academy to train.`; drawPanel(); return; }
+    if (t('data-ceremony') != null) {
+      ui.ceremonyBusy = true; drawPanel();
+      game.saveNow?.();
+      api.ceremony().then((r) => {
+        game.grownUp(r.character);
+        ui.grown = r.character;
+        world?.rebuildAvatar(); drawHud(); drawSkillBar();
+      }).catch((err) => { ui.ceremonyMsg = err.message; }).then(() => { ui.ceremonyBusy = false; drawPanel(); });
+      return;
+    }
     if (t('data-show-id') != null) { if (world?.passGate()) closePanel(); return; }
     if ((v = t('data-spell')) != null) { const r = game.attachSpell(v); ui.skillMsg = { ok: `${SPELLS[v].name} attached to your staff.`, full: 'Your staff is full: detach a spell first.', staff: 'Hold a staff first.' }[r] || ''; drawPanel(); return; }
     if ((v = t('data-unspell')) != null) { game.detachSpell(v); ui.skillMsg = `${SPELLS[v].name} detached.`; drawPanel(); return; }
@@ -1040,6 +1066,29 @@ function startGame(character) {
       if (type === 'castle-denied') showArea(data.day === 'council' ? "Today is a council day: only Emperors and Guild Masters may enter the Emperors' Castle." : "Today is a trade day: only Emperors and the guests they invited may enter the Emperors' Castle.");
       if (type === 'meeting-room') { ui.roomsCastle = data.id.startsWith('castle'); ui.roomPick = data.id; ui.roomMsg = ''; loadRooms(); if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'rooms') openPanel('rooms'); }
       if (type === 'room-ended') { showArea('Your time in the meeting room is up. You are back in the hallway.'); loadRooms(); }
+      // townsfolk: your own parents, other families, and the merchants of the plaza
+      if (type === 'npc') {
+        const job = PARENT_JOBS[data.job]?.name;
+        const line = data.kind === 'parent'
+          ? (data.mine ? (isChild(character) ? `${data.name}, your parent (${job}): "Off to the Academy with you! Pick a school and work hard."` : `${data.name}, your parent (${job}): "We are proud of you. Come home safe."`) : `${data.name} (${job}): "Good day to you."`)
+          : data.kind === 'businessman' ? `${data.name}, ${data.title}: "Looking for a shop of your own? Come and see me once you are grown."` : `${data.name}, ${data.title}: "The finest goods in the city, for those with coin."`;
+        showArea(line);
+      }
+      if (type === 'academy') { ui.academyMsg = ''; openPanel('academy'); }
+      // Appraisal: the monster in front, then the land underfoot (looked up)
+      if (type === 'appraise') {
+        ui.appraise = { ...(ui.appraise || {}), monster: data.monster, land: null, message: '' };
+        openPanel('appraise');
+        const at = world?.position();
+        api.landList().then((r) => {
+          if (!at) return;
+          const ix = Math.floor(at.x / 20), iz = Math.floor(at.z / 20);
+          const p = (r.plots || []).find((q) => q.ix === ix && q.iz === iz);
+          if (!p) return;
+          ui.appraise.land = { ix, iz, owner: p.mine ? 'you' : p.owner, price: plotPrice(ix, iz), pieces: (p.pieces || []).length, built: piecesCost(p.pieces || [], 'other') };
+          if (overlay.dataset.panel === 'appraise') drawPanel();
+        }).catch(() => {});
+      }
       if (type === 'gate') { ui.gate = data; if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'gate') openPanel('gate'); }
       if (type === 'guild') { game.fillQuests(here(), 'guild'); openPanel('guild'); loadBounties(); }
       if (type === 'guild-denied') showArea(`The guards at the Main Guild Hall turn you away: only hunters of level ${data.level} or more may enter.`);
@@ -1097,7 +1146,20 @@ function startGame(character) {
   drawSkillBar();
   bindHud($('hud'), drawHud);
   // real time played, for the ID card: counted while the game is open and showing
-  setInterval(() => { if (!document.hidden) game.addPlayTime(60000); }, 60000);
+  setInterval(() => {
+    if (document.hidden) return;
+    game.addPlayTime(60000);
+    // childhood: training at the Academy, growing a little, and the Ceremony at 7
+    if (!isChild(character)) return;
+    if (character.child.school && world?.nearAcademy()) { game.train(60000); if (overlay.dataset.panel === 'academy' && !overlay.classList.contains('hidden')) drawPanel(); }
+    world?.rebuildAvatar();
+    if (ceremonyDue(character) && !ui.ceremonyShown) { ui.ceremonyShown = true; ui.grown = null; openPanel('ceremony'); }
+  }, 60000);
+  if (ceremonyDue(character)) { ui.ceremonyShown = true; setTimeout(() => openPanel('ceremony'), 4000); }
+  // the bridges over the city moats: raised in times of war or attack (set by the realm's keepers)
+  const loadCityGates = () => api.cityGates().then((r) => world?.setCityGates(r.raised)).catch(() => {});
+  loadCityGates();
+  setInterval(loadCityGates, 60000);
   // death is final, so warn when HP runs low
   let warnedAt = 0;
   setInterval(() => {

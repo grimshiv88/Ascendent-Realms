@@ -1,6 +1,7 @@
 // Talks to the game server. If no server is reachable (for example, a static preview page),
 // it falls back to a preview mode that keeps accounts in this browser only.
-import { newCharacter, fallenKeep, rebornWith } from './data/game-data.mjs';
+import { fallenKeep, rebornWith, growUp } from './data/game-data.mjs';
+import * as birthData from './data/birth.mjs';
 import { setServerNow } from './data/clock.mjs';
 
 const TOKEN_KEY = 'ar.token';
@@ -255,7 +256,12 @@ export async function createCharacter(choice) {
   if (await isPreviewMode()) {
     return updatePreviewAccount((acc) => {
       if (acc.character) throw new Error('This account already has a character.');
-      const result = newCharacter(acc.username, choice);
+      // born at random into a house of the race's city (the preview keeps no count of full houses)
+      const B = birthData;
+      const birth = B.rollBirth(choice?.side || null);
+      const city = B.BIRTH_CITY[birth.race];
+      const held = acc.fallen?.uniqueSkill ? new Set([acc.fallen.uniqueSkill.name]) : new Set();
+      const result = B.bornCharacter(acc.username, birth, { city, house: Math.floor(Math.random() * B.houseCount(city)) }, { takenUniques: held, appraisal: !held.has('Appraisal') });
       if (result.error) throw new Error(result.error);
       if (acc.fallen) { rebornWith(result.character, acc.fallen); delete acc.fallen; }
       acc.character = result.character;
@@ -263,6 +269,42 @@ export async function createCharacter(choice) {
     });
   }
   return request('api/character', { method: 'POST', body: choice });
+}
+
+// Appraisal: everything about a player, even the side they secretly serve
+export async function appraise(name) {
+  if (await isPreviewMode()) {
+    const U = await import('./data/unique.mjs');
+    const C = await import('./data/cults.mjs');
+    if (!U.isAppraisal(previewMe()?.character)) throw new Error('Only the holder of Appraisal can do that.');
+    await previewSocial.sync();
+    const acc = previewSocial.find(name);
+    if (!acc?.character) throw new Error('There is no living player with that username.');
+    const s = previewSocial.load().cults || C.emptyCults();
+    const cult = C.cultOf(s, acc.username);
+    const side = cult ? { cult: cult.name, rank: C.CULT_RANKS[C.memberOf(cult, acc.username).rank] } : C.inOrder(s, acc.username) ? { order: C.ORDER_NAME } : null;
+    return { player: U.appraisalOf({ ...acc.character, name: acc.username }, side) };
+  }
+  return request(`api/appraise/${encodeURIComponent(name)}`);
+}
+
+// Which cities have the bridges over their moats raised: { raised: { cityId: true } }
+export async function cityGates() {
+  if (await isPreviewMode()) { try { return { raised: JSON.parse(storage.get('ar.preview.gates')) || {} }; } catch { return { raised: {} }; } }
+  return request('api/cities');
+}
+
+// The Ceremony of Revealing at 7: the class is drawn (by the server, or here in the preview)
+export async function ceremony() {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => {
+      const c = acc.character;
+      if (!c || !birthData.ceremonyDue(c)) throw new Error('You are not old enough yet.');
+      growUp(c, birthData.rollClass(c));
+      return { ok: true, character: c };
+    });
+  }
+  return request('api/character/ceremony', { method: 'POST' });
 }
 
 // Death is final: the character is gone, and only their Unique Skill passes to the next one

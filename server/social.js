@@ -7,6 +7,7 @@ const S = require('../public/js/data/social.mjs');
 const rooms = require('./rooms');
 const groups = require('./groups');
 const cults = require('./cults');
+const { isAppraisal, appraisalOf } = require('../public/js/data/unique.mjs');
 // the private chats you're in besides friends: meeting rooms, your party and your guild
 const extraChannels = (me) => [...rooms.channels(me), ...groups.channels(me)];
 
@@ -71,6 +72,16 @@ function profile(me, name) {
       cult: c ? cults.seenBy(nameOf(me), row.username) : null,
     },
   };
+}
+
+// Appraisal sees everything about a person, even the side they secretly serve
+function appraise(me, name) {
+  const mine = characters.load(me);
+  if (!isAppraisal(mine)) return { error: 'Only the holder of Appraisal can do that.' };
+  const row = byName(name);
+  const c = row && characters.load(row.id);
+  if (!c) return { error: 'There is no living player with that username.' };
+  return { player: appraisalOf(c, cults.allegiance(row.username)) };
 }
 
 function request(me, body) {
@@ -173,4 +184,5 @@ function setPrivacy(me, body) {
   return { ok: true, privacy: c.privacy };
 }
 
-module.exports = { search, profile, request, respond, remove, friends, poll, send, setPrivacy };
+module.exports = {
+  appraise, search, profile, request, respond, remove, friends, poll, send, setPrivacy };

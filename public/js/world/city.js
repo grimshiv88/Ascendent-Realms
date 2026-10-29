@@ -7,6 +7,8 @@ import { MARKETS, ITEMS } from '../data/items.mjs';
 import { buildSpawn, textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
+import { mergeStill } from './merge.js';
+import { cityHouses, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
 
 const PLAZA_R = 34;
 
@@ -19,7 +21,15 @@ const CITY_SHOPS = [
   ['city_tailor', Math.PI / 2 + 0.6, 8, 7, 5, '#e0d4c0', '#7a3a5a'],
   ['city_food', Math.PI / 2 - 0.4, 10, 8, 5, '#e2d2a8', '#8a5a2a'],
   ['tavern', -Math.PI / 2 - 1.4, 12, 9, 7, '#c8b48e', '#6a3a1e'],
+  // where children train at the school of their choice before the Ceremony
+  ['academy', 2.6, 12, 9, 7, '#e4dcc8', '#2a4a7a'],
 ];
+// The walls: the outer fortress wall, the moat inside it, then the inner wall. Only two gates (north
+// and south), each with a bridge over the moat that can be raised to shut the inner gate.
+export const INNER_R = 96;
+export const MOAT = [99.5, 107];
+export const GATE_ANGLES = [0, Math.PI]; // the gates, along the south-north street (angle as sin = x, cos = z)
+const GATE_HALF = 5; // metres either side of a gate's middle
 export const GUILD_NAME = 'Main Guild Hall';
 export const DARK_GUILD_NAME = 'Dark Guild Hall';
 
@@ -43,11 +53,18 @@ const STYLES = {
     tones: [['#7a6a48', '#4a6a3a'], ['#6a5a3c', '#5a7a3a'], ['#82704c', '#3a5a2e']], guards: ['lizardman', 'naga'], gear: { weapon: 'tusk_spear', head: 'horned_helm', body: 'scale_mail' } },
 };
 
+// materials shared by colour, so a city's houses can be merged into a few meshes
+const MATS = new Map();
+const matOf = (color, roughness = 0.9, extra = null) => {
+  const k = `${color}|${roughness}|${extra ? JSON.stringify(extra) : ''}`;
+  if (!MATS.has(k)) MATS.set(k, new THREE.MeshStandardMaterial({ color, roughness, ...(extra || {}) }));
+  return MATS.get(k);
+};
 function house(w, d, h, wall, roof, label) {
   const g = new THREE.Group();
-  const wallMat = new THREE.MeshStandardMaterial({ color: wall, roughness: 0.9 });
-  const roofMat = new THREE.MeshStandardMaterial({ color: roof, roughness: 0.8 });
-  const trim = new THREE.MeshStandardMaterial({ color: '#4a3424', roughness: 0.9 });
+  const wallMat = matOf(wall, 0.9);
+  const roofMat = matOf(roof, 0.8);
+  const trim = matOf('#4a3424', 0.9);
   const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
   body.position.y = h / 2;
   g.add(body);
@@ -63,7 +80,7 @@ function house(w, d, h, wall, roof, label) {
   const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.12), trim);
   door.position.set(0, 1.2, d / 2 + 0.05);
   g.add(door);
-  const glass = new THREE.MeshStandardMaterial({ color: '#ffe0a0', emissive: '#c08030', emissiveIntensity: 0.6 });
+  const glass = matOf('#ffe0a0', 1, { emissive: '#c08030', emissiveIntensity: 0.6 });
   for (const x of [-w / 3, w / 3]) {
     const win = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.1), glass);
     win.position.set(x, h * 0.55, d / 2 + 0.05);
@@ -98,7 +115,7 @@ function placeFacing(g, b, a, r, d) {
   return { x: x - Math.cos(a) * (d / 2 + 1.6), z: z - Math.sin(a) * (d / 2 + 1.6), rot: b.rotation.y, bx: x, bz: z };
 }
 
-export function buildCity(place) {
+export function buildCity(place, opts = {}) {
   const S = STYLES[place.style] || STYLES.heart;
   const monster = !!place.monster;
   const centre = buildSpawn(place, { market: false, lanterns: false });
@@ -128,12 +145,12 @@ export function buildCity(place) {
   // the shops round the plaza
   CITY_SHOPS.forEach(([id, a, w, d, h, wall0, roof0], i) => {
     const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
-    const name = id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : MARKETS[id].name;
+    const name = id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : id === 'academy' ? ACADEMY_NAME : MARKETS[id].name;
     const b = house(w, d, h, wall, roof, name);
     if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
     const at = placeFacing(g, b, a, PLAZA_R + d / 2 + 4, d);
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
-    shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: true });
+    shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: id !== 'academy' });
   });
   // the Guild Hall gets a bell tower and banners
   const guildAt = shops.find((s) => s.id === 'guild');
@@ -185,49 +202,24 @@ export function buildCity(place) {
     shops.push({ id: 'castle', name: "The Emperors' Castle", x: cx + CASTLE.x + out * Math.sin(rot), z: cz + CASTLE.z + out * Math.cos(rot), building: true });
   }
 
-  // houses of the townsfolk on an outer ring, between the streets
+  // the houses of the townsfolk, where every newborn's family lives (see data/birth.mjs)
+  // (houses and walls never move: they are merged into a few meshes at the end)
+  const fixed = new THREE.Group();
+  g.add(fixed);
   const tones = S.tones;
-  for (let i = 0; i < 20; i++) {
-    const a = (i / 20) * Math.PI * 2 + Math.PI / 20;
-    if (Math.abs(Math.sin(a * 2)) < 0.25) continue; // keep the streets clear
-    const r0 = 68 + (i % 2) * 14;
-    if (Math.hypot(Math.cos(a) * r0 - CASTLE.x, Math.sin(a) * r0 - CASTLE.z) < 26) continue; // the castle stands here
-    const [wall, roof] = tones[i % tones.length];
-    const w = 7 + (i % 3), d = 6 + (i % 2), h = 4 + (i % 3) * 0.8;
-    const r = 68 + (i % 2) * 14;
-    const hb = house(w, d, h, wall, roof, null);
-    const at = placeFacing(g, hb, a, r, d);
+  const houses = cityHouses(place.id);
+  for (const h of houses) {
+    const [wall, roof] = tones[h.i % tones.length];
+    const hb = house(h.w, h.d, h.h, wall, roof, null);
+    const at = placeFacing(fixed, hb, h.a, h.r, h.d);
     if (S.decor === 'reeds') hb.position.y = 0.6;
-    boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
+    boxColliders(cx + at.bx, cz + at.bz, h.w, h.d, at.rot, solid);
   }
 
-  // the city wall, with a gate on each street
-  const wallMat = new THREE.MeshStandardMaterial({ color: S.wall, roughness: 0.95 });
-  const seg = 4;
-  const n = Math.round((2 * Math.PI * CITY_R) / seg);
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    const inGate = [0, 1, 2, 3].some((k) => Math.abs(Math.atan2(Math.sin(a - (k * Math.PI) / 2), Math.cos(a - (k * Math.PI) / 2))) < 5 / CITY_R);
-    if (inGate) continue;
-    const x = Math.sin(a) * CITY_R, z = Math.cos(a) * CITY_R;
-    const w = new THREE.Mesh(new THREE.BoxGeometry(seg + 0.3, 6, 1.6), wallMat);
-    w.position.set(x, 3, z);
-    w.rotation.y = a;
-    w.castShadow = true; w.receiveShadow = true;
-    g.add(w);
-    solid.push({ x: cx + x, z: cz + z, r: 1.6, kind: 'wall', height: 6 }, { x: cx + Math.sin(a + 1 / CITY_R) * CITY_R, z: cz + Math.cos(a + 1 / CITY_R) * CITY_R, r: 1.6, kind: 'wall', height: 6 });
-  }
-  // gate towers
-  for (let k = 0; k < 4; k++) {
-    for (const side of [-1, 1]) {
-      const a = (k * Math.PI) / 2 + side * (6 / CITY_R);
-      const t = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.4, 9, 10), wallMat);
-      t.position.set(Math.sin(a) * CITY_R, 4.5, Math.cos(a) * CITY_R);
-      t.castShadow = true;
-      g.add(t);
-      solid.push({ x: cx + t.position.x, z: cz + t.position.z, r: 2.4, kind: 'wall', height: 9 });
-    }
-  }
+  // the walls: outer fortress wall, moat, inner wall (see walls())
+  const wallMat = matOf(S.wall, 0.95);
+  const bridges = walls(fixed, g, S, wallMat, cx, cz, solid);
+  mergeStill(fixed);
 
   // street lamps round the plaza
   const lampMat = new THREE.MeshStandardMaterial({ color: S.lamp[0], emissive: S.lamp[1], emissiveIntensity: 1.6 });
@@ -246,8 +238,7 @@ export function buildCity(place) {
   const guardRaces = S.guards;
   const guardGear = Object.fromEntries(Object.entries(S.gear).map(([k, id]) => [k, ITEMS[id]]));
   const gates = [];
-  for (let k = 0; k < 4; k++) {
-    const a = (k * Math.PI) / 2;
+  for (const [k, a] of GATE_ANGLES.entries()) {
     const ox = Math.sin(a), oz = Math.cos(a); // outward
     gates.push({ x: cx + ox * CITY_R, z: cz + oz * CITY_R, a });
     for (const side of [-1, 1]) {
@@ -263,14 +254,147 @@ export function buildCity(place) {
       solid.push({ x: cx + x, z: cz + z, r: 0.6, kind: 'wall', height: 2 });
     }
   }
+  // townsfolk: families at their doors, and merchants and businessmen round the plaza
+  const npcs = [];
+  const folk = [];
+  const addNpc = (race, x, z, faceA, info) => {
+    const body = buildCharacter({ race, form: 'humanoid', look: info.look || {} });
+    body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz) + (S.decor === 'reeds' ? 0.6 : 0), z);
+    body.rotation.y = faceA;
+    g.add(body);
+    folk.push(body);
+    solid.push({ x: cx + x, z: cz + z, r: 0.5, kind: 'wall', height: 2 });
+    npcs.push({ ...info, x: cx + x, z: cz + z });
+  };
+  const homeAt = opts.home?.city === place.id ? opts.home.house : -1;
+  for (const h of houses) {
+    if (h.i !== homeAt && h.i % 6) continue;
+    const race = h.i === homeAt ? opts.home.race : S.guards[h.i % S.guards.length];
+    const fam = familyOf(place.id, h.i, race);
+    const k = (h.r - h.d / 2 - 1.4) / h.r;
+    fam.parents.forEach((p, j) => {
+      const side = j ? 1.1 : -1.1, ox = Math.cos(h.a), oz = Math.sin(h.a);
+      addNpc(race, h.x * k - oz * side, h.z * k + ox * side, Math.atan2(-h.x, -h.z), { kind: 'parent', name: p.name, job: p.job, mine: h.i === homeAt, house: h.i });
+    });
+  }
+  const rnd = seeded(place.id);
+  const side = monster ? 'monster' : 'player';
+  [['merchant', 'Merchant'], ['businessman', 'Businessman'], ['merchant', 'Merchant'], ['businessman', 'Businessman'], ['merchant', 'Cloth Merchant'], ['merchant', 'Fruit Seller']].forEach(([kind, title], i) => {
+    const a = (i / 6) * Math.PI * 2 + 0.3, r = PLAZA_R - 7;
+    addNpc(S.guards[i % S.guards.length], Math.cos(a) * r, Math.sin(a) * r, Math.atan2(Math.cos(a), Math.sin(a)), { kind, title, name: townName(side, rnd) });
+  });
+
   const glow = decorate(g, S, cx, cz, solid);
   const update = (t) => {
     centre.update?.(t);
     for (const b of guards) animateCharacter(b, t, 0);
+    for (const b of folk) animateCharacter(b, t, 0);
+    for (const b of bridges) b.update();
     glow?.(t);
   };
+  // raise or lower the bridges over the moat (raised, they shut the inner gates)
+  const setRaised = (up, colliders) => { for (const b of bridges) b.raise(up, colliders); };
 
-  return { group: g, update, shops, solid, gates, centre: { x: cx, z: cz } };
+  return { group: g, update, shops, solid, gates, npcs, setRaised, centre: { x: cx, z: cz } };
+}
+
+// The outer fortress wall at CITY_R with two great gates, the moat inside it, and the inner wall at
+// INNER_R with a gate behind each bridge. Returns the bridges, which can be raised.
+function walls(g, live, S, wallMat, cx, cz, solid) {
+  const angleOff = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  const inGate = (a, R) => GATE_ANGLES.some((ga) => angleOff(a, ga) < GATE_HALF / R);
+  const ring = (R, height, thick) => {
+    const seg = 4;
+    const n = Math.round((2 * Math.PI * R) / seg);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      if (inGate(a, R)) continue;
+      const x = Math.sin(a) * R, z = Math.cos(a) * R;
+      const w = new THREE.Mesh(new THREE.BoxGeometry(seg + 0.3, height, thick), wallMat);
+      w.position.set(x, height / 2, z);
+      w.rotation.y = a;
+      w.castShadow = true; w.receiveShadow = true;
+      g.add(w);
+      // battlements along the top
+      if (i % 2 === 0) { const m = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, thick), wallMat); m.position.set(x, height + 0.55, z); m.rotation.y = a; g.add(m); }
+      solid.push({ x: cx + x, z: cz + z, r: thick, kind: 'wall', height }, { x: cx + Math.sin(a + 1 / R) * R, z: cz + Math.cos(a + 1 / R) * R, r: thick, kind: 'wall', height });
+    }
+    // a tower either side of each gate
+    for (const ga of GATE_ANGLES) {
+      for (const side of [-1, 1]) {
+        const a = ga + side * ((GATE_HALF + 1.8) / R);
+        const t = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 2.6, height + 4, 12), wallMat);
+        t.position.set(Math.sin(a) * R, (height + 4) / 2, Math.cos(a) * R);
+        const top = new THREE.Mesh(new THREE.ConeGeometry(2.9, 3, 12), matOf(S.tones[0][1], 0.8));
+        top.position.set(t.position.x, height + 5.5, t.position.z);
+        t.castShadow = true;
+        g.add(t, top);
+        solid.push({ x: cx + t.position.x, z: cz + t.position.z, r: 2.6, kind: 'wall', height: height + 4 });
+      }
+      // the arch over the gate
+      const arch = new THREE.Mesh(new THREE.BoxGeometry(GATE_HALF * 2 + 1, 2, thick + 0.4), wallMat);
+      arch.position.set(Math.sin(ga) * R, height - 1, Math.cos(ga) * R);
+      arch.rotation.y = ga;
+      g.add(arch);
+    }
+  };
+  ring(CITY_R, 9, 2);       // the outer fortress wall
+  ring(INNER_R, 7, 1.6);    // the inner wall
+
+  // the moat: water between stone banks, all the way round between the walls
+  const [m0, m1] = MOAT;
+  const water = new THREE.Mesh(new THREE.RingGeometry(m0, m1, 128, 1), new THREE.MeshStandardMaterial({ color: '#2a5a7a', roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.88 }));
+  water.rotation.x = -Math.PI / 2;
+  water.position.y = 0.05;
+  live.add(water);
+  const bank = matOf('#6a665e', 0.95);
+  for (const R of [m0, m1]) {
+    const kerb = new THREE.Mesh(new THREE.TorusGeometry(R, 0.25, 4, 160), bank);
+    kerb.rotation.x = -Math.PI / 2;
+    kerb.position.y = 0.12;
+    g.add(kerb);
+  }
+  // you can't wade the moat: solid all round except under the bridges
+  const mid = (m0 + m1) / 2, half = (m1 - m0) / 2;
+  const n = Math.round((2 * Math.PI * mid) / (half * 1.2));
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    if (GATE_ANGLES.some((ga) => angleOff(a, ga) < (GATE_HALF - 1) / mid)) continue;
+    solid.push({ x: cx + Math.sin(a) * mid, z: cz + Math.cos(a) * mid, r: half, kind: 'wall', height: 0.5 });
+  }
+
+  // the bridges: hinged at the inner gate; raised, they stand up and shut it
+  const wood = new THREE.MeshStandardMaterial({ color: '#6a4a2a', roughness: 0.9 });
+  const ironMat = new THREE.MeshStandardMaterial({ color: '#3a3a40', metalness: 0.7, roughness: 0.5 });
+  const len = CITY_R - INNER_R - 1;
+  return GATE_ANGLES.map((ga) => {
+    const hinge = new THREE.Group();
+    hinge.position.set(Math.sin(ga) * (INNER_R + 0.6), 0.2, Math.cos(ga) * (INNER_R + 0.6));
+    hinge.rotation.y = ga;
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(GATE_HALF * 2 - 1, 0.35, len), wood);
+    deck.position.z = len / 2;
+    deck.castShadow = true; deck.receiveShadow = true;
+    hinge.add(deck);
+    for (const sx of [-1, 1]) { const ch = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, len, 6), ironMat); ch.rotation.x = Math.PI / 2; ch.position.set(sx * (GATE_HALF - 0.8), 0.3, len / 2); hinge.add(ch); }
+    live.add(hinge);
+    // when raised: solid across the gap, so nobody gets in (or out)
+    const block = [];
+    for (let s2 = -GATE_HALF + 1; s2 <= GATE_HALF - 1; s2 += 1.6) block.push({ x: cx + Math.sin(ga) * (INNER_R + 1) + Math.cos(ga) * s2, z: cz + Math.cos(ga) * (INNER_R + 1) - Math.sin(ga) * s2, r: 1, kind: 'wall', height: 8 });
+    let up = false, tilt = 0;
+    return {
+      // `colliders` is the world's store: the gap is made solid while the bridge is up
+      raise(v, colliders) {
+        if (!!v === up) return;
+        up = !!v;
+        if (up) colliders?.add(block); else colliders?.remove(block);
+      },
+      update() {
+        const want = up ? -Math.PI / 2 : 0;
+        tilt += Math.max(-0.02, Math.min(0.02, want - tilt));
+        hinge.rotation.x = tilt;
+      },
+    };
+  });
 }
 
 // What makes each Monster City its own: lava pools in the Peaks, bone spikes in the Wastes, floating

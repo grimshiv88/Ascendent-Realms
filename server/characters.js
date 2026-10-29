@@ -1,6 +1,8 @@
 // Character creation and saving. The rules live in the shared game-data module.
 const db = require('./db');
-const { newCharacter, fallenKeep, rebornWith, mayChangeForm } = require('../public/js/data/game-data.mjs');
+const { fallenKeep, rebornWith, mayChangeForm, growUp } = require('../public/js/data/game-data.mjs');
+const { SCHOOLS, BIRTH_CITY, BIRTH_CITIES, KIDS_PER_HOUSE, houseCount, rollBirth, bornCharacter, ceremonyDue, rollClass } = require('../public/js/data/birth.mjs');
+const { pickUnique, uniqueSlot, APPRAISAL_AWAY_MS } = require('../public/js/data/unique.mjs');
 const { SKILLS } = require('../public/js/data/skills.mjs');
 const { ITEMS, EFFECTS } = require('../public/js/data/items.mjs');
 const { SPELLS } = require('../public/js/data/spells.mjs');
@@ -12,12 +14,36 @@ function load(accountId) {
   return row ? JSON.parse(row.data) : null;
 }
 
+// Unique Skills held by someone (alive, or kept by a fallen one): their names, how many of each top
+// rank are held, and whether anyone holds Appraisal
+function uniquesHeld() {
+  const rows = db.prepare("SELECT json_extract(data, '$.uniqueSkill.name') AS n, json_extract(data, '$.uniqueSkill.rank') AS r FROM characters UNION ALL SELECT json_extract(data, '$.uniqueSkill.name'), json_extract(data, '$.uniqueSkill.rank') FROM fallen").all();
+  const held = {};
+  for (const r of rows) if (r.r) held[r.r] = (held[r.r] || 0) + 1;
+  const takenUniques = new Set(rows.map((r) => r.n).filter(Boolean));
+  return { takenUniques, held, appraisal: ![...takenUniques].some((n) => String(n).toLowerCase() === 'appraisal') };
+}
+// A house with room for one more child: in the city of the race first, then the others in turn
+function findHome(race) {
+  const kids = db.prepare("SELECT json_extract(data, '$.child.family.city') AS city, json_extract(data, '$.child.family.house') AS house, COUNT(*) AS n FROM characters WHERE json_extract(data, '$.child') IS NOT NULL GROUP BY city, house").all();
+  const full = new Map(kids.map((k) => [`${k.city}:${k.house}`, k.n]));
+  const first = BIRTH_CITY[race] || 'central';
+  for (const city of [first, ...BIRTH_CITIES.filter((c) => c !== first)]) {
+    const open = [];
+    for (let h = 0; h < houseCount(city); h++) if ((full.get(`${city}:${h}`) || 0) < KIDS_PER_HOUSE) open.push(h);
+    if (open.length) return { city, house: open[Math.floor(Math.random() * open.length)] };
+  }
+  return { city: first, house: Math.floor(Math.random() * houseCount(first)) };
+}
+
+// Nobody chooses who they are: a new character is born at random into a family (see data/birth.mjs).
+// `body.side` ('player' or 'monster') narrows the race to one side, if given.
 function create(accountId, username, body) {
   if (load(accountId)) return { error: 'This account already has a character.' };
-  // Unique Skills already held by someone (alive, or kept by a fallen one), so the new one is unlike theirs
-  const takenUniques = new Set(db.prepare("SELECT json_extract(data, '$.uniqueSkill.name') AS n FROM characters UNION SELECT json_extract(data, '$.uniqueSkill.name') FROM fallen")
-    .all().map((r) => r.n).filter(Boolean));
-  const result = newCharacter(username, body, { takenUniques });
+  keepAppraisalHeld();
+  const opts = uniquesHeld();
+  const birth = rollBirth(['player', 'monster'].includes(body?.side) ? body.side : null);
+  const result = bornCharacter(username, birth, findHome(birth.race), opts);
   if (result.error) return result;
   // a character who fell before passes their Unique Skill on
   const kept = db.prepare('SELECT data FROM fallen WHERE account_id = ?').get(accountId);
@@ -27,8 +53,39 @@ function create(accountId, username, body) {
   return result;
 }
 
-// Death is final: the character is gone and the player starts again from the beginning, choosing
-// a race and class anew. Only the Unique Skill is kept for the next character.
+// The Ceremony of Revealing: a child who has reached 7 learns their class
+function ceremony(accountId) {
+  const character = load(accountId);
+  if (!character) return { error: 'No character yet.' };
+  if (!ceremonyDue(character)) return { error: 'You are not old enough yet.' };
+  const cls = rollClass(character);
+  growUp(character, cls);
+  store(accountId, character);
+  return { ok: true, character };
+}
+
+// Appraisal is held by one person only. If they stay away for more than a month it leaves them
+// and they are given another Unique Skill (alive or fallen).
+function keepAppraisalHeld(now = Date.now()) {
+  const away = (iso) => !iso || now - Date.parse(String(iso).replace(' ', 'T') + (String(iso).includes('Z') ? '' : 'Z')) > APPRAISAL_AWAY_MS;
+  const fresh = () => { const o = uniquesHeld(); return uniqueSlot(pickUnique(o.takenUniques, Math.random, { held: o.held })); };
+  for (const r of db.prepare("SELECT account_id, data, updated_at FROM characters WHERE lower(json_extract(data, '$.uniqueSkill.name')) = 'appraisal'").all()) {
+    if (!away(r.updated_at)) continue;
+    const c = JSON.parse(r.data);
+    c.uniqueSkill = fresh();
+    c.appraisalLost = true;
+    db.prepare('UPDATE characters SET data = ? WHERE account_id = ?').run(JSON.stringify(c), r.account_id);
+  }
+  for (const r of db.prepare("SELECT account_id, data FROM fallen WHERE lower(json_extract(data, '$.uniqueSkill.name')) = 'appraisal'").all()) {
+    const k = JSON.parse(r.data);
+    if (!away(k.fell)) continue;
+    k.uniqueSkill = fresh();
+    db.prepare('UPDATE fallen SET data = ? WHERE account_id = ?').run(JSON.stringify(k), r.account_id);
+  }
+}
+
+// Death is final: the character is gone and the player starts again from the beginning, born anew
+// at random into a new family. Only the Unique Skill (and a sinner's or blessed soul) passes on.
 function fall(accountId) {
   const character = load(accountId);
   if (!character) return { error: 'No character yet.' };
@@ -182,6 +239,14 @@ function saveProgress(accountId, p) {
   // real time played (it only ever grows)
   const playMs = int(Math.round(Number(p.playMs) || 0), 0, 1e13);
   if (playMs !== null && playMs >= (character.playMs || 0)) character.playMs = playMs;
+  // a child's school and time trained at each (never more than the time they have lived)
+  if (character.child && p.child && typeof p.child === 'object') {
+    const lived = Math.max(0, (character.playMs || 0) - (character.child.bornPlay || 0)) + 60000;
+    const train = {};
+    for (const [k, v] of Object.entries(p.child.train || {})) if (SCHOOLS[k] && Number.isFinite(v) && v > 0) train[k] = Math.min(Math.round(v), lived);
+    character.child.train = train;
+    character.child.school = SCHOOLS[p.child.school] ? p.child.school : null;
+  }
   // the Hunter's Guild Card: asked for (pending) or read by the crystal (with a rank)
   const gc = p.guildCard;
   if (gc && typeof gc === 'object') {
@@ -211,4 +276,4 @@ function top(limit = 10) {
     .slice(0, limit);
 }
 
-module.exports = { create, fall, load, store, saveLocation, saveProgress, top };
+module.exports = { create, fall, load, store, saveLocation, saveProgress, top, ceremony, keepAppraisalHeld };

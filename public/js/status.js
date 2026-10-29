@@ -7,6 +7,7 @@ import {
 import { tabsHtml } from './bag.js';
 import { lifeRows } from './idcard.js';
 import { uniqueAbility, uniqueTier, TIER_NAMES } from './data/unique.mjs';
+import { ageOf, CEREMONY_AGE, PARENT_JOBS } from './data/birth.mjs';
 import { PRIVACY, privacyOf } from './data/social.mjs';
 import { gameTime, clockText } from './data/clock.mjs';
 import { SKILLS, UPGRADE_EVERY } from './data/skills.mjs';
@@ -93,7 +94,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
   const race = RACES[c.race];
   const plus = (k) => (d.bonus?.[k] ? ` <small class="sw-gear">(+${d.bonus[k]} gear)</small>` : '');
   const isMonster = race.side === 'monster';
-  const className = ADVANCEMENTS[c.cls][c.stage || 0] || CLASSES[c.cls].name;
+  const className = ADVANCEMENTS[c.cls]?.[c.stage || 0] || CLASSES[c.cls]?.name || c.cls;
   const need = expToNext(c.level, c.race);
   const row = (label, value) => `<div class="sw-row"><dt>${label}:</dt><dd>${value}</dd></div>`;
   el.innerHTML = `
@@ -106,6 +107,8 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('Name', esc(c.name))}
           ${row('Race', `${race.name}${c.stage > 0 && EVOLUTIONS[c.race]?.[c.stage] ? ` (${esc(EVOLUTIONS[c.race][c.stage])})` : ''}${isMonster ? ` <small>(${c.form === 'humanoid' ? 'humanoid form' : 'monster form'})</small>` : ''}${isMonster ? (mayChangeForm(c) ? ` <button type="button" class="sw-form" data-form>Change to ${c.form === 'humanoid' ? 'monster' : 'humanoid'} form</button>` : ` <small>· humanoid form opens at Lv ${FORM_SWITCH_LEVEL}</small>`) : ''}`)}
           ${row('Class', className)}
+          ${c.child ? row('Age', `${ageOf(c).toFixed(1)} <small>(the Ceremony at ${CEREMONY_AGE})</small>`) : ''}
+          ${(c.child?.family || c.family) ? row('Parents', (c.child?.family || c.family).parents.map((p) => `${esc(p.name)} <small>(${esc(PARENT_JOBS[p.job]?.name || p.job)})</small>`).join(', ')) : ''}
           ${row('EXP', `${c.exp} / ${need}`)}
           ${row('Coins', c.coins)}
           ${lifeRows(c).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
@@ -113,7 +116,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
         <dl>
           ${row('LVL', c.level)}
           ${row('Rank', rankFor(c.level))}
-          ${row('Unique', `<span class="sw-unique" title="${esc(uniqueAbility(c).text)}">${esc(c.uniqueSkill.name)}</span> <small>(${esc(TIER_NAMES[uniqueTier(c.level)])})</small>`)}
+          ${row('Unique', `<span class="sw-unique" title="${esc(uniqueAbility(c).text)}">${esc(c.uniqueSkill.name)}</span> <b class="u-rank u-${esc(uniqueAbility(c).rank)}">${esc(uniqueAbility(c).rank)}</b> <small>(${esc(TIER_NAMES[uniqueTier(c.level)])}${c.child && CLASSES[uniqueAbility(c).fit] ? ` · suits a ${esc(CLASSES[uniqueAbility(c).fit].name)}` : ''})</small>`)}
           ${row(isMonster ? 'Next evolution' : 'Next advancement', `??? <small>at Lv ${KEY_LEVELS.find((k) => k > c.level) ?? '—'}</small>`)}
           ${row('Next upgrade', `Lv ${nextUpgrade(c.level)} <small>(stronger, + a new skill)</small>`)}
         </dl>
