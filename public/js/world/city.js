@@ -30,6 +30,7 @@ export const INNER_R = 96;
 export const MOAT = [INNER_R + 0.8, CITY_R - 1]; // right up to both walls: no strip of land to stand on
 export const GATE_ANGLES = [0, Math.PI]; // the gates, along the south-north street (angle as sin = x, cos = z)
 const GATE_HALF = 5; // metres either side of a gate's middle
+export const VILLAGE_WALL = 54; // a village's wooden wall (inside its safe zone)
 export const GUILD_NAME = 'Main Guild Hall';
 export const DARK_GUILD_NAME = 'Dark Guild Hall';
 
@@ -688,5 +689,50 @@ export function buildVillage(place) {
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
     if (tavern) shops.push({ id: 'tavern', name: `${place.name} Tavern`, x: cx + at.x, z: cz + at.z, building: true });
   }
-  return { group: g, update: (t, you) => { centre.update(t); doors.update(you); }, shops, solid, market: centre.market };
+  // a tall wooden wall of sharpened logs all round, with a gate north and south, a watchtower beside
+  // each gate, and two guards outside it
+  const fixed = new THREE.Group();
+  g.add(fixed);
+  const logMat = matOf('#6a4a2c', 0.95), tipMat = matOf('#8a6a44', 0.9);
+  const guards = [];
+  const gearOf = { weapon: ITEMS.iron_spear, head: ITEMS.knight_helm, body: ITEMS.knight_plate };
+  const R = VILLAGE_WALL;
+  const n = Math.round((2 * Math.PI * R) / 0.55);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    if (GATE_ANGLES.some((ga) => Math.abs(Math.atan2(Math.sin(a - ga), Math.cos(a - ga))) < 3.2 / R)) continue;
+    const x = Math.sin(a) * R, z = Math.cos(a) * R, y = heightAt(cx + x, cz + z) - baseY;
+    const hgt = 5.2 + ((i * 7) % 5) * 0.12;
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.29, hgt, 6), logMat);
+    log.position.set(x, y + hgt / 2 - 0.3, z);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.27, 0.6, 6), tipMat);
+    tip.position.set(x, y + hgt - 0.3 + 0.3, z);
+    fixed.add(log, tip);
+    if (i % 2 === 0) solid.push({ x: cx + x, z: cz + z, r: 0.62, kind: 'wall', height: hgt, y: baseY + y });
+  }
+  for (const ga of GATE_ANGLES) {
+    const ox = Math.sin(ga), oz = Math.cos(ga), sx = Math.cos(ga), sz = -Math.sin(ga);
+    for (const side of [-1, 1]) {
+      // a watchtower each side of the gate: four posts, a platform and a little roof
+      const tx = ox * R + sx * side * 4.6, tz = oz * R + sz * side * 4.6, ty = heightAt(cx + tx, cz + tz) - baseY;
+      for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 7.5, 6), logMat); post.position.set(tx + px, ty + 3.75 - 0.3, tz + pz); fixed.add(post); }
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.25, 2.6), logMat); deck.position.set(tx, ty + 5.4, tz); fixed.add(deck);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(2.1, 1.4, 4), tipMat); roof.position.set(tx, ty + 8, tz); roof.rotation.y = Math.PI / 4; fixed.add(roof);
+      solid.push({ x: cx + tx, z: cz + tz, r: 1.5, kind: 'wall', height: 8, y: baseY + ty });
+      // a guard outside the gate
+      const gx = ox * (R + 2.2) + sx * side * 2.2, gz = oz * (R + 2.2) + sz * side * 2.2;
+      const b = buildCharacter({ race: ['dwarf', 'elf', 'beastkin', 'hobbit'][(guards.length + place.id.length) % 4], form: 'humanoid', look: {} });
+      wearGear(b, gearOf);
+      b.position.set(gx, heightAt(cx + gx, cz + gz) - baseY, gz);
+      b.rotation.y = ga;
+      g.add(b); guards.push(b);
+      solid.push({ x: cx + gx, z: cz + gz, r: 0.55, kind: 'wall', height: 2 });
+    }
+    // a beam across the top of the gateway
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(7.4, 0.5, 0.5), logMat);
+    beam.position.set(ox * R, heightAt(cx + ox * R, cz + oz * R) - baseY + 5.2, oz * R); beam.rotation.y = ga;
+    fixed.add(beam);
+  }
+  mergeStill(fixed);
+  return { group: g, update: (t, you) => { centre.update(t); doors.update(you); for (const b of guards) animateCharacter(b, t, 0); }, shops, solid, market: centre.market };
 }

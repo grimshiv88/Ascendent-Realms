@@ -2,6 +2,7 @@
 // merged mesh with its colours baked in, drawn many times at once (instancing).
 import * as THREE from 'three';
 import { sample, placesWithPositions, isPrepared } from '../data/world-layout.mjs';
+import { allPortals } from '../data/portals.mjs';
 
 // ---------- building the models ----------
 
@@ -244,9 +245,12 @@ export function hideInstance(mesh, index) {
   mesh.instanceMatrix.needsUpdate = true;
 }
 
-// Keep the shrines and their clearings free of trees and rocks
+// Keep the shrines and their clearings free of trees and rocks: villages out to their walls, and the
+// portal halls
+let clearings = null;
 function nearPlace(x, z) {
-  for (const p of placesWithPositions()) if (Math.abs(x - p.x) < 32 && Math.abs(z - p.z) < 32) return true;
+  clearings ??= [...placesWithPositions().map((p) => ({ x: p.x, z: p.z, r: p.village ? 54 : 32 })), ...allPortals().map((p) => ({ x: p.x, z: p.z, r: 20 }))];
+  for (const c of clearings) if (Math.abs(x - c.x) < c.r && Math.abs(z - c.z) < c.r) return true;
   return false;
 }
 

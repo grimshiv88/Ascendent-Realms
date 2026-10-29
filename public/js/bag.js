@@ -210,8 +210,9 @@ function roomHtml(game) {
   const room = game.room();
   const price = game.roomPrice();
   return `<h3 class="sys-sub">Rooms</h3>
-    <div class="sys-row"><span class="sys-name"><b>${room ? `Your room: ${room.minutes} min left` : 'A room for the day'}</b><small>${room ? 'Sleep here to wake with full HP and SP and no Fatigue.' : 'No land or money for a house? Rent a room for a day of the realm (one real hour). Sleep in it to wake fully rested.'}</small></span>
-      ${room ? '<button type="button" class="sys-button" data-room="sleep">Sleep in your room</button>' : `<button type="button" class="sys-button" data-room="rent">Rent · ${money(price)}</button>`}</div>`;
+    <div class="sys-row"><span class="sys-name"><b>${room ? `Your room: Room ${room.n}, upstairs · ${room.minutes} min left` : 'A room for the day'}</b><small>${room ? 'Go up the stairs to your room and lie on the bed (E) to wake with full HP and SP and no Fatigue.' : 'No land or money for a house? Rent a room upstairs for a day of the realm (one real hour). Sleep in its bed to wake fully rested.'}</small></span>
+      ${room ? '' : `<button type="button" class="sys-button" data-room="rent">Rent · ${money(price)}</button>`}</div>
+    <p class="sys-hint">Drinks are made to order: pay here, find a seat, and the waiter brings yours to you. A fresh drink does a little more than one from your bag.</p>`;
 }
 
 // Merging: pick a piece, then a second of the same sub-category; the merge book shows what each

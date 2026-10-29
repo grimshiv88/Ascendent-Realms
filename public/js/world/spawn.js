@@ -175,9 +175,15 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
       box.position.set(-1.1 + i * 0.72, 1.05, 0);
       stall.add(box);
     });
-    const label = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.6), new THREE.MeshBasicMaterial({ map: textTexture(market.name), transparent: true, side: THREE.DoubleSide }));
-    label.position.set(0, 2.15, 0.55);
-    stall.add(label);
+    // the name on a board, written on both faces so it reads the right way round from either side
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.6), new THREE.MeshBasicMaterial({ map: textTexture(market.name), transparent: true }));
+    label.position.set(0, 2.15, 0.56);
+    const labelBack = label.clone();
+    labelBack.rotation.y = Math.PI;
+    labelBack.position.z = 0.54;
+    const boardBack = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.66, 0.015), wood);
+    boardBack.position.set(0, 2.15, 0.55);
+    stall.add(boardBack, label, labelBack);
     stall.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     g.add(stall);
     marketAt = { id: place.id, x: cx + mx, z: cz + mz };

@@ -5,6 +5,9 @@ import { CASTLES } from './data/kings.mjs';
 import { characterPortrait } from './characters/icons.js';
 import { CARD_RANKS, rankIndex } from './data/guildcard.mjs';
 import { now, DAY_MS } from './data/clock.mjs';
+import { PLACES } from './data/world-layout.mjs';
+// the city or village a player was born in, as written on their ID
+const birthplace = (c) => { const id = (c.child?.family || c.family)?.city; return id ? PLACES.find((p) => p.id === id)?.name.replace(/ \(.*\)/, '') || null : null; };
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -46,6 +49,7 @@ export function renderIdCard(el, game, { city = 'Central City', leaving = false,
           <div><dt>Level</dt><dd>${c.level}</dd></div>
           <div><dt>Title</dt><dd>${esc(titleOf(c, courts, nation))}</dd></div>
           <div><dt>Class</dt><dd>${esc(cls)}</dd></div>
+          ${birthplace(c) ? `<div><dt>Born in</dt><dd>${esc(birthplace(c))}</dd></div>` : ''}
           ${lifeRows(c)}
         </dl>
       </div>

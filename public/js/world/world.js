@@ -81,8 +81,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function updatePortals(x, z) {
     for (const q of portals) {
       const d = Math.hypot(x - q.p.x, z - q.p.z);
-      if (d < 900 && !q.built) { q.built = buildPortal(q.p); scene.add(q.built.group); }
-      else if (d > 1200 && q.built) { scene.remove(q.built.group); q.built = null; }
+      if (d < 900 && !q.built) { q.built = buildPortal(q.p); scene.add(q.built.group); colliders.add(q.built.solid); }
+      else if (d > 1200 && q.built) { scene.remove(q.built.group); colliders.remove(q.built.solid); q.built = null; }
     }
   }
   // The Monster Kings' castles, built when you come near, with their courts inside
@@ -714,6 +714,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!inside) return;
     const { built, back } = inside;
     sitting = null;
+    built.flushOrders?.(); // a drink still on its way is handed over at the door
     colliders.remove(built.solid);
     scene.remove(built.group);
     built.dispose();
@@ -739,6 +740,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     const spot = (b.spots || []).find((q) => Math.hypot(pos.x - q.x, pos.z - q.z) < q.r && Math.abs(pos.y - q.y) < 1);
     if (spot) { onEvent?.(spot.event, inside.shop.id); return; }
+    // the bed in your room at the tavern: lie down and wake fully rested
+    const bed = (b.bedrooms || []).find((r) => Math.hypot(pos.x - r.bed.x, pos.z - r.bed.z) < 1.9 && pos.y > 2);
+    if (bed) {
+      if (game?.room()?.n !== bed.n) { say(`Room ${bed.n} isn't yours`, 'hurt'); return; }
+      game.sleepInRoom();
+      sleeping = true; inBed = bed.bed;
+      say('You lie down in your bed and wake fully rested (move to get up)', 'exp');
+      onEvent?.('slept-room');
+      return;
+    }
     const door = b.rooms.find((r) => Math.hypot(pos.x - r.door.x, pos.z - r.door.z) < 2);
     if (door) { onEvent?.('meeting-room', { id: door.id }); return; }
     const seat = b.seats.filter((q) => Math.abs(q.y - pos.y) < 1).sort((p, q) => Math.hypot(p.x - pos.x, p.z - pos.z) - Math.hypot(q.x - pos.x, q.z - pos.z))[0];
@@ -765,6 +776,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   // meeting rooms you may be in: { room id -> until }, from the game
   let allowedRooms = {};
+  // the tavern's bedrooms: only the one you rented lets you in
+  function checkInn() {
+    const b = inside.built;
+    const room = (b.bedrooms || []).find((r) => pos.x > r.x0 && pos.x < r.x1 && pos.z > r.z0 && pos.z < r.z1);
+    if (!room) return;
+    const mine = game?.room();
+    if (mine?.n === room.n) return;
+    pos.set(room.door.x, b.floorAt(room.door.x, room.door.z), room.door.z);
+    heading = Math.PI; yaw = heading + Math.PI; velY = 0; speedNow = 0; autoWalk = false;
+    say(mine ? `That's not your room. Yours is Room ${mine.n}.` : `Room ${room.n} is locked. Rent a room at the counter downstairs.`, 'hurt');
+  }
+  let inBed = null; // the bed you're sleeping in
   function checkRooms() {
     const b = inside.built;
     if (!b.rooms.length) return;
@@ -1569,6 +1592,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (eyes && !sitting) heading = yaw - Math.PI; // in first person your body faces where you look
     avatar.position.copy(pos);
     avatar.rotation.y = heading;
+    if (!sleeping) inBed = null;
+    if (inBed) { avatar.position.set(inBed.x, inBed.y, inBed.z); avatar.rotation.y = 0; } // lying in the bed
     avatar.rotation.z = dead || resting() ? Math.min(Math.PI / 2, (avatar.rotation.z || 0) + dt * 3) : 0;
     avatar.visible = !(sleeping && inTent); // hidden inside the tent
     const rig = avatar.userData.rig;
@@ -1665,6 +1690,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (inside) {
       inside.built.update(t, pos);
       checkRooms();
+      checkInn();
       const d = Math.hypot(pos.x - inside.built.exit.x, pos.z - inside.built.exit.z);
       if (d > 3) inside.leftExit = true;
       else if (inside.leftExit && d < 1.2 && !dead) leaveBuilding();
@@ -1924,6 +1950,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setMouseMode(mode) { freeMouse = mode === 'free'; if (freeMouse && locked()) { letGo = true; document.exitPointerLock(); } },
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     setView(mode) { setView(mode); },
+    // order a drink in the tavern: `served` runs when the waiter brings it to you (wherever you are inside)
+    tavernOrder(served) { if (inside?.built.order) inside.built.order(() => ({ x: pos.x, z: pos.z }), served); },
     toggleView() { setView(viewMode === 'first' ? 'third' : 'first', true); },
     stop() {
       saveNow();

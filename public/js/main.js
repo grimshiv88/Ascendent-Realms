@@ -1002,6 +1002,16 @@ function startGame(character) {
       ui.smithMsg = made ? `The Blacksmith strikes your ${ITEMS[v].name} into ${moneyWords(made)}.` : 'You have none of that ore.';
       drawHud(); drawPanel(); return;
     }
+    // in the tavern a drink is ordered: paid at the counter, made by the keeper, brought by the waiter
+    if ((v = t('data-buy')) != null && overlay.dataset.panel === 'market' && ui.market === 'tavern' && ITEMS[v]?.kind === 'food' && world?.indoors()?.kind === 'tavern') {
+      const r = game.order(v, ui.market);
+      if (r === 'ok') {
+        const name = ITEMS[v].name;
+        world.tavernOrder(() => { game.serve(v); world?.say(`The waiter brings your ${name}. Refreshing!`, 'exp'); drawHud(); });
+        ui.shopMsg = `Ordered: ${name}. Take a seat and the waiter will bring it to you.`;
+      } else ui.shopMsg = SHOP_SAYS[r];
+      drawPanel(); return;
+    }
     if ((v = t('data-buy')) != null) { ui.shopMsg = SHOP_SAYS[game.buy(v, overlay.dataset.panel === 'market' ? ui.market : null)]; drawPanel(); return; }
     if ((v = t('data-sell')) != null || (v = t('data-sell-all')) != null) {
       const all = t('data-sell-all') != null;

@@ -13,11 +13,12 @@ import { buildWork, WORKER_Z } from './work.js';
 const OX = DEPTHS_X + 150000, OZ = 0;
 const UP = 4.5; // the Guild Hall's upper floor
 const CASTLE_UP = 5; // the castle's gallery over the reception
+const TAVERN_UP = 8.6; // how deep the tavern's upstairs (landing and bedrooms) is
 const SEAT_H = 0.48;
 const STEPS = 15; // steps on a staircase
 
 // [width, depth, ceiling] of each kind of room (the Guild Hall's ground floor)
-const SIZES = { castle: [30, 34, 12], guild: [24, 20, 9], tavern: [16, 13, 5], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5] };
+const SIZES = { castle: [30, 34, 12], guild: [24, 20, 9], tavern: [16, 14, 7], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5] };
 export const kindOf = (shopId) => ({ castle: 'castle', guild: 'guild', tavern: 'tavern', city_potions: 'potions', city_smith: 'smith', city_armoury: 'armoury', city_tailor: 'tailor', city_food: 'food' }[shopId] || 'tavern');
 
 export function buildInterior(shop) {
@@ -32,6 +33,7 @@ export function buildInterior(shop) {
   const workers = []; // { station, body }: people doing their jobs
   const rooms = [];
   const nooks = []; // small rooms and hallways the camera stays inside (not rented)
+  const bedrooms = []; // the tavern's rooms for the night
   const spots = []; // things to use with E: { x, z, y, event, r }
   const mats = [];
   const mat = (color, extra = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra }); mats.push(m); return m; };
@@ -425,14 +427,58 @@ export function buildInterior(shop) {
       rooms.push({ ...room, x0: OX + x0, x1: OX + x1, z0: OZ + D, z1: OZ + Z2, door: { x: OX + cx, z: OZ + D - 1.2 } });
     });
   } else {
-    wall(-W / 2, D, W / 2, D, 0, H);
+    // (the tavern's back wall has an opening at the top of its stairs)
+    wall(-W / 2, D, W / 2, D, 0, H, kind === 'tavern' ? [[0.4, 3.6, UP]] : []);
     ceiling(-W / 2, W / 2, 0, D, H);
     counterAt(0, D - 2.6, Math.min(6, W - 4), shop.name);
     if (kind === 'tavern') {
-      for (const [x, z] of [[-4.5, 4.5], [3.5, 4], [-4, 8.5]]) table(x, z);
-      barrel(W / 2 - 1, D - 1); barrel(W / 2 - 2, D - 1); barrel(-W / 2 + 1, D - 1);
+      for (const [x, z] of [[-4.5, 4.5], [3.5, 4], [3, 8.4]]) table(x, z);
+      barrel(W / 2 - 1, D - 1); barrel(W / 2 - 2, D - 1); barrel(W / 2 - 3, D - 1);
       hearth(W / 2 - 0.8, 7.5);
       chandelier(0, H - 1, 6);
+      // stairs up the left wall to the rooms for the night
+      ramp = { x0: -W / 2 + 0.4, x1: -W / 2 + 3.6, z0: 6, z1: D };
+      for (let i = 0; i < STEPS; i++) {
+        const z = ramp.z0 + ((ramp.z1 - ramp.z0) * (i + 0.5)) / STEPS;
+        box(ramp.x1 - ramp.x0, ((i + 1) / STEPS) * UP, (ramp.z1 - ramp.z0) / STEPS, wood, (ramp.x0 + ramp.x1) / 2, 0, z);
+      }
+      {
+        const run = ramp.z1 - ramp.z0, L = Math.hypot(run, UP);
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, L), darkWood);
+        rail.position.set(ramp.x1 + 0.1, UP / 2 + 1, (ramp.z0 + ramp.z1) / 2);
+        rail.rotation.x = -Math.atan2(UP, run);
+        g.add(rail);
+        for (let z = ramp.z0 + 0.3; z <= ramp.z1; z += 0.9) box(0.06, 1, 0.06, darkWood, ramp.x1 + 0.1, (UP * (z - ramp.z0)) / run, z);
+        for (let z = ramp.z0 + 0.6; z < ramp.z1; z += 0.8) block(ramp.x1 + 0.25, z, 0.4, 0, 6);
+      }
+      // upstairs: a landing along the front, and three bedrooms behind, each with a bed and a lamp
+      const Z0 = D, Z1 = D + 2.6, Z2 = D + TAVERN_UP;
+      floor(-W / 2, W / 2, Z0, Z2, UP);
+      wall(-W / 2, Z0, -W / 2, Z2, UP, 3.6); wall(W / 2, Z0, W / 2, Z2, UP, 3.6); wall(-W / 2, Z2, W / 2, Z2, UP, 3.6);
+      ceiling(-W / 2, W / 2, Z0, Z2, UP + 3.6);
+      const rw = W / 3;
+      wall(-W / 2, Z1, W / 2, Z1, UP, 3.6, [0, 1, 2].map((i) => [i * rw + rw / 2 - 0.6, i * rw + rw / 2 + 0.6]));
+      const blankets = ['#3a5a8a', '#7a3a3a', '#3a6a4a'];
+      for (let i = 0; i < 3; i++) {
+        const x0 = -W / 2 + i * rw, x1 = x0 + rw, cx = (x0 + x1) / 2;
+        if (i) wall(x0, Z1, x0, Z2, UP, 3.6);
+        swingDoor(cx, UP, Z1, 1.2);
+        const plate = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.4), new THREE.MeshBasicMaterial({ map: textTexture(`Room ${i + 1}`), transparent: true }));
+        plate.position.set(cx, UP + 2.9, Z1 - 0.17); plate.rotation.y = Math.PI; g.add(plate);
+        // the bed against the back wall: a frame, a blanket and a pillow
+        const bx = cx - 0.6, bz = Z2 - 1.3;
+        box(1.2, 0.45, 2.2, darkWood, bx, UP, bz);
+        box(1.1, 0.12, 1.5, mat(blankets[i]), bx, UP + 0.45, bz - 0.3);
+        box(0.8, 0.14, 0.4, mat('#efe6d0'), bx, UP + 0.45, bz + 0.75);
+        box(1.2, 0.9, 0.1, darkWood, bx, UP, Z2 - 0.25);
+        block(bx, bz, 0.7, UP, 0.5);
+        box(0.5, 0.6, 0.5, wood, cx + 1.3, UP, Z2 - 0.6);
+        lamp(cx + 1.3, UP + 1, Z2 - 0.6, 6);
+        bedrooms.push({ n: i + 1, x0: OX + x0, x1: OX + x1, z0: OZ + Z1, z1: OZ + Z2, bed: { x: OX + bx, z: OZ + bz, y: UP + 0.5 }, door: { x: OX + cx, z: OZ + Z1 - 1.1 } });
+        nooks.push({ x0: OX + x0, x1: OX + x1, z0: OZ + Z1, z1: OZ + Z2 });
+      }
+      lamp(0, UP + 2.8, D + 1.3, 10);
+      tavernLife();
     } else if (kind === 'food') {
       for (const [x, z] of [[-4.5, 4], [4.5, 4], [-4.5, 7.5]]) table(x, z);
       const pot = cyl(0.6, 0.5, 0.7, mat('#2e2a26', { metalness: 0.6, roughness: 0.4 }), W / 2 - 1.5, 0, D - 1.5);
@@ -469,13 +515,78 @@ export function buildInterior(shop) {
     }
   }
 
+  // ---------- the tavern's life: orders, the keeper pressing juice, and the waiter ----------
+  // Nothing is made until someone orders and pays: a guest at a table (now and then) or you, at the
+  // counter. The keeper presses the drink, then the waiter carries it to whoever ordered it.
+  const orders = []; // { to: { x, z } (local), done }
+  let waiter = null, cup = null, serving = null, making = 0, waiterHome = null, waiterWait = 0, nextGuestOrder = 20;
+  const patrons = [];
+  function tavernLife() {
+    waiterHome = { x: 3.2, z: D - 4.2 };
+    waiter = buildCharacter({ race: 'hobbit', form: 'humanoid', look: { accent: '#f0ead8' } });
+    waiter.position.set(waiterHome.x, 0, waiterHome.z);
+    waiter.rotation.y = Math.PI;
+    g.add(waiter);
+    cup = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.14, 10), mat('#f0a030', { emissive: '#a05010', emissiveIntensity: 0.3 }));
+    cup.visible = false;
+    g.add(cup);
+    // two guests already sitting at the tables (their chairs are taken)
+    for (const k of [1, 6]) {
+      const seat = seats[k];
+      if (!seat) continue;
+      const b = buildCharacter({ race: ['elf', 'dwarf'][patrons.length % 2], form: 'humanoid', look: {} });
+      b.position.set(seat.x - OX, seat.y + 0.5 - b.userData.height * 0.27, seat.z - OZ);
+      b.rotation.y = seat.heading;
+      g.add(b);
+      patrons.push({ body: b, at: { x: seat.x - OX, z: seat.z - OZ } });
+    }
+    for (const p of patrons) seats.splice(seats.findIndex((q) => q.x - OX === p.at.x && q.z - OZ === p.at.z), 1);
+  }
+  // `where` says where whoever ordered is now (they may have sat down meanwhile)
+  function order(where, done) { orders.push({ to: () => { const p = where(); return { x: p.x - OX, z: p.z - OZ }; }, done }); }
+  let lastLife = null;
+  function lifeUpdate(t) {
+    const dt = lastLife === null ? 0 : Math.min(0.1, t - lastLife);
+    lastLife = t;
+    for (const p of patrons) {
+      const rig = p.body.userData.rig;
+      animateCharacter(p.body, t, 0);
+      if (rig.legs) for (const leg of rig.legs) { leg.hip.rotation.x = -1.45; leg.knee.rotation.x = 1.45; }
+    }
+    // the guests order now and then
+    if (patrons.length && t > nextGuestOrder) { nextGuestOrder = t + 35 + Math.random() * 30; const p = patrons[Math.floor(Math.random() * patrons.length)]; orders.push({ to: p.at, done: null }); }
+    // the keeper presses a drink for the next order, then hands it to the waiter
+    if (!serving && orders.length && !making) making = t + 4;
+    if (making && t > making) { making = 0; serving = orders.shift(); cup.visible = true; }
+    let speed = 0;
+    if (waiterWait > 0) waiterWait -= dt;
+    else {
+      let goal = serving ? (typeof serving.to === 'function' ? serving.to() : serving.to) : waiterHome;
+      if (serving) goal = { x: Math.max(-W / 2 + 4, Math.min(W / 2 - 1, goal.x)), z: Math.max(1, Math.min(D - 3.6, goal.z)) }; // (the waiter keeps to the ground floor)
+      const dx = goal.x - waiter.position.x, dz = goal.z - waiter.position.z, d = Math.hypot(dx, dz);
+      const stop = serving ? 0.9 : 0.05; // stand at the guest's side, not on top of them
+      if (d > stop) {
+        speed = 1.5;
+        const step = Math.min(d - stop, speed * dt);
+        waiter.position.x += (dx / d) * step; waiter.position.z += (dz / d) * step;
+        waiter.rotation.y = Math.atan2(dx, dz);
+      } else if (serving) {
+        // handed over
+        serving.done?.();
+        serving = null; cup.visible = false; waiterWait = 1.2;
+      }
+    }
+    animateCharacter(waiter, t, speed ? 1 : 0);
+    if (cup.visible) { cup.position.set(waiter.position.x + Math.sin(waiter.rotation.y) * 0.35, 1.05, waiter.position.z + Math.cos(waiter.rotation.y) * 0.35); }
+  }
+
   // ---------- the ground: floors, the stairs, and the upper floor ----------
   function sampleAt(x, z, out = {}) {
     const lx = x - OX, lz = z - OZ;
     let h = 0;
     // on the stairs you stand on the step under you (not a slope through them)
     if (ramp && lx >= ramp.x0 && lx <= ramp.x1 && lz >= ramp.z0 && lz <= ramp.z1) { const n = ramp.top ? 16 : STEPS; h = (Math.min(n, Math.floor(((lz - ramp.z0) / (ramp.z1 - ramp.z0)) * n) + 1) / n) * (ramp.top || UP); }
-    else if (kind === 'guild' && lz > D) h = UP;
+    else if ((kind === 'guild' || kind === 'tavern') && lz > D) h = UP;
     out.h = h; out.water = -1e6; out.region = 'indoors'; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0;
     return out;
   }
@@ -492,20 +603,22 @@ export function buildInterior(shop) {
     kind, group: g, solid, seats, rooms, nooks, spots, counter, exit, start,
     sample: sampleAt,
     floorAt: (x, z) => sampleAt(x, z, tmp).h,
-    roofAt: (x, z) => (z - OZ > D ? (kind === 'guild' ? UP + 4 : 6) : H) - 0.3,
+    roofAt: (x, z) => (z - OZ > D ? (kind === 'guild' ? UP + 4 : kind === 'tavern' ? UP + 3.6 : 6) : H) - 0.3,
     // keep the camera inside the walls of the floor you're on
     clampCam(v, upstairs) {
-      const lo = upstairs ? D + 0.4 : 0.4, hi = upstairs ? D + 12 - 0.4 : (kind === 'castle' ? D + 10 : D) - 0.4;
+      const lo = upstairs ? D + 0.4 : 0.4, hi = upstairs ? D + (kind === 'tavern' ? TAVERN_UP : 12) - 0.4 : (kind === 'castle' ? D + 10 : D) - 0.4;
       v.x = OX + Math.max(-W / 2 + 0.4, Math.min(W / 2 - 0.4, v.x - OX));
       v.z = OZ + Math.max(lo, Math.min(hi, v.z - OZ));
       return v;
     },
     clampPos(v) {
       v.x = OX + Math.max(-W / 2 + 0.4, Math.min(W / 2 - 0.4, v.x - OX));
-      v.z = OZ + Math.max(0.4, Math.min((kind === 'guild' ? D + 12 : kind === 'castle' ? D + 10 : D) - 0.4, v.z - OZ));
+      v.z = OZ + Math.max(0.4, Math.min((kind === 'guild' ? D + 12 : kind === 'tavern' ? D + TAVERN_UP : kind === 'castle' ? D + 10 : D) - 0.4, v.z - OZ));
       return v;
     },
-    upstairs: (p) => kind === 'guild' && p.z - OZ > D,
+    upstairs: (p) => (kind === 'guild' || kind === 'tavern') && p.z - OZ > D,
+    bedrooms,
+    order,
     update(t, you) {
       // the front doors open while someone is near them
       const near = you && Math.hypot(you.x - OX, you.z - OZ) < 3;
@@ -516,9 +629,13 @@ export function buildInterior(shop) {
         d.hinge.rotation.y = -d.open;
       }
       for (const p of people) animateCharacter(p, t, 0);
-      for (const w of workers) w.station.play(w.body, t);
+      // (in the tavern the keeper only works while there's an order to make)
+      for (const w of workers) { if (kind === 'tavern' && !making) animateCharacter(w.body, t, 0); else w.station.play(w.body, t); }
+      if (waiter) lifeUpdate(t);
       for (const sp of spots) if (sp.spin) { sp.spin.rotation.y = t * 0.8; sp.spin.position.y = 1.3 + Math.sin(t * 2) * 0.05; }
     },
+    // leaving with an order not yet brought: the waiter hands it over at the door
+    flushOrders() { if (serving) { serving.done?.(); serving = null; } for (const o of orders.splice(0)) o.done?.(); },
     dispose() { for (const w of workers) w.station.dispose(); g.traverse((o) => { o.geometry?.dispose(); if (o.material?.map) o.material.map.dispose(); }); for (const m of mats) m.dispose(); },
   };
 }

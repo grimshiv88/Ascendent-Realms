@@ -278,15 +278,36 @@ export function createProgress(c, { save, onChange, onEvent }) {
     },
     // A tavern room: rented for a day of the realm. Sleeping in it restores everything.
     roomPrice: () => 20 + c.level * 2,
-    room: () => (c.room?.until > Date.now() ? { minutes: Math.ceil((c.room.until - Date.now()) / 60000) } : null),
+    room: () => (c.room?.until > Date.now() ? { minutes: Math.ceil((c.room.until - Date.now()) / 60000), n: c.room.n || 1 } : null),
     rentRoom() {
       if (this.room()) return 'have';
       const price = this.roomPrice();
       if (c.coins < price) return poor(price);
       c.coins -= price;
-      c.room = { until: Date.now() + DAY_MS };
+      c.room = { until: Date.now() + DAY_MS, n: 1 + Math.floor(Math.random() * 3) }; // one of the three rooms upstairs
       changed('coins');
       return 'ok';
+    },
+    // A drink ordered at the tavern counter: paid now, brought to you by the waiter (see serve)
+    order(id, market) {
+      const it = ITEMS[id];
+      if (!it || !marketStock(market, c.level).includes(id)) return 'locked';
+      const price = marketPrice(market, id);
+      if (c.coins < price) return poor(price);
+      c.coins -= price;
+      changed('coins');
+      return 'ok';
+    },
+    // the waiter brings it: you drink it at once (it does what it would from the bag, and a fresh
+    // drink at the table gives a little more)
+    serve(id) {
+      const it = ITEMS[id];
+      if (!it) return;
+      if (it.heal) c.hp = Math.min(stats().hp, c.hp + Math.round(it.heal * 1.25));
+      if (it.sp) c.sp = Math.min(stats().sp, c.sp + Math.round(it.sp * 1.25));
+      if (it.rest) c.fatigue = Math.max(0, c.fatigue - it.rest);
+      if (it.boost) c.boosts.push({ sp: it.boost.sp, until: Date.now() + it.boost.minutes * 60000 });
+      changed('hp');
     },
     sleepInRoom() {
       if (!this.room()) return 'none';
