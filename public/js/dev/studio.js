@@ -4,6 +4,8 @@ import { makeStage } from '../characters/stage.js';
 import { makeBody } from '../characters/body/build.js';
 import { poseOf, applyPose } from '../characters/body/motion.js';
 import { MOTIONS } from './motions-demo.js';
+import { RACES } from '../characters/body/races.js';
+import { APPEARANCE } from '../data/game-data.mjs';
 
 const canvas = document.getElementById('c');
 const stage = makeStage(canvas);
@@ -29,6 +31,12 @@ const studio = {
     } else { camera.position.set(...at); camera.lookAt(...look); }
   },
   pose(rot) { for (const [n, r] of Object.entries(rot)) body.bones[n]?.rotation.set(...r); },
+  // a playable race, in its palette's colours (i: which of the palette's choices)
+  race(name, i = 0, extra = {}) {
+    const R = RACES[name], pal = APPEARANCE[name];
+    const furry = name === 'beastkin';
+    return this.build(R.body, { hair: R.hair, face: { eyes: pal.eyes[i], ...R.eyes }, outfit: R.outfit, skin: furry ? '#e3bc98' : pal.skin[i], hairColor: furry ? pal.skin[i] : pal.accent[i], ...extra });
+  },
   // spec: a pose (see motion.js poseOf)
   set(spec) { applyPose(body, poseOf(spec)); },
   // a motion from motions-demo.js at time t (seconds)

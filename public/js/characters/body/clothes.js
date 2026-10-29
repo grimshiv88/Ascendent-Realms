@@ -11,6 +11,8 @@ import { cone, ell } from './sdf.js';
 // `o` picks the cut: { sleeves: 'long'|'short'|'none', legs: 'long'|'short', boots: true }
 export function outfitPlan(plan, o = {}) {
   const pos = Object.fromEntries(plan.bones.map((b) => [b.name, b.pos]));
+  // how big round the body is (the regions must hold a broad dwarf as well as a slim elf)
+  const P = plan.P, wide = P.bulk * Math.max(P.shoulders, P.chest, P.hips, P.waist + P.belly * 0.3);
   const hipY = pos.hips[1], neckY = pos.neck[1], kneeL = pos.leftLowerLeg, ankleL = pos.leftFoot;
   const torsoTop = neckY + 0.02;
   const pieces = [];
@@ -19,7 +21,7 @@ export function outfitPlan(plan, o = {}) {
 
   // shirt (or tunic)
   {
-    const region = [cone([0, hipY - 0.1, 0], [0, torsoTop - 0.06, 0], 0.26, 0.24, { bone: 'spine' })];
+    const region = [cone([0, hipY - 0.4, 0], [0, torsoTop - 0.06, 0], 0.27 * wide, 0.25 * wide, { bone: 'spine' })];
     const cuts = [
       { bone: 'hips', p: [0, hipY - (o.tunic ? 0.16 : 0.07), 0], n: [0, -1, 0] }, // the hem
       { bone: 'upperChest', p: [0, neckY + 0.05, 0], n: [0, 1, 0] },
@@ -33,24 +35,24 @@ export function outfitPlan(plan, o = {}) {
       region.push(cone(sh, el, 0.11, 0.1, { bone: `${L}UpperArm` }));
       if (sleeves === 'long') {
         region.push(cone(el, wr, 0.1, 0.09, { bone: `${L}LowerArm` }));
-        cuts.push({ bone: `${L}LowerArm`, p: [wr[0], wr[1] + 0.035, wr[2]], n: [0, -1, 0] });
+        cuts.push({ bone: `${L}LowerArm`, p: [wr[0], wr[1] + 0.035, wr[2]], n: [0, -1, 0], r: 0.1 * wide });
       } else {
-        cuts.push({ bone: `${L}UpperArm`, p: [sh[0], (sh[1] + el[1]) / 2 - 0.02, sh[2]], n: [0, -1, 0] });
+        cuts.push({ bone: `${L}UpperArm`, p: [sh[0], (sh[1] + el[1]) / 2 - 0.02, sh[2]], n: [0, -1, 0], r: 0.1 * wide });
       }
     }
     if (sleeves === 'none') for (const L of ['left', 'right']) {
       const sh = pos[`${L}UpperArm`];
-      cuts.push({ bone: `${L}UpperArm`, p: [sh[0] - Math.sign(sh[0]) * 0.035, sh[1], sh[2]], n: [Math.sign(sh[0]), 0, 0] });
+      cuts.push({ bone: `${L}UpperArm`, p: [sh[0] - Math.sign(sh[0]) * 0.035, sh[1], sh[2]], n: [Math.sign(sh[0]), 0, 0], r: 0.2 * wide });
     }
     // the neck of the shirt
     // (an ellipsoid reaching through front to back, so its edge meets the skin square on)
     const hole = [ell([0, neckY - 0.012, 0.09], [0.06, 0.062, 0.13], { bone: 'neck' }), ell([0, neckY + 0.015, -0.03], [0.064, 0.05, 0.16], { bone: 'neck' }), cone([0, neckY + 0.03, -0.01], [0, neckY + 0.3, -0.02], 0.06, 0.06, { bone: 'neck' })];
-    pieces.push({ name: 'shirt', thick: o.tunic ? 0.012 : 0.006, region, cuts, hole, tubes: sleeves === 'none' ? [] : ['left', 'right'].flatMap((L) => [[`${L}UpperArm`, `${L}LowerArm`, 0.008], ...(sleeves === 'long' ? [[`${L}LowerArm`, `${L}Hand`, 0.01]] : [])]), colour: o.shirt || '#d8d0c0', cloth: 'linen' });
+    pieces.push({ name: 'shirt', thick: o.tunic ? 0.012 : 0.006, region, cuts, hole, skirt: o.tunic ? [hipY + 0.06, hipY - 0.17, 0.035] : null, tubes: sleeves === 'none' ? [] : ['left', 'right'].flatMap((L) => [[`${L}UpperArm`, `${L}LowerArm`, 0.004], ...(sleeves === 'long' ? [[`${L}LowerArm`, `${L}Hand`, 0.01]] : [])]), colour: o.shirt || '#d8d0c0', cloth: 'linen' });
   }
 
   // trousers
   {
-    const region = [cone([0, hipY - 0.16, 0], [0, hipY + 0.12, 0], 0.22, 0.22, { bone: 'hips' })];
+    const region = [cone([0, hipY - 0.16, 0], [0, hipY + 0.12, 0], 0.23 * wide, 0.23 * wide, { bone: 'hips' })];
     const cuts = [{ bone: 'hips', p: [0, hipY + 0.085, 0], n: [0, 1, 0] }];
     for (const L of ['left', 'right']) {
       const hp = pos[`${L}UpperLeg`], kn = pos[`${L}LowerLeg`], an = pos[`${L}Foot`];

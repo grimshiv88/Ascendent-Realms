@@ -123,17 +123,28 @@ export function sculpt(plan, quality = 'high', { hair = 'short', hairSeed = 1, o
         const a2 = add(a, scale(sub(b, a), 0.3)); // (starting past the shoulder or hip, so it never pads them)
         return cone(a2, b, girth(limb, a2, b, 0) + ease, girth(limb, b, a, 0.12) + ease * 0.7, { blend: 0.03 });
       });
-      const m = meshField([...near, ...[...pc.extra, ...pc.tubes].map((e) => ({ ...e, ghost: true }))], box, q.body * 0.7, field, { clipNormals: true });
+      // a skirt (a tunic's lower part): one cone hanging round both legs, flaring out a little
+      if (pc.skirt) {
+        const [y0, y1, flare] = pc.skirt;
+        const whole = (x, y, z) => fieldDist(near, x, y, z);
+        const a = [0, y0, -0.01], b = [0, y1, -0.01];
+        pc.tubes.push(cone(a, b, outline(whole, a) + 0.006, outline(whole, b) + 0.006 + flare, { blend: 0.04 }));
+      }
+      // the cloth lies over the body's main forms, not its small details, the head or a beard
+      const under = near.filter((s) => !s.detail && !s.part && s.bone !== 'head');
+      const m = meshField([...under, ...[...pc.extra, ...pc.tubes].map((e) => ({ ...e, ghost: true }))], box, q.body * 0.7, field, { clipNormals: true });
       m.shapes = near;
-      dropInner(m, (x, y, z) => fieldDist(near, x, y, z));
+      dropInner(m, (x, y, z) => fieldDist(under, x, y, z));
       m.cloth = pc.cloth; m.colour = pc.colour; m.name = pc.name;
       clothes[pc.name] = m;
     }
-    hideCovered(parts.body, pieces);
+    // (a beard over a shirt stays: only skin lying on the body under the cloth is hidden)
+    const bare = shapes.filter((s) => !s.part && s.bone !== 'head' && !s.sub);
+    hideCovered(parts.body, pieces, (x, y, z) => fieldDist(bare, x, y, z), pose.neck.t[1] - 0.3);
   }
   for (const part of [...Object.values(parts), ...Object.values(clothes)]) skinPart(part, shapes, plan);
   const face = faceSheet(plan, shapes, boneIndex.head);
-  const headShapes = shapes.filter((s) => s.bone === 'head' && !s.sub);
+  const headShapes = shapes.filter((s) => s.bone === 'head' && !s.sub && !s.part); // (hair grows round ears and beards)
   const locks = growHair(hair, headShapes, plan, hairSeed);
   if (locks) {
     const n = locks.positions.length / 3;
@@ -149,7 +160,7 @@ function posePiece(plan, pose, pc) {
   const cuts = pc.cuts.map((c) => {
     const { R, t } = pose[c.bone], r = rest[c.bone];
     const v = apply3(R, sub(c.p, r));
-    return { p: add(v, t), n: norm3(apply3(R, c.n)) };
+    return { p: add(v, t), n: norm3(apply3(R, c.n)), r: c.r || Infinity };
   });
   return { ...pc, region: poseShapes(plan, pose, pc.region), hole: poseShapes(plan, pose, pc.hole || []), extra: poseShapes(plan, pose, pc.extra || []), cuts };
 }
@@ -158,7 +169,14 @@ function posePiece(plan, pose, pc) {
 function coverDist(pc, x, y, z) {
   let r = Infinity;
   for (const s of pc.region) r = Math.min(r, shapeDist(s, x, y, z));
-  for (const c of pc.cuts) r = smax(r, (x - c.p[0]) * c.n[0] + (y - c.p[1]) * c.n[1] + (z - c.p[2]) * c.n[2], 0.008);
+  for (const c of pc.cuts) {
+    // a hem: everything past its plane is cut away (when the cut has a reach r, only within r of
+    // the line through it along its normal: a sleeve's hem cuts the arm, not the body beside it)
+    const dx = x - c.p[0], dy = y - c.p[1], dz = z - c.p[2];
+    let h = dx * c.n[0] + dy * c.n[1] + dz * c.n[2];
+    if (c.r < Infinity) h = Math.min(h, c.r - Math.hypot(dx - h * c.n[0], dy - h * c.n[1], dz - h * c.n[2]));
+    r = smax(r, h, 0.008);
+  }
   for (const h of pc.hole) r = smax(r, -shapeDist(h, x, y, z), 0.008);
   return r;
 }
@@ -190,6 +208,15 @@ function girth(f, a, b, along) {
   }
   return r;
 }
+// how far out from a point the body reaches, all round it (in the level plane): its outline's radius
+function outline(f, c) {
+  let r = 0;
+  for (let i = 0; i < 24; i++) {
+    const t = (i / 24) * Math.PI * 2, dx = Math.cos(t), dz = Math.sin(t);
+    for (let u = 0.4; u > r; u -= 0.003) if (f(c[0] + dx * u, c[1], c[2] + dz * u) < 0) { r = u; break; }
+  }
+  return r;
+}
 // the inside of a garment's shell lies under the skin, never seen: take it away
 function dropInner(m, bodyAt) {
   const P = m.positions, n = P.length / 3, under = new Uint8Array(n);
@@ -199,12 +226,14 @@ function dropInner(m, bodyAt) {
   m.indices = new Uint32Array(keep);
 }
 // take away the body's triangles that lie well inside a piece of clothing
-function hideCovered(part, pieces) {
+function hideCovered(part, pieces, bareAt, checkAbove) {
   const P = part.positions, n = P.length / 3;
   const hidden = new Uint8Array(n);
   for (let v = 0; v < n; v++) {
     const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
     for (const pc of pieces) if (coverDist(pc, x, y, z) < -0.014) { hidden[v] = 1; break; }
+    // near the head, a point standing off the bare body (a beard) is not under the cloth
+    if (hidden[v] && y > checkAbove && bareAt(x, y, z) > 0.006) hidden[v] = 0;
   }
   const I = part.indices, keep = [];
   for (let t = 0; t < I.length; t += 3) if (!(hidden[I[t]] && hidden[I[t + 1]] && hidden[I[t + 2]])) keep.push(I[t], I[t + 1], I[t + 2]);
@@ -274,9 +303,12 @@ function partBox(shapes, c, over) {
 // stronger, so joints bend smoothly where two bones' shapes meet
 function skinPart(part, allShapes, plan) {
   const shapes = part.shapes.filter((s) => !s.sub && !s.ghost);
+  // the skin without the added parts (a beard, tusks): a point standing out from it is on a part
+  const plain = part.shapes.filter((s) => !s.part && !s.ghost);
+  const hasParts = shapes.some((s) => s.part);
   const n = part.positions.length / 3;
   const skinIndex = new Uint16Array(n * 4), skinWeight = new Float32Array(n * 4), tint = new Uint8Array(n);
-  const PARTS = { lips: 1, nail: 2, claw: 3 };
+  const PARTS = { lips: 1, nail: 2, claw: 3, fur: 4, tusk: 5 };
   const d = new Float64Array(shapes.length);
   const acc = new Map();
   for (let v = 0; v < n; v++) {
@@ -305,7 +337,12 @@ function skinPart(part, allShapes, plan) {
     const top = [...acc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
     const sum = top.reduce((a, [, w]) => a + w, 0);
     top.forEach(([bi, w], i) => { skinIndex[v * 4 + i] = bi; skinWeight[v * 4 + i] = w / sum; });
-    tint[v] = PARTS[shapes[mi].part] || 0;
+    let t = m < 0.0025 ? PARTS[shapes[mi].part] || 0 : 0;
+    if (!t && hasParts && fieldDist(plain, x, y, z) > 0.0015) {
+      let best = Infinity;
+      for (let k = 0; k < shapes.length; k++) if (shapes[k].part && d[k] < best) { best = d[k]; t = PARTS[shapes[k].part]; }
+    }
+    tint[v] = t;
   }
   part.skinIndex = skinIndex; part.skinWeight = skinWeight; part.tint = tint;
   delete part.shapes;

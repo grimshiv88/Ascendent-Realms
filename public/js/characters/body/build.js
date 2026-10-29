@@ -53,9 +53,9 @@ export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips =
   const skeleton = new THREE.Skeleton(list);
   const mat = skinMaterial(skin);
   const meshes = {};
-  const colours = paint(skin, lips, nails, data.hair ? hairColor : null);
+  const colours = paint(skin, lips, nails, data.hair ? hairColor : null, hairColor);
   for (const [name, part] of Object.entries(data.parts)) {
-    const gk = name + skin + (data.hair ? hairColor : '');
+    const gk = name + skin + hairColor;
     let geo = made.geos[gk];
     if (!geo) {
       geo = new THREE.BufferGeometry();
@@ -73,6 +73,7 @@ export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips =
     mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     scaler.add(mesh);
+    mesh.updateMatrixWorld(true);
     mesh.bind(skeleton, mesh.matrixWorld);
     meshes[name] = mesh;
   }
@@ -94,6 +95,7 @@ export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips =
     mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     scaler.add(mesh);
+    mesh.updateMatrixWorld(true);
     mesh.bind(skeleton, mesh.matrixWorld);
     meshes[name] = mesh;
   }
@@ -117,6 +119,7 @@ export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips =
   faceMesh.frustumCulled = false;
   faceMesh.renderOrder = 1;
   scaler.add(faceMesh);
+  faceMesh.updateMatrixWorld(true);
   faceMesh.bind(skeleton, faceMesh.matrixWorld);
   meshes.face = faceMesh;
   const blink = (shut) => { faceMat.map = shut ? tex.shut : tex.open; };
@@ -130,6 +133,7 @@ export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips =
     hairMesh.castShadow = true; hairMesh.receiveShadow = true;
     hairMesh.frustumCulled = false;
     scaler.add(hairMesh);
+    hairMesh.updateMatrixWorld(true);
     hairMesh.bind(skeleton, hairMesh.matrixWorld);
     meshes.hair = hairMesh;
   }
@@ -163,7 +167,7 @@ function wrapLight(shader) {
   );
 }
 
-function paint(skin, lips, nails, hair) {
+function paint(skin, lips, nails, hair, furHex) {
   const s = new THREE.Color(skin);
   const hsl = {}; s.getHSL(hsl);
   return {
@@ -171,6 +175,8 @@ function paint(skin, lips, nails, hair) {
     lips: lips ? new THREE.Color(lips) : s.clone().lerp(new THREE.Color('#c0605a'), 0.38),
     nail: nails ? new THREE.Color(nails) : s.clone().lerp(new THREE.Color('#f4d8d0'), 0.5),
     claw: new THREE.Color('#2a2420'),
+    fur: new THREE.Color(furHex || '#5a4030'),
+    tusk: new THREE.Color('#e8dfc8'),
     warm: s.clone().lerp(new THREE.Color('#e07868'), 0.22),
     pale: s.clone().lerp(new THREE.Color('#fff4ec'), 0.18),
     hair: hair ? new THREE.Color(hair).multiplyScalar(0.7) : null,
@@ -190,6 +196,10 @@ function colourPoints(part, C, plan) {
     if (t === 1) c.copy(C.lips);
     else if (t === 2) c.copy(C.nail);
     else if (t === 3) c.copy(C.claw);
+    else if (t === 4) {
+      // fur: the hair's colour, lighter at the tips, with a fine streaking
+      c.copy(C.fur).multiplyScalar(0.8 + 0.3 * Math.abs(Math.sin(x * 1300 + Math.sin(y * 60 + z * 40) * 3)));
+    } else if (t === 5) c.copy(C.tusk);
     else {
       // cheeks
       for (const s of [-1, 1]) {

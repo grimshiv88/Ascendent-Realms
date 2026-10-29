@@ -26,6 +26,10 @@ export const BASE = {
   jaw: 1, chin: 1, nose: 1, cheeks: 1, brow: 0.3,
   eyes: 1,          // eye size
   claws: false,
+  animalEars: null, // 'wolf', 'cat', 'fox': furred ears on top of the head (beastkin)
+  tail: null,       // 'wolf', 'cat', 'fox'
+  beard: 0,         // 0 none .. 1 a full, long beard (dwarves)
+  tusks: 0,         // small tusks from the lower jaw (giants), 0 .. 1
 };
 
 // Fingers: [name, side offset across the palm (front is +), knuckle drop, segment lengths, radius]
@@ -88,14 +92,14 @@ export function humanoidPlan(opts = {}) {
   for (const s of [-1, 1]) {
     const pk = 0.6 + m * 0.7;
     // chest muscles, only on the muscled
-    if (m > 0.4) put('upperChest', ell([s * 0.06 * sw, T(0.39), 0.074 * ch * b], [0.064 * sw, 0.044, 0.03 * (m - 0.3)], { m: rotXYZ(0, s * 0.25, s * 0.12), blend: 0.06 }));
+    if (m > 0.4) put('upperChest', ell([s * 0.06 * sw, T(0.395), 0.072 * ch * b], [0.066 * sw, 0.042, 0.02 * (m - 0.3)], { m: rotXYZ(0, s * 0.25, s * 0.12), blend: 0.022 }));
     // the slope from the neck to the shoulders
     put('upperChest', cone([s * 0.024, T(0.535), -0.024], [s * 0.14 * sw, T(0.48), -0.016], 0.03 * (0.8 + m * 0.5), 0.024, { blend: 0.05 }));
   }
   if (m > 0.35) {
     // stomach muscles
     for (let row = 0; row < 3; row++) for (const s of [-1, 1]) {
-      put('spine', ell([s * 0.024, T(0.1 + row * 0.07), 0.077 * b], [0.022, 0.03, 0.01 * (m - 0.2)], { blend: 0.025 }));
+      put('spine', ell([s * 0.024, T(0.1 + row * 0.07), 0.077 * b], [0.022, 0.03, 0.01 * (m - 0.2)], { blend: 0.012, detail: true }));
     }
   }
 
@@ -131,6 +135,32 @@ export function humanoidPlan(opts = {}) {
       put('head', ell(mix(root, tip, 0.42), [0.006, len * 0.56, 0.019 * es], { m: alongDir(dir, s * 0.5), blend: 0.006 }));
       put('head', ell(H(s * 0.077, 0.045, -0.012), [0.008, 0.02, 0.014], { blend: 0.006 })); // the lobe
     }
+  }
+
+  // animal ears on top of the head: a tall furred cone, hollowed in front
+  if (P.animalEars) {
+    const tall = { wolf: 0.085, cat: 0.06, fox: 0.095 }[P.animalEars] || 0.08;
+    const wide = { wolf: 0.032, cat: 0.03, fox: 0.034 }[P.animalEars] || 0.032;
+    for (const s of [-1, 1]) {
+      const root = H(s * 0.052, 0.168, -0.012), tip = H(s * 0.085, 0.168 + tall * 1.05, -0.026);
+      const dir = norm([tip[0] - root[0], tip[1] - root[1], tip[2] - root[2]]);
+      put('head', cone(root, tip, wide * hd, 0.004 * hd, { blend: 0.012, part: 'fur' }));
+      // flattened front to back, and hollow at the front
+      put('head', ell(mix(root, tip, 0.45).map((v, i) => v + [0, 0, 0.022 * hd][i]), [wide * 0.75 * hd, tall * 0.42 * hd, 0.012 * hd], { m: alongDir(dir), sub: true, blend: 0.008 }));
+      put('head', ell(mix(root, tip, 0.4).map((v, i) => v + [0, 0, -0.026 * hd][i]), [wide * 1.1 * hd, tall * 0.5 * hd, 0.012 * hd], { m: alongDir(dir), sub: true, blend: 0.01 }));
+    }
+  }
+  // a beard: full over the jaw and chin, falling to a point, with a moustache
+  if (P.beard > 0) {
+    const bd = P.beard;
+    // it grows from the jaw and chin, below the mouth (the lips stay clear), and hangs down the chest
+    put('head', ell(H(0, -0.028, 0.045), [0.058, 0.04, 0.046], { blend: 0.03, part: 'fur' }));
+    for (const sd of [-1, 1]) put('head', ell(H(sd * 0.052, 0.012, 0.022), [0.022, 0.04, 0.036], { blend: 0.025, part: 'fur' }));
+    put('head', cone(H(0, -0.05, 0.058), H(0, -0.08 - 0.12 * bd, 0.06 + 0.02 * bd), 0.046, 0.012, { blend: 0.04, part: 'fur' }));
+    for (const sd of [-1, 1]) put('head', cone(H(sd * 0.004, 0.026, 0.078), H(sd * 0.032, 0.008, 0.07), 0.0065, 0.0035, { blend: 0.006, part: 'fur' }));
+  }
+  if (P.tusks > 0) {
+    for (const sd of [-1, 1]) put('head', cone(H(sd * 0.021, 0.0, 0.07), H(sd * 0.03, 0.03 + 0.012 * P.tusks, 0.086), 0.0065 * P.tusks, 0.002, { blend: 0.002, part: 'tusk' }));
   }
 
   // ---- arms and hands ----
@@ -243,6 +273,22 @@ export function humanoidPlan(opts = {}) {
     put(fo, ell(add(ball, [0, -0.004, -0.045]), [0.04 * ft, 0.019 * ft, 0.06 * ft], { blend: 0.025 }));
     put(to, ell(add(ball, [-s * 0.002, -0.005, 0.03 * ft]), [0.043 * ft, 0.015 * ft, 0.036 * ft], { blend: 0.012 }));
     put(to, ell(add(ball, [-s * 0.02 * ft, -0.003, 0.05 * ft]), [0.013 * ft, 0.012 * ft, 0.02 * ft], { blend: 0.008 })); // the big toe
+  }
+
+  // a tail, from the base of the spine, curving down and out behind; bushy for a wolf or fox
+  if (P.tail) {
+    const bushy = P.tail === 'cat' ? 0.6 : 1;
+    const N = 5;
+    let at = [0, hipY + 0.06, -0.085], parent = 'hips';
+    for (let i = 0; i < N; i++) {
+      const nm = `tail${i + 1}`;
+      bone(nm, parent, at);
+      const k = (i + 1) / N;
+      const next = [0, hipY + 0.06 - 0.09 * k - 0.16 * k * k, -0.085 - 0.13 * k - 0.05 * k * k];
+      const r0 = (0.018 + 0.03 * bushy * Math.sin(Math.PI * Math.min(1, (i / N) * 1.2 + 0.1))), r1 = (0.018 + 0.03 * bushy * Math.sin(Math.PI * Math.min(1, (k) * 1.2 + 0.1)));
+      put(nm, cone(at, next, i === 0 ? 0.02 : r0, i === N - 1 ? 0.006 : r1, { blend: i ? 0.01 : 0.03, part: 'fur' }));
+      at = next; parent = nm;
+    }
   }
 
   const top = headO[1] + 0.186 * hd; // the crown of the skull
