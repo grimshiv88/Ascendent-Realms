@@ -1506,7 +1506,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     jumpQueued = false;
     // walking down a slope keeps your feet on it; only a real drop (a cliff, a ledge) is a fall
     const drop = pos.y - ground;
-    if (!airborne && drop < 0.35 + speedNow * dt * 2.2) { pos.y = ground; velY = 0; } else {
+    // stepping up (a stair, a log, a bridge) lifts you over a moment instead of in one jump
+    if (!airborne && drop < 0.35 + speedNow * dt * 2.2) { pos.y = drop < -0.05 && drop > -0.85 ? pos.y + Math.min(-drop, dt * 5) : ground; velY = 0; } else {
       if (!airborne && drop > 0) { airborne = true; fallFrom = pos.y; }
       velY -= 9.81 * dt;
       pos.y += velY * dt;
@@ -1620,7 +1621,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (!depth && !inside) checkGates(t);
     if (inside) {
-      inside.built.update(t);
+      inside.built.update(t, pos);
       checkRooms();
       const d = Math.hypot(pos.x - inside.built.exit.x, pos.z - inside.built.exit.z);
       if (d > 3) inside.leftExit = true;
@@ -1668,8 +1669,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (depth) cam.y = Math.min(cam.y, depth.built.roofAt(cam.x, cam.z) - 0.5);
     if (inside) {
       inside.built.clampCam(cam, inside.built.upstairs(pos));
-      // in a meeting room the camera stays in the room
-      const rm = inside.built.rooms.find((r) => pos.x > r.x0 && pos.x < r.x1 && pos.z > r.z0 && pos.z < r.z1);
+      // in a meeting room (or the Assessment Room and its hallway) the camera stays in the room
+      const rm = [...inside.built.rooms, ...(inside.built.nooks || [])].find((r) => pos.x > r.x0 && pos.x < r.x1 && pos.z > r.z0 && pos.z < r.z1);
       if (rm) { cam.x = Math.max(rm.x0 + 0.4, Math.min(rm.x1 - 0.4, cam.x)); cam.z = Math.max(rm.z0 + 0.4, Math.min(rm.z1 - 0.4, cam.z)); }
       cam.y = Math.min(cam.y, inside.built.roofAt(cam.x, cam.z) - 0.2); }
     const near = eyes ? 0.08 : 0.2;
@@ -1694,7 +1695,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     lightTorches(t);
     sun.position.copy(pos).addScaledVector(lightDir, 120);
     sun.target.position.copy(pos);
-    for (const s of sites) s.built?.update?.(t);
+    for (const s of sites) s.built?.update?.(t, pos);
     for (const q of mobVillages.values()) q.built.update(t);
     walkBuild?.update();
     sky.follow(camera);

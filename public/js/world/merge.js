@@ -3,13 +3,13 @@
 import * as THREE from 'three';
 
 // Replace every mesh under `group` with one merged mesh per material. Only for meshes that never
-// move on their own and have no textures.
+// move on their own and have no textures (a mesh marked userData.moves, like a door, stays as it is).
 export function mergeStill(group) {
   group.updateMatrixWorld(true);
   const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert();
   const byMat = new Map();
   const meshes = [];
-  group.traverse((o) => { if (o.isMesh && !o.material.map) meshes.push(o); });
+  group.traverse((o) => { if (o.isMesh && !o.material.map && !Array.isArray(o.material) && !o.userData.moves) meshes.push(o); });
   for (const m of meshes) {
     const geo = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone());
     geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toLocal, m.matrixWorld));

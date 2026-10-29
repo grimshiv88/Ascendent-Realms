@@ -75,13 +75,26 @@ function house(w, d, h, wall, roof, label) {
   const roofGeo = new THREE.ExtrudeGeometry(tri, { depth: w + 0.6, bevelEnabled: false });
   roofGeo.translate(0, 0, -(w + 0.6) / 2);
   roofGeo.rotateY(Math.PI / 2);
-  const r = new THREE.Mesh(roofGeo, [wallMat, roofMat]); // ends in the wall's colour, slopes in the roof's
+  const r = new THREE.Mesh(roofGeo, roofMat);
   r.position.y = h - 0.05;
   g.add(r);
+  for (const side of [-1, 1]) {
+    const end = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(-d / 2, 0), new THREE.Vector2(d / 2, 0), new THREE.Vector2(0, rise * (d / 2) / (d / 2 + eave))])).rotateY(side * Math.PI / 2), wallMat);
+    end.position.set(side * (w / 2 + 0.01), h - 0.05, 0);
+    g.add(end);
+  }
   // door and windows on the front (+z)
+  // the door swings on its left side; it opens when someone comes to it (see openDoors)
+  const hinge = new THREE.Group();
+  hinge.position.set(-0.7, 0, d / 2 + 0.05);
   const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.12), trim);
-  door.position.set(0, 1.2, d / 2 + 0.05);
-  g.add(door);
+  door.position.set(0.7, 1.2, 0);
+  door.userData.moves = true;
+  hinge.add(door);
+  const dark = new THREE.Mesh(new THREE.BoxGeometry(1.36, 2.36, 0.02), matOf('#140e08', 1));
+  dark.position.set(0, 1.18, d / 2 + 0.005); // the dark doorway behind it
+  g.add(hinge, dark);
+  g.userData.door = hinge;
   const glass = matOf('#ffe0a0', 1, { emissive: '#c08030', emissiveIntensity: 0.6 });
   for (const x of [-w / 3, w / 3]) {
     const win = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.1), glass);
@@ -97,6 +110,26 @@ function house(w, d, h, wall, roof, label) {
   }
   g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return g;
+}
+
+// Doors that swing open while someone is near them (you, for now). Their places are worked out
+// the first time, once the buildings stand where they will stay.
+function doorKeeper() {
+  const doors = [];
+  const v = new THREE.Vector3();
+  return {
+    add(b) { if (b.userData.door) doors.push({ hinge: b.userData.door, x: null, z: null, open: 0 }); },
+    update(you) {
+      if (!you) return;
+      for (const d of doors) {
+        if (d.x === null) { d.hinge.updateWorldMatrix(true, false); d.hinge.getWorldPosition(v); d.x = v.x + 0.7; d.z = v.z; }
+        const want = Math.abs(you.x - d.x) < 3 && Math.abs(you.z - d.z) < 3 && Math.hypot(you.x - d.x, you.z - d.z) < 3 ? 1.35 : 0;
+        if (Math.abs(want - d.open) < 0.005) continue;
+        d.open += (want - d.open) * 0.12;
+        d.hinge.rotation.y = d.open;
+      }
+    },
+  };
 }
 
 // Solid circles along a rectangle's edges, so you can't walk through a building
@@ -125,6 +158,7 @@ export function buildCity(place, opts = {}) {
   const cx = place.x, cz = place.z;
   const solid = [...centre.solid];
   const shops = [];
+  const doors = doorKeeper();
 
   // the paved plaza
   const paving = new THREE.Mesh(new THREE.CircleGeometry(PLAZA_R + 10, 64), new THREE.MeshStandardMaterial({ color: S.paving, roughness: 0.95 }));
@@ -149,6 +183,7 @@ export function buildCity(place, opts = {}) {
     const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
     const name = id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : id === 'academy' ? ACADEMY_NAME : MARKETS[id].name;
     const b = house(w, d, h, wall, roof, name);
+    doors.add(b);
     if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
     const at = placeFacing(g, b, a, PLAZA_R + d / 2 + 4, d);
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
@@ -213,6 +248,7 @@ export function buildCity(place, opts = {}) {
   for (const h of houses) {
     const [wall, roof] = tones[h.i % tones.length];
     const hb = house(h.w, h.d, h.h, wall, roof, null);
+    doors.add(hb);
     const at = placeFacing(fixed, hb, h.a, h.r, h.d);
     if (S.decor === 'reeds') hb.position.y = 0.6;
     boxColliders(cx + at.bx, cz + at.bz, h.w, h.d, at.rot, solid);
@@ -287,8 +323,9 @@ export function buildCity(place, opts = {}) {
   });
 
   const glow = decorate(g, S, cx, cz, solid);
-  const update = (t) => {
+  const update = (t, you) => {
     centre.update?.(t);
+    doors.update(you);
     for (const b of guards) animateCharacter(b, t, 0);
     for (const b of folk) animateCharacter(b, t, 0);
     for (const b of bridges) b.update();
@@ -497,16 +534,18 @@ export function buildVillage(place) {
   const g = centre.group;
   const cx = place.x, cz = place.z, baseY = heightAt(cx, cz);
   const solid = [...centre.solid];
+  const doors = doorKeeper();
   const shops = centre.market ? [{ ...centre.market, name: MARKETS[centre.market.id].name }] : [];
   const spots = [[-0.6, 30, 'tavern'], [0.9, 32], [1.9, 28], [2.8, 34], [3.9, 30], [5.0, 33]];
   for (const [a, r, id] of spots) {
     const tavern = id === 'tavern';
     const w = tavern ? 11 : 7, d = tavern ? 8 : 6, h = tavern ? 6 : 4;
     const b = house(w, d, h, tavern ? '#c8b48e' : '#d0c2a2', tavern ? '#6a3a1e' : '#5a4a3a', tavern ? `${place.name} Tavern` : null);
+    doors.add(b);
     const at = placeFacing(g, b, a, r, d);
     b.position.y = heightAt(cx + at.bx, cz + at.bz) - baseY;
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
     if (tavern) shops.push({ id: 'tavern', name: `${place.name} Tavern`, x: cx + at.x, z: cz + at.z, building: true });
   }
-  return { group: g, update: centre.update, shops, solid, market: centre.market };
+  return { group: g, update: (t, you) => { centre.update(t); doors.update(you); }, shops, solid, market: centre.market };
 }

@@ -13,6 +13,7 @@ import { buildWork, WORKER_Z } from './work.js';
 const OX = DEPTHS_X + 150000, OZ = 0;
 const UP = 4.5; // the Guild Hall's upper floor
 const SEAT_H = 0.48;
+const STEPS = 15; // steps on a staircase
 
 // [width, depth, ceiling] of each kind of room (the Guild Hall's ground floor)
 const SIZES = { castle: [30, 22, 12], guild: [24, 20, 9], tavern: [16, 13, 5], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5] };
@@ -29,6 +30,7 @@ export function buildInterior(shop) {
   const people = [];
   const workers = []; // { station, body }: people doing their jobs
   const rooms = [];
+  const nooks = []; // small rooms and hallways the camera stays inside (not rented)
   const spots = []; // things to use with E: { x, z, y, event, r }
   const mats = [];
   const mat = (color, extra = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra }); mats.push(m); return m; };
@@ -69,6 +71,21 @@ export function buildInterior(shop) {
       if (h - top > 0.2) box(b - a, h - top, 0.3, plaster, x0 + ux * (a + b) / 2, y + top, z0 + uz * (a + b) / 2, Math.atan2(-uz, ux));
       if (base > 0) box(b - a, base, 0.3, plaster, x0 + ux * (a + b) / 2, y, z0 + uz * (a + b) / 2, Math.atan2(-uz, ux));
     }
+  }
+  // a single wooden door in a doorway along x, hinged on its left, swinging in (towards +z) while
+  // someone stands near it
+  const swings = [];
+  function swingDoor(x, y, z, w) {
+    const hinge = new THREE.Group();
+    hinge.position.set(x - w / 2, y, z);
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(w, 2.5, 0.07), wood);
+    leaf.position.set(w / 2, 1.25, 0);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), brass);
+    knob.position.set(w - 0.15, 1.1, -0.06);
+    for (const by of [0.45, 2.05]) { const band = new THREE.Mesh(new THREE.BoxGeometry(w - 0.05, 0.06, 0.09), darkWood); band.position.set(w / 2, by, 0); hinge.add(band); }
+    hinge.add(leaf, knob);
+    g.add(hinge);
+    swings.push({ hinge, x: x, y, z, open: 0 });
   }
   function floor(x0, x1, z0, z1, y, m = floorMat) {
     const f = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), m);
@@ -112,22 +129,21 @@ export function buildInterior(shop) {
     }
   }
   function chair(x, z, y, facing) {
+    // a wooden chair: turned legs, a seat with a cloth cushion, and a back of two posts and three slats
     const c = new THREE.Group();
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.5), wood);
-    seat.position.y = SEAT_H;
-    const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.06), wood);
-    back.position.set(0, SEAT_H + 0.3, -0.24);
-    c.add(seat, back);
-    for (const [lx, lz] of [[-0.21, -0.21], [0.21, -0.21], [-0.21, 0.21], [0.21, 0.21]]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, SEAT_H, 0.05), darkWood);
-      leg.position.set(lx, SEAT_H / 2, lz);
-      c.add(leg);
-    }
+    const part = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); c.add(o); return o; };
+    part(new THREE.BoxGeometry(0.48, 0.05, 0.46), wood, 0, SEAT_H, 0);
+    part(new THREE.BoxGeometry(0.4, 0.05, 0.38), cloth, 0, SEAT_H + 0.05, 0.01);
+    for (const [lx, lz] of [[-0.2, -0.19], [0.2, -0.19], [-0.2, 0.19], [0.2, 0.19]]) part(new THREE.CylinderGeometry(0.025, 0.03, SEAT_H, 6), darkWood, lx, SEAT_H / 2, lz);
+    for (const lx of [-0.2, 0.2]) part(new THREE.CylinderGeometry(0.025, 0.025, 0.62, 6), darkWood, lx, SEAT_H + 0.31, -0.2);
+    for (const k of [0.18, 0.36, 0.54]) part(new THREE.BoxGeometry(0.4, 0.06, 0.03), wood, 0, SEAT_H + k, -0.2);
+    part(new THREE.BoxGeometry(0.4, 0.03, 0.03), darkWood, 0, 0.14, 0.19); // a stretcher between the front legs
     c.position.set(x, y, z);
     c.rotation.y = facing;
     c.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     g.add(c);
     seats.push({ x: OX + x, z: OZ + z, y, heading: facing });
+    block(x, z, 0.28, y, 1); // solid: you walk round it (E to sit)
   }
   // the counter where the keeper stands, and the keeper
   let counter = null;
@@ -209,9 +225,24 @@ export function buildInterior(shop) {
   wall(-W / 2, 0, W / 2, 0, 0, H, [[W / 2 - 1, W / 2 + 1]]); // front, with the door
   wall(-W / 2, 0, -W / 2, D, 0, H);
   wall(W / 2, 0, W / 2, D, 0, H);
-  const door = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.6), new THREE.MeshStandardMaterial({ color: '#fff2c8', emissive: '#ffe6a8', emissiveIntensity: 1.2 }));
-  door.position.set(0, 1.3, 0.05);
-  g.add(door);
+  // the way out: a wooden door frame with two doors that swing open as you come to them, and the
+  // daylight beyond
+  const light = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.6), new THREE.MeshStandardMaterial({ color: '#d8c8a0', emissive: '#e8d4a0', emissiveIntensity: 0.55 }));
+  light.position.set(0, 1.3, -0.12);
+  g.add(light);
+  box(0.18, 2.75, 0.36, darkWood, -1.09, 0, 0); box(0.18, 2.75, 0.36, darkWood, 1.09, 0, 0); box(2.36, 0.2, 0.36, darkWood, 0, 2.6, 0);
+  const leaves = [-1, 1].map((side) => {
+    const hinge = new THREE.Group();
+    hinge.position.set(side * 1, 0, 0.05);
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(1, 2.55, 0.08), wood);
+    leaf.position.set(-side * 0.5, 1.28, 0);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.015, 6, 12), brass);
+    ring.position.set(-side * 0.85, 1.2, 0.06);
+    for (const y of [0.5, 1.3, 2.1]) { const band = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.07, 0.1), darkWood); band.position.set(-side * 0.5, y, 0); hinge.add(band); }
+    hinge.add(leaf, ring);
+    g.add(hinge);
+    return { hinge, side, open: 0 };
+  });
   const exit = { x: OX, z: OZ + 0.4 };
   const start = { x: OX, z: OZ + 3.6, heading: 0 };
 
@@ -221,39 +252,69 @@ export function buildInterior(shop) {
     wall(-W / 2, D, W / 2, D, 0, H, [[W - 3.6, W - 0.4, UP]]);
     ceiling(-W / 2, W / 2, 0, D, H);
     // the counter at the back, the guild board beside it
-    counterAt(-3, D - 3, 7, 'Main Guild Hall');
-    const board = box(3.2, 2, 0.12, mat('#7a5a34'), -9, 1, D - 0.3);
-    for (let i = 0; i < 6; i++) box(0.6, 0.45, 0.02, mat('#efe2c0'), -10.2 + (i % 3) * 1.1, 1.5 + Math.floor(i / 2) * 0, D - 0.38);
+    counterAt(-1, D - 3, 7, 'Main Guild Hall');
+    // the Bounty Board on the front wall, left of the door
+    const board = box(3.2, 2, 0.12, mat('#7a5a34'), -8, 1, 0.3);
+    for (let i = 0; i < 6; i++) box(0.6, 0.45, 0.02, mat('#efe2c0'), -9.2 + (i % 3) * 1.1, 1.3 + Math.floor(i / 3) * 0.7, 0.38);
     board.receiveShadow = true;
-    spots.push({ x: OX - 9, z: OZ + D - 1.4, y: 0, event: 'guild', r: 2 }); // the Bounty Board on the wall
-    // the Assessment Room in the back left corner: a glowing crystal that reads a hunter's level and stats
-    const AX = -W / 2 + 2.6, AZ = D - 5.5;
-    wall(-W / 2, AZ - 2.6, -W / 2 + 3.6, AZ - 2.6, 0, 3.2, [[1.0, 2.6]]);
-    cyl(0.35, 0.45, 0.9, stone, AX, 0, AZ, 12);
-    const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 1), mat('#8fd8ff', { emissive: '#3fb0ff', emissiveIntensity: 1.6, transparent: true, opacity: 0.9 }));
-    orb.position.set(AX, 1.3, AZ);
-    g.add(orb);
+    spots.push({ x: OX - 8, z: OZ + 1.4, y: 0, event: 'guild', r: 2 });
+    // the Assessment Room in the back left: a hallway from the hall, a door off it into the room, a
+    // crystal board to lay your hand on, and the assessor watching from behind a glass wall
+    wall(-W / 2, 8, -6, 8, 0, H);                         // the wing's front
+    wall(-6, 8, -6, D, 0, H, [[0.4, 2.0]]);               // hall to hallway
+    wall(-8, 8, -8, D, 0, H, [[5.0, 6.6]]);               // hallway to the room
+    const glassMat = mat('#bfe4ff', { transparent: true, opacity: 0.22, metalness: 0.4, roughness: 0.05 });
+    const glass = box(4, 2.6, 0.06, glassMat, -10, 0, 16.5);
+    glass.castShadow = false;
+    box(4, 0.9, 0.3, plaster, -10, 0, 16.5);              // the sill under the glass
+    box(4, H - 2.6, 0.3, plaster, -10, 2.6, 16.5);        // and the wall over it
+    for (let x = -11.7; x <= -8.2; x += 0.8) block(x, 16.5, 0.45, 0, H);
+    // the crystal board: a slab of crystal on a stone stand, glowing where the hand goes
+    cyl(0.3, 0.4, 1.0, stone, -10, 0, 15.2, 10);
+    const slab = box(1.1, 0.08, 0.8, mat('#8fd8ff', { emissive: '#3fb0ff', emissiveIntensity: 1.4, transparent: true, opacity: 0.9 }), -10, 1.0, 15.2);
+    slab.rotation.x = -0.35;
+    const hand = new THREE.Mesh(new THREE.CircleGeometry(0.16, 16), mat('#ffffff', { emissive: '#bfe8ff', emissiveIntensity: 2 }));
+    hand.rotation.x = -Math.PI / 2 - 0.35; hand.position.set(-10, 1.1, 15.15);
+    g.add(hand);
+    block(-10, 15.2, 0.5, 0, 1.2);
     const glow = new THREE.PointLight('#7fd0ff', 8, 6, 1.6);
-    glow.position.set(AX, 1.6, AZ);
+    glow.position.set(-10, 1.8, 15);
     g.add(glow); lights.push(glow);
-    block(AX, AZ, 0.5, 0, 1.4);
-    const plate = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), new THREE.MeshBasicMaterial({ map: textTexture('Assessment Room'), transparent: true }));
-    plate.position.set(-W / 2 + 2.1, 2.9, AZ - 2.75);
-    plate.rotation.y = Math.PI;
-    g.add(plate);
-    spots.push({ x: OX + AX, z: OZ + AZ, y: 0, event: 'assess', r: 1.8, spin: orb });
+    spots.push({ x: OX - 10, z: OZ + 15.2, y: 0, event: 'assess', r: 1.7, spin: null });
+    // the assessor at a desk behind the glass, reading what the crystal shows
+    box(2.4, 0.8, 0.7, darkWood, -10, 0, 17.6);
+    const assessor = buildCharacter({ race: 'elf', form: 'humanoid', look: {} });
+    assessor.position.set(-10, 0, 18.5);
+    assessor.rotation.y = Math.PI;
+    g.add(assessor);
+    people.push(assessor);
+    lamp(-10, H - 0.8, 13);
+    lamp(-7, H - 0.8, 14, 10);
+    const sign = (text, x, z) => { const pl = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), new THREE.MeshBasicMaterial({ map: textTexture(text), transparent: true })); pl.position.set(x, 2.85, z); pl.rotation.y = Math.PI / 2; g.add(pl); };
+    sign('Assessment Room', -5.83, 9.2);   // over the way into the hallway, seen from the hall
+    sign('Assessment Room', -7.83, 13.8);  // over the room's door, seen from the hallway
+    nooks.push({ x0: OX - 8, x1: OX - 6, z0: OZ + 8, z1: OZ + D }, { x0: OX - W / 2, x1: OX - 8, z0: OZ + 8, z1: OZ + D });
     // tables with chairs round them
-    for (const [x, z] of [[-7, 5], [-7, 10.5], [0, 7.5], [5, 4.5]]) table(x, z);
+    for (const [x, z] of [[-7.5, 4.5], [-2.5, 11.5], [0, 6.5], [5, 4.5]]) table(x, z);
     // the stairs up along the right wall: from z = 7 at the floor to z = D at the upper floor
     ramp = { x0: W / 2 - 3.6, x1: W / 2 - 0.4, z0: 7, z1: D };
-    const steps = 15;
+    const steps = STEPS;
     for (let i = 0; i < steps; i++) {
       const z = ramp.z0 + ((ramp.z1 - ramp.z0) * (i + 0.5)) / steps;
       box(ramp.x1 - ramp.x0, ((i + 1) / steps) * UP, (ramp.z1 - ramp.z0) / steps, wood, (ramp.x0 + ramp.x1) / 2, 0, z);
     }
     // a rail on the open side of the stairs
     for (let z = ramp.z0 + 0.6; z < ramp.z1; z += 0.8) block(ramp.x0 - 0.25, z, 0.4, 0, 6);
-    box(0.08, 1, ramp.z1 - ramp.z0, darkWood, ramp.x0 - 0.1, UP * 0.5, (ramp.z0 + ramp.z1) / 2);
+    // the handrail: a sloped rail along the stairs on posts, a metre above each step
+    {
+      const run = ramp.z1 - ramp.z0, L = Math.hypot(run, UP);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, L), darkWood);
+      rail.position.set(ramp.x0 - 0.1, UP / 2 + 1, (ramp.z0 + ramp.z1) / 2);
+      rail.rotation.x = -Math.atan2(UP, run);
+      rail.castShadow = true;
+      g.add(rail);
+      for (let z = ramp.z0 + 0.3; z <= ramp.z1; z += 0.9) box(0.06, 1, 0.06, darkWood, ramp.x0 - 0.1, (UP * (z - ramp.z0)) / run, z);
+    }
 
     // ---------- upstairs: a hallway along the front and four meeting rooms behind ----------
     const Z0 = D, Z1 = D + 3.5, Z2 = D + 12;
@@ -269,6 +330,7 @@ export function buildInterior(shop) {
       const x0 = -W / 2 + i * rw, x1 = x0 + rw, cx = (x0 + x1) / 2, cz = (Z1 + Z2) / 2;
       if (i) wall(x0, Z1, x0, Z2, UP, 4);
       table(cx, cz, UP, 0.95, 6);
+      swingDoor(cx, UP, Z1, 1.4);
       lamp(cx, UP + 3.2, cz, 14);
       const plate = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.5), new THREE.MeshBasicMaterial({ map: textTexture(room.name), transparent: true }));
       plate.position.set(cx, UP + 3.1, Z1 - 0.2);
@@ -316,6 +378,7 @@ export function buildInterior(shop) {
       const x0 = -W / 2 + i * rw, x1 = x0 + rw, cx = (x0 + x1) / 2, cz = (D + Z2) / 2;
       if (i) wall(x0, D, x0, Z2, 0, 6);
       table(cx, cz, 0, 1.1, 8);
+      swingDoor(cx, 0, D, 1.6);
       lamp(cx, 5, cz, 14);
       const plate = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.5), new THREE.MeshBasicMaterial({ map: textTexture(room.name), transparent: true }));
       plate.position.set(cx, 3.2, D - 0.2);
@@ -372,14 +435,15 @@ export function buildInterior(shop) {
   function sampleAt(x, z, out = {}) {
     const lx = x - OX, lz = z - OZ;
     let h = 0;
-    if (ramp && lx >= ramp.x0 && lx <= ramp.x1 && lz >= ramp.z0 && lz <= ramp.z1) h = ((lz - ramp.z0) / (ramp.z1 - ramp.z0)) * UP;
+    // on the stairs you stand on the step under you (not a slope through them)
+    if (ramp && lx >= ramp.x0 && lx <= ramp.x1 && lz >= ramp.z0 && lz <= ramp.z1) h = (Math.min(STEPS, Math.floor(((lz - ramp.z0) / (ramp.z1 - ramp.z0)) * STEPS) + 1) / STEPS) * UP;
     else if (kind === 'guild' && lz > D) h = UP;
     out.h = h; out.water = -1e6; out.region = 'indoors'; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0;
     return out;
   }
   const tmp = {};
   return {
-    kind, group: g, solid, seats, rooms, spots, counter, exit, start,
+    kind, group: g, solid, seats, rooms, nooks, spots, counter, exit, start,
     sample: sampleAt,
     floorAt: (x, z) => sampleAt(x, z, tmp).h,
     roofAt: (x, z) => (z - OZ > D ? (kind === 'guild' ? UP + 4 : 6) : H) - 0.3,
@@ -396,7 +460,15 @@ export function buildInterior(shop) {
       return v;
     },
     upstairs: (p) => kind === 'guild' && p.z - OZ > D,
-    update(t) {
+    update(t, you) {
+      // the front doors open while someone is near them
+      const near = you && Math.hypot(you.x - OX, you.z - OZ) < 3;
+      for (const l of leaves) { l.open += ((near ? 1.4 : 0) - l.open) * 0.12; l.hinge.rotation.y = l.side * l.open; }
+      for (const d of swings) {
+        const by = you && Math.hypot(you.x - OX - d.x, you.z - OZ - d.z) < 2.2 && Math.abs(you.y - d.y) < 1.5;
+        d.open += ((by ? 1.45 : 0) - d.open) * 0.12;
+        d.hinge.rotation.y = -d.open;
+      }
       for (const p of people) animateCharacter(p, t, 0);
       for (const w of workers) w.station.play(w.body, t);
       for (const sp of spots) if (sp.spin) { sp.spin.rotation.y = t * 0.8; sp.spin.position.y = 1.3 + Math.sin(t * 2) * 0.05; }
