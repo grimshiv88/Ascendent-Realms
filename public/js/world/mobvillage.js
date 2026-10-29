@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { heightAt } from '../data/world-layout.mjs';
 import { textTexture } from './spawn.js';
-import { villageName } from '../data/mobvillages.mjs';
+import { villageName, sizeOf } from '../data/mobvillages.mjs';
 
 const LOOKS = {
   goblin: { wall: '#6b5a3c', roof: '#4a3b22', banner: '#5a8a2a' },
@@ -29,10 +29,11 @@ export function buildMobVillage(v) {
   const at = (x, z) => heightAt(v.x + x, v.z + z) - baseY;
 
   // the huts, in a ring with their doors to the fire
-  const huts = 5;
+  const SZ = sizeOf(v);
+  const huts = SZ.huts;
   for (let i = 0; i < huts; i++) {
     const a = (i / huts) * Math.PI * 2 + 0.4;
-    const x = Math.cos(a) * 13, z = Math.sin(a) * 13;
+    const x = Math.cos(a) * SZ.ring, z = Math.sin(a) * SZ.ring;
     const hut = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(HUT_R, HUT_R * 1.08, 2.4, 10), wall);
     body.position.y = 1.2;
@@ -48,10 +49,11 @@ export function buildMobVillage(v) {
   }
   // a fence of stakes, open on two sides
   const stake = new THREE.CylinderGeometry(0.12, 0.16, 2, 5);
-  for (let i = 0; i < 64; i++) {
-    const a = (i / 64) * Math.PI * 2;
+  const stakes = Math.round(SZ.fence * 3);
+  for (let i = 0; i < stakes; i++) {
+    const a = (i / stakes) * Math.PI * 2;
     if (Math.abs(Math.sin(a)) < 0.12) continue; // the ways in, east and west
-    const x = Math.cos(a) * 21, z = Math.sin(a) * 21;
+    const x = Math.cos(a) * SZ.fence, z = Math.sin(a) * SZ.fence;
     const s = new THREE.Mesh(stake, wood);
     s.position.set(x, at(x, z) + 0.9, z);
     s.rotation.z = Math.cos(a) * 0.15; s.rotation.x = -Math.sin(a) * 0.15;
@@ -100,7 +102,7 @@ export function buildMobVillage(v) {
   // where the folk stand: around the fire and by the huts
   const homes = v.folk.map((f, i) => {
     const a = (i / v.folk.length) * Math.PI * 2;
-    const r = f[0] === 2 ? 4 : 6 + (i % 3) * 3;
+    const r = i === v.folk.length - 1 ? 4 : 6 + (i % 3) * (SZ.ring - 4) / 3;
     return { x: v.x + Math.cos(a) * r, z: v.z + Math.sin(a) * r };
   });
 

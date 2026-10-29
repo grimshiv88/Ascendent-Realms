@@ -12,7 +12,7 @@ import { buildCave } from './caves.js';
 import { createCreatures, KINDS, monsterHit, GOBLIN_LINE } from './creatures.js';
 import { buildMobVillage } from './mobvillage.js';
 import { startWalkBuild } from './buildwalk.js';
-import { VILLAGES_AT_ONCE, VILLAGE_RETURNS_MS, VILLAGE_NEAR, VILLAGE_KIND, newVillage, villageName, villageCleared, villageLoot } from '../data/mobvillages.mjs';
+import { VILLAGES_AT_ONCE, VILLAGE_RETURNS_MS, VILLAGE_NEAR, VILLAGE_KIND, VILLAGE_SIZES, pickSize, newVillage, villageName, villageCleared, villageLoot } from '../data/mobvillages.mjs';
 import { createSkillFx } from './skillfx.js';
 import { codeFor, actionFor, keyName } from '../data/controls.mjs';
 import { buildDepths } from './depths.js';
@@ -27,11 +27,13 @@ import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
 import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
-import { gameTime } from '../data/clock.mjs';
+import { gameTime, now as realmNow } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
+import { skyCard } from './skycard.js';
+import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
-import { ageOf, isChild, ACADEMY_NAME, parentAlive } from '../data/birth.mjs';
+import { ageOf, isChild, ACADEMY_NAME, parentAlive, CEREMONY_SHOW_MS } from '../data/birth.mjs';
 import { money } from '../data/money.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
@@ -153,6 +155,24 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const s of sites) if (s.built?.setRaised) s.built.setRaised(!!cityRaised[s.place.id], colliders);
   }
   const builtCities = () => sites.filter((s) => s.place.city && s.built?.npcs);
+  // the cards of new Ceremonies, hanging in the sky over each city's shrine (the latest one per city)
+  const skyCards = new Map(); // city id -> { at, card, place }
+  function setCeremonies(list = []) {
+    const latest = {};
+    for (const c of list) if (realmNow() - c.at < CEREMONY_SHOW_MS && (!latest[c.city] || latest[c.city].at < c.at)) latest[c.city] = c;
+    for (const [city, k] of skyCards) if (!latest[city] || latest[city].at !== k.at) { scene.remove(k.card.group); k.card.dispose(); skyCards.delete(city); }
+    for (const [city, c] of Object.entries(latest)) {
+      if (skyCards.has(city)) continue;
+      const place = placesWithPositions().find((p) => p.id === city);
+      if (!place) continue;
+      const card = skyCard(c);
+      card.group.position.set(place.x, heightAt(place.x, place.z), place.z);
+      scene.add(card.group);
+      skyCards.set(city, { at: c.at, card, place });
+    }
+  }
+  // whether you stand at the shrine in the middle of a city (where Ceremonies are held)
+  const atShrine = () => !inside && !depth && builtCities().some((s) => Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 8);
   // clicking or tapping a townsperson (within 14 m) talks to them
   const talkV = new THREE.Vector3();
   function talkAt(sx, sy) {
@@ -493,11 +513,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // dry, open ground right across the camp (in the end, a clearing in a wood will do)
       const open = tries < 45 ? 0.25 : 1;
       if (s.forest > open) continue;
-      if ([[24, 0], [-24, 0], [0, 24], [0, -24]].some(([dx, dz]) => { const q = sample(x + dx, z + dz, tmpV); return q.h < q.water + 0.5 || q.forest > open; })) continue;
+      const size = pickSize(), SZ = VILLAGE_SIZES[size], reach = SZ.fence + 3;
+      if ([[reach, 0], [-reach, 0], [0, reach], [0, -reach]].some(([dx, dz]) => { const q = sample(x + dx, z + dz, tmpV); return q.h < q.water + 0.5 || q.forest > open; })) continue;
       const lvl = wildLevelAt(x, z);
-      if (lvl < 12 || lvl > 45) continue;
+      if (lvl < SZ.levels[0] || lvl > SZ.levels[1]) continue;
       if (game.villages().some((v) => Math.hypot(v.x - x, v.z - z) < 1500)) continue;
-      return newVillage(x, z, region);
+      return newVillage(x, z, region, Math.random, size);
     }
     return null;
   }
@@ -507,7 +528,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const extra = { keep: true, site: v.id, village: v.id, folk: i, angry: true };
     if (v.race === 'goblin') id = GOBLIN_LINE[stage];
     else if (stage) { extra.stage = stage; extra.title = EVOLUTIONS[v.race][stage]; }
-    if (stage === 2) { extra.title = `${EVOLUTIONS[v.race][2]} (Chief)`; extra.chief = true; }
+    if (i === v.folk.length - 1) { extra.title = `${EVOLUTIONS[v.race][stage]} (Chief)`; extra.chief = true; }
     const at = q.built.homes[i];
     creatures.spawnAt(id, level, at.x, at.z, extra);
   }
@@ -565,11 +586,32 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setTimeout(() => dropVillage(q), 2500);
   }
 
-  // Death is final: the game shows what happened and the player begins again (see main.js)
-  function defeated(m) {
+  // A death: main.js decides whether you rise at a shrine or it is the end (see data/life.mjs)
+  function defeated(m, cause = 'monster') {
+    if (dead) return;
     dead = true;
-    onEvent?.('defeated', { by: m.kind.name });
+    onEvent?.('defeated', { by: m.kind.name, cause });
   }
+  // Rise again at the nearest shrine (a city's plaza, a village's waystone or a waypoint)
+  function riseAtShrine() {
+    if (inside) leaveBuilding();
+    if (depth) leaveDepths();
+    if (sleeping) toggleSleep();
+    const spots = placesWithPositions().filter((p) => !p.cave && (p.city || p.village || p.spawn));
+    const best = spots.reduce((a, b) => (Math.hypot(b.x - pos.x, b.z - pos.z) < Math.hypot(a.x - pos.x, a.z - pos.z) ? b : a));
+    pos.set(best.x + 3, 0, best.z + 3);
+    updateSites(pos.x, pos.z);
+    land.update(pos.x, pos.z, Infinity);
+    pos.y = groundAt(pos.x, pos.z);
+    velY = 0; fallFrom = pos.y; airborne = false;
+    creatures.removeWhere((m) => Math.hypot(m.x - pos.x, m.z - pos.z) < 60 && !m.keep);
+    dead = false;
+    snapCam = true;
+    saveNow();
+    return best.name;
+  }
+  // dying of old age (checked by main.js as play time passes)
+  const oldAge = () => defeated({ kind: { name: 'old age' } }, 'age');
 
   // ---------- the depths below each cave ----------
   let holding = false; // a lit torch in your hand
@@ -925,6 +967,60 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     helper.body.position.set(helper.x, heightAt(helper.x, helper.z), helper.z);
     helper.body.rotation.y = helper.heading;
     animateCharacter(helper.body, t, speed / WALK * 1.6);
+  }
+
+  // ---------- a bodyguard hired at the guild: follows you and fights what comes near ----------
+  let guard = null;
+  const GUARD_GEAR = {
+    novice: { weapon: 'iron_sword', body: 'leather_armor', head: 'leather_cap' },
+    veteran: { weapon: 'steel_sword', body: 'chainmail', head: 'iron_helm' },
+    elite: { weapon: 'steel_sword', body: 'knight_plate', head: 'knight_helm' },
+  };
+  function refreshGuard() {
+    const g = game?.guard();
+    if (guard && (!g || g.tier !== guard.tier)) { scene.remove(guard.body); guard = null; }
+    if (!g || guard) return;
+    const race = ['dwarf', 'elf', 'beastkin', 'giant'][Math.floor(Math.random() * 4)];
+    const body = buildCharacter({ race, form: 'humanoid' });
+    wearGear(body, Object.fromEntries(Object.entries(GUARD_GEAR[g.tier]).map(([k, id]) => [k, ITEMS[id]])));
+    guard = { tier: g.tier, body, x: pos.x - Math.sin(heading) * 2.5, z: pos.z - Math.cos(heading) * 2.5, heading, swing: 0, target: null };
+    scene.add(body);
+    say(`Your ${BODYGUARDS[g.tier].name} falls in beside you`, 'note');
+  }
+  function moveGuard(dt, t) {
+    if (!guard) { if (game?.guard() && !dead) refreshGuard(); return; }
+    if (!game?.guard()) { refreshGuard(); say('Your bodyguard\'s time is up. They head back to the guild', 'note'); return; }
+    guard.body.visible = !inside && !depth;
+    if (inside || depth) return;
+    guard.swing = Math.max(0, guard.swing - dt);
+    // the nearest monster that is close to you (or already its target)
+    if (guard.target && (guard.target.dead || guard.target.hp <= 0 || Math.hypot(guard.target.x - pos.x, guard.target.z - pos.z) > 25)) guard.target = null;
+    if (!guard.target) guard.target = creatures.list.filter((m) => !m.dead && m.hp > 0 && Math.hypot(m.x - pos.x, m.z - pos.z) < 12).sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0] || null;
+    const m = guard.target;
+    let tx, tz, reach = 0.4;
+    if (m) { tx = m.x; tz = m.z; reach = m.radius + 1.1; } else { tx = pos.x - Math.sin(heading) * 2.2 - Math.cos(heading) * 1.2; tz = pos.z - Math.cos(heading) * 2.2 + Math.sin(heading) * 1.2; }
+    const dx = tx - guard.x, dz = tz - guard.z, d = Math.hypot(dx, dz);
+    let speed = 0;
+    if (d > 60) { guard.x = pos.x; guard.z = pos.z; }
+    else if (d > reach) {
+      speed = Math.min(d * 2.5, RUN * 1.25);
+      guard.x += (dx / d) * speed * dt; guard.z += (dz / d) * speed * dt;
+      guard.heading = Math.atan2(dx, dz);
+    } else if (m) {
+      guard.heading = Math.atan2(dx, dz);
+      if (guard.swing === 0) {
+        guard.swing = 1.1;
+        const dmg = Math.round(guardHit(guard.tier) * (0.85 + Math.random() * 0.3));
+        floatText(`-${dmg}`, new THREE.Vector3(m.x, (m.y ?? heightAt(m.x, m.z)) + m.height, m.z), 'hit');
+        finishHit(m, creatures.hit(m, dmg));
+      }
+    } else guard.heading = heading;
+    guard.body.position.set(guard.x, groundAt(guard.x, guard.z, -Infinity), guard.z);
+    guard.body.rotation.y = guard.heading;
+    animateCharacter(guard.body, t, speed / WALK * 1.6);
+    // a swing of the sword arm
+    const arm = guard.body.userData.rig?.arms?.[0];
+    if (arm) { const k = guard.swing > 0.6 ? (1.1 - guard.swing) / 0.5 : 0; arm.shoulder.rotation.x = k > 0 ? -2.6 + k * 2.4 : READY[0]; arm.elbow.rotation.x = READY[1]; }
   }
 
   // ---------- attacking ----------
@@ -1389,6 +1485,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // Pressing back turns you round to face behind you (the camera swings round too); keep holding it
   // and you walk on in the new direction
   let moatAt = -10; // when you last fell in a moat
+  let camOverride = null; // (testing) a fixed camera: [[x, y, z], [look x, y, z]]
   let snapCam = true; // the camera jumps straight to its place (after a door, a portal, a fall in the moat)
   let backWas = false, aboutFace = false, turnLeft = 0, backYaw = 0, backHeading = 0;
   let lastSave = 0;
@@ -1570,7 +1667,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (city) {
         moatAt = t;
         const monster = RACES[character.race].side === 'monster';
-        if (monster !== !!city.place.monster) { say('You sink into the moat and drown…', 'hurt'); defeated({ kind: { name: 'the moat' } }); }
+        if (monster !== !!city.place.monster) { say('You sink into the moat and drown…', 'hurt'); defeated({ kind: { name: 'the moat' } }, 'drown'); }
         else {
           const back = city.built.rescue(pos.x, pos.z);
           pos.set(back.x, pos.y, back.z); pos.y = groundAt(pos.x, pos.z); speedNow = 0; autoWalk = false;
@@ -1605,7 +1702,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
           say(hit.broke ? `You broke your ${hit.broke === 'ribs' ? 'ribs' : hit.broke}! Get it treated at The Green Vial.` : fell > 12 ? 'A hard landing!' : 'Ouch!', 'hurt');
           lastHurt = clock.elapsedTime;
           if (hit.broke) onEvent?.('injury', { part: hit.broke });
-          if (game.damage(hit.dmg)) defeated({ kind: { name: 'long fall' } });
+          // nobody can be killed inside a city's walls: a fall there leaves you at 1 HP at worst
+          const inCity = builtCities().some((c) => Math.hypot(pos.x - c.place.x, pos.z - c.place.z) < CITY_R);
+          if (game.damage(inCity ? Math.min(hit.dmg, Math.max(0, Math.ceil(game.character.hp) - 1)) : hit.dmg)) defeated({ kind: { name: 'long fall' } }, 'fall');
         }
         fallFrom = pos.y;
       }
@@ -1628,6 +1727,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // a blade (sword, axe, club...) is held ready: the hand in front at the waist, the blade pointing ahead
     else if (bladeHeld() && !sleeping && !dead && rig.arms) { rig.arms[0].shoulder.rotation.x = READY[0]; rig.arms[0].elbow.rotation.x = READY[1]; }
     moveHelper(dt, t);
+    moveGuard(dt, t);
 
     if (skillPose) { skillPose.t += dt; poseSkill(rig, skillPose); if (skillPose.t >= skillPose.dur) skillPose = null; }
     // Attacks
@@ -1690,6 +1790,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       plots.update(pos.x, pos.z);
     }
     land.animate(t);
+    for (const k of skyCards.values()) { k.card.group.visible = !inside && !depth && Math.hypot(pos.x - k.place.x, pos.z - k.place.z) < 1500; if (k.card.group.visible) k.card.update(t, 42); }
     creatures.update(dt, t);
     tickEffects(dt);
     skillFx.update(dt);
@@ -1794,6 +1895,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     walkBuild?.update();
     sky.follow(camera);
 
+    if (camOverride) { camera.position.set(...camOverride[0]); camera.lookAt(...camOverride[1]); avatar.visible = false; }
     renderer.render(scene, camera);
 
     // floating text rises and fades
@@ -1918,6 +2020,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugSlayVillage(id) { for (const m of creatures.list.filter((q) => q.village === id && !q.dead)) finishHit(m, creatures.hit(m, m.hp)); },
     debugUse: () => interact(),
     debugTalkParent() { for (const c of builtCities()) { const n = c.built.npcs.find((q) => q.kind === 'parent' && q.mine); if (n) { pos.set(n.x + 1, pos.y, n.z); talkTo(n); return true; } } return false; },
+    debugCam(at, look) { camOverride = at ? [at, look] : null; if (!at) avatar.visible = true; },
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
     debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`), villages: game?.villages().map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.length, dead: v.dead.length, built: mobVillages.has(v.id) })) }),
     teleport,
@@ -1930,6 +2033,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     nextSpell,
     passGate,
     setCityGates,
+    setCeremonies,
+    atShrine,
+    riseAtShrine,
+    oldAge,
     trainingAt,
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
@@ -1946,6 +2053,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // for testing: go into a city building by its id
     debugEnter(id) { for (const c of builtCities()) { const sh = c.built.shops.find((q) => q.id === id); if (sh) { pos.set(sh.x, pos.y, sh.z); enterBuilding(sh); return true; } } return false; },
     refreshHelper,
+    refreshGuard,
     sleep: toggleSleep,
     placeTorch,
     pitchTent,

@@ -1,5 +1,5 @@
 // Draws the world map onto a canvas (1600 × 1000). Used by the map page and the in-game map.
-import { REGIONS, PLACES, RIVERS, LAKE, noise1, toMap } from '../data/world-layout.mjs';
+import { REGIONS, PLACES, RIVERS, LAKE, LAKES, SECTIONS, METRES_PER_PX, sectionAt, noise1, toMap } from '../data/world-layout.mjs';
 
 let cache = null;
 
@@ -127,15 +127,34 @@ function paint(ctx, W, H) {
     }
   }
 
-  // Heartland: forest in the middle, hills to the east, a river to the south-east sea
-  const hx = 800, hy = 520;
+  // Heartland: each section drawn in its own kind of land
+  // rivers stop at the coast
+  ctx.save(); ctx.beginPath();
+  for (const id of ['heart', 'sun']) for (const pts of shapes[id]) pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+  ctx.clip();
   ctx.strokeStyle = '#4f86a0';
   RIVERS.forEach(([p0, p1, p2, p3], i) => {
-    ctx.lineWidth = i === 0 ? 2.5 : 4; ctx.beginPath(); ctx.moveTo(...p0); ctx.bezierCurveTo(...p1, ...p2, ...p3); ctx.stroke();
+    ctx.lineWidth = i === 0 ? 2.5 : 3.5; ctx.beginPath(); ctx.moveTo(...p0); ctx.bezierCurveTo(...p1, ...p2, ...p3); ctx.stroke();
   });
-  scatter('heart', 520, 4, (x, y, r) => tree(x, y, 0.8 + r() * 0.5, r() < 0.5 ? '#4f6b2f' : '#3e5a28'), (x, y) => Math.hypot((x - hx) / 1.3, y - hy) < 190 && Math.hypot(x - hx, y - hy) > 22);
-  scatter('heart', 22, 8, (x, y, r) => mountain(x, y, 0.8 + r() * 0.4, false), (x, y) => x > hx + 210);
-  scatter('heart', 40, 9, (x, y) => tuft(x, y), (x, y) => Math.hypot((x - hx) / 1.3, y - hy) > 210 && x < hx + 200);
+  ctx.restore();
+  const biomeOf = (x, y) => sectionAt(x, y, 'heart')?.biome;
+  // soft tints under the symbols
+  for (const sc of SECTIONS.filter((q) => q.region === 'heart')) {
+    const tint = { plains: 'rgba(230,200,110,0.35)', darkwood: 'rgba(40,50,30,0.35)', jungle: 'rgba(90,160,70,0.25)', highland: 'rgba(150,140,120,0.3)', lakeland: 'rgba(140,190,190,0.2)' }[sc.biome];
+    if (!tint) continue;
+    const g = ctx.createRadialGradient(sc.px, sc.py, 0, sc.px, sc.py, sc.r * 1.1);
+    g.addColorStop(0, tint); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.save(); trace(shapes.heart[0]); ctx.clip(); ctx.fillStyle = g; ctx.fillRect(sc.px - sc.r * 1.2, sc.py - sc.r * 1.2, sc.r * 2.4, sc.r * 2.4); ctx.restore();
+  }
+  const nearCity = (x, y) => Math.hypot(x - 800, y - 520) < 12;
+  scatter('heart', 420, 4, (x, y, r) => tree(x, y, 0.8 + r() * 0.4, r() < 0.5 ? '#4f6b2f' : '#3e5a28'), (x, y) => biomeOf(x, y) === 'forest' && !nearCity(x, y));
+  scatter('heart', 160, 5, (x, y, r) => tree(x, y, 0.9 + r() * 0.3, r() < 0.5 ? '#26331b' : '#1d2914'), (x, y) => biomeOf(x, y) === 'darkwood');
+  scatter('heart', 300, 6, (x, y, r) => tree(x, y, 0.8 + r() * 0.5, r() < 0.5 ? '#3f8a35' : '#2f7a3a'), (x, y) => biomeOf(x, y) === 'jungle');
+  scatter('heart', 80, 7, (x, y, r) => tree(x, y, 0.7, '#557a3a'), (x, y) => biomeOf(x, y) === 'lakeland');
+  scatter('heart', 32, 8, (x, y, r) => mountain(x, y, 0.8 + r() * 0.5, r() < 0.4), (x, y) => biomeOf(x, y) === 'highland');
+  scatter('heart', 14, 10, (x, y, r) => mountain(x, y, 0.6 + r() * 0.3, false), (x, y) => biomeOf(x, y) === 'hills');
+  scatter('heart', 60, 9, (x, y) => tuft(x, y), (x, y) => biomeOf(x, y) === 'hills');
+  scatter('heart', 160, 11, (x, y) => dot(x, y, '#a8862e'), (x, y) => biomeOf(x, y) === 'plains');
 
   // Dragon Peaks: mountains and volcanoes
   scatter('peaks', 34, 12, (x, y, r) => (r() < 0.2 ? volcano(x, y, 0.9) : mountain(x, y, 0.9 + r() * 0.6, true)));
@@ -155,11 +174,17 @@ function paint(ctx, W, H) {
   // Mirefall: the great lake and marsh tufts
   const lake = blobPath(LAKE.x, LAKE.y, LAKE.r, LAKE.seed, LAKE.stretch, LAKE.wobble);
   trace(lake); ctx.fillStyle = '#6fa3b0'; ctx.fill(); ctx.strokeStyle = '#3b5a68'; ctx.lineWidth = 1.6; ctx.stroke();
-  scatter('mire', 120, 18, (x, y) => tuft(x, y), (x, y) => !inside(lake, x, y) && Math.hypot((x - 1130) / 1.5, y - 860) > 82);
+  scatter('mire', 120, 18, (x, y) => tuft(x, y), (x, y) => !inside(lake, x, y) && Math.hypot((x - LAKE.x) / 1.5, y - LAKE.y) > 82);
+  // the smaller lakes everywhere
+  LAKES.forEach(([x, y, r], i) => {
+    trace(blobPath(x, y, Math.max(1.6, r), 60 + i, [1.2, 0.85], 0.2));
+    ctx.fillStyle = '#6fa3b0'; ctx.fill(); ctx.strokeStyle = '#3b5a68'; ctx.lineWidth = 0.8; ctx.stroke();
+  });
   // Temple in the lake
   ctx.fillStyle = '#e8dcb8'; ctx.strokeStyle = '#3b2a17'; ctx.lineWidth = 1.2;
-  ctx.fillRect(1122, 846, 16, 14); ctx.strokeRect(1122, 846, 16, 14);
-  ctx.beginPath(); ctx.moveTo(1118, 846); ctx.lineTo(1130, 836); ctx.lineTo(1142, 846); ctx.closePath(); ctx.fill(); ctx.stroke();
+  const tx0 = LAKE.x - 8, ty0 = LAKE.y - 14;
+  ctx.fillRect(tx0, ty0, 16, 14); ctx.strokeRect(tx0, ty0, 16, 14);
+  ctx.beginPath(); ctx.moveTo(tx0 - 4, ty0); ctx.lineTo(LAKE.x, ty0 - 10); ctx.lineTo(tx0 + 20, ty0); ctx.closePath(); ctx.fill(); ctx.stroke();
   // Frostreach and Sunscar
   scatter('frost', 14, 19, (x, y, r) => mountain(x, y, 0.7 + r() * 0.3, true));
   scatter('sun', 220, 20, (x, y) => dot(x, y, '#b08a4a'));
@@ -172,7 +197,7 @@ function paint(ctx, W, H) {
       ctx.closePath(); ctx.fill(); ctx.stroke();
     } else {
       ctx.fillStyle = opts.color || '#8a1f1a'; ctx.strokeStyle = '#fff4d8'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, (opts.size || 15) < 13 ? 4 : 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
     ctx.font = `${opts.bold ? 700 : 500} ${opts.size || 15}px Cinzel, Georgia, serif`;
     ctx.textAlign = opts.align || 'left'; ctx.textBaseline = 'middle';
@@ -186,11 +211,19 @@ function paint(ctx, W, H) {
     ctx.fillStyle = '#5a3a14'; ctx.fillText(text.toUpperCase(), x, y);
   }
 
-  regionLabel(800, 300, 'The Verdant Heartland', 28);
+  // section names, small and slanted
+  ctx.font = 'italic 600 12px Cinzel, Georgia, serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const sc of SECTIONS) {
+    if (sc.region === 'fae' || sc.region === 'frost' || sc.name === 'Gloomhollow') continue; // named elsewhere already
+    const y = sc.py + (sc.region === 'heart' ? sc.r * 0.45 : 22);
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(245,235,205,0.8)'; ctx.strokeText(sc.name, sc.px, y);
+    ctx.fillStyle = sc.biome === 'darkwood' ? '#2a1a10' : '#6a4a20'; ctx.fillText(sc.name, sc.px, y);
+  }
+  regionLabel(800, 268, 'The Verdant Heartland', 28);
   regionLabel(790, 40, 'Dragon Peaks', 24);
   regionLabel(230, 250, 'Ashen Wastes', 22);
   regionLabel(1440, 150, 'The Fae Isles', 22);
-  regionLabel(1130, 965, 'Mirefall', 24);
+  regionLabel(1130, 812, 'Mirefall', 24);
   regionLabel(240, 55, 'Frostreach', 18);
   regionLabel(330, 955, 'Sunscar Desert', 18);
 
@@ -204,9 +237,11 @@ function paint(ctx, W, H) {
     slimecaves: { color: '#8a1f1a', align: 'center', dy: 18 },
     glade: { color: '#8a1f1a', align: 'center', dy: -18 },
     temple: { color: '#8a1f1a', align: 'center', dy: -26 },
+    lumenhollow: { color: '#8a1f1a', align: 'right' },
     marsh: { color: '#8a1f1a', align: 'right' },
   };
-  for (const p of PLACES) marker(p.px, p.py, LABEL[p.id]?.label || p.name, LABEL[p.id] || {});
+  const VILLAGE = { color: '#5a3a14', size: 11 };
+  for (const p of PLACES) marker(p.px, p.py, LABEL[p.id]?.label || p.name, LABEL[p.id] || (p.village ? { ...VILLAGE, color: p.summit ? '#7a6a5a' : VILLAGE.color } : {}));
 
   // --- compass and scale ---
   function compass(x, y) {
@@ -222,11 +257,11 @@ function paint(ctx, W, H) {
     ctx.font = '700 16px Cinzel, Georgia, serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#2a1c0c'; ctx.fillText('N', x, y - 56);
   }
   compass(1500, 860);
-  // 10 km scale bar (the Heartland's 600 px ≈ 60 km → 100 px = 10 km)
+  // scale bar: 100 px on the map
   ctx.fillStyle = '#2a1c0c'; ctx.fillRect(1400, 950, 50, 6); ctx.fillStyle = '#f5ebd0'; ctx.fillRect(1450, 950, 50, 6);
   ctx.strokeStyle = '#2a1c0c'; ctx.strokeRect(1400, 950, 100, 6);
   ctx.font = '500 13px Cinzel, Georgia, serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#2a1c0c';
-  ctx.fillText('0', 1400, 972); ctx.fillText('10 km', 1500, 972);
+  ctx.fillText('0', 1400, 972); ctx.fillText(`${Math.round(100 * METRES_PER_PX / 1000)} km`, 1500, 972);
 
   // paper vignette and border
   const vg = ctx.createRadialGradient(W / 2, H / 2, W * 0.35, W / 2, H / 2, W * 0.75);

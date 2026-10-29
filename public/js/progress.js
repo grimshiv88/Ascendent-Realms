@@ -4,6 +4,10 @@ import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } fr
 import { MINT } from './data/money.mjs';
 import { ITEMS, shopFor, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, gearSkillSlots, mythicSkill, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
+import { deathOutcome, applyRise, livesLeft } from './data/life.mjs';
+import { BODYGUARDS, HIRE_SPANS, hireCost, guardActive } from './data/hire.mjs';
+import { WEDDING_FEE, ADOPT_FEE, MAX_CHILDREN, newChild, nextChildIn } from './data/family.mjs';
+import { canMarry } from './data/life.mjs';
 import { ageOf, childStatShare, classOdds, SCHOOLS, TRAIN_FULL_MS, visitDue, CHILD_MAX_LEVEL, TRAIN_EXP, TECHNIQUE_AT, SCHOOL_TECHNIQUES } from './data/birth.mjs';
 import { PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, BOOK_ID, bookStops, spellStrength } from './data/cults.mjs';
 import { GUILD_HALL_LEVEL, CARD_FEE, assess, mayTake } from './data/guildcard.mjs';
@@ -135,7 +139,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, techniques: c.techniques,
+    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
     spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null,
   });
 
@@ -633,6 +637,64 @@ export function createProgress(c, { save, onChange, onEvent }) {
       c.hp = stats().hp;
       c.sp = stats().sp;
       changed('hp');
+    },
+    // Hire a bodyguard at the guild for `mins` minutes (see data/hire.mjs): 'hired', 'coins' or 'busy'
+    hireGuard(tier, mins) {
+      if (!BODYGUARDS[tier] || !HIRE_SPANS.includes(mins)) return 'bad';
+      if (guardActive(c)) return 'busy';
+      const cost = hireCost(tier, mins);
+      if (c.coins < cost) return 'coins';
+      c.coins -= cost;
+      c.guard = { tier, until: Date.now() + mins * 60000 };
+      changed('coins');
+      this.saveNow();
+      return 'hired';
+    },
+    dismissGuard() { c.guard = null; changed('guard'); },
+    // ---- marriage and children (see data/family.mjs) ----
+    // marry a townsperson: 'married', 'young', 'married-already' or 'coins'
+    marryNpc(s) {
+      if (!canMarry(c)) return 'young';
+      if (c.spouse) return 'married-already';
+      if (c.coins < WEDDING_FEE) return 'coins';
+      c.coins -= WEDDING_FEE;
+      c.spouse = { name: s.name, race: s.race, cls: s.cls, npc: true, since: Date.now() };
+      changed('coins');
+      this.saveNow();
+      return 'married';
+    },
+    setSpouse(sp) { c.spouse = sp || null; changed('spouse'); },
+    // a child of your marriage ('born', 'single', 'wait', 'full') or given by the Temple ('coins')
+    haveChild(school, adopt = false) {
+      c.children ||= [];
+      if (c.children.length >= MAX_CHILDREN) return 'full';
+      if (adopt) {
+        if (c.coins < ADOPT_FEE) return 'coins';
+        c.coins -= ADOPT_FEE;
+        changed('coins');
+      } else {
+        if (!c.spouse) return 'single';
+        if (nextChildIn(c) > 0) return 'wait';
+        c.lastChildPlay = c.playMs || 0;
+      }
+      c.children.push(newChild(c, school));
+      changed('children');
+      this.saveNow();
+      return 'born';
+    },
+    setChildSchool(i, school) { if (c.children?.[i]) { c.children[i].school = school || null; changed('children'); } },
+    guard: () => guardActive(c),
+    // A death: what it costs (see data/life.mjs). If you rise again, it is applied and you are healed.
+    die(cause) {
+      const out = deathOutcome(c, cause);
+      if (out.rise) {
+        applyRise(c, out);
+        c.injury = null; // the shrine mends broken bones too
+        this.respawn();
+        changed('lives');
+        this.saveNow();
+      }
+      return out;
     },
 
     gainCoins(n) { c.coins += n; changed('coins'); },

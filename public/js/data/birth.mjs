@@ -10,6 +10,7 @@ import { PLACES, toWorld } from './world-layout.mjs';
 
 export const BORN_AGE = 4;
 export const CEREMONY_AGE = 7;
+export const CEREMONY_SHOW_MS = 15 * 60 * 1000; // a new card hangs in the sky over the shrine this long
 export const YEAR_MS = 30 * 60 * 1000;          // a childhood year passes in 30 minutes of play
 export const TRAIN_FULL_MS = 40 * 60 * 1000;     // 40 minutes at a school trains you fully in it
 export const CHILD_CLASS = 'child';              // a child's class until the Ceremony
@@ -28,30 +29,63 @@ export const KIDS_PER_HOUSE = 4;
 //   - north-east, the Civic Quarter: the Main Guild Hall, the Academy and its training grounds, the portal
 //   - south-east, the Market Quarter: the city's shops and tavern along the avenue and the east
 //     road, and behind them lots kept for the shops of Businessmen
-//   - the whole west half is the Neighbourhood: rows of family houses along three lanes, with a
-//     playground for the children
+//   - the whole west half is the Neighbourhood: streets of family houses standing side by side,
+//     with a playground for the children
 // (x is east, z is south; positions are from the city's middle)
 export const CASTLE_SPOT = { x: 105, z: 0 };
-export const LANES = [-56, -88, -120];          // the Neighbourhood's lanes (x), running north-south
-export const PLAYGROUND = { x0: -100, x1: -76, z0: 16, z1: 50 };
+// The Neighbourhood, laid out like the old towns: streets (lanes) running north-south. Along each
+// street, houses stand side by side facing it; behind each row stands another row back to back
+// with it (a narrow alley between their back walls), facing the next street, and so on outward.
+// The first row faces the main avenue; the last row backs onto the inner wall. Streets running
+// east-west (the west road and two cross streets each side) cut through the rows.
+export const HOUSE_D = 8;                        // how deep every house is
+export const LANE_W = 6;                         // a street's width
+const FRONT = 1.2;                               // the pavement and steps between a street and the doors
+const ALLEY = 2;                                 // the gap between back walls
+const AVENUE_EDGE = -3.5;                        // the west edge of the main avenue
+const PITCH = LANE_W + 2 * (FRONT + HOUSE_D) + ALLEY;
+const FIRST_LANE = AVENUE_EDGE - FRONT - 2 * HOUSE_D - ALLEY - FRONT - LANE_W / 2;
+export const LANES = [0, 1, 2, 3, 4].map((i) => Math.round((FIRST_LANE - i * PITCH) * 10) / 10); // x of each street's middle
+export const CROSS_STREETS = [-104, -58, 58, 104]; // z of the east-west streets (and the west road at 0)
+export const PLAYGROUND = { x0: -102, x1: -84, z0: 18, z1: 50 };
 const CITY_INNER = 138;                          // houses stay this far in (the inner wall is beyond)
-// The family houses: on both sides of each lane, doors facing it, leaving the west road and the
-// playground clear. Each: { i, x, z, rot (facing), fx, fz (the way the door faces), w, d, h }
+const PLAZA_CLEAR = 40;                          // and this far from the middle (the plaza)
+// the rows: [x of the row's middle, the way its doors face (fx)]
+const ROWS = [[AVENUE_EDGE - FRONT - HOUSE_D / 2, 1]];
+for (const lane of LANES) ROWS.push([lane + LANE_W / 2 + FRONT + HOUSE_D / 2, -1], [lane - LANE_W / 2 - FRONT - HOUSE_D / 2, 1]);
+// The family houses. Each: { i, x, z, rot (facing), fx, fz (the way the door faces), w (its front),
+// d, floors, doorX (the door's place along the front), door: { x, z } (the door's offset from the middle) }
+let HOUSES = null;
 export function cityHouses(placeId) {
+  if (HOUSES) return HOUSES;
   const out = [];
-  for (const lane of LANES) {
-    for (const side of [1, -1]) {
-      const x = lane + side * 8;
-      const zMax = Math.sqrt(Math.max(0, CITY_INNER ** 2 - (Math.abs(x) + 4) ** 2)) - 4;
-      for (let z = -Math.floor(zMax / 10) * 10; z <= zMax; z += 10) {
-        if (Math.abs(z) < 12) continue; // the west road
-        if (x > PLAYGROUND.x0 - 4 && x < PLAYGROUND.x1 + 4 && z > PLAYGROUND.z0 - 6 && z < PLAYGROUND.z1 + 6) continue;
-        const k = out.length;
-        const fx = -side, fz = 0; // facing the lane
-        out.push({ i: k, x, z, rot: Math.atan2(fx, fz), fx, fz, w: 6 + (k % 3) * 0.6, d: 5 + (k % 2) * 0.6, h: 3.6 + (k % 3) * 0.5 });
-      }
+  const blocked = (x0, x1, z0, z1) => {
+    for (const [x, z] of [[x0, z0], [x0, z1], [x1, z0], [x1, z1]]) {
+      if (Math.hypot(x, z) > CITY_INNER || Math.hypot(x, z) < PLAZA_CLEAR) return true;
     }
-  }
+    if (z1 > -3.5 - 1.5 && z0 < 3.5 + 1.5) return true; // the west road
+    for (const c of CROSS_STREETS) if (z1 > c - 2.5 - 1 && z0 < c + 2.5 + 1) return true;
+    const P = PLAYGROUND;
+    if (x1 > P.x0 && x0 < P.x1 && z1 > P.z0 - 1 && z0 < P.z1 + 1) return true;
+    return false;
+  };
+  ROWS.forEach(([x, fx], r) => {
+    const rnd = seeded(`row${r}`);
+    const x0 = x - HOUSE_D / 2, x1 = x + HOUSE_D / 2;
+    let z = -CITY_INNER;
+    while (z < CITY_INNER) {
+      const w = Math.round((7 + rnd() * 2.6) * 10) / 10;
+      if (blocked(x0, x1, z, z + w)) { z += 1; continue; }
+      const k = out.length;
+      const rot = Math.atan2(fx, 0);
+      const floors = rnd() < 0.3 ? 3 : 2;
+      const doorX = w >= 8.4 && rnd() < 0.4 ? 0 : (rnd() < 0.5 ? -1 : 1) * Math.round((w / 2 - 1.5) * 10) / 10;
+      out.push({ i: k, x, z: z + w / 2, rot, fx, fz: 0, w, d: HOUSE_D, h: floors * 3.1, floors, doorX,
+        door: { x: doorX * Math.cos(rot), z: -doorX * Math.sin(rot) } });
+      z += w + 0.25; // side by side, with only a hand's width between
+    }
+  });
+  HOUSES = out;
   return out;
 }
 export const houseCount = (placeId) => cityHouses(placeId).length;
@@ -97,17 +131,26 @@ export function familyOf(city, house, race) {
 // Your parents are real people of the city: each has a class (from their job) and a level, and you
 // can see their cards. Once you are grown you must visit them (talk to them at their door) at least
 // once every VISIT_EVERY_MS of play, or you are marked a sinner for the rest of this life. Parents
-// grow old: each dies at a set point in your life (between PARENT_LIFE hours of play), the same for
-// that family every time.
+// grow old: each dies of old age at their race's age (see LIFESPAN), the same for that family every
+// time. They were between about a third and a half of their lifespan when you were born.
 export const VISIT_EVERY_MS = 3 * 3600 * 1000;   // 3 hours of play (three days of the realm)
-export const PARENT_LIFE = [15, 45];             // hours of your play time
+export const ADULT_YEAR_MS = 4 * 60 * 60 * 1000; // after the Ceremony a year passes every 4 hours of play
+// how many years each race lives (each person a little more or less)
+export const LIFESPAN = {
+  elf: 700, dwarf: 250, hobbit: 120, giant: 300, beastkin: 90,
+  goblin: 70, slime: 500, fairy: 600, lizardman: 150, naga: 400, dragonewt: 900,
+};
+// play time from your birth until you are `years` older than when you were born
+const playForYears = (years) => (years <= CEREMONY_AGE - BORN_AGE ? years * YEAR_MS : (CEREMONY_AGE - BORN_AGE) * YEAR_MS + (years - (CEREMONY_AGE - BORN_AGE)) * ADULT_YEAR_MS);
 export const familyOfChar = (c) => c?.child?.family || c?.family || null;
 export function parentInfo(fam, j) {
   const p = fam?.parents?.[j];
   if (!p) return null;
   const rnd = seeded(`${fam.city}:${fam.house}:${p.name}:${j}:life`);
   const level = 12 + Math.floor(rnd() * 70);
-  const diesAt = Math.round((PARENT_LIFE[0] + rnd() * (PARENT_LIFE[1] - PARENT_LIFE[0])) * 3600 * 1000);
+  const span = LIFESPAN[fam.race] || 90;
+  const ageThen = span * (0.3 + rnd() * 0.2), diesAge = span * (0.85 + rnd() * 0.25);
+  const diesAt = Math.round(playForYears(Math.max(1, diesAge - ageThen)));
   return { ...p, race: fam.race, cls: PARENT_JOBS[p.job]?.cls, jobName: PARENT_JOBS[p.job]?.name || p.job, level, diesAt };
 }
 // a child's parents are always alive; after that, until their time comes
@@ -147,7 +190,7 @@ export const ACADEMY_NAME = 'The Academy';
 // Training raises their level (up to CHILD_MAX_LEVEL before the Ceremony) and teaches the school's
 // two techniques, at a quarter and at 60% of full training. Techniques are kept for life.
 export const CHILD_MAX_LEVEL = 10;
-export const TRAIN_EXP = 0.12;                 // of a level's EXP, per minute of training
+export const TRAIN_EXP = 0.2;                  // of a level's EXP, per minute of training
 export const TECHNIQUE_AT = [0.25, 0.6];
 export const SCHOOL_TECHNIQUES = {
   swordsman: ['power_strike', 'charge'], tank: ['shield_bash', 'iron_skin'], assassin: ['backstab', 'shadow_step'],
@@ -161,7 +204,16 @@ export const TRAINING_STATIONS = Object.keys(SCHOOLS).map((school, i) => ({ scho
 // parent's job adds to theirs, and training at a school adds most to its own (up to 10 when fully
 // trained). So a fully trained child usually gets their school's class, but never surely.
 const BASE_W = 1, PARENT_W = 2, SCHOOL_W = 10;
+// The odds of a child's class at its Ceremony when its parents planned it (a player's own child,
+// see data/family.mjs): a quarter for each parent's class, and the other half spread over all
+export function plannedClassOdds(plan) {
+  const w = Object.fromEntries(STARTER_CLASSES.map((id) => [id, 0.5 / STARTER_CLASSES.length]));
+  for (const k of [plan?.a, plan?.b]) if (k in w) w[k] += 0.25;
+  const total = Object.values(w).reduce((a, b) => a + b, 0);
+  return Object.fromEntries(Object.entries(w).map(([k, v]) => [k, v / total]));
+}
 export function classOdds(c) {
+  if (c?.child?.plan) return plannedClassOdds(c.child.plan);
   const w = Object.fromEntries(STARTER_CLASSES.map((id) => [id, BASE_W]));
   for (const p of c?.child?.family?.parents || []) { const k = PARENT_JOBS[p.job]?.cls; if (k in w) w[k] += PARENT_W; }
   for (const [k, ms] of Object.entries(c?.child?.train || {})) if (k in w) w[k] += SCHOOL_W * Math.min(1, ms / TRAIN_FULL_MS);
@@ -180,9 +232,9 @@ export const className = (cls) => (cls === CHILD_CLASS ? 'Child' : CLASSES[cls]?
 // ---------- being born ----------
 // Who you are born as: any race at all (`side` narrows it to Players or Monsters, if given), with a
 // look of your race chosen at random
-export function rollBirth(side = null, rnd = Math.random) {
+export function rollBirth(side = null, rnd = Math.random, forceRace = null) {
   const races = Object.keys(RACES).filter((r) => !side || RACES[r].side === side);
-  const race = races[Math.floor(rnd() * races.length)];
+  const race = RACES[forceRace] ? forceRace : races[Math.floor(rnd() * races.length)];
   const pal = APPEARANCE[race];
   const pick = (list) => list[Math.floor(rnd() * list.length)];
   return { race, side: RACES[race].side, form: RACES[race].side === 'monster' ? 'monster' : 'humanoid',
@@ -194,8 +246,8 @@ export function houseDoor(city, house) {
   const h = cityHouses(city)[house];
   if (!place || !h) return null;
   const c = toWorld(place.px, place.py);
-  const out = h.d / 2 + 2; // just in front of the door, on the lane
-  return { x: c.x + h.x + h.fx * out, z: c.z + h.z + h.fz * out, heading: h.rot, area: place.name };
+  const out = h.d / 2 + 2; // just in front of the door, on the street
+  return { x: c.x + h.x + (h.door?.x || 0) + h.fx * out, z: c.z + h.z + (h.door?.z || 0) + h.fz * out, heading: h.rot, area: place.name };
 }
 // A newborn: a Child of 4 in their family's house. `home` is { city, house } (the server finds a
 // house with room); the rest as newCharacter. Returns { character } or { error }.

@@ -3,13 +3,14 @@
 import * as THREE from 'three';
 
 // Replace every mesh under `group` with one merged mesh per material. Only for meshes that never
-// move on their own and have no textures (a mesh marked userData.moves, like a door, stays as it is).
+// move on their own (a mesh marked userData.moves, like a door, stays as it is). Textured meshes
+// keep their UVs.
 export function mergeStill(group) {
   group.updateMatrixWorld(true);
   const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert();
   const byMat = new Map();
   const meshes = [];
-  group.traverse((o) => { if (o.isMesh && !o.material.map && !Array.isArray(o.material) && !o.userData.moves) meshes.push(o); });
+  group.traverse((o) => { if (o.isMesh && !Array.isArray(o.material) && !o.userData.moves && !o.parent?.userData.moves) meshes.push(o); });
   for (const m of meshes) {
     const geo = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone());
     geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toLocal, m.matrixWorld));
@@ -25,16 +26,19 @@ export function mergeStill(group) {
     let n = 0;
     for (const g of geos) n += g.attributes.position.count;
     const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
+    const uv = mat.map ? new Float32Array(n * 2) : null;
     let at = 0;
     for (const g of geos) {
       pos.set(g.attributes.position.array, at * 3);
       if (g.attributes.normal) nor.set(g.attributes.normal.array, at * 3);
+      if (uv && g.attributes.uv) uv.set(g.attributes.uv.array, at * 2);
       at += g.attributes.position.count;
       g.dispose();
     }
     const merged = new THREE.BufferGeometry();
     merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     merged.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    if (uv) merged.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     merged.computeBoundingSphere();
     const mesh = new THREE.Mesh(merged, mat);
     mesh.castShadow = true; mesh.receiveShadow = true;

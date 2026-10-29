@@ -1,17 +1,26 @@
 // Character creation and saving. The rules live in the shared game-data module.
 const db = require('./db');
-const { fallenKeep, rebornWith, mayChangeForm, growUp } = require('../public/js/data/game-data.mjs');
-const { SCHOOLS, BIRTH_CITY, BIRTH_CITIES, KIDS_PER_HOUSE, houseCount, rollBirth, bornCharacter, ceremonyDue, rollClass } = require('../public/js/data/birth.mjs');
+const { fallenKeep, rebornWith, rebirthAsChild, mayChangeForm, growUp } = require('../public/js/data/game-data.mjs');
+const { SCHOOLS, BIRTH_CITY, BIRTH_CITIES, KIDS_PER_HOUSE, houseCount, rollBirth, bornCharacter, ceremonyDue, rollClass, CEREMONY_SHOW_MS } = require('../public/js/data/birth.mjs');
+const { moveToNewWorld } = require('../public/js/data/world-layout.mjs');
 const { pickUnique, uniqueSlot, APPRAISAL_AWAY_MS, rankProofs, climbedRank, rankOf, RANK_CAP, isAppraisal } = require('../public/js/data/unique.mjs');
 const { SKILLS } = require('../public/js/data/skills.mjs');
 const { ITEMS, EFFECTS } = require('../public/js/data/items.mjs');
 const { SPELLS } = require('../public/js/data/spells.mjs');
 const { CARD_RANKS } = require('../public/js/data/guildcard.mjs');
 const { VILLAGE_RACES } = require('../public/js/data/mobvillages.mjs');
+const { LIVES, UNDYING_LEVEL, canMarry } = require('../public/js/data/life.mjs');
+const { MAX_CHILDREN } = require('../public/js/data/family.mjs');
+const { RACES, CLASSES } = require('../public/js/data/game-data.mjs');
+const { BODYGUARDS } = require('../public/js/data/hire.mjs');
 
 function load(accountId) {
   const row = db.prepare('SELECT data FROM characters WHERE account_id = ?').get(accountId);
-  return row ? JSON.parse(row.data) : null;
+  if (!row) return null;
+  const c = JSON.parse(row.data);
+  // saved before the world grew: carried to the same spot on the new map
+  if (moveToNewWorld(c)) db.prepare('UPDATE characters SET data = ? WHERE account_id = ?').run(JSON.stringify(c), accountId);
+  return c;
 }
 
 // Unique Skills held by someone (alive, or kept by a fallen one): their names, how many of each top
@@ -42,12 +51,16 @@ function create(accountId, username, body) {
   if (load(accountId)) return { error: 'This account already has a character.' };
   keepAppraisalHeld();
   const opts = uniquesHeld();
-  const birth = rollBirth(['player', 'monster'].includes(body?.side) ? body.side : null);
-  const result = bornCharacter(username, birth, findHome(birth.race), opts);
-  if (result.error) return result;
-  // a character who fell before passes their Unique Skill on
   const kept = db.prepare('SELECT data FROM fallen WHERE account_id = ?').get(accountId);
-  if (kept) rebornWith(result.character, JSON.parse(kept.data));
+  const keep = kept ? JSON.parse(kept.data) : null;
+  // born again as one of your own children, or at random into a family
+  const asKid = Number.isInteger(body?.asChild) ? rebirthAsChild(keep, body.asChild, rollBirth) : null;
+  const birth = asKid?.birth || rollBirth(['player', 'monster'].includes(body?.side) ? body.side : null);
+  const result = bornCharacter(username, birth, (asKid?.home && houseCount(asKid.home.city) > asKid.home.house ? asKid.home : null) || findHome(birth.race), opts);
+  if (result.error) return result;
+  if (asKid) { result.character.child.school = asKid.kid.school || null; result.character.child.plan = asKid.kid.plan; result.character.rebornFrom = keep.name || null; }
+  // a character who fell before passes their Unique Skill on
+  if (keep) rebornWith(result.character, keep);
   db.prepare('INSERT INTO characters (account_id, data) VALUES (?, ?)').run(accountId, JSON.stringify(result.character));
   db.prepare('DELETE FROM fallen WHERE account_id = ?').run(accountId);
   return result;
@@ -59,9 +72,22 @@ function ceremony(accountId) {
   if (!character) return { error: 'No character yet.' };
   if (!ceremonyDue(character)) return { error: 'You are not old enough yet.' };
   const cls = rollClass(character);
+  const city = character.child?.family?.city || 'central';
   growUp(character, cls);
   store(accountId, character);
+  // the new card is shown in the sky over the city's shrine for a while, for everyone there to see
+  db.exec('CREATE TABLE IF NOT EXISTS world_state (key TEXT PRIMARY KEY, data TEXT NOT NULL)');
+  const now = Date.now();
+  const list = recentCeremonies(now);
+  list.push({ city, name: character.name, race: character.race, cls, level: character.level, rank: character.uniqueSkill?.rank || null, unique: character.uniqueSkill?.name || null, at: now });
+  db.prepare("INSERT INTO world_state (key, data) VALUES ('ceremonies', ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data").run(JSON.stringify(list.slice(-30)));
   return { ok: true, character };
+}
+// Ceremonies held in the last CEREMONY_SHOW_MS (see data/birth.mjs)
+function recentCeremonies(now = Date.now()) {
+  db.exec('CREATE TABLE IF NOT EXISTS world_state (key TEXT PRIMARY KEY, data TEXT NOT NULL)');
+  const r = db.prepare("SELECT data FROM world_state WHERE key = 'ceremonies'").get();
+  return (r ? JSON.parse(r.data) : []).filter((c) => now - c.at < CEREMONY_SHOW_MS);
 }
 
 // Raise the Unique Skill one rank when the character has earned a proof of growth for it (see
@@ -203,12 +229,12 @@ function saveProgress(accountId, p) {
   // monster villages out in the wilds: where they are, who lives there and who is beaten
   const vv = p.villages && typeof p.villages === 'object' ? p.villages : {};
   const villages = {
-    list: (Array.isArray(vv.list) ? vv.list.slice(0, 5) : []).filter((v) => typeof v?.id === 'string' && /^v[a-z0-9]{1,20}$/.test(v.id)
+    list: (Array.isArray(vv.list) ? vv.list.slice(0, 8) : []).filter((v) => typeof v?.id === 'string' && /^v[a-z0-9]{1,20}$/.test(v.id)
       && int(v.x, -1e6, 1e6) !== null && int(v.z, -1e6, 1e6) !== null && VILLAGE_RACES.includes(v.race)
-      && Array.isArray(v.folk) && v.folk.length <= 16 && v.folk.every((f) => Array.isArray(f) && int(f[0], 0, 2) !== null && int(f[1], 1, 499) !== null)
+      && Array.isArray(v.folk) && v.folk.length <= 16 && v.folk.every((f) => Array.isArray(f) && int(f[0], 0, 3) !== null && int(f[1], 1, 499) !== null)
       && Array.isArray(v.dead) && v.dead.every((i) => int(i, 0, 15) !== null))
-      .map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.map(([a, b]) => [a, b]), dead: [...new Set(v.dead)], looted: false })),
-    due: (Array.isArray(vv.due) ? vv.due.slice(0, 5) : []).filter((t) => int(t, 0, 1e15) !== null),
+      .map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, size: ['small', 'village', 'big'].includes(v.size) ? v.size : 'village', folk: v.folk.map(([a, b]) => [a, b]), dead: [...new Set(v.dead)], looted: false })),
+    due: (Array.isArray(vv.due) ? vv.due.slice(0, 8) : []).filter((t) => int(t, 0, 1e15) !== null),
   };
   // a Potion-Maker hired by a Businessman, and the potions brewing
   const pm = p.potionMaker;
@@ -248,6 +274,21 @@ function saveProgress(accountId, p) {
   // visiting your parents (play time of the last visit), and whether you once left them unvisited
   const visitPlay = int(p.visitPlay ?? 0, 0, 1e15) ?? 0;
   const neglect = p.neglect === true || character.neglect === true; // once a sinner, always (this life)
+  // lives only ever go down; an undying character (level 250+) can be renewed younger after old age
+  // a hired bodyguard: which kind, and until when (at most 3 hours ahead)
+  const guard = p.guard && BODYGUARDS[p.guard.tier] && int(p.guard.until, 0, Date.now() + 3 * 3600 * 1000 + 60000) !== null ? { tier: p.guard.tier, until: p.guard.until } : null;
+  // married: a player spouse is set only by the server (see family.js); a townsperson by the game
+  const okStr = (v, n) => typeof v === 'string' && v.length > 0 && v.length <= n;
+  const spouse = character.spouse?.npc === false ? character.spouse
+    : p.spouse && p.spouse.npc === true && okStr(p.spouse.name, 24) && RACES[p.spouse.race] && CLASSES[p.spouse.cls] && canMarry(character)
+      ? { name: p.spouse.name, race: p.spouse.race, cls: p.spouse.cls, npc: true, since: int(p.spouse.since, 0, 1e15) ?? Date.now() } : (character.spouse || null);
+  const children = (Array.isArray(p.children) ? p.children : character.children || []).slice(0, MAX_CHILDREN)
+    .filter((k) => okStr(k?.name, 24) && RACES[k.race] && (k.school == null || SCHOOLS[k.school]))
+    .map((k) => ({ name: k.name, race: k.race, plan: { a: CLASSES[k.plan?.a] ? k.plan.a : null, b: CLASSES[k.plan?.b] ? k.plan.b : null }, school: k.school || null, born: int(k.born, 0, 1e15) ?? 0 }));
+  const lastChildPlay = int(p.lastChildPlay ?? character.lastChildPlay ?? 0, 0, 1e15) ?? 0;
+  const storedLives = Number.isInteger(character.livesLeft) ? character.livesLeft : LIVES;
+  const livesLeft = Math.min(storedLives, int(p.livesLeft ?? storedLives, 1, LIVES) ?? storedLives);
+  const ageShift = character.level >= UNDYING_LEVEL && Number.isFinite(p.ageShift) && p.ageShift <= 0 && p.ageShift > -1e5 ? p.ageShift : (character.ageShift || 0);
   const growth = { work: int(p.growth?.work ?? 0, 0, 1e9) ?? 0, trials: int(p.growth?.trials ?? 0, 0, 1e6) ?? 0 };
   // a broken bone from a bad fall, and the treatments it has had (one a day)
   const injury = p.injury && ['leg', 'arm', 'ribs'].includes(p.injury.part) && int(p.injury.left, 1, 5) !== null
@@ -291,7 +332,7 @@ function saveProgress(accountId, p) {
   }
   // monster players from level 100 can switch to their humanoid form and back
   if ((p.form === 'monster' || p.form === 'humanoid') && mayChangeForm({ ...character, level: fields.level ?? character.level })) character.form = p.form;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, growth, visitPlay, neglect, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };
@@ -311,4 +352,4 @@ function top(limit = 10) {
     .slice(0, limit);
 }
 
-module.exports = { cleanItem, create, fall, rankUp, load, store, saveLocation, saveProgress, top, ceremony, keepAppraisalHeld };
+module.exports = { cleanItem, create, fall, rankUp, load, store, saveLocation, saveProgress, top, ceremony, recentCeremonies, keepAppraisalHeld };

@@ -64,9 +64,9 @@ export const portalById = (id) => allPortals().find((p) => p.id === id) || null;
 export const portalsFrom = (from) => allPortals().filter((p) => p.region === from.region && p.id !== from.id);
 export const nearestPortal = (x, z, reach = PORTAL_REACH) => allPortals().find((p) => Math.hypot(p.x - x, p.z - z) <= reach) || null;
 
-// The fee grows with how far you go: 10 Copper plus 4 Copper a kilometre
+// The fee grows with how far you go: 10 Copper plus 1.5 Copper a kilometre
 export function portalFee(from, to) {
   const km = Math.hypot(from.x - to.x, from.z - to.z) / 1000;
-  return Math.round(10 + km * 4);
+  return Math.round(10 + km * 1.5); // (the world is big: long trips stay affordable)
 }
 export const portalKm = (from, to) => Math.hypot(from.x - to.x, from.z - to.z) / 1000;

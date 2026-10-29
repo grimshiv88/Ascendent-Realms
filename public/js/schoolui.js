@@ -46,7 +46,7 @@ export function renderCeremony(el, game, { result = null, busy = false, message 
     ? `<p class="blurb">The elder lays a hand on your head, and the crystal lights up. You are a <b>${esc(CLASSES[result.cls].name)}</b>.</p>
        ${classGuide(result.cls)}
        <button type="button" class="gold-button" data-close>Begin your journey</button>`
-    : `<p class="blurb">You are ${CEREMONY_AGE}. The townsfolk gather at the Academy for your Ceremony of Revealing, where the crystal shows what you will become.</p>
+    : `<p class="blurb">You are ${CEREMONY_AGE}. The townsfolk gather round the shrine in the middle of the city for your Ceremony of Revealing, where the crystal shows what you will become. Your new card will shine in the sky over the city for all to see.</p>
        ${c.child?.school ? `<p class="bag-hint">You trained at the ${esc(SCHOOLS[c.child.school].name)}.</p>` : '<p class="bag-hint">You never chose a school. Your parents\' work and luck will decide.</p>'}
        <button type="button" class="gold-button" data-ceremony ${busy ? 'disabled' : ''}>Step forward</button>`;
   el.innerHTML = `

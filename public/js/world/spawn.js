@@ -73,12 +73,14 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
 
   // Campfire beside the path
   const fire = new THREE.Group();
-  fire.position.set(9.5, heightAt(cx + 9.5, cz - 11) - baseY, -11);
+  const fireY = heightAt(cx + 9.5, cz - 11); // the fire and its seats sit on this, so you stand on them where they are drawn
+  fire.position.set(9.5, fireY - baseY, -11);
   for (let i = 0; i < 9; i++) {
     const a = (i / 9) * Math.PI * 2;
     const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22, 0), darkStone);
     r.position.set(Math.cos(a) * 0.8, 0.1, Math.sin(a) * 0.8);
     fire.add(r);
+    solid.push({ x: cx + 9.5 + r.position.x, z: cz - 11 + r.position.z, r: 0.22, kind: 'wall', height: 0.3, y: fireY, step: true });
   }
   const logMat = new THREE.MeshStandardMaterial({ color: '#4a3020', roughness: 1 });
   for (let i = 0; i < 4; i++) {
@@ -103,7 +105,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
     const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 2, 10), logMat);
     seat.rotation.set(0, ry, Math.PI / 2);
     seat.position.set(x, 0.28, z);
-    for (const k of [-0.75, 0, 0.75]) put(9.5 + x + Math.cos(ry) * k, -11 + z - Math.sin(ry) * k, 0.32, 0.58, true);
+    for (const k of [-0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9]) solid.push({ x: cx + 9.5 + x + Math.cos(ry) * k, z: cz - 11 + z - Math.sin(ry) * k, r: 0.3, kind: 'wall', height: 0.56, y: fireY, step: true });
     seat.castShadow = true;
     fire.add(seat);
   }
@@ -118,10 +120,10 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
   pole.position.y = 1.2;
   post.add(pole);
   const board = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 0.06), wood);
-  board.position.set(0.4, 2.0, 0);
+  board.position.set(0.92, 2.0, 0); // to one side of the pole, so the pole never covers the name
   post.add(board);
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.36), new THREE.MeshBasicMaterial({ map: textTexture(place.name.replace(/ \(.*\)/, '')), transparent: true }));
-  sign.position.set(0.4, 2.0, 0.035);
+  sign.position.set(0.92, 2.0, 0.035);
   post.add(sign);
   const signBack = sign.clone();
   signBack.rotation.y = Math.PI;

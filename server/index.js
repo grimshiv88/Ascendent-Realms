@@ -51,7 +51,7 @@ app.post('/api/character', requireAccount, (req, res) => {
 
 // The bridges over the city moats (raised in war or when monsters attack; the admins set them)
 const cityGates = () => { const r = db.prepare("SELECT data FROM world_state WHERE key = 'city_gates'").get(); return r ? JSON.parse(r.data) : {}; };
-app.get('/api/cities', (req, res) => res.json({ raised: cityGates() }));
+app.get('/api/cities', (req, res) => res.json({ raised: cityGates(), ceremonies: characters.recentCeremonies() }));
 
 app.post('/api/character/ceremony', requireAccount, (req, res) => {
   const result = characters.ceremony(req.account.id);
@@ -108,6 +108,10 @@ for (const [route, fn] of [['challenge', kings.challenge], ['answer', kings.answ
     res.status(result.error ? 400 : 200).json(result);
   });
 }
+// Marriage between players
+const family = require('./family');
+app.get('/api/family', requireAccount, (req, res) => res.json(family.list(req.account.id)));
+app.post('/api/family', requireAccount, (req, res) => { const r = family.act(req.account.id, req.body || {}); res.status(r.error ? 400 : 200).json(r); });
 app.get('/api/groups', requireAccount, (req, res) => res.json(groups.list(req.account.id)));
 app.post('/api/groups', requireAccount, (req, res) => {
   const r = groups.act(req.account.id, req.body || {});

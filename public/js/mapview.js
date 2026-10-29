@@ -9,7 +9,7 @@ import { allCastles } from './data/kings.mjs';
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
 const W = 1600, H = 1000;          // the map canvas, in map pixels at zoom 1
-const MAX_ZOOM = 640;              // at the closest, the window is about 250 m across
+const MAX_ZOOM = 2560;             // at the closest, the window is about 250 m across
 const DETAIL_FROM = 4;             // real ground starts showing from this zoom
 const VIEW_KEY = 'ar-mapview';
 

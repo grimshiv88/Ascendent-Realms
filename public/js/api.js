@@ -1,10 +1,11 @@
 // Talks to the game server. If no server is reachable (for example, a static preview page),
 // it falls back to a preview mode that keeps accounts in this browser only.
-import { fallenKeep, rebornWith, growUp } from './data/game-data.mjs';
+import { fallenKeep, rebornWith, rebirthAsChild, growUp } from './data/game-data.mjs';
 import { moneyWords } from './data/money.mjs';
 import * as birthData from './data/birth.mjs';
 import { setServerNow } from './data/clock.mjs';
 import * as uniqueData from './data/unique.mjs';
+import { moveToNewWorld } from './data/world-layout.mjs';
 
 const TOKEN_KEY = 'ar.token';
 
@@ -152,6 +153,7 @@ const preview = {
     const acc = this.accounts().find((a) => (a.email.toLowerCase() === login || a.username.toLowerCase() === login) && a.digest === digest);
     if (!acc) throw new Error('That username or email and password don\'t match an account.');
     token.set(`preview:${acc.email}`, remember);
+    if (moveToNewWorld(acc.character)) preview.save(preview.accounts().map((a) => (a.email === acc.email ? acc : a)), acc);
     return { account: { email: shownEmail(acc.email), username: acc.username, character: acc.character }, isNew: false };
   },
 };
@@ -238,6 +240,7 @@ export async function resume() {
   if (!t) return null;
   if (await isPreviewMode()) {
     const acc = preview.accounts().find((a) => `preview:${a.email}` === t);
+    if (acc && moveToNewWorld(acc.character)) preview.save(preview.accounts().map((a) => (a.email === acc.email ? acc : a)), acc);
     return acc ? { account: { email: shownEmail(acc.email), username: acc.username, character: acc.character } } : null;
   }
   try {
@@ -259,17 +262,29 @@ export async function createCharacter(choice) {
       if (acc.character) throw new Error('This account already has a character.');
       // born at random into a house of the race's city (the preview keeps no count of full houses)
       const B = birthData;
-      const birth = B.rollBirth(choice?.side || null);
+      const asKid = Number.isInteger(choice?.asChild) ? rebirthAsChild(acc.fallen, choice.asChild, B.rollBirth) : null;
+      const birth = asKid?.birth || B.rollBirth(choice?.side || null);
       const city = B.BIRTH_CITY[birth.race];
       const held = acc.fallen?.uniqueSkill ? new Set([acc.fallen.uniqueSkill.name]) : new Set();
-      const result = B.bornCharacter(acc.username, birth, { city, house: Math.floor(Math.random() * B.houseCount(city)) }, { takenUniques: held, appraisal: !held.has('Appraisal') });
+      const result = B.bornCharacter(acc.username, birth, asKid?.home || { city, house: Math.floor(Math.random() * B.houseCount(city)) }, { takenUniques: held, appraisal: !held.has('Appraisal') });
       if (result.error) throw new Error(result.error);
+      if (asKid) { result.character.child.school = asKid.kid.school || null; result.character.child.plan = asKid.kid.plan; result.character.rebornFrom = acc.fallen.name || null; }
       if (acc.fallen) { rebornWith(result.character, acc.fallen); delete acc.fallen; }
       acc.character = result.character;
       return result;
     });
   }
   return request('api/character', { method: 'POST', body: choice });
+}
+
+// Marriage between players: your spouse and the proposals waiting for you, and asking or answering
+export async function family() {
+  if (await isPreviewMode()) return { spouse: previewMe()?.character?.spouse || null, proposals: [], sent: [] };
+  return request('api/family');
+}
+export async function familyAct(body) {
+  if (await isPreviewMode()) throw new Error('Marrying another player needs the online game.');
+  return request('api/family', { method: 'POST', body });
 }
 
 // Appraisal: everything about a player, even the side they secretly serve
@@ -291,7 +306,10 @@ export async function appraise(name) {
 
 // Which cities have the bridges over their moats raised: { raised: { cityId: true } }
 export async function cityGates() {
-  if (await isPreviewMode()) { try { return { raised: JSON.parse(storage.get('ar.preview.gates')) || {} }; } catch { return { raised: {} }; } }
+  if (await isPreviewMode()) {
+    const read = (k, d) => { try { return JSON.parse(storage.get(k)) || d; } catch { return d; } };
+    return { raised: read('ar.preview.gates', {}), ceremonies: read('ar.preview.ceremonies', []) };
+  }
   return request('api/cities');
 }
 
@@ -301,7 +319,9 @@ export async function ceremony() {
     return updatePreviewAccount((acc) => {
       const c = acc.character;
       if (!c || !birthData.ceremonyDue(c)) throw new Error('You are not old enough yet.');
+      const city = c.child?.family?.city || 'central';
       growUp(c, birthData.rollClass(c));
+      storage.set('ar.preview.ceremonies', JSON.stringify([{ city, name: c.name, race: c.race, cls: c.cls, at: Date.now() }]));
       return { ok: true, character: c };
     });
   }

@@ -198,6 +198,11 @@ const FLORA = {
   mire: [['swamp', 0.4, 0.02], ['reeds', 0, 0.1], ['bush', 0.05, 0.02], ['rock', 0, 0.01]],
   frost: [['snowpine', 0.6, 0.003], ['young', 0.1, 0.004], ['rock', 0.04, 0.05]],
   sun: [['cactus', 0, 0.012], ['rock', 0, 0.025]],
+  // the Heartland's own kinds of land (sections)
+  darkwood: [['great', 0.02, 0], ['pine', 0.45, 0.01], ['oak', 0.3, 0.01], ['dead', 0.06, 0.02], ['bush', 0.02, 0.01], ['rock', 0.04, 0.02]],
+  jungle: [['great', 0.012, 0], ['oak', 0.5, 0.02], ['young', 0.18, 0.03], ['bush', 0.12, 0.04], ['swamp', 0.06, 0], ['rock', 0.02, 0.01]],
+  plains: [['oak', 0.3, 0.003], ['young', 0.1, 0.004], ['bush', 0.05, 0.01], ['rock', 0.02, 0.006]],
+  highland: [['pine', 0.4, 0.004], ['young', 0.08, 0.006], ['bush', 0.02, 0.006], ['rock', 0.06, 0.05]],
 };
 // Small things you can break with your hands (or a weapon): hit points, and what they drop
 // What can be broken, and what it takes. Big trees need an axe (`chop`: a Hand Axe is 3, a War Axe 4)
@@ -289,7 +294,7 @@ export function scenery() {
         const r = rand();
         if (nearPlace(x, z) || isPrepared(x, z)) continue;
         sample(x, z, s);
-        const flora = FLORA[s.region];
+        const flora = (s.region === 'heart' && FLORA[s.biome]) || FLORA[s.region];
         if (!flora) continue;
         let acc = 0;
         for (const [kind, inForest, open] of flora) {
@@ -301,7 +306,7 @@ export function scenery() {
           if (s.h < s.water + 0.6 && kind !== 'reeds') break;
           if (kind === 'great' && s.forest < 0.5) break;
           if (BREAKABLE[kind] && isBroken(spotKey(kind, x, z))) break;
-          (spots[`${kind}|${(i >= per / 2 ? 1 : 0) + (j >= per / 2 ? 2 : 0)}`] ||= []).push({ x, z, y: surfaceAt(x, z), region: s.region }); // on the land as drawn, not floating over it
+          (spots[`${kind}|${(i >= per / 2 ? 1 : 0) + (j >= per / 2 ? 2 : 0)}`] ||= []).push({ x, z, y: surfaceAt(x, z), region: s.region, dark: s.dark || 0 }); // on the land as drawn, not floating over it
           break;
         }
       }
@@ -322,9 +327,9 @@ export function scenery() {
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
         if (kind === 'rock') tint.set(ROCK_TINT[p.region] || '#888').multiplyScalar(0.85 + rand() * 0.3);
-        else tint.setHSL(0, 0, 0.85 + rand() * 0.3);
+        else tint.setHSL(0, 0, (0.85 + rand() * 0.3) * (1 - p.dark * 0.5)); // the Dark Forests are gloomier
         mesh.setColorAt(i, tint);
-        const entry = SOLID[kind] ? { x: p.x, z: p.z, r: SOLID[kind] * sc } : kind === 'rock' && sc > 0.9 ? { x: p.x, z: p.z, r: sc * 0.9 } : null;
+        const entry = SOLID[kind] ? { x: p.x, z: p.z, r: SOLID[kind] * sc } : kind === 'rock' && sc > 0.3 ? { x: p.x, z: p.z, r: sc * 0.8, y: p.y, step: true } : null; // every rock but pebbles is solid, and you can climb on it
         if (BREAKABLE[kind]) {
           // things you can break keep a link to their instance so they can be removed
           const e = entry || { x: p.x, z: p.z, r: 0 };
@@ -332,7 +337,7 @@ export function scenery() {
           solid.push(e);
         } else if (entry) {
           entry.kind = kind;
-          entry.height = kind === 'rock' ? sc : 10 * sc;
+          entry.height = kind === 'rock' ? sc * 0.55 : 10 * sc;
           solid.push(entry);
         }
       });
@@ -380,17 +385,18 @@ export function scenery() {
       if (s.h < s.water + 0.4) continue;
       if (s.region !== 'heart' && s.region !== 'fae' && s.region !== 'mire') continue;
       if (rand() > 0.85 - s.forest * 0.5) continue;
-      list.push([x, surfaceAt(x, z) - 0.05, z]); // (the drawn land, so tufts never hover on ridges)
+      list.push([x, surfaceAt(x, z) - 0.05, z, s.biome === 'plains' ? 1 : s.dark > 0.4 ? 2 : 0]); // (the drawn land, so tufts never hover on ridges)
     }
     if (!list.length) return null;
     const mesh = new THREE.InstancedMesh(grass, grassMat, list.length);
-    list.forEach(([x, y, z], i) => {
+    list.forEach(([x, y, z, look], i) => {
       dummy.position.set(x, y, z);
       dummy.rotation.set((rand() - 0.5) * 0.3, rand() * 3, (rand() - 0.5) * 0.3);
       dummy.scale.setScalar(0.7 + rand() * 0.9);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
-      tint.setHSL(0.22 + rand() * 0.06, 0.4, 0.42 + rand() * 0.14);
+      if (look === 1) tint.setHSL(0.14 + rand() * 0.04, 0.45, 0.5 + rand() * 0.12); // golden plains grass
+      else tint.setHSL(0.22 + rand() * 0.06, 0.4, (0.42 + rand() * 0.14) * (look === 2 ? 0.55 : 1));
       mesh.setColorAt(i, tint);
     });
     mesh.receiveShadow = true;

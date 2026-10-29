@@ -25,7 +25,8 @@ const PAL = {
   snow: C('#e9eef3'), sand: C('#cdb88a'), seabed: C('#6a6450'), deep: C('#3c4a48'),
   clay: C('#a8764a'), clay2: C('#c69a68'), fae: C('#4f9a68'), fae2: C('#6fb08a'),
   mud: C('#4a4630'), moss: C('#566a32'), dune: C('#d8b678'), dune2: C('#c49a5e'),
-  tundra: C('#9aa08a'),
+  tundra: C('#9aa08a'), darkFloor: C('#1f2a17'), gold: C('#a39a48'), gold2: C('#b8a457'),
+  jungle: C('#3f8a2c'), heath: C('#7a7a52'),
 };
 const tmpC = new THREE.Color();
 
@@ -38,8 +39,12 @@ function groundColor(s, ny, wx, wz, far, out) {
   }
   switch (s.region) {
     case 'heart':
-      out.copy(PAL.grass).lerp(PAL.grass2, n);
+      if (s.biome === 'plains') out.copy(PAL.gold).lerp(PAL.gold2, n).lerp(PAL.grass2, 0.25);
+      else if (s.biome === 'jungle') out.copy(PAL.jungle).lerp(PAL.grass2, n * 0.6);
+      else if (s.biome === 'highland') out.copy(PAL.grass).lerp(PAL.heath, 0.4 + n * 0.4);
+      else out.copy(PAL.grass).lerp(PAL.grass2, n);
       out.lerp(far ? PAL.canopy : PAL.forestFloor, Math.min(1, s.forest * (far ? 1.3 : 1.1)));
+      if (s.dark) out.lerp(PAL.darkFloor, Math.min(1, s.dark * 0.8));
       if (h > 260) out.lerp(PAL.rock, Math.min(1, (h - 260) / 300));
       break;
     case 'peaks':
@@ -348,7 +353,7 @@ export function createLand(scene) {
   scene.add(water);
 
   // inland lakes, each with its own water surface
-  const lakeMats = [];
+  const lakeMats = [], lakeDiscs = [];
   for (const L of lakesWithLevels()) {
     const n = normals.clone();
     n.repeat.set((L.r * 2.6) / 14, (L.r * 2.6) / 14);
@@ -359,6 +364,8 @@ export function createLand(scene) {
     disc.rotation.x = -Math.PI / 2;
     disc.position.set(L.x, L.level, L.z);
     disc.receiveShadow = true;
+    disc.userData.reach = L.r * 1.3 + 30000; // far lakes are hidden (the fog covers them anyway)
+    lakeDiscs.push(disc);
     scene.add(disc);
   }
 
@@ -423,6 +430,7 @@ export function createLand(scene) {
   function update(x, z, budgetMs = 6) {
     lastX = x; lastZ = z;
     for (const t of tiles.values()) t.veg?.view(x, z);
+    for (const d of lakeDiscs) d.visible = Math.hypot(x - d.position.x, z - d.position.z) < d.userData.reach;
     if (!farCentre || Math.hypot(x - farCentre.x, z - farCentre.z) > FAR_RECENTRE) placeFar(x, z);
     // snap the water to whole ripple repeats so the ripples don't jump when it moves
     water.position.set(Math.round(x / 1400) * 1400, SEA_LEVEL, Math.round(z / 1400) * 1400);

@@ -12,6 +12,7 @@ import { gameTime, now, DAY_MS } from './data/clock.mjs';
 import { KINDS, BY_REGION, GOBLIN_LINE } from './world/creatures.js';
 import { CARD_RANKS, rankIndex, rankHard, rankForLevel, CARD_FEE, mayTake } from './data/guildcard.mjs';
 import { money } from './data/money.mjs';
+import { BODYGUARDS, HIRE_SPANS, hireCost } from './data/hire.mjs';
 
 export const BOARD = 4;
 export const QUESTS_PER_DAY = 3;
@@ -224,6 +225,8 @@ export function renderGuild(el, game, message = '', bounty = null) {
         <button type="submit" class="gold-button small">Post bounty</button>
       </form>
       ${bounty?.message ? `<p class="sys-msg">${esc(bounty.message)}</p>` : ''}
+      <h3 class="sys-sub">Hire a bodyguard</h3>
+      ${guardHtml(game)}
       <h3 class="sys-sub">Meeting rooms</h3>
       <p class="sys-hint">Upstairs are rooms for parties and guild masters, rented by the hour, with their own private chat.</p>
       <button type="button" class="gold-button small" data-open-rooms>See the meeting rooms</button>
@@ -231,4 +234,14 @@ export function renderGuild(el, game, message = '', bounty = null) {
       <p class="sys-hint">Start a party, answer invites, or found a guild of your own here.</p>
       <button type="button" class="gold-button small" data-open-groups>Party and guild</button>
     </div>`;
+}
+
+// hunters for hire, to guard you on a trip (see data/hire.mjs)
+function guardHtml(game) {
+  const g = game.guard();
+  if (g) return `<p class="sys-hint">Your <b>${BODYGUARDS[g.tier].name}</b> (Lv ${BODYGUARDS[g.tier].level}) walks with you for another <b>${Math.ceil((g.until - Date.now()) / 60000)} min</b>.</p>
+    <button type="button" class="gold-button small" data-guard-dismiss>Send them home</button>`;
+  return `<p class="sys-hint">Not a fighter, or heading somewhere dangerous? A hunter will walk with you and fight anything that comes near. Whatever they slay counts as yours.</p>
+    <div class="quest-list">${Object.entries(BODYGUARDS).map(([id, b]) => `<div class="bounty"><b>${b.name} · Lv ${b.level}</b><span>${b.blurb}</span>
+      <span>${HIRE_SPANS.map((m) => `<button type="button" class="gold-button small" data-guard="${id}:${m}">${m < 60 ? `${m} min` : `${m / 60} h`} · ${money(hireCost(id, m))}</button>`).join(' ')}</span></div>`).join('')}</div>`;
 }

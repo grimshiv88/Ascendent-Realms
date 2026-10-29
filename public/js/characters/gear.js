@@ -239,7 +239,7 @@ export function wearGear(character, worn) {
     // a spear or staff stands up from the fist; a blade sits so that, with the arm in its ready pose
     // (see world.js), it points straight ahead, and it follows the arm through an overhead slash
     const type = worn.weapon.type || ITEMS[worn.weapon.id || worn.weapon.entry?.id]?.type;
-    w.rotation.x = type === 'spear' || type === 'staff' ? -0.85 : -1.2;
+    w.rotation.x = type === 'spear' || type === 'staff' ? -0.85 : 1.2;
     rig.arms[0].hand.add(w);
   }
   if (worn.shield) {

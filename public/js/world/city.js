@@ -8,7 +8,8 @@ import { buildSpawn, textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill } from './merge.js';
-import { cityHouses, CASTLE_SPOT, LANES, PLAYGROUND, TRAINING_GROUND, TRAINING_STATIONS, SCHOOLS, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
+import { buildHouse, buildTower, paved, TOWN_TONES } from './houses.js';
+import { cityHouses, CASTLE_SPOT, LANES, CROSS_STREETS, HOUSE_D, LANE_W, PLAYGROUND, TRAINING_GROUND, TRAINING_STATIONS, SCHOOLS, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
 
 const PLAZA_R = 34;
 
@@ -68,56 +69,9 @@ const matOf = (color, roughness = 0.9, extra = null) => {
   if (!MATS.has(k)) MATS.set(k, new THREE.MeshStandardMaterial({ color, roughness, ...(extra || {}) }));
   return MATS.get(k);
 };
-function house(w, d, h, wall, roof, label) {
-  const g = new THREE.Group();
-  const wallMat = matOf(wall, 0.9);
-  const roofMat = matOf(roof, 0.8);
-  const trim = matOf('#4a3424', 0.9);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
-  body.position.y = h / 2;
-  g.add(body);
-  // a closed pitched roof along the width: a ridge on top, sloping down over the front and back,
-  // with the gable ends filled in in the wall's colour
-  const rise = d * 0.42, eave = 0.35;
-  const tri = new THREE.Shape([new THREE.Vector2(-d / 2 - eave, 0), new THREE.Vector2(d / 2 + eave, 0), new THREE.Vector2(0, rise)]);
-  const roofGeo = new THREE.ExtrudeGeometry(tri, { depth: w + 0.6, bevelEnabled: false });
-  roofGeo.translate(0, 0, -(w + 0.6) / 2);
-  roofGeo.rotateY(Math.PI / 2);
-  const r = new THREE.Mesh(roofGeo, roofMat);
-  r.position.y = h - 0.05;
-  g.add(r);
-  for (const side of [-1, 1]) {
-    const end = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(-d / 2, 0), new THREE.Vector2(d / 2, 0), new THREE.Vector2(0, rise * (d / 2) / (d / 2 + eave))])).rotateY(side * Math.PI / 2), wallMat);
-    end.position.set(side * (w / 2 + 0.01), h - 0.05, 0);
-    g.add(end);
-  }
-  // door and windows on the front (+z)
-  // the door swings on its left side; it opens when someone comes to it (see openDoors)
-  const hinge = new THREE.Group();
-  hinge.position.set(-0.7, 0, d / 2 + 0.05);
-  const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.12), trim);
-  door.position.set(0.7, 1.2, 0);
-  door.userData.moves = true;
-  hinge.add(door);
-  const dark = new THREE.Mesh(new THREE.BoxGeometry(1.36, 2.36, 0.02), matOf('#140e08', 1));
-  dark.position.set(0, 1.18, d / 2 + 0.005); // the dark doorway behind it
-  g.add(hinge, dark);
-  g.userData.door = hinge;
-  const glass = matOf('#ffe0a0', 1, { emissive: '#c08030', emissiveIntensity: 0.6 });
-  for (const x of [-w / 3, w / 3]) {
-    const win = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.1), glass);
-    win.position.set(x, h * 0.55, d / 2 + 0.05);
-    g.add(win);
-  }
-  if (label) {
-    const board = new THREE.Mesh(new THREE.BoxGeometry(Math.min(w - 1, 6), 0.9, 0.1), trim);
-    board.position.set(0, Math.min(h - 0.6, 3.4), d / 2 + 0.12);
-    const text = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w - 1.2, 5.8), 0.8), new THREE.MeshBasicMaterial({ map: textTexture(label), transparent: true }));
-    text.position.set(0, board.position.y, d / 2 + 0.18);
-    g.add(board, text);
-  }
-  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  return g;
+// A building in the town style (see world/houses.js): w wide, d deep, about h high (3.1 m a storey)
+function house(w, d, h, wall, roof, label, opts = {}) {
+  return buildHouse({ w, d, floors: Math.max(1, Math.round(h / 3.1)), wall, roof, seed: opts.seed ?? `${w}:${d}:${h}:${label}`, labelTex: label ? textTexture(label) : null, ...opts });
 }
 
 // Doors that swing open while someone is near them (you, for now). Their places are worked out
@@ -141,9 +95,9 @@ function doorKeeper() {
 }
 
 // Solid circles along a rectangle's edges, so you can't walk through a building
-function boxColliders(x, z, w, d, rot, out) {
+function boxColliders(x, z, w, d, rot, out, height = 6) {
   const c = Math.cos(rot), s = Math.sin(rot);
-  const put = (lx, lz) => out.push({ x: x + lx * c + lz * s, z: z - lx * s + lz * c, r: 1.1, kind: 'wall', height: 6 });
+  const put = (lx, lz) => out.push({ x: x + lx * c + lz * s, z: z - lx * s + lz * c, r: 1.1, kind: 'wall', height });
   for (let lx = -w / 2; lx <= w / 2 + 0.01; lx += 1.8) { put(lx, -d / 2 + 0.6); put(lx, d / 2 - 0.6); }
   for (let lz = -d / 2; lz <= d / 2 + 0.01; lz += 1.8) { put(-w / 2 + 0.6, lz); put(w / 2 - 0.6, lz); }
 }
@@ -176,30 +130,32 @@ export function buildCity(place, opts = {}) {
   const doors = doorKeeper();
 
   // the paved plaza
-  const paving = new THREE.Mesh(new THREE.CircleGeometry(PLAZA_R + 10, 64), new THREE.MeshStandardMaterial({ color: S.paving, roughness: 0.95 }));
-  paving.rotation.x = -Math.PI / 2;
+  const paving = paved(PLAZA_R + 10, 0, S.paving, true);
   paving.position.y = 0.03;
-  paving.receiveShadow = true;
   g.add(paving);
   // streets out to the four gates
-  const streetMat = new THREE.MeshStandardMaterial({ color: S.street, roughness: 0.95 });
   for (let i = 0; i < 4; i++) {
-    const st = new THREE.Mesh(new THREE.PlaneGeometry(7, CITY_R - PLAZA_R), streetMat);
-    st.rotation.x = -Math.PI / 2;
-    st.rotation.z = (i * Math.PI) / 2;
-    const a = (i * Math.PI) / 2, mid = (CITY_R + PLAZA_R) / 2;
+    const a = (i * Math.PI) / 2, mid = (CITY_R + PLAZA_R) / 2, along = i % 2 === 0;
+    const st = paved(along ? 7 : CITY_R - PLAZA_R, along ? CITY_R - PLAZA_R : 7, S.street);
     st.position.set(Math.sin(a) * mid, 0.02, Math.cos(a) * mid);
-    st.receiveShadow = true;
     g.add(st);
   }
-  // the Neighbourhood's lanes (north-south) and the paths from the west road
+  // the Neighbourhood's streets: north-south ones between the rows of houses, with a pavement in
+  // front of each row, and east-west cross streets (see the plan in data/birth.mjs)
+  const zOf = (x) => Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - x * x));
+  const lay = (w, d, color, x, z, y = 0.021) => { const m = paved(w, d, color); m.position.set(x, y, z); g.add(m); return m; };
   for (const lx of LANES) {
-    const zMax = Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - lx * lx));
-    const lane = new THREE.Mesh(new THREE.PlaneGeometry(4.5, zMax * 2), streetMat);
-    lane.rotation.x = -Math.PI / 2;
-    lane.position.set(lx, 0.021, 0);
-    lane.receiveShadow = true;
-    g.add(lane);
+    const zMax = zOf(lx);
+    lay(LANE_W, zMax * 2, S.street, lx, 0);
+    for (const s of [-1, 1]) lay(1.3, zMax * 2, S.paving, lx + s * (LANE_W / 2 + 0.65), 0, 0.03);
+    // the alley behind the next row
+    const ax = lx + LANE_W / 2 + 1.2 + HOUSE_D + 1;
+    lay(2, zOf(ax) * 2, S.street, ax, 0, 0.019);
+  }
+  for (const s of [-1, 1]) lay(1.3, INNER_R - PLAZA_R, S.paving, -3.5 - 0.65, s * (INNER_R + PLAZA_R) / 2, 0.03); // the pavement along the avenue
+  for (const cz of CROSS_STREETS) {
+    const x0 = -Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - cz * cz)), x1 = -3.5;
+    lay(x1 - x0, 5, S.street, (x0 + x1) / 2, cz);
   }
 
   // the city's own buildings, quarter by quarter
@@ -210,13 +166,12 @@ export function buildCity(place, opts = {}) {
     doors.add(b);
     if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
     const at = placeAt(g, b, x, z, fx, fz, d);
-    boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
+    boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid, b.userData.height);
     shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: id !== 'academy' });
     // the Guild Hall gets a bell tower at its back
     if (id === 'guild') {
-      const tower = new THREE.Mesh(new THREE.BoxGeometry(3, 15, 3), new THREE.MeshStandardMaterial({ color: monster ? S.tones[0][0] : '#bfb08e', roughness: 0.9 }));
-      tower.position.set(x - fx * (d / 2 - 1.5), 7.5, z - fz * (d / 2 - 1.5));
-      tower.castShadow = true;
+      const tower = buildTower({ size: 3.6, height: 16, wall: monster ? S.tones[0][0] : '#d8ccb0', roof });
+      tower.position.set(x - fx * (d / 2 - 1.5), 0, z - fz * (d / 2 - 1.5));
       g.add(tower);
     }
   });
@@ -271,15 +226,15 @@ export function buildCity(place, opts = {}) {
   // (houses and walls never move: they are merged into a few meshes at the end)
   const fixed = new THREE.Group();
   g.add(fixed);
-  const tones = S.tones;
+  const tones = monster ? S.tones : TOWN_TONES;
   const houses = cityHouses(place.id);
   for (const h of houses) {
-    const [wall, roof] = tones[h.i % tones.length];
-    const hb = house(h.w, h.d, h.h, wall, roof, null);
+    const [wall, roof] = tones[(h.i * 7 + Math.floor(h.i / 3)) % tones.length];
+    const hb = buildHouse({ w: h.w, d: h.d, floors: h.floors, wall, roof, seed: `${place.id}:${h.i}`, doorX: h.doorX, over: 0.1 });
     doors.add(hb);
     const at = placeAt(fixed, hb, h.x, h.z, h.fx, h.fz, h.d);
     if (S.decor === 'reeds') hb.position.y = 0.6;
-    boxColliders(cx + at.bx, cz + at.bz, h.w, h.d, at.rot, solid);
+    boxColliders(cx + at.bx, cz + at.bz, h.w, h.d, at.rot, solid, hb.userData.height);
   }
 
   // the walls: outer fortress wall, moat, inner wall (see walls())
@@ -297,6 +252,7 @@ export function buildCity(place, opts = {}) {
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), lampMat);
     lamp.position.set(pole.position.x, 3.1, pole.position.z);
     g.add(pole, lamp);
+    solid.push({ x: cx + pole.position.x, z: cz + pole.position.z, r: 0.15, kind: 'wall', height: 3.3 });
   }
 
   // two guards at each gate, in plate with spears, who check everyone's ID on the way in
@@ -380,7 +336,7 @@ export function buildCity(place, opts = {}) {
     fam.parents.forEach((p, j) => {
       if (h.i === homeAt && opts.home.dead?.includes(j)) return; // passed away of old age
       const side = j ? 1.1 : -1.1;
-      addNpc(race, h.x + h.fx * out - h.fz * side, h.z + h.fz * out + h.fx * side, h.rot, { kind: 'parent', name: p.name, job: p.job, mine: h.i === homeAt, house: h.i });
+      addNpc(race, h.x + (h.door?.x || 0) + h.fx * out - h.fz * side, h.z + (h.door?.z || 0) + h.fz * out + h.fx * side, h.rot, { kind: 'parent', name: p.name, job: p.job, mine: h.i === homeAt, house: h.i });
     });
   }
   // a teacher at each station of the Training Grounds, who teaches the children of that school
@@ -790,11 +746,11 @@ export function buildVillage(place) {
   for (const [a, r, id] of spots) {
     const tavern = id === 'tavern';
     const w = tavern ? 11 : 7, d = tavern ? 8 : 6, h = tavern ? 6 : 4;
-    const b = house(w, d, h, tavern ? '#c8b48e' : '#d0c2a2', tavern ? '#6a3a1e' : '#5a4a3a', tavern ? `${place.name} Tavern` : null);
+    const b = house(w, d, h, tavern ? '#c8b48e' : '#d0c2a2', tavern ? '#6a3a1e' : '#5a4a3a', tavern ? `${place.name} Tavern` : null, { seed: `${place.id}:${a}` });
     doors.add(b);
     const at = placeFacing(g, b, a, r, d);
     b.position.y = heightAt(cx + at.bx, cz + at.bz) - baseY;
-    boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
+    boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid, b.userData.height);
     if (tavern) shops.push({ id: 'tavern', name: `${place.name} Tavern`, x: cx + at.x, z: cz + at.z, building: true });
   }
   // a tall wooden wall of sharpened logs all round, with a gate north and south, a watchtower beside

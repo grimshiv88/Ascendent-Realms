@@ -1,5 +1,5 @@
 // Game rules shared by the browser and the server. Numbers come from the rulebook.
-import { homePlace, toWorld, PLACES } from './world-layout.mjs';
+import { homePlace, toWorld, PLACES, WORLD_VERSION } from './world-layout.mjs';
 import { STARTER_ITEMS } from './items.mjs';
 import { pickUnique, uniqueByName, uniqueSlot } from './unique.mjs';
 
@@ -236,7 +236,16 @@ export const mayChangeForm = (c) => c.side === 'monster' && (c.level || 1) >= FO
 export const PAST_LIFE_STATS = 2; // taken from (sinner) or added to (blessed) every main stat
 // (a child who left their parents unvisited is a sinner too)
 export const pastLifeOf = (c) => (c.pact === 'dark' || c.neglect ? 'sinner' : c.pact === 'holy' ? 'blessed' : null);
-export const fallenKeep = (c) => ({ uniqueSkill: { name: c.uniqueSkill?.name, rank: c.uniqueSkill?.rank }, lives: (c.lives || 1) + 1, soul: pastLifeOf(c), fell: new Date().toISOString() });
+export const fallenKeep = (c) => ({ uniqueSkill: { name: c.uniqueSkill?.name, rank: c.uniqueSkill?.rank }, lives: (c.lives || 1) + 1, soul: pastLifeOf(c), fell: new Date().toISOString(),
+  // your children, any of whom you may be reborn as, and the family house they live in
+  name: c.name, children: (c.children || []).slice(0, 6), home: c.family ? { city: c.family.city, house: c.family.house } : null });
+// Born again as one of your children (see data/family.mjs): their race, in your family's house,
+// already set on the school you chose for them. Returns { birth, home, child } or null.
+export function rebirthAsChild(keep, i, rollBirthFn) {
+  const kid = keep?.children?.[i];
+  if (!kid || !RACES[kid.race]) return null;
+  return { birth: rollBirthFn(null, Math.random, kid.race), home: keep.home, kid };
+}
 export function rebornWith(character, keep) {
   const skill = uniqueByName(keep?.uniqueSkill?.name);
   // Appraisal is kept only while nobody else has been given it (the server checks)
@@ -280,6 +289,7 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
       skills: [],
       // A new character starts at a random safe zone (waystone) on their home continent
       location: startLocation(race.home),
+      worldV: WORLD_VERSION, // made in the bigger world (see moveToNewWorld)
       hp: null, // current HP; null means full
       inventory: [...(STARTER_ITEMS[classId] || []), ['bread', 3], ['water_flask', 3], ['herbal_tea', 2]].map(([id, n]) => ({ id, n })),
       equipped: { weapon: null },

@@ -48,6 +48,10 @@ document.addEventListener('selectstart', (e) => { if (!typing(e)) e.preventDefau
 document.addEventListener('dragstart', (e) => { if (!typing(e)) e.preventDefault(); });
 import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } from './data/controls.mjs';
 import { ageOf, isChild, ceremonyDue, SCHOOLS, PARENT_JOBS } from './data/birth.mjs';
+import { UNDYING_LEVEL, RENEW_AGE, MARRY_AGE, diedOfAge } from './data/life.mjs';
+import { BODYGUARDS } from './data/hire.mjs';
+import { suitorsFor } from './data/family.mjs';
+import { renderFamily } from './familyui.js';
 import { renderAcademy, renderCeremony } from './schoolui.js';
 import { renderAppraise } from './appraiseui.js';
 import { piecesCost } from './data/building.mjs';
@@ -136,7 +140,12 @@ function openCreation(username) {
   $('creator-root').classList.remove('hidden');
   creator = openCreator($('creator-root'), {
     username,
-    async onBorn() { return (await api.createCharacter({})).character; },
+    async onBorn() {
+      // reborn as one of your children (chosen on the screen of your final death)
+      let asChild = null;
+      try { const v = sessionStorage.getItem('ar.rebirth'); if (v != null) asChild = Number(v); sessionStorage.removeItem('ar.rebirth'); } catch { /* blocked */ }
+      return (await api.createCharacter(Number.isInteger(asChild) ? { asChild } : {})).character;
+    },
     async onEnter(character) {
       await cloudTransition(async () => {
         creator.close();
@@ -549,6 +558,7 @@ function startGame(character) {
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'guild') renderGuild(overlay, game, ui.questMsg, ui.bounty);
+    else if (name === 'family') renderFamily(overlay, game, { server: ui.familyServer, message: ui.familyMsg || '' });
     else if (name === 'assess') renderAssess(overlay, character, ui.assessed);
     else if (name === 'map' && world?.indoors()?.kind === 'castle') renderCastlePlan(overlay, world.indoors());
     else if (name === 'map') renderMap(overlay, () => world?.position(), [...(character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })),
@@ -593,6 +603,7 @@ function startGame(character) {
     ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.skillMsg = ''; ui.binding = null;
     if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
     if (name === 'cult') { ui.cultMsg = ''; loadCult(); }
+    if (name === 'family') { ui.familyMsg = ''; loadFamily(); }
     if (name === 'rankings') {
       ui.top = null;
       game.saveNow();
@@ -602,6 +613,27 @@ function startGame(character) {
     drawPanel();
     overlay.classList.remove('hidden');
   };
+  // A death: it costs one of your 3 lives and you wake at the nearest shrine, or, with none left
+  // (or of old age below level 250), it is final (see data/life.mjs)
+  function died(by, cause) {
+    const out = game.die(cause);
+    if (!out.rise) { fallen(by); return; }
+    const where = world?.riseAtShrine();
+    world?.releaseMouse();
+    overlay.dataset.panel = 'risen';
+    const what = cause === 'age' ? 'Your body gave out to old age' : `You were defeated by ${cause === 'monster' ? 'a ' : ''}${esc(by)}`;
+    overlay.innerHTML = `
+      <div class="status-window welcome-window fallen-window" role="dialog" aria-label="You have fallen">
+        <h2>You have fallen</h2>
+        <p>${what}.</p>
+        ${out.free ? `<p>But you are past level ${UNDYING_LEVEL}: death cannot hold you. ${out.renewed ? `The shrine renews you, and you wake at the age of ${RENEW_AGE}.` : 'No life is lost.'}</p>`
+          : `<p>The shrine's light gathers you back. <b>${out.livesLeft} ${out.livesLeft === 1 ? 'life' : 'lives'} left.</b> ${out.livesLeft === 1 ? 'The next death will be your last.' : ''}</p>`}
+        <p>You wake at the shrine of ${esc(where || 'the nearest town')}.</p>
+        <button type="button" class="gold-button" data-close>Rise</button>
+      </div>`;
+    overlay.classList.remove('hidden');
+    drawHud();
+  }
   // Death is final: the character is gone. Only the Unique Skill passes on to the next one.
   async function fallen(by) {
     game.saveNow?.();
@@ -616,10 +648,13 @@ function startGame(character) {
         <p>Your journey begins again from the very start: you will be born anew, into a new family, as whatever life gives you.</p>
         <p>Your Unique Skill stays with you: <b>${esc(kept?.name || '')}</b>.</p>
         ${character.pact === 'dark' ? '<p>You served the dark and die a <b>sinner</b>. Your next life begins weaker.</p>' : character.pact === 'holy' ? '<p>You die in the Light. Your next life begins <b>stronger</b>.</p>' : ''}
+        ${(character.children || []).length ? `<p>Or be <b>reborn as one of your children</b>, a child of 4 in your family's house:</p>
+          <p>${character.children.map((k, i) => `<button type="button" class="gold-button small" data-rebirth="${i}">${esc(k.name)} (${esc(RACES[k.race]?.name || k.race)})</button>`).join(' ')}</p>` : ''}
         <button type="button" class="gold-button" data-begin-again>Begin again</button>
       </div>`;
     overlay.classList.remove('hidden');
     overlay.querySelector('[data-begin-again]').addEventListener('click', () => location.reload());
+    for (const b of overlay.querySelectorAll('[data-rebirth]')) b.addEventListener('click', () => { try { sessionStorage.setItem('ar.rebirth', b.dataset.rebirth); } catch { /* blocked */ } location.reload(); });
   }
   const closePanel = () => { if (overlay.dataset.panel === 'power') ui.powers = []; overlay.classList.add('hidden'); overlay.dataset.shown = ''; preview.unmount(); };
 
@@ -677,6 +712,23 @@ function startGame(character) {
     location.reload();
   }
   // Settings: set a new password (for now without the old one)
+  // marriage between players: proposals waiting for you, and your spouse as the server has it
+  function loadFamily(r = null) {
+    const done = (x) => { ui.familyServer = x; if (x.spouse && !character.spouse) game.setSpouse(x.spouse); if (overlay.dataset.panel === 'family') drawPanel(); };
+    if (r) { done(r); return; }
+    api.family().then(done).catch(() => {});
+  }
+  overlay.addEventListener('submit', async (e) => {
+    if (!e.target.matches('[data-propose-form]')) return;
+    e.preventDefault();
+    const { to } = Object.fromEntries(new FormData(e.target));
+    try { loadFamily(await api.familyAct({ act: 'propose', to })); ui.familyMsg = `You asked ${to}. They will see it in their Family window.`; } catch (err) { ui.familyMsg = err.message; }
+    drawPanel();
+  });
+  overlay.addEventListener('change', (e) => {
+    const i = e.target.dataset?.kidSchool;
+    if (i != null) { game.setChildSchool(Number(i), e.target.value); ui.familyMsg = 'School chosen.'; }
+  });
   // posting a bounty on the Guild Hall's board
   overlay.addEventListener('submit', async (e) => {
     if (!e.target.matches('[data-bounty-form]')) return;
@@ -937,6 +989,33 @@ function startGame(character) {
       return;
     }
     if ((v = t('data-school')) != null) { game.setSchool(v); ui.academyMsg = `You now train at the ${SCHOOLS[v].name}. Go to its station on the Training Grounds beside the Academy and stand with your teacher.`; drawPanel(); return; }
+    if (t('data-open-family') != null) { openPanel('family'); return; }
+    if ((v = t('data-marry')) != null) {
+      const s2 = suitorsFor(character, realmTime().day)[Number(v)];
+      const r = s2 ? game.marryNpc(s2) : 'gone';
+      ui.familyMsg = { married: `You and ${s2?.name} are married at the shrine!`, coins: 'You cannot afford the wedding.', young: `You must be ${MARRY_AGE} to marry.`, 'married-already': 'You are already married.' }[r] || '';
+      drawPanel(); drawHud(); return;
+    }
+    if ((v = t('data-answer')) != null) {
+      const [from, yes] = v.split(':');
+      api.familyAct({ act: 'answer', from, yes: yes === '1' }).then((r) => { if (r.married) game.setSpouse(r.married); ui.familyMsg = r.married ? `You and ${from} are married!` : 'You said no.'; loadFamily(r); })
+        .catch((err) => { ui.familyMsg = err.message; drawPanel(); });
+      return;
+    }
+    if (t('data-have-child') != null || t('data-adopt') != null) {
+      const school = overlay.querySelector('[data-new-school]')?.value || null;
+      const r = game.haveChild(school, t('data-adopt') != null);
+      const kid = character.children?.[character.children.length - 1];
+      ui.familyMsg = { born: `Welcome, ${kid?.name}!`, coins: 'You cannot afford that.', wait: 'Not yet.', single: 'You need to be married first.', full: 'Your house is full.' }[r] || '';
+      drawPanel(); drawHud(); return;
+    }
+    if ((v = t('data-guard')) != null) {
+      const [tier, mins] = v.split(':');
+      const r = game.hireGuard(tier, Number(mins));
+      ui.questMsg = { hired: `Your ${BODYGUARDS[tier].name} is ready. They will follow you and fight anything that comes near.`, coins: 'You cannot afford that hunter.', busy: 'You already have a bodyguard.' }[r] || '';
+      world?.refreshGuard(); drawPanel(); return;
+    }
+    if (t('data-guard-dismiss') != null) { game.dismissGuard(); world?.refreshGuard(); ui.questMsg = 'Your bodyguard heads home.'; drawPanel(); return; }
     if (t('data-ceremony') != null) {
       ui.ceremonyBusy = true; drawPanel();
       game.saveNow?.();
@@ -944,6 +1023,7 @@ function startGame(character) {
         game.grownUp(r.character);
         ui.grown = r.character;
         world?.rebuildAvatar(); drawHud(); drawSkillBar();
+        loadCityGates(); // your card goes up in the sky over the shrine
       }).catch((err) => { ui.ceremonyMsg = err.message; }).then(() => { ui.ceremonyBusy = false; drawPanel(); });
       return;
     }
@@ -1212,7 +1292,7 @@ function startGame(character) {
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
       if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
-      if (type === 'defeated') fallen(data.by);
+      if (type === 'defeated') died(data.by, data.cause);
     },
     onKey(e) {
       const act = actionFor(e.code);
@@ -1260,6 +1340,8 @@ function startGame(character) {
   setInterval(() => {
     if (document.hidden) return;
     game.addPlayTime(60000);
+    // a life runs out at its race's age (see data/life.mjs)
+    if (diedOfAge(character)) { world?.oldAge(); return; }
     // childhood: training at the Academy, growing a little, and the Ceremony at 7
     if (!isChild(character)) return;
     // training: at your own school's station on the Training Grounds, beside its teacher
@@ -1267,11 +1349,17 @@ function startGame(character) {
     if (character.child.school && at === character.child.school) { game.train(60000); if (overlay.dataset.panel === 'academy' && !overlay.classList.contains('hidden')) drawPanel(); }
     else if (at && at !== character.child.school) showArea(`This is the ${SCHOOLS[at].name}'s station. Train at your own school's station${character.child.school ? '' : ' (choose a school at the Academy first)'}.`);
     world?.rebuildAvatar();
-    if (ceremonyDue(character) && !ui.ceremonyShown) { ui.ceremonyShown = true; ui.grown = null; openPanel('ceremony'); }
   }, 60000);
-  if (ceremonyDue(character)) { ui.ceremonyShown = true; setTimeout(() => openPanel('ceremony'), 4000); }
+  // the Ceremony is held at the shrine in the middle of your city: when you are old enough, go there
+  let ceremonyNag = 0;
+  setInterval(() => {
+    if (!ceremonyDue(character) || overlay.dataset.panel === 'ceremony' && !overlay.classList.contains('hidden')) return;
+    if (world?.atShrine()) { if (!ui.ceremonyShown) { ui.ceremonyShown = true; ui.grown = null; openPanel('ceremony'); } return; }
+    ui.ceremonyShown = false;
+    if (Date.now() - ceremonyNag > 90000) { ceremonyNag = Date.now(); showArea('You are 7! Go to the shrine in the middle of your city for your Ceremony of Revealing.'); }
+  }, 2000);
   // the bridges over the city moats: raised in times of war or attack (set by the realm's keepers)
-  const loadCityGates = () => api.cityGates().then((r) => world?.setCityGates(r.raised)).catch(() => {});
+  const loadCityGates = () => api.cityGates().then((r) => { world?.setCityGates(r.raised); world?.setCeremonies(r.ceremonies || []); }).catch(() => {});
   loadCityGates();
   setInterval(loadCityGates, 60000);
   // death is final, so warn when HP runs low
