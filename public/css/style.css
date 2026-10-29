@@ -999,3 +999,6 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .cp-you-label { fill: #fff; font-size: 1.1px; font-weight: 700; }
 
 .hud-injury { margin: 4px 0 0; font-size: 12px; color: #f0b0a0; }
+.parent-cards { display: grid; gap: 12px; }
+.id-card.late { filter: grayscale(0.85); opacity: 0.8; }
+.bag-hint.bad { color: #f0a090; }

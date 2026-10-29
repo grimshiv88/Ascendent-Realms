@@ -36,8 +36,8 @@ export function allPortals() {
     if (g && !list.some((p) => Math.hypot(p.x - g.x, p.z - g.z) < 2500)) list.push({ id: `portal${list.length}`, name, region, ...g });
   };
   // one beside every named place (a little off to the side, so it never sits on the spawn)
-  // (a village's stands just outside its wooden wall)
-  for (const p of PLACES) { const w = toWorld(p.px, p.py); add(p.region, `${p.name} Portal`, w.x + (p.village ? 76 : 40), w.z + (p.village ? 0 : 25)); }
+  // (a village's stands just outside its wooden wall; a city's in its Civic Quarter, north-east)
+  for (const p of PLACES) { const w = toWorld(p.px, p.py); const [ox, oz] = p.village ? [76, 0] : p.city ? [56, -52] : [40, 25]; add(p.region, `${p.name} Portal`, w.x + ox, w.z + oz); }
   // and a ring around each continent; each Fae island gets one in its middle
   for (const reg of REGIONS) {
     if (reg.islands) {

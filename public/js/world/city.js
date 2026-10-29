@@ -8,25 +8,32 @@ import { buildSpawn, textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill } from './merge.js';
-import { cityHouses, CASTLE_SPOT, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
+import { cityHouses, CASTLE_SPOT, LANES, PLAYGROUND, TRAINING_GROUND, TRAINING_STATIONS, SCHOOLS, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
 
 const PLAZA_R = 34;
 
-// The buildings on the plaza: [shop id, angle (0 = east, going round towards south), width, depth, height, wall colour, roof colour]
+// The city's own buildings, each by its quarter (see the plan in data/birth.mjs):
+// [id, x, z, facing (the way its door looks: [fx, fz]), width, depth, height, wall colour, roof colour]
+// They stand back from the avenue and the roads, never across them.
 const CITY_SHOPS = [
-  ['guild', -Math.PI / 2, 18, 12, 9, '#cdbf9e', '#5a2a24'],
-  ['city_potions', -Math.PI / 2 + 0.95, 8, 7, 5, '#d8cdb0', '#3a6a3a'],
-  ['city_smith', 0.2, 9, 8, 5, '#9a8e7e', '#3a3632'],
-  ['city_armoury', 0.95, 9, 8, 5.5, '#b0a690', '#4a4a5a'],
-  ['city_tailor', -2.3, 8, 7, 5, '#e0d4c0', '#7a3a5a'],
-  ['city_food', 2.1, 10, 8, 5, '#e2d2a8', '#8a5a2a'],
-  ['tavern', -Math.PI / 2 - 1.4, 12, 9, 7, '#c8b48e', '#6a3a1e'],
-  // where children train at the school of their choice before the Ceremony
-  ['academy', 2.75, 12, 9, 7, '#e4dcc8', '#2a4a7a'],
+  // the Civic Quarter (north-east), along the avenue
+  ['guild', 14, -64, [-1, 0], 18, 12, 9, '#cdbf9e', '#5a2a24'],
+  ['academy', 12, -96, [-1, 0], 12, 9, 7, '#e4dcc8', '#2a4a7a'],
+  // the Market Quarter (south-east): along the avenue, and along the east road
+  ['city_potions', 11.5, 52, [-1, 0], 8, 7, 5, '#d8cdb0', '#3a6a3a'],
+  ['city_tailor', 11.5, 64, [-1, 0], 8, 7, 5, '#e0d4c0', '#7a3a5a'],
+  ['city_food', 12, 77, [-1, 0], 10, 8, 5, '#e2d2a8', '#8a5a2a'],
+  ['tavern', 12.5, 93, [-1, 0], 12, 9, 7, '#c8b48e', '#6a3a1e'],
+  ['city_smith', 52, 11, [0, -1], 9, 8, 5, '#9a8e7e', '#3a3632'],
+  ['city_armoury', 66, 11.25, [0, -1], 9, 8, 5.5, '#b0a690', '#4a4a5a'],
 ];
+// lots kept for the shops of Businessmen, behind the Market Quarter's shops: [x, z] middles, 14 m square
+const SHOP_LOTS = [];
+for (const x of [36, 54, 72]) for (const z of [34, 52, 70, 88]) if (Math.hypot(x + 7, z + 7) < 130) SHOP_LOTS.push([x, z]);
+
 // The walls: the outer fortress wall, the moat inside it, then the inner wall. Only two gates (north
 // and south), each with a bridge over the moat that can be raised to shut the inner gate.
-export const INNER_R = 96;
+export const INNER_R = CITY_R - 14;
 export const MOAT = [INNER_R + 0.8, CITY_R - 1]; // right up to both walls: no strip of land to stand on
 export const GATE_ANGLES = [0, Math.PI]; // the gates, along the south-north street (angle as sin = x, cos = z)
 const GATE_HALF = 5; // metres either side of a gate's middle
@@ -143,6 +150,13 @@ function boxColliders(x, z, w, d, rot, out) {
 
 // A building at angle `a` on a ring of radius `r` round (0, 0), its door facing the middle.
 // Returns the door's spot (in the group's space) for the shop's E key.
+// put a building with its middle at (x, z) and its door facing (fx, fz); returns the spot in front of the door
+function placeAt(g, b, x, z, fx, fz, d) {
+  b.position.set(x, 0, z);
+  b.rotation.y = Math.atan2(fx, fz);
+  g.add(b);
+  return { x: x + fx * (d / 2 + 1.6), z: z + fz * (d / 2 + 1.6), rot: b.rotation.y, bx: x, bz: z };
+}
 function placeFacing(g, b, a, r, d) {
   const x = Math.cos(a) * r, z = Math.sin(a) * r;
   b.position.set(x, 0, z);
@@ -178,24 +192,35 @@ export function buildCity(place, opts = {}) {
     st.receiveShadow = true;
     g.add(st);
   }
+  // the Neighbourhood's lanes (north-south) and the paths from the west road
+  for (const lx of LANES) {
+    const zMax = Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - lx * lx));
+    const lane = new THREE.Mesh(new THREE.PlaneGeometry(4.5, zMax * 2), streetMat);
+    lane.rotation.x = -Math.PI / 2;
+    lane.position.set(lx, 0.021, 0);
+    lane.receiveShadow = true;
+    g.add(lane);
+  }
 
-  // the shops round the plaza
-  CITY_SHOPS.forEach(([id, a, w, d, h, wall0, roof0], i) => {
+  // the city's own buildings, quarter by quarter
+  CITY_SHOPS.forEach(([id, x, z, [fx, fz], w, d, h, wall0, roof0], i) => {
     const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
     const name = id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : id === 'academy' ? ACADEMY_NAME : MARKETS[id].name;
     const b = house(w, d, h, wall, roof, name);
     doors.add(b);
     if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
-    const at = placeFacing(g, b, a, PLAZA_R + d / 2 + 4, d);
+    const at = placeAt(g, b, x, z, fx, fz, d);
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid);
     shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: id !== 'academy' });
+    // the Guild Hall gets a bell tower at its back
+    if (id === 'guild') {
+      const tower = new THREE.Mesh(new THREE.BoxGeometry(3, 15, 3), new THREE.MeshStandardMaterial({ color: monster ? S.tones[0][0] : '#bfb08e', roughness: 0.9 }));
+      tower.position.set(x - fx * (d / 2 - 1.5), 7.5, z - fz * (d / 2 - 1.5));
+      tower.castShadow = true;
+      g.add(tower);
+    }
   });
-  // the Guild Hall gets a bell tower and banners
-  const guildAt = shops.find((s) => s.id === 'guild');
-  const tower = new THREE.Mesh(new THREE.BoxGeometry(3, 15, 3), new THREE.MeshStandardMaterial({ color: monster ? S.tones[0][0] : '#bfb08e', roughness: 0.9 }));
-  tower.position.set(guildAt.x - cx, 7.5, guildAt.z - cz - 14);
-  tower.castShadow = true;
-  g.add(tower);
+  const open = quarters(g, S, solid, cx, cz, monster);
 
   // the Emperors' Castle in the east of the city: a great keep with four towers
   // (only the Central City has it)
@@ -252,7 +277,7 @@ export function buildCity(place, opts = {}) {
     const [wall, roof] = tones[h.i % tones.length];
     const hb = house(h.w, h.d, h.h, wall, roof, null);
     doors.add(hb);
-    const at = placeFacing(fixed, hb, h.a, h.r, h.d);
+    const at = placeAt(fixed, hb, h.x, h.z, h.fx, h.fz, h.d);
     if (S.decor === 'reeds') hb.position.y = 0.6;
     boxColliders(cx + at.bx, cz + at.bz, h.w, h.d, at.rot, solid);
   }
@@ -301,11 +326,14 @@ export function buildCity(place, opts = {}) {
     const body = buildCharacter({ race, form: 'humanoid', look: info.look || {} });
     body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz) + (S.decor === 'reeds' ? 0.6 : 0), z);
     body.rotation.y = faceA;
+    if (info.small) body.scale.setScalar(0.58);
     g.add(body);
+    // your own parents carry a sign over their heads, so you can find them in a crowd
+    if (info.mine) { const sign = parentSign(); sign.position.y = (body.userData.height || 1.8) + 0.55; body.add(sign); }
     const npc = { ...info, x: cx + x, z: cz + z };
     npcs.push(npc);
     // townsfolk stroll about near their spot: parents in front of their house, traders round the plaza
-    walkers.push({ body, npc, hx: x, hz: z, range: info.kind === 'parent' ? 2.6 : 5, tx: x, tz: z, wait: 1 + rnd2() * 4, talk: 0 });
+    walkers.push({ body, npc, hx: x, hz: z, range: info.still ? 0.4 : info.kind === 'parent' ? 2.6 : info.kind === 'child' ? 7 : 5, tx: x, tz: z, wait: 1 + rnd2() * 4, talk: 0 });
   };
   const walkers = [];
   let seed2 = 7;
@@ -348,12 +376,22 @@ export function buildCity(place, opts = {}) {
     if (h.i !== homeAt && h.i % 6) continue;
     const race = h.i === homeAt ? opts.home.race : S.guards[h.i % S.guards.length];
     const fam = familyOf(place.id, h.i, race);
-    const k = (h.r - h.d / 2 - 1.4) / h.r;
+    const out = h.d / 2 + 1.4;
     fam.parents.forEach((p, j) => {
-      const side = j ? 1.1 : -1.1, ox = Math.cos(h.a), oz = Math.sin(h.a);
-      addNpc(race, h.x * k - oz * side, h.z * k + ox * side, Math.atan2(-h.x, -h.z), { kind: 'parent', name: p.name, job: p.job, mine: h.i === homeAt, house: h.i });
+      if (h.i === homeAt && opts.home.dead?.includes(j)) return; // passed away of old age
+      const side = j ? 1.1 : -1.1;
+      addNpc(race, h.x + h.fx * out - h.fz * side, h.z + h.fz * out + h.fx * side, h.rot, { kind: 'parent', name: p.name, job: p.job, mine: h.i === homeAt, house: h.i });
     });
   }
+  // a teacher at each station of the Training Grounds, who teaches the children of that school
+  TRAINING_STATIONS.forEach((st, i) => {
+    addNpc(S.guards[(i + 2) % S.guards.length], st.x - 1.6, st.z, Math.PI / 2, { kind: 'teacher', school: st.school, name: townName(monster ? 'monster' : 'player', seeded(`${place.id}:teach${i}`)), still: true });
+  });
+  // children playing in the playground
+  open.kids.forEach(([x, z], i) => {
+    const race = S.guards[(i * 3 + 1) % S.guards.length];
+    addNpc(race, x, z, i, { kind: 'child', name: townName(monster ? 'monster' : 'player', seeded(`${place.id}:kid${i}`)), small: true });
+  });
   const rnd = seeded(place.id);
   const side = monster ? 'monster' : 'player';
   [['merchant', 'Merchant'], ['businessman', 'Businessman'], ['merchant', 'Merchant'], ['businessman', 'Businessman'], ['merchant', 'Cloth Merchant'], ['merchant', 'Fruit Seller']].forEach(([kind, title], i) => {
@@ -385,7 +423,76 @@ export function buildCity(place, opts = {}) {
     return { x: cx + Math.sin(ga) * d, z: cz + Math.cos(ga) * d };
   };
 
-  return { group: g, update, shops, solid, gates, npcs, setRaised, deckAt, inMoat, rescue, centre: { x: cx, z: cz } };
+  const stations = TRAINING_STATIONS.map((st) => ({ school: st.school, x: cx + st.x, z: cz + st.z }));
+  return { group: g, update, shops, solid, gates, npcs, stations, setRaised, deckAt, inMoat, rescue, centre: { x: cx, z: cz } };
+}
+
+// The quarters' open ground: the lots kept for Businessmen's shops, the Academy's training grounds
+// and the children's playground (see the plan in data/birth.mjs)
+function quarters(g, S, solid, cx, cz, monster) {
+  const wood = matOf('#7a5a3a', 0.9), dark = matOf('#4a3424', 0.9), sand = matOf('#cdb88a', 1), rope = matOf('#c8b48a', 0.9);
+  const add = (geo, m, x, y, z, ry = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.y = ry; o.castShadow = true; o.receiveShadow = true; g.add(o); return o; };
+  const flat = (w, d, m, x, z, y = 0.025) => { const o = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m); o.rotation.x = -Math.PI / 2; o.position.set(x, y, z); o.receiveShadow = true; g.add(o); return o; };
+  const fence = (x0, z0, x1, z1, gapAt = null) => {
+    for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) {
+      const len = Math.hypot(bx - ax, bz - az), n = Math.round(len / 2.5);
+      for (let i = 0; i <= n; i++) {
+        const x = ax + (bx - ax) * (i / n), z = az + (bz - az) * (i / n);
+        if (gapAt && Math.hypot(x - gapAt.x, z - gapAt.z) < 2.6) continue;
+        add(new THREE.CylinderGeometry(0.09, 0.11, 1.2, 6), wood, x, 0.6, z);
+        solid.push({ x: cx + x, z: cz + z, r: 0.35, kind: 'wall', height: 1.2, step: false });
+      }
+      const rail = add(new THREE.BoxGeometry(len, 0.1, 0.08), wood, (ax + bx) / 2, 1.0, (az + bz) / 2, Math.atan2(-(bz - az), bx - ax));
+      if (gapAt) rail.visible = !(Math.abs((ax + bx) / 2 - gapAt.x) < len / 2 + 0.1 && Math.abs((az + bz) / 2 - gapAt.z) < 0.5 || Math.abs((az + bz) / 2 - gapAt.z) < len / 2 + 0.1 && Math.abs((ax + bx) / 2 - gapAt.x) < 0.5);
+    }
+  };
+  const sign = (text, x, z, ry) => {
+    add(new THREE.CylinderGeometry(0.08, 0.1, 2.2, 6), dark, x, 1.1, z);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshBasicMaterial({ map: textTexture(text), transparent: true, side: THREE.DoubleSide }));
+    board.position.set(x, 2, z); board.rotation.y = ry; g.add(board);
+  };
+  // Shop lots: marked out with corner stones and a sign, waiting for a Businessman
+  const lotMat = matOf(S.paving, 0.95);
+  for (const [x, z] of SHOP_LOTS) {
+    flat(13, 13, lotMat, x, z, 0.022);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new THREE.BoxGeometry(0.5, 0.5, 0.5), dark, x + sx * 6.5, 0.25, z + sz * 6.5);
+    sign('Shop lot: for Businessmen', x - 5.5, z - 6.8, 0);
+  }
+  // the Academy's training grounds: a sandy yard behind a fence, with a station for each school:
+  // a straw dummy, a sign, and the school's teacher (added with the townsfolk)
+  const T = TRAINING_GROUND, tx = (T.x0 + T.x1) / 2, tz = (T.z0 + T.z1) / 2;
+  flat(T.x1 - T.x0, T.z1 - T.z0, sand, tx, tz);
+  fence(T.x0, T.z0, T.x1, T.z1, { x: T.x0, z: tz });
+  sign('Training Grounds', T.x0 - 0.6, tz - 3.4, Math.PI / 2);
+  for (const st of TRAINING_STATIONS) {
+    const x = st.x + 2, z = st.z;
+    add(new THREE.CylinderGeometry(0.1, 0.1, 1.9, 6), wood, x, 0.95, z);
+    add(new THREE.CylinderGeometry(0.32, 0.36, 1.1, 8), matOf('#c9a85a', 1), x, 1.35, z);
+    add(new THREE.BoxGeometry(1.3, 0.12, 0.12), wood, x, 1.6, z);
+    solid.push({ x: cx + x, z: cz + z, r: 0.45, kind: 'wall', height: 1.9 });
+    sign(`${SCHOOLS[st.school].icon} ${SCHOOLS[st.school].name}`, st.x, st.z - 3.2, 0);
+  }
+  // the playground in the Neighbourhood: a sandpit, swings, a see-saw and a slide
+  const P = PLAYGROUND, px = (P.x0 + P.x1) / 2, pz = (P.z0 + P.z1) / 2;
+  flat(P.x1 - P.x0, P.z1 - P.z0, matOf('#7fa24a', 1), px, pz, 0.02);
+  flat(8, 8, sand, px - 5, pz - 8, 0.03);
+  for (const sx of [-1.6, 1.6]) for (const sz of [-1, 1]) {
+    const leg = add(new THREE.CylinderGeometry(0.07, 0.07, 3, 6), wood, px + 4 + sx, 1.45, pz + 6 + sz * 0.7);
+    leg.rotation.x = -sz * 0.22;
+  }
+  add(new THREE.BoxGeometry(4.2, 0.12, 0.12), wood, px + 4, 2.9, pz + 6);
+  for (const sx of [-0.8, 0.8]) {
+    for (const rx of [-0.25, 0.25]) add(new THREE.CylinderGeometry(0.015, 0.015, 2.2, 4), rope, px + 4 + sx + rx, 1.8, pz + 6);
+    add(new THREE.BoxGeometry(0.6, 0.06, 0.3), dark, px + 4 + sx, 0.7, pz + 6);
+  }
+  solid.push({ x: cx + px + 4, z: cz + pz + 6, r: 1.6, kind: 'wall', height: 3 });
+  const plank = add(new THREE.BoxGeometry(4, 0.1, 0.35), wood, px - 5, 0.55, pz + 6); plank.rotation.z = 0.12;
+  add(new THREE.BoxGeometry(0.4, 0.5, 0.4), dark, px - 5, 0.25, pz + 6);
+  const slide = add(new THREE.BoxGeometry(0.9, 0.08, 4), matOf('#c8503a', 0.6), px + 4, 1.1, pz - 6); slide.rotation.x = 0.5;
+  add(new THREE.BoxGeometry(1.2, 2.2, 1.2), wood, px + 4, 1.1, pz - 8.4);
+  solid.push({ x: cx + px + 4, z: cz + pz - 7, r: 1.4, kind: 'wall', height: 2.2 });
+  sign('Playground', P.x1 + 0.6, pz, Math.PI / 2);
+  return { kids: [[px - 5, pz - 8], [px - 3, pz - 6], [px + 4, pz + 6], [px, pz], [px - 4, pz + 4], [px + 2, pz - 2]] };
 }
 
 // The Emperors' Castle grounds: a curtain wall round the keep with a gate (its portcullis rises as
@@ -610,7 +717,7 @@ function decorate(g, S, cx, cz, solid) {
       solid.push({ x: cx + p.x, z: cz + p.z, r: 2.5, kind: 'wall', height: 1 });
     }
     for (let i = 0; i < 14; i++) {
-      const p = at((i / 14) * Math.PI * 2, 100 + (i % 3) * 3);
+      const p = at((i / 14) * Math.PI * 2 + 0.22, INNER_R - 3.5); // just inside the inner wall, clear of the roads
       const spike = new THREE.Mesh(new THREE.ConeGeometry(1.2, 6 + (i % 4) * 2, 5), rock);
       spike.position.set(p.x, heightAt(cx + p.x, cz + p.z) - baseY + 3, p.z);
       g.add(spike);
@@ -678,7 +785,8 @@ export function buildVillage(place) {
   const solid = [...centre.solid];
   const doors = doorKeeper();
   const shops = centre.market ? [{ ...centre.market, name: MARKETS[centre.market.id].name }] : [];
-  const spots = [[-0.6, 30, 'tavern'], [0.9, 32], [1.9, 28], [2.8, 34], [3.9, 30], [5.0, 33]];
+  // (kept off the north-south street between the gates: each at least 10 m to the side of it)
+  const spots = [[-0.6, 30, 'tavern'], [0.05, 33], [0.7, 30], [2.45, 32], [3.14, 30], [3.83, 33]];
   for (const [a, r, id] of spots) {
     const tavern = id === 'tavern';
     const w = tavern ? 11 : 7, d = tavern ? 8 : 6, h = tavern ? 6 : 4;
@@ -735,4 +843,25 @@ export function buildVillage(place) {
   }
   mergeStill(fixed);
   return { group: g, update: (t, you) => { centre.update(t); doors.update(you); for (const b of guards) animateCharacter(b, t, 0); }, shops, solid, market: centre.market };
+}
+
+// The sign over your parents' heads: a heart and "Your parent", always facing you
+let signTex = null;
+function parentSign() {
+  if (!signTex) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const x = c.getContext('2d');
+    x.fillStyle = 'rgba(30, 20, 14, 0.72)';
+    x.beginPath(); x.roundRect(4, 8, 248, 48, 22); x.fill();
+    x.font = 'bold 30px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillStyle = '#ff7a8a'; x.fillText('\u2665', 44, 33);
+    x.fillStyle = '#ffe9c8'; x.fillText('Your parent', 142, 33);
+    signTex = new THREE.CanvasTexture(c);
+    signTex.colorSpace = THREE.SRGBColorSpace;
+  }
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTex, depthTest: false, transparent: true }));
+  s.scale.set(1.6, 0.4, 1);
+  s.renderOrder = 10;
+  return s;
 }

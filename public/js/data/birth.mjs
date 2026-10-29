@@ -21,25 +21,35 @@ export const BIRTH_CITY = { elf: 'central', dwarf: 'central', hobbit: 'central',
 export const BIRTH_CITIES = ['central', 'emberfall', 'ashgrave', 'lumenhollow', 'mirehaven'];
 export const KIDS_PER_HOUSE = 4;
 
-// ---------- the houses of a city (the same list in the game and on the server) ----------
-// Rows of houses on rings between the plaza and the inner wall, their doors facing the middle,
-// leaving the streets (north, south, east, west) clear. Positions are from the city's middle.
-// the Emperors' Castle in the Central City: in the east, at the end of the east street, away from
-// the two gates (north and south) so it isn't the first thing in the face of those who come in
-export const CASTLE_SPOT = { x: 74, z: 0 };
-const CASTLE = CASTLE_SPOT;
+// ---------- the plan of a city (the same in the game and on the server) ----------
+// Every walled city is laid out in quarters around its round plaza, with a main avenue from the
+// north gate to the south gate and a road east and west:
+//   - the east road leads to the Royal Quarter: the Emperors' Castle and its grounds
+//   - north-east, the Civic Quarter: the Main Guild Hall, the Academy and its training grounds, the portal
+//   - south-east, the Market Quarter: the city's shops and tavern along the avenue and the east
+//     road, and behind them lots kept for the shops of Businessmen
+//   - the whole west half is the Neighbourhood: rows of family houses along three lanes, with a
+//     playground for the children
+// (x is east, z is south; positions are from the city's middle)
+export const CASTLE_SPOT = { x: 105, z: 0 };
+export const LANES = [-56, -88, -120];          // the Neighbourhood's lanes (x), running north-south
+export const PLAYGROUND = { x0: -100, x1: -76, z0: 16, z1: 50 };
+const CITY_INNER = 138;                          // houses stay this far in (the inner wall is beyond)
+// The family houses: on both sides of each lane, doors facing it, leaving the west road and the
+// playground clear. Each: { i, x, z, rot (facing), fx, fz (the way the door faces), w, d, h }
 export function cityHouses(placeId) {
   const out = [];
-  const place = PLACES.find((p) => p.id === placeId);
-  const rings = [[60, 26], [72, 30], [84, 36]];
-  for (const [r, n] of rings) {
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + (r === 72 ? Math.PI / n : 0);
-      if (Math.abs(Math.sin(a * 2)) < 0.22) continue; // the four streets
-      const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (!place?.monster && Math.hypot(x - CASTLE.x, z - CASTLE.z) < 33) continue; // the Emperors' Castle and its grounds
-      const k = out.length;
-      out.push({ i: k, a, r, x, z, w: 6 + (k % 3) * 0.6, d: 5 + (k % 2) * 0.6, h: 3.6 + (k % 3) * 0.5 });
+  for (const lane of LANES) {
+    for (const side of [1, -1]) {
+      const x = lane + side * 8;
+      const zMax = Math.sqrt(Math.max(0, CITY_INNER ** 2 - (Math.abs(x) + 4) ** 2)) - 4;
+      for (let z = -Math.floor(zMax / 10) * 10; z <= zMax; z += 10) {
+        if (Math.abs(z) < 12) continue; // the west road
+        if (x > PLAYGROUND.x0 - 4 && x < PLAYGROUND.x1 + 4 && z > PLAYGROUND.z0 - 6 && z < PLAYGROUND.z1 + 6) continue;
+        const k = out.length;
+        const fx = -side, fz = 0; // facing the lane
+        out.push({ i: k, x, z, rot: Math.atan2(fx, fz), fx, fz, w: 6 + (k % 3) * 0.6, d: 5 + (k % 2) * 0.6, h: 3.6 + (k % 3) * 0.5 });
+      }
     }
   }
   return out;
@@ -83,6 +93,32 @@ export function familyOf(city, house, race) {
   return { city, house, race, parents };
 }
 
+// ---------- parents ----------
+// Your parents are real people of the city: each has a class (from their job) and a level, and you
+// can see their cards. Once you are grown you must visit them (talk to them at their door) at least
+// once every VISIT_EVERY_MS of play, or you are marked a sinner for the rest of this life. Parents
+// grow old: each dies at a set point in your life (between PARENT_LIFE hours of play), the same for
+// that family every time.
+export const VISIT_EVERY_MS = 3 * 3600 * 1000;   // 3 hours of play (three days of the realm)
+export const PARENT_LIFE = [15, 45];             // hours of your play time
+export const familyOfChar = (c) => c?.child?.family || c?.family || null;
+export function parentInfo(fam, j) {
+  const p = fam?.parents?.[j];
+  if (!p) return null;
+  const rnd = seeded(`${fam.city}:${fam.house}:${p.name}:${j}:life`);
+  const level = 12 + Math.floor(rnd() * 70);
+  const diesAt = Math.round((PARENT_LIFE[0] + rnd() * (PARENT_LIFE[1] - PARENT_LIFE[0])) * 3600 * 1000);
+  return { ...p, race: fam.race, cls: PARENT_JOBS[p.job]?.cls, jobName: PARENT_JOBS[p.job]?.name || p.job, level, diesAt };
+}
+// a child's parents are always alive; after that, until their time comes
+export const parentAlive = (c, j) => { const f = familyOfChar(c), p = parentInfo(f, j); return !!p && (!!c.child || (c.playMs || 0) < p.diesAt); };
+export const parentsAlive = (c) => [0, 1].filter((j) => parentAlive(c, j));
+// how long until you must visit again (ms of play; 0 or less: overdue), or null when there is nobody to visit
+export function visitDue(c) {
+  if (c?.child || !familyOfChar(c) || !parentsAlive(c).length) return null;
+  return Math.max(c.visitPlay || 0, c.grownPlay || 0) + VISIT_EVERY_MS - (c.playMs || 0);
+}
+
 // ---------- growing up ----------
 // How old a child is now (play time since birth; a grown character has no age shown)
 export const ageOf = (c) => (c?.child ? Math.min(CEREMONY_AGE, BORN_AGE + Math.max(0, (c.playMs || 0) - (c.child.bornPlay || 0)) / YEAR_MS) : null);
@@ -107,6 +143,20 @@ export const SCHOOLS = {
   farmer: { name: 'Farming School', icon: '🌾', text: 'Soil, seed and the care of animals.' },
 };
 export const ACADEMY_NAME = 'The Academy';
+// Children train on the Academy's Training Grounds, at their school's station with its teacher.
+// Training raises their level (up to CHILD_MAX_LEVEL before the Ceremony) and teaches the school's
+// two techniques, at a quarter and at 60% of full training. Techniques are kept for life.
+export const CHILD_MAX_LEVEL = 10;
+export const TRAIN_EXP = 0.12;                 // of a level's EXP, per minute of training
+export const TECHNIQUE_AT = [0.25, 0.6];
+export const SCHOOL_TECHNIQUES = {
+  swordsman: ['power_strike', 'charge'], tank: ['shield_bash', 'iron_skin'], assassin: ['backstab', 'shadow_step'],
+  healer: ['mend', 'blessing'], blacksmith: ['hammer_blow', 'ground_slam'], businessman: ['coin_toss', 'haggle'],
+  builder: ['quick_wall', 'ground_slam'], potion_maker: ['second_wind', 'blessing'], farmer: ['harvest_swing', 'hearty_meal'],
+};
+// the stations on the Training Grounds, one per school (x, z from the city's middle)
+export const TRAINING_GROUND = { x0: 24, x1: 58, z0: -112, z1: -82 };
+export const TRAINING_STATIONS = Object.keys(SCHOOLS).map((school, i) => ({ school, x: 30 + (i % 3) * 11, z: -106 + Math.floor(i / 3) * 9 }));
 // How much each thing weighs on the class a child grows into: every class has a little, each
 // parent's job adds to theirs, and training at a school adds most to its own (up to 10 when fully
 // trained). So a fully trained child usually gets their school's class, but never surely.
@@ -144,8 +194,8 @@ export function houseDoor(city, house) {
   const h = cityHouses(city)[house];
   if (!place || !h) return null;
   const c = toWorld(place.px, place.py);
-  const k = (h.r - h.d / 2 - 2) / h.r; // just in front of the door, towards the middle
-  return { x: c.x + h.x * k, z: c.z + h.z * k, heading: Math.atan2(-h.x, -h.z), area: place.name };
+  const out = h.d / 2 + 2; // just in front of the door, on the lane
+  return { x: c.x + h.x + h.fx * out, z: c.z + h.z + h.fz * out, heading: h.rot, area: place.name };
 }
 // A newborn: a Child of 4 in their family's house. `home` is { city, house } (the server finds a
 // house with room); the rest as newCharacter. Returns { character } or { error }.

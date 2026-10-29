@@ -13,7 +13,7 @@ import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass, itemInfoHtml } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
 import { playWork } from './workscene.js';
-import { renderAssess } from './idcard.js';
+import { renderAssess, renderParents } from './idcard.js';
 import { renderQuests, renderGuild } from './quests.js';
 import { renderLand, renderCave } from './landui.js';
 import { caveById } from './data/depths.mjs';
@@ -195,6 +195,8 @@ function startGame(character) {
       if (type === 'bag-full') world?.say('Your bag is full', 'hurt');
       if (type === 'no-funds') noFunds(data.need);
       if (type === 'rank-due') climbRank();
+      if (type === 'technique') { world?.say(`New technique: ${SKILLS[data.id].name}`, 'exp'); showArea(`Your teacher taught you ${SKILLS[data.id].name}. It is on your skills now.`); drawSkillBar(); }
+      if (type === 'neglect') showArea('You have not visited your parents for too long. You are now counted a sinner in this life.');
       if (type === 'evolved') { world?.say('Your weapon evolved!', 'exp'); showArea(`Your weapon evolved into the ${data.name}!`); }
       if (type === 'spell') {
         const sp = SPELLS[data.id];
@@ -539,6 +541,7 @@ function startGame(character) {
     else if (name === 'groups') renderGroups(overlay, game, ui.groups, { message: ui.groupMsg, busy: ui.groupBusy });
     else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy, castle: !!ui.roomsCastle, emperor: !!ui.groups?.nation });
     else if (name === 'appraise') renderAppraise(overlay, game, ui.appraise || {});
+    else if (name === 'parents') renderParents(overlay, game, { visited: ui.parentsVisited });
     else if (name === 'academy') renderAcademy(overlay, game, { message: ui.academyMsg || '' });
     else if (name === 'ceremony') renderCeremony(overlay, game, { result: ui.grown, busy: ui.ceremonyBusy, message: ui.ceremonyMsg || '' });
     else if (name === 'gate') renderIdCard(overlay, game, { city: ui.gate?.city, leaving: ui.gate?.leaving, monster: ui.gate?.barred, barredText: ui.gate?.barred && !ui.gate?.monster ? 'The guards bare their fangs. "No outsiders in a monster city."' : null, courts: ui.courts || [], nation: ui.groups?.nation?.name });
@@ -933,7 +936,7 @@ function startGame(character) {
         .then(() => { ui.appraise.busy = false; drawPanel(); });
       return;
     }
-    if ((v = t('data-school')) != null) { game.setSchool(v); ui.academyMsg = `You now train at the ${SCHOOLS[v].name}. Stay near the Academy to train.`; drawPanel(); return; }
+    if ((v = t('data-school')) != null) { game.setSchool(v); ui.academyMsg = `You now train at the ${SCHOOLS[v].name}. Go to its station on the Training Grounds beside the Academy and stand with your teacher.`; drawPanel(); return; }
     if (t('data-ceremony') != null) {
       ui.ceremonyBusy = true; drawPanel();
       game.saveNow?.();
@@ -1165,10 +1168,18 @@ function startGame(character) {
       if (type === 'meeting-room') { ui.roomsCastle = data.id.startsWith('castle'); ui.roomPick = data.id; ui.roomMsg = ''; loadRooms(); if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'rooms') openPanel('rooms'); }
       if (type === 'room-ended') { showArea('Your time in the meeting room is up. You are back in the hallway.'); loadRooms(); }
       // townsfolk: your own parents, other families, and the merchants of the plaza
+      if (type === 'npc' && data.kind === 'parent' && data.mine) {
+        game.visitParents();
+        ui.parentsVisited = !isChild(character);
+        openPanel('parents');
+        return;
+      }
       if (type === 'npc') {
         const job = PARENT_JOBS[data.job]?.name;
         const line = data.kind === 'parent'
           ? (data.mine ? (isChild(character) ? `${data.name}, your parent (${job}): "Off to the Academy with you! Pick a school and work hard."` : `${data.name}, your parent (${job}): "We are proud of you. Come home safe."`) : `${data.name} (${job}): "Good day to you."`)
+          : data.kind === 'teacher' ? `${data.name}, teacher of the ${SCHOOLS[data.school].name}: "${isChild(character) ? (character.child.school === data.school ? 'Stand here with me and practise. Every minute counts, and soon you will learn our techniques.' : 'Is this your school? Choose it at the Academy, then come and train with me.') : 'You have grown well. Come back and teach the little ones some day.'}"`
+          : data.kind === 'child' ? `${data.name}: "Want to play? Catch me if you can!"`
           : data.kind === 'businessman' ? `${data.name}, ${data.title}: "Looking for a shop of your own? Come and see me once you are grown."` : `${data.name}, ${data.title}: "The finest goods in the city, for those with coin."`;
         showArea(line);
       }
@@ -1251,7 +1262,10 @@ function startGame(character) {
     game.addPlayTime(60000);
     // childhood: training at the Academy, growing a little, and the Ceremony at 7
     if (!isChild(character)) return;
-    if (character.child.school && world?.nearAcademy()) { game.train(60000); if (overlay.dataset.panel === 'academy' && !overlay.classList.contains('hidden')) drawPanel(); }
+    // training: at your own school's station on the Training Grounds, beside its teacher
+    const at = world?.trainingAt();
+    if (character.child.school && at === character.child.school) { game.train(60000); if (overlay.dataset.panel === 'academy' && !overlay.classList.contains('hidden')) drawPanel(); }
+    else if (at && at !== character.child.school) showArea(`This is the ${SCHOOLS[at].name}'s station. Train at your own school's station${character.child.school ? '' : ' (choose a school at the Academy first)'}.`);
     world?.rebuildAvatar();
     if (ceremonyDue(character) && !ui.ceremonyShown) { ui.ceremonyShown = true; ui.grown = null; openPanel('ceremony'); }
   }, 60000);

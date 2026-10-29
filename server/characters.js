@@ -245,6 +245,9 @@ function saveProgress(accountId, p) {
   const questNext = int(p.questNext ?? 0, 0, 1e15) ?? 0;
   const questDay = p.questDay && int(p.questDay.day, 0, 1e9) !== null && int(p.questDay.n, 0, 100) !== null ? { day: p.questDay.day, n: p.questDay.n } : null;
   const room = p.room && int(p.room.until, 0, 1e15) !== null ? { until: p.room.until, n: int(p.room.n ?? 1, 1, 3) ?? 1 } : null;
+  // visiting your parents (play time of the last visit), and whether you once left them unvisited
+  const visitPlay = int(p.visitPlay ?? 0, 0, 1e15) ?? 0;
+  const neglect = p.neglect === true || character.neglect === true; // once a sinner, always (this life)
   const growth = { work: int(p.growth?.work ?? 0, 0, 1e9) ?? 0, trials: int(p.growth?.trials ?? 0, 0, 1e6) ?? 0 };
   // a broken bone from a bad fall, and the treatments it has had (one a day)
   const injury = p.injury && ['leg', 'arm', 'ribs'].includes(p.injury.part) && int(p.injury.left, 1, 5) !== null
@@ -254,6 +257,8 @@ function saveProgress(accountId, p) {
     .map((t) => ({ x: t.x, z: t.z }));
   // Skills: known skill ids, up to 6 on keys
   const skills = (Array.isArray(p.skills) ? p.skills.slice(0, 200) : []).filter((id) => typeof id === 'string' && SKILLS[id]);
+  // techniques learned as a child at school (two per school)
+  const techniques = [...new Set((Array.isArray(p.techniques) ? p.techniques.slice(0, 20) : []).filter((id) => typeof id === 'string' && SKILLS[id]))];
   const skillBar = (Array.isArray(p.skillBar) ? p.skillBar.slice(0, 6) : [])
     .filter((b) => SKILLS[b?.id] && (b.key === null || (typeof b.key === 'string' && /^[A-Za-z0-9]{1,20}$/.test(b.key))))
     .map((b) => ({ id: b.id, key: b.key }));
@@ -286,7 +291,7 @@ function saveProgress(accountId, p) {
   }
   // monster players from level 100 can switch to their humanoid form and back
   if ((p.form === 'monster' || p.form === 'humanoid') && mayChangeForm({ ...character, level: fields.level ?? character.level })) character.form = p.form;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, growth, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
+  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, growth, visitPlay, neglect, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
   db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
     .run(JSON.stringify(character), accountId);
   return { ok: true };

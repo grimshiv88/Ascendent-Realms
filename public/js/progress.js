@@ -4,7 +4,7 @@ import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } fr
 import { MINT } from './data/money.mjs';
 import { ITEMS, shopFor, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, gearSkillSlots, mythicSkill, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
-import { ageOf, childStatShare, classOdds, SCHOOLS, TRAIN_FULL_MS } from './data/birth.mjs';
+import { ageOf, childStatShare, classOdds, SCHOOLS, TRAIN_FULL_MS, visitDue, CHILD_MAX_LEVEL, TRAIN_EXP, TECHNIQUE_AT, SCHOOL_TECHNIQUES } from './data/birth.mjs';
 import { PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, BOOK_ID, bookStops, spellStrength } from './data/cults.mjs';
 import { GUILD_HALL_LEVEL, CARD_FEE, assess, mayTake } from './data/guildcard.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
@@ -63,6 +63,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.potionMaker ??= null; // { until, queue: [{ id, ready }] } while a Businessman has one hired
   // Skills: learned ones, the ones ready on keys (the rest are kept in storage), and choices still to make
   c.skills = (c.skills || []).filter((id) => SKILLS[id]);
+  c.techniques = (c.techniques || []).filter((id) => SKILLS[id]); // learned as a child at school
   // (a skill from a Skill Stone in your gear stays on the bar while that gear is off, but only works when worn)
   c.skillBar = (c.skillBar || []).filter((b) => SKILLS[b?.id]);
   c.skillPicks ??= Math.max(0, Math.floor(c.level / UPGRADE_EVERY) - c.skills.length);
@@ -118,6 +119,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
   // not enough coins: the game says so on screen
   // Proofs of growth for the Unique Skill's rank (see rankProofs): honest work adds up here
   c.growth = { work: 0, trials: 0, ...(c.growth || {}) };
+  // grown before parents needed visiting: their clock starts now
+  if (!c.child && !c.visitPlay && !c.grownPlay) c.visitPlay = c.playMs || 0;
   function work(n) {
     c.growth.work += n;
     const u = c.uniqueSkill;
@@ -132,7 +135,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth,
+    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, techniques: c.techniques,
     spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null,
   });
 
@@ -435,10 +438,18 @@ export function createProgress(c, { save, onChange, onEvent }) {
     // choose the school to train at (training already done at others is kept)
     setSchool(cls) { if (c.child && SCHOOLS[cls]) { c.child.school = cls; changed('child'); } },
     // time spent training at your school, while at the Academy
+    // a minute (or `ms`) of training at your school's station: it counts towards your class, raises
+    // your level (up to CHILD_MAX_LEVEL) and in time teaches the school's techniques
     train(ms) {
-      if (!c.child?.school) return;
+      const school = c.child?.school;
+      if (!school) return;
       c.child.train ||= {};
-      c.child.train[c.child.school] = Math.min(TRAIN_FULL_MS, (c.child.train[c.child.school] || 0) + ms);
+      c.child.train[school] = Math.min(TRAIN_FULL_MS, (c.child.train[school] || 0) + ms);
+      if (c.level < CHILD_MAX_LEVEL) this.gainExp(Math.max(1, Math.round(expToNext(c.level, c.race) * TRAIN_EXP * (ms / 60000))));
+      const done = c.child.train[school] / TRAIN_FULL_MS;
+      (SCHOOL_TECHNIQUES[school] || []).forEach((id, i) => {
+        if (done >= TECHNIQUE_AT[i] && !c.techniques.includes(id)) { c.techniques.push(id); onEvent?.('technique', { id }); }
+      });
       changed('child');
     },
     classOdds: () => classOdds(c),
@@ -740,7 +751,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return out;
     },
     // every skill you can use now: learned ones and those in your gear
-    knownSkills() { return [...new Set([...c.skills, ...this.gearSkills()])]; },
+    knownSkills() { return [...new Set([...c.skills, ...c.techniques, ...this.gearSkills()])]; },
     // the Mythic weapon in your hand's own skill, if you hold one
     mythic() { const w = gearIn('weapon'); return w ? mythicSkill(w, w.plus) : null; },
     // set a Skill Stone (by its item id) into a piece of gear (by uid), or take one out again
@@ -821,7 +832,20 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return 'ok';
     },
     // real time spent playing, shown on the ID card
-    addPlayTime(ms) { c.playMs = (c.playMs || 0) + ms; },
+    addPlayTime(ms) {
+      c.playMs = (c.playMs || 0) + ms;
+      // grown, with a parent still living, and no visit for too long: a sinner for this life
+      const due = visitDue(c);
+      if (due !== null && due <= 0 && !c.neglect) { c.neglect = true; changed('soul'); onEvent?.('neglect'); }
+    },
+    // talking to your parents at their door counts as a visit
+    visitParents() {
+      if (c.child) return 'child';
+      const before = visitDue(c);
+      c.visitPlay = c.playMs || 0;
+      changed('visit');
+      return before;
+    },
     // The Hunter's Guild Card: ask for one at the Guild Hall counter (paying the fee), then lay a
     // hand on the crystal in the Assessment Room to have it read and ranked
     requestCard() {

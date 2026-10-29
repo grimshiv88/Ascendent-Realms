@@ -234,7 +234,8 @@ export const mayChangeForm = (c) => c.side === 'monster' && (c.level || 1) >= FO
 // and what their soul carries: one who served the Dark Side dies a sinner and starts the next life
 // weaker; one sworn to the Light starts it stronger.
 export const PAST_LIFE_STATS = 2; // taken from (sinner) or added to (blessed) every main stat
-export const pastLifeOf = (c) => (c.pact === 'dark' ? 'sinner' : c.pact === 'holy' ? 'blessed' : null);
+// (a child who left their parents unvisited is a sinner too)
+export const pastLifeOf = (c) => (c.pact === 'dark' || c.neglect ? 'sinner' : c.pact === 'holy' ? 'blessed' : null);
 export const fallenKeep = (c) => ({ uniqueSkill: { name: c.uniqueSkill?.name, rank: c.uniqueSkill?.rank }, lives: (c.lives || 1) + 1, soul: pastLifeOf(c), fell: new Date().toISOString() });
 export function rebornWith(character, keep) {
   const skill = uniqueByName(keep?.uniqueSkill?.name);
@@ -300,6 +301,7 @@ export function growUp(c, cls) {
   }
   if (c.child?.family) c.family = c.child.family;
   c.grown = { cls, at: new Date().toISOString(), school: c.child?.school || null };
+  c.grownPlay = c.playMs || 0; // from now on, parents must be visited (see visitDue)
   delete c.child;
   return true;
 }

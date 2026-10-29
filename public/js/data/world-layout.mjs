@@ -452,7 +452,7 @@ export function placesWithPositions() {
 // Safe zones: the ground around every waystone, where players spawn and monsters can't go
 export const SAFE_R = 60;
 // The Central City: owned by no one, walled, on levelled ground, and safe all the way to its walls
-export const CITY_R = 110;
+export const CITY_R = 160;
 export const safeRadius = (p) => (p.city ? CITY_R + 8 : SAFE_R);
 export function safeZoneAt(x, z) {
   for (const p of placesWithPositions()) if (!p.cave && (p.x - x) ** 2 + (p.z - z) ** 2 < safeRadius(p) ** 2) return p;

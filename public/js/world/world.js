@@ -31,7 +31,7 @@ import { gameTime } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
-import { ageOf, isChild, ACADEMY_NAME } from '../data/birth.mjs';
+import { ageOf, isChild, ACADEMY_NAME, parentAlive } from '../data/birth.mjs';
 import { money } from '../data/money.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
@@ -146,7 +146,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
   // your family's house (its parents stand at the door), and which cities have their bridges raised
-  const homeOf = () => { const f = character.child?.family || character.family; return f ? { city: f.city, house: f.house, race: f.race } : null; };
+  const homeOf = () => { const f = character.child?.family || character.family; return f ? { city: f.city, house: f.house, race: f.race, dead: [0, 1].filter((j) => !parentAlive(game?.character || character, j)) } : null; };
   let cityRaised = {};
   function setCityGates(raised = {}) {
     cityRaised = { ...raised };
@@ -176,9 +176,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const s of builtCities()) for (const n of s.built.npcs) if (Math.hypot(n.x - x, n.z - z) < r) return n;
     return null;
   }
-  function nearAcademy() {
-    for (const s of builtCities()) { const a = s.built.shops.find((q) => q.id === 'academy'); if (a && Math.hypot(a.x - pos.x, a.z - pos.z) < 14) return true; }
-    return false;
+  // the school whose station on the Training Grounds you stand at (with its teacher), or null
+  function trainingAt() {
+    for (const s of builtCities()) for (const st of s.built.stations || []) if (Math.hypot(st.x - pos.x, st.z - pos.z) < 4.5) return st.school;
+    return null;
   }
   function updateSites(x, z) {
     updatePortals(x, z);
@@ -1439,13 +1440,20 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (!arms.length) rig.root.position.z = up * bodyH * 0.2;
   }
+  // the weapon arm's ready pose [shoulder, elbow] with a blade (see gear.js: the blade then points ahead)
+  const READY = [-0.35, -0.85];
+  const bladeHeld = () => { const w = game?.weapon(); return !!w && w.type !== 'spear' && w.type !== 'staff'; };
   function poseAttack(rig, k, armed) {
     const arm = rig.arms?.[0];
     if (arm) {
       if (armed) {
-        const a = k < 0.35 ? THREE.MathUtils.lerp(0, -2.6, k / 0.35) : THREE.MathUtils.lerp(-2.6, -0.4, (k - 0.35) / 0.65);
-        arm.shoulder.rotation.x = a;
-        arm.elbow.rotation.x = -0.3;
+        // an overhead slash: up from the ready pose until the blade points at the sky, down hard
+        // until it points ahead and low, then back to ready
+        const L = THREE.MathUtils.lerp, from = bladeHeld() ? READY : [0, -0.3];
+        if (k < 0.35) { const q = k / 0.35; arm.shoulder.rotation.x = L(from[0], -2.6, q); arm.elbow.rotation.x = L(from[1], -0.3, q); }
+        else if (k < 0.75) { const q = (k - 0.35) / 0.4; arm.shoulder.rotation.x = L(-2.6, -0.5, q * q); arm.elbow.rotation.x = -0.3; }
+        else { const q = (k - 0.75) / 0.25; arm.shoulder.rotation.x = L(-0.5, from[0], q); arm.elbow.rotation.x = L(-0.3, from[1], q); }
+        if (rig.spine) rig.spine.rotation.x = 0.18 * Math.sin(Math.min(1, k / 0.75) * Math.PI); // lean into it
       } else {
         const p = Math.sin(Math.min(1, k) * Math.PI);
         arm.shoulder.rotation.x = -1.5 * p;
@@ -1617,6 +1625,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     rig.root.position.z = 0;
     animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 1.6);
     if (sitting) { poseSit(rig); avatar.position.y = sitting.y + 0.5 - bodyH * 0.27; }
+    // a blade (sword, axe, club...) is held ready: the hand in front at the waist, the blade pointing ahead
+    else if (bladeHeld() && !sleeping && !dead && rig.arms) { rig.arms[0].shoulder.rotation.x = READY[0]; rig.arms[0].elbow.rotation.x = READY[1]; }
     moveHelper(dt, t);
 
     if (skillPose) { skillPose.t += dt; poseSkill(rig, skillPose); if (skillPose.t >= skillPose.dur) skillPose = null; }
@@ -1907,6 +1917,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     get walkBuilding() { return !!walkBuild; },
     debugSlayVillage(id) { for (const m of creatures.list.filter((q) => q.village === id && !q.dead)) finishHit(m, creatures.hit(m, m.hp)); },
     debugUse: () => interact(),
+    debugTalkParent() { for (const c of builtCities()) { const n = c.built.npcs.find((q) => q.kind === 'parent' && q.mine); if (n) { pos.set(n.x + 1, pos.y, n.z); talkTo(n); return true; } } return false; },
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
     debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`), villages: game?.villages().map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.length, dead: v.dead.length, built: mobVillages.has(v.id) })) }),
     teleport,
@@ -1919,7 +1930,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     nextSpell,
     passGate,
     setCityGates,
-    nearAcademy,
+    trainingAt,
     // Redraw your gear after equipping or taking something off
     refreshGear() { if (game) wearGear(avatar, game.worn()); },
     holdTorch() { setHolding(!holding); },

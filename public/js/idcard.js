@@ -6,6 +6,7 @@ import { characterPortrait } from './characters/icons.js';
 import { CARD_RANKS, rankIndex } from './data/guildcard.mjs';
 import { now, DAY_MS } from './data/clock.mjs';
 import { PLACES } from './data/world-layout.mjs';
+import { familyOfChar, parentInfo, parentAlive, visitDue, VISIT_EVERY_MS } from './data/birth.mjs';
 // the city or village a player was born in, as written on their ID
 const birthplace = (c) => { const id = (c.child?.family || c.family)?.city; return id ? PLACES.find((p) => p.id === id)?.name.replace(/ \(.*\)/, '') || null : null; };
 
@@ -74,5 +75,47 @@ export function renderAssess(el, c, result = 'new') {
       <div class="guild-card"><span class="gc-rank">${r.id}</span><span><b>${esc(c.name)}</b><small>Hunter's Guild Card · Rank ${r.id} (${r.name})</small></span></div>
       <p class="shop-msg" role="status">${{ new: `Your card is ready: Rank ${r.id}. You can now take guild requests of rank ${r.id} and below at the counter.`, up: `Your card rises to Rank ${r.id}!`, same: `Your card stays at Rank ${r.id}.` }[result]}${next ? ` Rank ${next.id} needs level ${next.level}.` : ''}</p>
       <button type="button" class="gold-button" data-close>Take the card</button>
+    </div>`;
+}
+
+// Your parents' cards: who they are, their class and level, and whether they still live. Grown
+// children must visit them (talk to them at their door) at least every three hours of play.
+const parentPhotos = new Map();
+export function renderParents(el, game, { visited = false } = {}) {
+  const c = game.character;
+  const fam = familyOfChar(c);
+  if (!fam) { el.innerHTML = '<div class="status-window id-window" role="dialog"><button type="button" class="sw-close" data-close aria-label="Close">×</button><p>No family.</p></div>'; return; }
+  const cards = [0, 1].map((j) => {
+    const p = parentInfo(fam, j);
+    if (!p) return '';
+    const alive = parentAlive(c, j);
+    const key = `${fam.race}:${p.name}`;
+    if (!parentPhotos.has(key)) parentPhotos.set(key, characterPortrait({ race: fam.race, form: 'humanoid', look: {} }));
+    const url = parentPhotos.get(key);
+    return `<div class="id-card${alive ? '' : ' late'}">
+        ${url ? `<img class="id-photo" src="${url}" alt="Photo of ${esc(p.name)}">` : '<div class="id-photo"></div>'}
+        <dl>
+          <div><dt>Name</dt><dd>${esc(p.name)}${alive ? '' : ' <small>(passed away)</small>'}</dd></div>
+          <div><dt>Race</dt><dd>${esc(RACES[fam.race]?.name || fam.race)}</dd></div>
+          <div><dt>Level</dt><dd>${p.level}</dd></div>
+          <div><dt>Title</dt><dd>${esc(rankFor(p.level))}</dd></div>
+          <div><dt>Class</dt><dd>${esc(CLASSES[p.cls]?.name || '')}</dd></div>
+          <div><dt>Work</dt><dd>${esc(p.jobName)}</dd></div>
+          ${birthplace(c) ? `<div><dt>Lives in</dt><dd>${esc(birthplace(c))}, house ${fam.house + 1}</dd></div>` : ''}
+        </dl>
+      </div>`;
+  }).join('');
+  const due = visitDue(c);
+  const hours = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
+  const note = c.child ? 'Your parents look after you until the Ceremony. After it, visit them often.'
+    : due === null ? 'Your parents have both passed away. Their house is quiet now.'
+    : `${visited ? 'They are glad you came. ' : ''}Visit again within ${hours(due)} of play (every ${VISIT_EVERY_MS / 3600000} hours), or you will be counted a sinner.`;
+  el.innerHTML = `
+    <div class="status-window id-window parents-window" role="dialog" aria-label="Your parents">
+      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      <h2>Your parents</h2>
+      ${c.neglect ? '<p class="bag-hint bad">You left your parents unvisited for too long. You are a sinner in this life, and your next life starts weaker.</p>' : ''}
+      <div class="parent-cards">${cards}</div>
+      <p class="bag-hint">${esc(note)}</p>
     </div>`;
 }

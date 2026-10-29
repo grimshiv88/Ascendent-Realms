@@ -1,6 +1,7 @@
 // The Academy, where children train at the school of their choice, and the Ceremony of Revealing
 // at 7, which tells them their class.
-import { SCHOOLS, TRAIN_FULL_MS, CEREMONY_AGE, ACADEMY_NAME, PARENT_JOBS } from './data/birth.mjs';
+import { SCHOOLS, TRAIN_FULL_MS, CEREMONY_AGE, ACADEMY_NAME, PARENT_JOBS, CHILD_MAX_LEVEL, SCHOOL_TECHNIQUES, TECHNIQUE_AT } from './data/birth.mjs';
+import { SKILLS } from './data/skills.mjs';
 import { CLASSES } from './data/game-data.mjs';
 import { uniqueAbility } from './data/unique.mjs';
 import { classGuide } from './status.js';
@@ -19,13 +20,13 @@ export function renderAcademy(el, game, { message = '' } = {}) {
     const age = game.age();
     const parents = c.child.family?.parents || [];
     body = `
-      <p class="bag-hint">Choose a school and stay at the Academy to train in it. The more you train, the likelier you are to become that class at your Ceremony (age ${CEREMONY_AGE}; you are ${age.toFixed(1)}). It is never certain: your parents' work counts too, and so does luck.</p>
+      <p class="bag-hint">Choose a school, then train at its station on the Training Grounds beside the Academy, with its teacher. Training raises your level (up to ${CHILD_MAX_LEVEL} before the Ceremony) and teaches you the school's two techniques, which you keep for life. The more you train, the likelier you are to become that class at your Ceremony (age ${CEREMONY_AGE}; you are ${age.toFixed(1)}). It is never certain: your parents' work counts too, and so does luck.</p>
       <p class="bag-hint">Your parents: ${parents.map((p) => `${esc(p.name)} (${esc(PARENT_JOBS[p.job]?.name || p.job)})`).join(' and ')}. Your Unique Skill, <b>${esc(u.name)}</b>, suits a <b>${esc(CLASSES[u.fit]?.name || 'anyone')}</b>.</p>
       <div class="school-list">${Object.entries(SCHOOLS).map(([cls, s]) => {
         const done = Math.min(1, (c.child.train?.[cls] || 0) / TRAIN_FULL_MS);
         const on = c.child.school === cls;
         return `<div class="sk-row school-row${on ? ' on' : ''}"><span class="sk-icon">${s.icon}</span>
-          <span class="sk-name"><b>${esc(s.name)}</b><small>${esc(CLASSES[cls].name)} · ${esc(s.text)} · trained ${Math.round(done * 100)}% · chance ${pct(odds[cls])}%</small></span>
+          <span class="sk-name"><b>${esc(s.name)}</b><small>${esc(CLASSES[cls].name)} · ${esc(s.text)} · trained ${Math.round(done * 100)}% · chance ${pct(odds[cls])}% · teaches ${SCHOOL_TECHNIQUES[cls].map((id, i) => `${esc(SKILLS[id].name)}${c.techniques?.includes(id) ? ' ✓' : ` (at ${Math.round(TECHNIQUE_AT[i] * 100)}%)`}`).join(', ')}</small></span>
           ${on ? '<span class="school-here">Training here</span>' : `<button type="button" class="gold-button small" data-school="${cls}">Train here</button>`}</div>`;
       }).join('')}</div>`;
   }

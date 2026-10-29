@@ -7,7 +7,7 @@ import {
 import { tabsHtml } from './bag.js';
 import { lifeRows } from './idcard.js';
 import { uniqueAbility, uniqueTier, TIER_NAMES, rankProofs, isAppraisal, RANK_UP_MAX, TRIALS_PER_PROOF, WORK_PER_PROOF } from './data/unique.mjs';
-import { ageOf, CEREMONY_AGE, PARENT_JOBS } from './data/birth.mjs';
+import { ageOf, CEREMONY_AGE, PARENT_JOBS, parentAlive, visitDue } from './data/birth.mjs';
 import { PRIVACY, privacyOf } from './data/social.mjs';
 import { gameTime, clockText } from './data/clock.mjs';
 import { SKILLS, UPGRADE_EVERY } from './data/skills.mjs';
@@ -111,7 +111,9 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('Race', `${race.name}${c.stage > 0 && EVOLUTIONS[c.race]?.[c.stage] ? ` (${esc(EVOLUTIONS[c.race][c.stage])})` : ''}${isMonster ? ` <small>(${c.form === 'humanoid' ? 'humanoid form' : 'monster form'})</small>` : ''}${isMonster ? (mayChangeForm(c) ? ` <button type="button" class="sw-form" data-form>Change to ${c.form === 'humanoid' ? 'monster' : 'humanoid'} form</button>` : ` <small>· humanoid form opens at Lv ${FORM_SWITCH_LEVEL}</small>`) : ''}`)}
           ${row('Class', className)}
           ${c.child ? row('Age', `${ageOf(c).toFixed(1)} <small>(the Ceremony at ${CEREMONY_AGE})</small>`) : ''}
-          ${(c.child?.family || c.family) ? row('Parents', (c.child?.family || c.family).parents.map((p) => `${esc(p.name)} <small>(${esc(PARENT_JOBS[p.job]?.name || p.job)})</small>`).join(', ')) : ''}
+          ${(c.child?.family || c.family) ? row('Parents', (c.child?.family || c.family).parents.map((p, j) => `${esc(p.name)} <small>(${esc(PARENT_JOBS[p.job]?.name || p.job)}${parentAlive(c, j) ? '' : ', passed away'})</small>`).join(', ')) : ''}
+          ${(() => { const due = visitDue(c); return due === null ? '' : row('Visit parents', due > 0 ? `within ${Math.ceil(due / 60000)} min of play` : '<b>overdue</b>'); })()}
+          ${c.neglect ? row('Soul', 'Sinner <small>(left parents unvisited)</small>') : ''}
           ${row('EXP', `${c.exp} / ${need}`)}
           ${row('Coins', money(c.coins))}
           ${lifeRows(c).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
