@@ -34,6 +34,11 @@ export function buildInterior(shop) {
   const rooms = [];
   const nooks = []; // small rooms and hallways the camera stays inside (not rented)
   const bedrooms = []; // the tavern's rooms for the night
+  // the tavern's orders, waiter and guests (see tavernLife)
+  const orders = []; // { to, done }
+  let waiter = null, cup = null, serving = null, making = 0, waiterHome = null, waiterWait = 0, nextGuestOrder = 20;
+  const patrons = [];
+  let lastLife = null;
   const spots = []; // things to use with E: { x, z, y, event, r }
   const mats = [];
   const mat = (color, extra = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra }); mats.push(m); return m; };
@@ -518,9 +523,6 @@ export function buildInterior(shop) {
   // ---------- the tavern's life: orders, the keeper pressing juice, and the waiter ----------
   // Nothing is made until someone orders and pays: a guest at a table (now and then) or you, at the
   // counter. The keeper presses the drink, then the waiter carries it to whoever ordered it.
-  const orders = []; // { to: { x, z } (local), done }
-  let waiter = null, cup = null, serving = null, making = 0, waiterHome = null, waiterWait = 0, nextGuestOrder = 20;
-  const patrons = [];
   function tavernLife() {
     waiterHome = { x: 3.2, z: D - 4.2 };
     waiter = buildCharacter({ race: 'hobbit', form: 'humanoid', look: { accent: '#f0ead8' } });
@@ -544,7 +546,6 @@ export function buildInterior(shop) {
   }
   // `where` says where whoever ordered is now (they may have sat down meanwhile)
   function order(where, done) { orders.push({ to: () => { const p = where(); return { x: p.x - OX, z: p.z - OZ }; }, done }); }
-  let lastLife = null;
   function lifeUpdate(t) {
     const dt = lastLife === null ? 0 : Math.min(0.1, t - lastLife);
     lastLife = t;
