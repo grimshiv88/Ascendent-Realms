@@ -1,0 +1,229 @@
+// Makes a living body from a plan: three.js bones and skinned meshes from the sculpted data, with
+// skin colours painted on (lips, nails, a little warmth on the cheeks, knees and knuckles).
+// Sculpting is slow, so each plan is sculpted once and its meshes shared by every body like it.
+import * as THREE from 'three';
+import { humanoidPlan } from './humanoid.js';
+import { sculpt } from './sculptor.js';
+import { faceTextures } from './face.js';
+
+const cache = new Map();
+
+export function sculptedBody(opts = {}, quality = 'high', hair = 'short') {
+  const key = JSON.stringify(opts) + '|' + quality + '|' + hair;
+  if (!cache.has(key)) {
+    const plan = humanoidPlan(opts);
+    const data = sculpt(plan, quality, { hair });
+    cache.set(key, { plan, data, geos: {} });
+  }
+  return cache.get(key);
+}
+
+// A new body: { root, bones: {name: Bone}, skeleton, meshes, plan }.
+// skin: the skin colour. Bones start in the rest pose (arms hanging, fingers straight).
+export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips = null, nails = null, face = {}, hair = 'short', hairColor = '#3a2a22' } = {}) {
+  const made = sculptedBody(opts, quality, hair);
+  const { plan, data } = made;
+  const k = opts.height ? opts.height / plan.top : 1;
+  const root = new THREE.Group();
+  const scaler = new THREE.Group();
+  scaler.scale.setScalar(k);
+  root.add(scaler);
+  // bones in the sculpting pose, to bind the skin
+  const bones = {};
+  const list = plan.bones.map((b) => {
+    const bone = new THREE.Bone();
+    bone.name = b.name;
+    bones[b.name] = bone;
+    return bone;
+  });
+  const byName = Object.fromEntries(plan.bones.map((b) => [b.name, b]));
+  plan.bones.forEach((b, i) => {
+    const bone = list[i];
+    if (b.parent) {
+      const p = byName[b.parent];
+      bone.position.set(b.pos[0] - p.pos[0], b.pos[1] - p.pos[1], b.pos[2] - p.pos[2]);
+      bones[b.parent].add(bone);
+    } else {
+      bone.position.set(...b.pos);
+      scaler.add(bone);
+    }
+    if (b.bind) bone.rotation.set(...b.bind);
+  });
+  root.updateMatrixWorld(true);
+  const skeleton = new THREE.Skeleton(list);
+  const mat = skinMaterial(skin);
+  const meshes = {};
+  const colours = paint(skin, lips, nails, data.hair ? hairColor : null);
+  for (const [name, part] of Object.entries(data.parts)) {
+    const gk = name + skin + (data.hair ? hairColor : '');
+    let geo = made.geos[gk];
+    if (!geo) {
+      geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(part.positions, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(part.normals, 3));
+      geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(part.skinIndex, 4));
+      geo.setAttribute('skinWeight', new THREE.BufferAttribute(part.skinWeight, 4));
+      geo.setAttribute('color', new THREE.BufferAttribute(colourPoints(part, colours, plan), 3));
+      geo.setIndex(new THREE.BufferAttribute(part.indices, 1));
+      geo.computeBoundingSphere();
+      made.geos[gk] = geo;
+    }
+    const mesh = new THREE.SkinnedMesh(geo, name === 'body' ? mat : mat.fine);
+    mesh.name = name;
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    scaler.add(mesh);
+    mesh.bind(skeleton, mesh.matrixWorld);
+    meshes[name] = mesh;
+  }
+  // the painted face
+  const F = data.face;
+  if (!made.geos.face) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(F.positions, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(F.normals, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(F.uvs, 2));
+    geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(F.skinIndex, 4));
+    geo.setAttribute('skinWeight', new THREE.BufferAttribute(F.skinWeight, 4));
+    geo.setIndex(new THREE.BufferAttribute(F.indices, 1));
+    geo.computeBoundingSphere();
+    made.geos.face = geo;
+  }
+  const tex = faceTextures(F.area, face);
+  const faceMat = new THREE.MeshStandardMaterial({ map: tex.open, transparent: true, depthWrite: false, roughness: 0.45, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
+  const faceMesh = new THREE.SkinnedMesh(made.geos.face, faceMat);
+  faceMesh.name = 'face';
+  faceMesh.frustumCulled = false;
+  faceMesh.renderOrder = 1;
+  scaler.add(faceMesh);
+  faceMesh.bind(skeleton, faceMesh.matrixWorld);
+  meshes.face = faceMesh;
+  const blink = (shut) => { faceMat.map = shut ? tex.shut : tex.open; };
+
+  // hair
+  if (data.hair) {
+    const hk = 'hair' + hairColor;
+    if (!made.geos[hk]) made.geos[hk] = hairGeometry(data.hair, hairColor, plan);
+    const hairMesh = new THREE.SkinnedMesh(made.geos[hk], hairMaterial());
+    hairMesh.name = 'hair';
+    hairMesh.castShadow = true; hairMesh.receiveShadow = true;
+    hairMesh.frustumCulled = false;
+    scaler.add(hairMesh);
+    hairMesh.bind(skeleton, hairMesh.matrixWorld);
+    meshes.hair = hairMesh;
+  }
+
+  // now stand at rest: arms down, fingers straight
+  for (const b of list) b.rotation.set(0, 0, 0);
+  root.userData.height = plan.top * k;
+  return { root, bones, skeleton, meshes, plan, scale: k, blink };
+}
+
+// Skin: soft, slightly glossy, warm where light passes through. The head and hands are drawn a
+// hair in front of the body where they overlap it (their seams sit under the skin).
+const skinMats = new Map();
+function skinMaterial(hex) {
+  if (skinMats.has(hex)) return skinMats.get(hex);
+  const base = { color: '#ffffff', vertexColors: true, roughness: 0.58, metalness: 0 };
+  const mat = new THREE.MeshStandardMaterial(base);
+  mat.fine = new THREE.MeshStandardMaterial({ ...base, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
+  for (const m of [mat, mat.fine]) m.onBeforeCompile = wrapLight;
+  skinMats.set(hex, mat);
+  return mat;
+}
+// light that wraps a little round the edge of a shape, as it does through skin
+function wrapLight(shader) {
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <lights_fragment_begin>',
+    '#include <lights_fragment_begin>\n',
+  ).replace(
+    'vec3 totalDiffuse = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;',
+    'vec3 totalDiffuse = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse * 1.12 + diffuseColor.rgb * vec3(0.11, 0.035, 0.02);',
+  );
+}
+
+function paint(skin, lips, nails, hair) {
+  const s = new THREE.Color(skin);
+  const hsl = {}; s.getHSL(hsl);
+  return {
+    skin: s,
+    lips: lips ? new THREE.Color(lips) : s.clone().lerp(new THREE.Color('#c0605a'), 0.38),
+    nail: nails ? new THREE.Color(nails) : s.clone().lerp(new THREE.Color('#f4d8d0'), 0.5),
+    claw: new THREE.Color('#2a2420'),
+    warm: s.clone().lerp(new THREE.Color('#e07868'), 0.22),
+    pale: s.clone().lerp(new THREE.Color('#fff4ec'), 0.18),
+    hair: hair ? new THREE.Color(hair).multiplyScalar(0.7) : null,
+  };
+}
+
+// a colour for each point: lips and nails by the shape they belong to, then a few soft tints
+function colourPoints(part, C, plan) {
+  const n = part.positions.length / 3;
+  const out = new Float32Array(n * 3);
+  const head = plan.headO, hd = plan.hd;
+  const c = new THREE.Color();
+  for (let v = 0; v < n; v++) {
+    const x = part.positions[v * 3], y = part.positions[v * 3 + 1], z = part.positions[v * 3 + 2];
+    c.copy(C.skin);
+    const t = part.tint[v];
+    if (t === 1) c.copy(C.lips);
+    else if (t === 2) c.copy(C.nail);
+    else if (t === 3) c.copy(C.claw);
+    else {
+      // cheeks
+      for (const s of [-1, 1]) {
+        const d = Math.hypot((x - s * 0.043 * hd) / 0.022, (y - head[1] - 0.04 * hd) / 0.014, (z - head[2] - 0.07 * hd) / 0.03);
+        if (d < 1) c.lerp(C.warm, (1 - d) * 0.5);
+      }
+      // the tip of the nose and the ears
+      const dn = Math.hypot(x / 0.01, (y - head[1] - 0.038 * hd) / 0.01, (z - head[2] - 0.1 * hd) / 0.012);
+      if (dn < 1) c.lerp(C.warm, (1 - dn) * 0.35);
+      if (Math.abs(x) > 0.07 * hd && Math.abs(y - head[1] - 0.06 * hd) < 0.05 && Math.abs(z - head[2]) < 0.05) c.lerp(C.warm, 0.25);
+      // under the hair, the scalp takes the hair's colour (so no gaps show between the locks)
+      if (C.hair) {
+        const rx = x / hd, ry = (y - head[1]) / hd, rz = (z - head[2] + 0.01 * hd) / hd;
+        const front = rz / (Math.hypot(rx, rz) || 1);
+        const line = front > 0 ? 0.07 + 0.045 * smoothstep(0.2, 0.85, front) : 0.07 - 0.075 * smoothstep(0, -0.9, front);
+        const k = smoothstep(line - 0.006, line + 0.006, ry);
+        if (k > 0) c.lerp(C.hair, k);
+      }
+    }
+    out[v * 3] = c.r; out[v * 3 + 1] = c.g; out[v * 3 + 2] = c.b;
+  }
+  return out;
+}
+
+const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+// Hair: darker at the roots and on the inner layers, lighter towards the tips, with the bright
+// "ring" of shine around the crown that anime hair has
+let hairMat = null;
+function hairMaterial() {
+  if (!hairMat) hairMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.05 });
+  return hairMat;
+}
+function hairGeometry(H, hex, plan) {
+  const base = new THREE.Color(hex);
+  const dark = base.clone().multiplyScalar(0.55), light = base.clone().lerp(new THREE.Color('#ffffff'), 0.12), shine = base.clone().lerp(new THREE.Color('#fff6e8'), 0.42);
+  const n = H.positions.length / 3;
+  const col = new Float32Array(n * 3);
+  const ringY = plan.headO[1] + 0.135 * plan.hd;
+  const c = new THREE.Color();
+  for (let v = 0; v < n; v++) {
+    const t = H.along[v], layer = H.layer[v];
+    c.copy(dark).lerp(light, Math.min(1, t * 1.4 + layer * 0.12));
+    const y = H.positions[v * 3 + 1], z = H.positions[v * 3 + 2] - plan.headO[2];
+    const ring = Math.max(0, 1 - Math.abs(y - ringY) / (0.012 * plan.hd)) * (z > -0.04 ? 1 : 0.4);
+    if (ring > 0) c.lerp(shine, ring * 0.7);
+    col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(H.positions, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(H.normals, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(H.skinIndex, 4));
+  geo.setAttribute('skinWeight', new THREE.BufferAttribute(H.skinWeight, 4));
+  geo.setIndex(new THREE.BufferAttribute(H.indices, 1));
+  geo.computeBoundingSphere();
+  return geo;
+}
