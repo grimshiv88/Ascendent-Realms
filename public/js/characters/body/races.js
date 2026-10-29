@@ -51,8 +51,8 @@ export const GOBLIN_STAGES = [
   { name: 'Hobgoblin', body: { height: 1.4, head: 1.12, legs: 0.98, bulk: 0.88, muscle: 0.45, shoulders: 0.95, waist: 0.88, ears: 'goblin', earSize: 1.1, nose: 2, jaw: 0.95, brow: 0.7 },
     hair: 'spiky', eyes: { sharp: 0.8 }, stoop: 0.4,
     outfit: { shirt: false, trousers: false, boots: false, loincloth: { length: 0.26, colour: '#6a5a44' } } },
-  // 3. goblin rider: fit and strong, a fur vest
-  { name: 'Goblin Rider', body: { height: 1.5, head: 1.06, legs: 1, bulk: 0.94, muscle: 0.6, shoulders: 1.02, waist: 0.9, ears: 'goblin', earSize: 1, nose: 1.9, jaw: 1, brow: 0.8 },
+  // 3. goblin chieftain: fit and strong, a fur vest
+  { name: 'Goblin Chieftain', body: { height: 1.5, head: 1.06, legs: 1, bulk: 0.94, muscle: 0.6, shoulders: 1.02, waist: 0.9, ears: 'goblin', earSize: 1, nose: 1.9, jaw: 1, brow: 0.8 },
     hair: 'spiky', eyes: { sharp: 0.85 }, stoop: 0.2,
     outfit: { sleeves: 'none', shirt: '#6a4a30', shirtCloth: 'leather', tunic: false, trousers: false, boots: false, loincloth: { length: 0.3, colour: '#5a4a38' } } },
   // 4. goblin lord: tall and muscular, long hair
