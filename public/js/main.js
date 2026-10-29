@@ -1,4 +1,5 @@
 // Front door flow: intro → title docks → Choose → Sign Up / Sign In → clouds → next screen.
+import { renderCastlePlan } from './castleplan.js';
 import { startIntro } from './intro.js';
 import * as api from './api.js';
 import { paintCloudBanks } from './clouds.js';
@@ -525,6 +526,7 @@ function startGame(character) {
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
     else if (name === 'guild') renderGuild(overlay, game, ui.questMsg, ui.bounty);
     else if (name === 'assess') renderAssess(overlay, character, ui.assessed);
+    else if (name === 'map' && world?.indoors()?.kind === 'castle') renderCastlePlan(overlay, world.indoors());
     else if (name === 'map') renderMap(overlay, () => world?.position(), [...(character.quests || []).filter((q) => q.accepted && q.type === 'explore' && !q.have).map((q) => ({ ...q.place, label: q.title.replace('Explore: ', '') })),
       ...(character.villages?.list || []).map((v) => ({ x: v.x, z: v.z, label: villageName(v) }))],
       { plots: ui.myPlots || [], others: ui.otherPlots || [], chosen: () => ui.basket, reach: REACH, caves: (ui.caves || []).filter((q) => q.mine).map((q) => { const cv = caveById(q.cave); return cv && { x: cv.place.x, z: cv.place.z, name: cv.name }; }).filter(Boolean) },

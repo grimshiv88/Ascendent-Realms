@@ -199,6 +199,7 @@ export function buildCity(place, opts = {}) {
   // the Emperors' Castle in the east of the city: a great keep with four towers
   // (only the Central City has it)
   const CASTLE = monster ? { x: 1e6, z: 1e6 } : { ...CASTLE_SPOT, w: 30, d: 24 };
+  let castleGrounds = null;
   if (!monster) {
     const stoneMat = new THREE.MeshStandardMaterial({ color: '#9a9284', roughness: 0.95 });
     const roofMat = new THREE.MeshStandardMaterial({ color: '#3a3e5a', roughness: 0.8 });
@@ -219,9 +220,9 @@ export function buildCity(place, opts = {}) {
     // the great door, a sign over it and banners either side (on the side facing the plaza)
     const doorMat = new THREE.MeshStandardMaterial({ color: '#4a2e1a', roughness: 0.8 });
     const door = new THREE.Mesh(new THREE.BoxGeometry(4, 6, 0.4), doorMat);
-    door.position.set(0, 3, CASTLE.d / 2 + 0.1);
+    door.position.set(0, 3 + STEP_UP, CASTLE.d / 2 + 0.1);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 1.2), new THREE.MeshBasicMaterial({ map: textTexture("The Emperors' Castle"), transparent: true }));
-    sign.position.set(0, 7.4, CASTLE.d / 2 + 0.25);
+    sign.position.set(0, 7.4 + STEP_UP, CASTLE.d / 2 + 0.25);
     k.add(door, sign);
     for (const sx of [-4, 4]) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 5, 0.1), new THREE.MeshStandardMaterial({ color: '#7a1a1a' })); b.position.set(sx, 7, CASTLE.d / 2 + 0.2); k.add(b); }
     k.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -237,6 +238,7 @@ export function buildCity(place, opts = {}) {
     }
     const out = CASTLE.d / 2 + 2.2;
     shops.push({ id: 'castle', name: "The Emperors' Castle", x: cx + CASTLE.x + out * Math.sin(rot), z: cz + CASTLE.z + out * Math.cos(rot), building: true });
+    castleGrounds = buildCastleGrounds(k, CASTLE, rot, cx, cz, solid, S);
   }
 
   // the houses of the townsfolk, where every newborn's family lives (see data/birth.mjs)
@@ -294,16 +296,52 @@ export function buildCity(place, opts = {}) {
   }
   // townsfolk: families at their doors, and merchants and businessmen round the plaza
   const npcs = [];
-  const folk = [];
   const addNpc = (race, x, z, faceA, info) => {
     const body = buildCharacter({ race, form: 'humanoid', look: info.look || {} });
     body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz) + (S.decor === 'reeds' ? 0.6 : 0), z);
     body.rotation.y = faceA;
     g.add(body);
-    folk.push(body);
-    solid.push({ x: cx + x, z: cz + z, r: 0.5, kind: 'wall', height: 2 });
-    npcs.push({ ...info, x: cx + x, z: cz + z });
+    const npc = { ...info, x: cx + x, z: cz + z };
+    npcs.push(npc);
+    // townsfolk stroll about near their spot: parents in front of their house, traders round the plaza
+    walkers.push({ body, npc, hx: x, hz: z, range: info.kind === 'parent' ? 2.6 : 5, tx: x, tz: z, wait: 1 + rnd2() * 4, talk: 0 });
   };
+  const walkers = [];
+  let seed2 = 7;
+  const rnd2 = () => { seed2 = (seed2 * 16807) % 2147483647; return seed2 / 2147483647; };
+  let lastT = null;
+  function walkFolk(t, you) {
+    const dt = lastT === null ? 0 : Math.min(0.1, t - lastT);
+    lastT = t;
+    for (const w of walkers) {
+      const b = w.body;
+      let speed = 0;
+      if (w.npc.talkUntil && w.npc.talkUntil > t) {
+        // talking: stop and face whoever spoke to them
+        if (you) b.rotation.y = Math.atan2(you.x - cx - b.position.x, you.z - cz - b.position.z);
+      } else if (w.wait > 0) w.wait -= dt;
+      else {
+        const dx = w.tx - b.position.x, dz = w.tz - b.position.z, d = Math.hypot(dx, dz);
+        if (d < 0.15) {
+          w.wait = 2 + rnd2() * 6;
+          // the next spot: somewhere near home, never further from the middle than home (not into a house)
+          for (let k = 0; k < 6; k++) {
+            const a = rnd2() * Math.PI * 2, r = w.range * Math.sqrt(rnd2());
+            const nx = w.hx + Math.cos(a) * r, nz = w.hz + Math.sin(a) * r, nd = Math.hypot(nx, nz);
+            if (nd <= Math.hypot(w.hx, w.hz) + 0.2 && nd > 11) { w.tx = nx; w.tz = nz; break; }
+          }
+        } else {
+          speed = 1.1;
+          const step = Math.min(d, speed * dt);
+          b.position.x += (dx / d) * step; b.position.z += (dz / d) * step;
+          const want = Math.atan2(dx, dz);
+          b.rotation.y += Math.atan2(Math.sin(want - b.rotation.y), Math.cos(want - b.rotation.y)) * Math.min(1, dt * 6);
+          w.npc.x = cx + b.position.x; w.npc.z = cz + b.position.z;
+        }
+      }
+      animateCharacter(b, t, speed ? 0.9 : 0);
+    }
+  }
   const homeAt = opts.home?.city === place.id ? opts.home.house : -1;
   for (const h of houses) {
     if (h.i !== homeAt && h.i % 6) continue;
@@ -327,14 +365,15 @@ export function buildCity(place, opts = {}) {
     centre.update?.(t);
     doors.update(you);
     for (const b of guards) animateCharacter(b, t, 0);
-    for (const b of folk) animateCharacter(b, t, 0);
+    walkFolk(t, you);
     for (const b of bridges) b.update();
+    castleGrounds?.update(t, you);
     glow?.(t);
   };
   // raise or lower the bridges over the moat (raised, they shut the inner gates)
   const setRaised = (up, colliders) => { for (const b of bridges) b.raise(up, colliders); };
   // walking on a lowered bridge: its deck, to stand on
-  const deckAt = (x, z) => { for (const b of bridges) { const y = b.deckAt(x, z); if (y !== undefined) return y; } return undefined; };
+  const deckAt = (x, z) => { for (const b of bridges) { const y = b.deckAt(x, z); if (y !== undefined) return y; } return castleGrounds?.topAt(x, z); };
   // in the moat's water (and not on a bridge)
   const inMoat = (x, z) => { const d = Math.hypot(x - cx, z - cz); return d > MOAT[0] && d < MOAT[1] && deckAt(x, z) === undefined; };
 
@@ -346,6 +385,108 @@ export function buildCity(place, opts = {}) {
   };
 
   return { group: g, update, shops, solid, gates, npcs, setRaised, deckAt, inMoat, rescue, centre: { x: cx, z: cz } };
+}
+
+// The Emperors' Castle grounds: a curtain wall round the keep with a gate (its portcullis rises as
+// you come), a wall-walk on top for archers with stairs up to it, guards at the gate and on the
+// walls, a paved path from the gate, and steps up to the great door. Built in the keep's own space
+// (`k`, turned by `rot`). Returns { topAt(x, z): what you stand on there (the wall-walk, the
+// stairs, the steps), update }.
+const STEP_UP = 1.2; // the keep's door stands this high, up a flight of steps
+const YARD = { x0: -21, x1: 21, z0: -17, z1: 23, h: 6, gate: 3.2 };
+function buildCastleGrounds(k, C, rot, cx, cz, solid, S) {
+  const c = Math.cos(rot), s = Math.sin(rot);
+  const ox = cx + C.x, oz = cz + C.z;
+  const base = heightAt(ox, oz);
+  const toWorld = (lx, lz) => ({ x: ox + lx * c + lz * s, z: oz - lx * s + lz * c });
+  const toLocal = (x, z) => { const dx = x - ox, dz = z - oz; return { lx: dx * c - dz * s, lz: dx * s + dz * c }; };
+  const stone = matOf('#8a8274', 0.95), dark = matOf('#6a6458', 0.95), paving = matOf('#a49a86', 0.95);
+  const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; o.receiveShadow = true; k.add(o); return o; };
+  const put = (lx, lz, r, height, y = base) => { const w = toWorld(lx, lz); solid.push({ x: w.x, z: w.z, r, kind: 'wall', height, y }); };
+  const { x0, x1, z0, z1, h, gate } = YARD;
+  // the curtain wall, with merlons along its outer edge to shoot from behind
+  const wallRun = (ax, az, bx, bz, outX, outZ) => {
+    const len = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / len, uz = (bz - az) / len;
+    const w = add(new THREE.BoxGeometry(len + 1.6, h, 1.6), stone, (ax + bx) / 2, h / 2, (az + bz) / 2);
+    w.rotation.y = Math.atan2(-uz, ux);
+    for (let t = 0.6; t < len; t += 1.8) {
+      const m = add(new THREE.BoxGeometry(0.9, 1, 0.4), stone, ax + ux * t + outX * 0.6, h + 0.5, az + uz * t + outZ * 0.6);
+      m.rotation.y = w.rotation.y;
+    }
+    for (let t = 0; t <= len; t += 1.4) put(ax + ux * t, az + uz * t, 1.0, h);
+  };
+  wallRun(x0, z0, x1, z0, 0, -1);           // back
+  wallRun(x0, z0, x0, z1, -1, 0);           // sides
+  wallRun(x1, z0, x1, z1, 1, 0);
+  wallRun(x0, z1, -gate, z1, 0, 1);         // front, either side of the gate
+  wallRun(gate, z1, x1, z1, 0, 1);
+  // the walk over the gate, and the gatehouse arch above it
+  add(new THREE.BoxGeometry(gate * 2, 1.2, 1.6), stone, 0, h - 0.6, z1);
+  for (const sx of [-1, 1]) { add(new THREE.BoxGeometry(1.4, h + 3, 2.4), dark, sx * (gate + 0.7), (h + 3) / 2, z1); put(sx * (gate + 0.7), z1, 1.3, h + 3); }
+  const crest = add(new THREE.BoxGeometry(gate * 2 + 2.8, 1.4, 0.6), dark, 0, h + 2.3, z1 + 0.9);
+  crest.receiveShadow = true;
+  // round towers at the corners
+  for (const [tx, tz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
+    add(new THREE.CylinderGeometry(2.4, 2.7, h + 3, 12), stone, tx, (h + 3) / 2, tz);
+    add(new THREE.ConeGeometry(3, 3.2, 12), matOf('#3a3e5a', 0.8), tx, h + 4.6, tz);
+    put(tx, tz, 2.7, h + 3);
+  }
+  // the portcullis: iron bars that rise into the arch while anyone is near the gate
+  const port = new THREE.Group();
+  const iron = matOf('#2e2c2a', 0.5, { metalness: 0.6 });
+  for (let x = -gate + 0.3; x <= gate - 0.2; x += 0.55) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.1, h - 1.2, 0.1), iron); b.position.set(x, (h - 1.2) / 2, 0); port.add(b); }
+  for (const y of [1, 2.4, 3.8]) { const b = new THREE.Mesh(new THREE.BoxGeometry(gate * 2, 0.1, 0.1), iron); b.position.set(0, y, 0); port.add(b); }
+  port.position.set(0, 0, z1 + 0.6);
+  k.add(port);
+  let lift = 0;
+  // the paved path from the gate to the steps, and the steps up to the great door
+  const path = add(new THREE.BoxGeometry(5, 0.06, z1 - C.d / 2 - 7), paving, 0, 0.03, (z1 + C.d / 2 + 7) / 2);
+  path.castShadow = false;
+  const landing = { z0: C.d / 2, z1: C.d / 2 + 3.6 }, stepsTo = landing.z1 + 3.6, nSteps = 6;
+  add(new THREE.BoxGeometry(9, STEP_UP, landing.z1 - landing.z0), stone, 0, STEP_UP / 2, (landing.z0 + landing.z1) / 2);
+  for (let i = 0; i < nSteps; i++) {
+    const top = STEP_UP * (nSteps - i) / nSteps, zz = landing.z1 + (i + 0.5) * (stepsTo - landing.z1) / nSteps;
+    add(new THREE.BoxGeometry(7, top, (stepsTo - landing.z1) / nSteps), stone, 0, top / 2, zz);
+  }
+  // stone stairs up the inside of the front wall to the wall-walk (the right side, coming in)
+  const st = { x0: 8, x1: 19, z0: z1 - 2.6, z1: z1 - 0.8, n: 14 };
+  for (let i = 0; i < st.n; i++) {
+    const top = h * (i + 1) / st.n, xx = st.x0 + (i + 0.5) * (st.x1 - st.x0) / st.n;
+    add(new THREE.BoxGeometry((st.x1 - st.x0) / st.n, top, st.z1 - st.z0), dark, xx, top / 2, (st.z0 + st.z1) / 2);
+  }
+  // guards: two at the gate and archers up on the walls
+  const guards = [];
+  const gearOf = Object.fromEntries(Object.entries(S.gear).map(([key, id]) => [key, ITEMS[id]]));
+  const guard = (lx, lz, y, face, race) => {
+    const b = buildCharacter({ race, form: 'humanoid', look: {} });
+    wearGear(b, gearOf);
+    b.position.set(lx, y, lz); b.rotation.y = face;
+    k.add(b); guards.push(b);
+    if (!y) put(lx, lz, 0.6, 2);
+  };
+  guard(-gate - 1.6, z1 + 2, 0, 0, 'dwarf'); guard(gate + 1.6, z1 + 2, 0, 0, 'elf');
+  guard(-12, z1, h, 0, 'elf'); guard(12, z1, h, 0, 'beastkin'); guard(x0, 4, h, -Math.PI / 2, 'elf'); guard(x1, 4, h, Math.PI / 2, 'hobbit'); guard(0, z0, h, Math.PI, 'elf');
+  // what you stand on: the wall-walk (1.6 m wide on top of the walls), the stairs and the steps
+  const onWall = (lx, lz) => (Math.abs(lz - z0) < 0.8 || Math.abs(lz - z1) < 0.8) && lx > x0 - 0.8 && lx < x1 + 0.8
+    || (Math.abs(lx - x0) < 0.8 || Math.abs(lx - x1) < 0.8) && lz > z0 - 0.8 && lz < z1 + 0.8;
+  return {
+    topAt(x, z) {
+      const { lx, lz } = toLocal(x, z);
+      if (lx < x0 - 3 || lx > x1 + 3 || lz < z0 - 3 || lz > z1 + 3) return undefined;
+      if (onWall(lx, lz)) return base + h;
+      if (lx > st.x0 && lx < st.x1 && lz > st.z0 && lz < st.z1) return base + h * Math.min(st.n, Math.floor((lx - st.x0) / (st.x1 - st.x0) * st.n) + 1) / st.n;
+      if (Math.abs(lx) < 4.5 && lz > landing.z0 && lz <= landing.z1) return base + STEP_UP;
+      if (Math.abs(lx) < 3.5 && lz > landing.z1 && lz < stepsTo) return base + STEP_UP * (nSteps - Math.floor((lz - landing.z1) / (stepsTo - landing.z1) * nSteps)) / nSteps;
+      return undefined;
+    },
+    update(t, you) {
+      for (const b of guards) animateCharacter(b, t, 0);
+      const g = toWorld(0, z1);
+      const near = you && Math.hypot(you.x - g.x, you.z - g.z) < 9;
+      lift += ((near ? h - 1.4 : 0) - lift) * 0.05;
+      port.position.y = lift;
+    },
+  };
 }
 
 // The outer fortress wall at CITY_R with two great gates, the moat inside it, and the inner wall at

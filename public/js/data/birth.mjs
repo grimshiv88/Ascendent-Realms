@@ -37,7 +37,7 @@ export function cityHouses(placeId) {
       const a = (i / n) * Math.PI * 2 + (r === 72 ? Math.PI / n : 0);
       if (Math.abs(Math.sin(a * 2)) < 0.22) continue; // the four streets
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (!place?.monster && Math.hypot(x - CASTLE.x, z - CASTLE.z) < 26) continue; // the Emperors' Castle
+      if (!place?.monster && Math.hypot(x - CASTLE.x, z - CASTLE.z) < 33) continue; // the Emperors' Castle and its grounds
       const k = out.length;
       out.push({ i: k, a, r, x, z, w: 6 + (k % 3) * 0.6, d: 5 + (k % 2) * 0.6, h: 3.6 + (k % 3) * 0.5 });
     }

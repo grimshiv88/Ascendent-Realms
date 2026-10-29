@@ -142,6 +142,24 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const s of sites) if (s.built?.setRaised) s.built.setRaised(!!cityRaised[s.place.id], colliders);
   }
   const builtCities = () => sites.filter((s) => s.place.city && s.built?.npcs);
+  // clicking or tapping a townsperson (within 14 m) talks to them
+  const talkV = new THREE.Vector3();
+  function talkAt(sx, sy) {
+    if (inside || depth || dead) return false;
+    const r = canvas.getBoundingClientRect();
+    let best = null, bd = 46;
+    for (const s of builtCities()) for (const n of s.built.npcs) {
+      if (Math.hypot(n.x - pos.x, n.z - pos.z) > 14) continue;
+      talkV.set(n.x, groundAt(n.x, n.z, -Infinity) + 1.1, n.z).project(camera);
+      if (talkV.z > 1) continue;
+      const d = Math.hypot(r.left + (talkV.x + 1) / 2 * r.width - sx, r.top + (1 - talkV.y) / 2 * r.height - sy);
+      if (d < bd) { bd = d; best = n; }
+    }
+    if (best) talkTo(best);
+    return !!best;
+  }
+  function talkTo(n) { n.talkUntil = clock.elapsedTime + 6; onEvent?.('npc', n); }
+  let touched = null; // the townsperson you last walked into (they talk once, until you step away)
   // townsfolk close enough to talk to
   function npcNear(x, z, r = 2.4) {
     for (const s of builtCities()) for (const n of s.built.npcs) if (Math.hypot(n.x - x, n.z - z) < r) return n;
@@ -209,7 +227,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const solidTops = new Map(); // "cellX,cellZ" -> heights of the foundations and floors built there
   function groundAt(x, z, fromY = pos?.y ?? -Infinity) {
     // underground, the cave floor is exact; up top, the ground as drawn (see surfaceAt)
-    let g = depth || inside ? heightAt(x, z) : surfaceAt(x, z);
+    let g = inside?.built.standAt ? inside.built.standAt(x, z, fromY) : depth || inside ? heightAt(x, z) : surfaceAt(x, z);
     for (const s of sites) {
       if (!s.built || s.place.cave) continue;
       if (Math.hypot(x - s.place.x, z - s.place.z) < 7.4) g = Math.max(g, s.place.y + 0.45);
@@ -836,7 +854,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (stand) { onEvent?.('stand', stand); return; }
       if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
       const npc = npcNear(pos.x, pos.z);
-      if (npc) { onEvent?.('npc', npc); return; }
+      if (npc) { talkTo(npc); return; }
       const shop = shopNear(pos.x, pos.z);
       if (shop?.id === 'academy') { onEvent?.('academy'); return; }
       if (shop?.building) { enterBuilding(shop); return; }
@@ -1243,6 +1261,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let letGo = false; // the game released the mouse itself (a window opened), not the player's Esc
   let noLock = false; // some pages can't capture the mouse: then you drag to look, as before
   let freeMouse = view?.mouse === 'free'; // Settings: the mouse stays free (drag to look) instead of being captured
+  const fingers = new Map(); // fingers on the screen (not the walking stick), for pinch-to-zoom
+  let pinch = null;
   document.addEventListener('pointerlockerror', () => { noLock = true; });
   document.addEventListener('pointerlockchange', () => {
     if (!locked() && !letGo) onMouseFreed?.();
@@ -1254,7 +1274,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018, pitchLo(), pitchHi());
   });
   canvas.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'mouse' && locked()) { if (e.button === 0) attack(); return; }
+    if (e.pointerType === 'mouse' && locked()) { if (e.button === 0 && !talkAt(window.innerWidth / 2, window.innerHeight / 2)) attack(); return; }
     if (e.pointerType === 'mouse' && e.button === 0 && !plots.on && !noLock && !freeMouse && !windowOpen?.() && canvas.requestPointerLock) {
       try { const r = canvas.requestPointerLock(); r?.catch?.(() => { noLock = true; }); } catch { noLock = true; }
       if (!noLock) return;
@@ -1267,6 +1287,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       stickEl.firstChild.style.transform = 'translate(-50%, -50%)';
     } else {
       look = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), mouse: e.pointerType === 'mouse' };
+      if (e.pointerType === 'touch') {
+        // two fingers on the screen: pinch them together or apart to zoom out or in
+        fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (fingers.size === 2) { const [a, b] = [...fingers.values()]; pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, dist0: dist }; look = null; }
+      }
     }
     canvas.setPointerCapture(e.pointerId);
   });
@@ -1278,6 +1303,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       stick.x = dx / STICK_R;
       stick.y = dy / STICK_R;
       stickEl.firstChild.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    } else if (fingers.has(e.pointerId) && pinch) {
+      fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const [a, b] = [...fingers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      if (viewMode === 'first') { if (d < pinch.d0 * 0.7) { setView('third', true); pinch = { d0: d, dist0: dist }; } }
+      else {
+        const want = pinch.dist0 * pinch.d0 / d;
+        if (want < 1.6) { setView('first', true); pinch = { d0: d, dist0: 2 }; } else dist = THREE.MathUtils.clamp(want, 2, 30);
+      }
     } else if (look && e.pointerId === look.id) {
       // a finger turns the camera more gently than a mouse, so small swipes are small turns
       const k = look.mouse ? 1 : 0.55;
@@ -1287,6 +1321,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   });
   const release = (e) => {
+    if (fingers.delete(e.pointerId) && fingers.size < 2) pinch = null;
     if (e.pointerId === stick.id) { stick.id = null; stick.x = 0; stick.y = 0; stickEl.classList.add('hidden'); }
     if (look && e.pointerId === look.id) {
       // a quick click without dragging is an attack, or picks a plot while the land grid is showing
@@ -1297,11 +1332,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
         const at = plots.pick(ray.ray);
         if (at) onPlot?.(plots.select(at));
-      } else if (tap && look.mouse) attack();
+      } else if (tap && talkAt(e.clientX, e.clientY)) { /* clicked a townsperson: they talk */ } else if (tap && look.mouse) attack();
       look = null;
     }
   };
   canvas.addEventListener('pointerup', release);
+  canvas.style.touchAction = 'none'; // the game handles pinches itself (the page doesn't zoom)
   canvas.addEventListener('pointercancel', release);
   canvas.addEventListener('wheel', (e) => {
     if (viewMode === 'first') { if (e.deltaY > 0) setView('third', true); }
@@ -1619,7 +1655,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (s.built?.hole && !dead && Math.hypot(pos.x - s.built.hole.x, pos.z - s.built.hole.z) < 1.6) { enterDepths(s); break; }
       }
     }
-    if (!depth && !inside) checkGates(t);
+    if (!depth && !inside) {
+      checkGates(t);
+      // walk into a townsperson and they talk to you
+      const n = npcNear(pos.x, pos.z, bodyR + 0.55);
+      if (n && n !== touched) { touched = n; talkTo(n); }
+      else if (touched && Math.hypot(touched.x - pos.x, touched.z - pos.z) > 2.5) touched = null;
+    }
     if (inside) {
       inside.built.update(t, pos);
       checkRooms();
@@ -1846,6 +1888,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setRooms(map) { allowedRooms = { ...map }; },
     setCastleAccess(a) { castleAccess = { ...a }; },
     leaveBuilding: () => leaveBuilding(),
+    // where you are inside a building (in its own metres from the door), for the castle's map
+    indoors: () => (inside ? { kind: inside.built.kind, x: pos.x - inside.built.exit.x, z: pos.z - inside.built.exit.z + 0.4, up: pos.y > 2 } : null),
     // for testing: go into a city building by its id
     debugEnter(id) { for (const c of builtCities()) { const sh = c.built.shops.find((q) => q.id === id); if (sh) { pos.set(sh.x, pos.y, sh.z); enterBuilding(sh); return true; } } return false; },
     refreshHelper,

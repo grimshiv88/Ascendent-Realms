@@ -978,3 +978,22 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .item-pop-box { position: relative; width: min(460px, 100%); max-height: 85vh; overflow: auto; padding: 18px 18px 14px; background: #120d06; border: 1px solid #6a5220; border-radius: 6px; color: #fff3cf; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
 .item-pop-box .bag-big { width: 110px; height: 110px; }
 .item-pop-box .bag-actions { margin-top: 8px; }
+
+/* the castle's floor plan (the map while inside the Emperors' Castle) */
+.castle-plan .cp-svg { width: 100%; max-height: 70vh; display: block; margin: 0 auto; background: #2a2018; border-radius: 8px; }
+.cp-reception { fill: #6a1a1a; stroke: #c8a040; stroke-width: 0.2; }
+.cp-hall { fill: #4a3a2a; stroke: #c8a040; stroke-width: 0.2; }
+.cp-room { fill: #3a2e22; stroke: #c8a040; stroke-width: 0.2; }
+.cp-gallery { fill: rgba(200, 160, 64, 0.25); stroke: #c8a040; stroke-width: 0.12; stroke-dasharray: 0.5 0.4; }
+.cp-stairs { fill: #8a8274; }
+.cp-step { stroke: #5a544a; stroke-width: 0.12; }
+.cp-table { fill: #6b4a2e; }
+.cp-throne { fill: #e0b84a; }
+.cp-desk { fill: #6b4a2e; }
+.cp-door { fill: #e0b84a; }
+.castle-plan svg text { letter-spacing: 0; text-transform: none; font-family: Georgia, serif; }
+.cp-label { fill: #f2e6c8; font-size: 1.2px; }
+.cp-small { font-size: 0.9px; }
+.cp-room-label { fill: #f2e6c8; font-size: 0.9px; }
+.cp-you { fill: #ff5a3a; stroke: #fff; stroke-width: 0.2; }
+.cp-you-label { fill: #fff; font-size: 1.1px; font-weight: 700; }

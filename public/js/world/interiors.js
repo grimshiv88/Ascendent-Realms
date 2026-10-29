@@ -12,11 +12,12 @@ import { buildWork, WORKER_Z } from './work.js';
 // where the insides are laid out: past the caves, one at a time
 const OX = DEPTHS_X + 150000, OZ = 0;
 const UP = 4.5; // the Guild Hall's upper floor
+const CASTLE_UP = 5; // the castle's gallery over the reception
 const SEAT_H = 0.48;
 const STEPS = 15; // steps on a staircase
 
 // [width, depth, ceiling] of each kind of room (the Guild Hall's ground floor)
-const SIZES = { castle: [30, 22, 12], guild: [24, 20, 9], tavern: [16, 13, 5], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5] };
+const SIZES = { castle: [30, 34, 12], guild: [24, 20, 9], tavern: [16, 13, 5], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5] };
 export const kindOf = (shopId) => ({ castle: 'castle', guild: 'guild', tavern: 'tavern', city_potions: 'potions', city_smith: 'smith', city_armoury: 'armoury', city_tailor: 'tailor', city_food: 'food' }[shopId] || 'tavern');
 
 export function buildInterior(shop) {
@@ -244,7 +245,7 @@ export function buildInterior(shop) {
     return { hinge, side, open: 0 };
   });
   const exit = { x: OX, z: OZ + 0.4 };
-  const start = { x: OX, z: OZ + 3.6, heading: 0 };
+  const start = { x: OX, z: OZ + (kind === 'castle' ? 2.2 : 3.6), heading: 0 }; // (in the castle, just short of the grand staircase)
 
   let ramp = null;
   if (kind === 'guild') {
@@ -344,35 +345,72 @@ export function buildInterior(shop) {
     // banners on the side walls
     for (const z of [5, 12]) for (const s of [-1, 1]) box(0.05, 3, 1.4, cloth, s * (W / 2 - 0.2), 3.5, z);
   } else if (kind === 'castle') {
-    // ---------- the Emperors' Castle: a great hall with the council table, and chambers behind ----------
+    // ---------- the Emperors' Castle ----------
+    // In through the great door: the reception, red carpet wall to wall, a chandelier, and a grand
+    // staircase in the middle up to a gallery. Under the gallery, a wide doorway into the great hall
+    // with the council table and the throne, and the chambers behind.
+    const R = 12; // the reception is the first 12 m; the great hall is behind it
     const n = CASTLE_ROOMS.length, rw = W / n, Z2 = D + 10;
     wall(-W / 2, D, W / 2, D, 0, H, CASTLE_ROOMS.map((_, i) => [i * rw + rw / 2 - 0.8, i * rw + rw / 2 + 0.8]));
     ceiling(-W / 2, W / 2, 0, D, H);
     floor(-W / 2, W / 2, D, Z2, 0, mat('#5a3a2a'));
     wall(-W / 2, D, -W / 2, Z2, 0, 6); wall(W / 2, D, W / 2, Z2, 0, 6); wall(-W / 2, Z2, W / 2, Z2, 0, 6);
     ceiling(-W / 2, W / 2, D, Z2, 6);
-    // the steward's desk by the door: E there for the castle's chambers and today's rule
-    counterAt(W / 2 - 5, 3.5, 3, "The Emperors' Castle");
-    // a red carpet up the middle to the council table and the empty throne
-    const carpet = new THREE.Mesh(new THREE.PlaneGeometry(3, D - 6), mat('#8a1a1a'));
-    carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.02, (D - 6) / 2); g.add(carpet);
+    // the reception
+    const red = mat('#8a1a1a'), gold = mat('#c8a040', { metalness: 0.8, roughness: 0.3 });
+    const rug = new THREE.Mesh(new THREE.PlaneGeometry(W - 1, R - 0.4), red);
+    rug.rotation.x = -Math.PI / 2; rug.position.set(0, 0.02, R / 2); g.add(rug);
+    const trimRug = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.4, R + 0.2), gold);
+    trimRug.rotation.x = -Math.PI / 2; trimRug.position.set(0, 0.015, R / 2); g.add(trimRug);
+    counterAt(W / 2 - 5, 3.5, 3, "The Emperors' Castle"); // the steward's desk: E for the chambers and today's rule
+    chandelier(0, H - 2, 4.5);
+    // the grand staircase, in the middle, up to the gallery along the back of the reception
+    ramp = { x0: -2.6, x1: 2.6, z0: 3.2, z1: R - 3.2, top: CASTLE_UP, gallery: { z0: R - 3.2, z1: R } };
+    const cSteps = 16;
+    for (let i = 0; i < cSteps; i++) {
+      const z = ramp.z0 + ((ramp.z1 - ramp.z0) * (i + 0.5)) / cSteps, top = ((i + 1) / cSteps) * CASTLE_UP;
+      box(ramp.x1 - ramp.x0, top, (ramp.z1 - ramp.z0) / cSteps, stone, 0, 0, z);
+      box(ramp.x1 - ramp.x0 - 0.8, 0.02, (ramp.z1 - ramp.z0) / cSteps, red, 0, top, z); // the carpet runs up the stairs
+    }
+    for (const sx of [-1, 1]) {
+      const run = ramp.z1 - ramp.z0, L = Math.hypot(run, CASTLE_UP);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, L), gold);
+      rail.position.set(sx * (ramp.x1 + 0.1), CASTLE_UP / 2 + 1, (ramp.z0 + ramp.z1) / 2);
+      rail.rotation.x = -Math.atan2(CASTLE_UP, run); g.add(rail);
+      for (let z = ramp.z0 + 0.3; z <= ramp.z1; z += 1) box(0.07, 1, 0.07, gold, sx * (ramp.x1 + 0.1), (CASTLE_UP * (z - ramp.z0)) / run, z);
+      for (let z = ramp.z0 + 0.5; z < ramp.z1; z += 0.8) block(sx * (ramp.x1 + 0.3), z, 0.35, 0, 6);
+    }
+    // the gallery: a floor along the back at the top of the stairs, a gold railing at its edge
+    box(W, 0.3, R - ramp.gallery.z0, stone, 0, CASTLE_UP - 0.3, (ramp.gallery.z0 + R) / 2);
+    box(W, 0.02, R - ramp.gallery.z0, red, 0, CASTLE_UP, (ramp.gallery.z0 + R) / 2);
+    for (const [a, b] of [[-W / 2, ramp.x0], [ramp.x1, W / 2]]) {
+      box(b - a, 0.08, 0.08, gold, (a + b) / 2, CASTLE_UP + 1, ramp.gallery.z0);
+      for (let x = a + 0.4; x < b; x += 0.9) { box(0.06, 1, 0.06, gold, x, CASTLE_UP, ramp.gallery.z0); block(x, ramp.gallery.z0, 0.4, CASTLE_UP, 1.2); }
+    }
+    for (const sx of [-1, 1]) { cyl(0.5, 0.6, CASTLE_UP - 0.3, stone, sx * 11.5, 0, ramp.gallery.z0 + 0.4, 12); block(sx * 11.5, ramp.gallery.z0 + 0.4, 0.6, 0, CASTLE_UP - 0.3); }
+    // the wall between the reception and the great hall, with a wide doorway each side of the stairs
+    wall(-W / 2, R, W / 2, R, 0, H, [[W / 2 - 9, W / 2 - 5], [W / 2 + 5, W / 2 + 9]]);
+    for (const sx of [-1, 1]) box(0.05, 3, 1.4, cloth, sx * (W / 2 - 0.2), 1.6, 6);
+    // the great hall: a red carpet up the middle to the council table and the empty throne
+    const carpet = new THREE.Mesh(new THREE.PlaneGeometry(3, D - R - 6), red);
+    carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.02, R + (D - R - 6) / 2); g.add(carpet);
     // the long council table, chairs down both sides and one at each end
-    box(2.2, 0.1, 11, wood, 0, 0.75, 11);
-    for (const [lx, lz] of [[-0.9, 6], [0.9, 6], [-0.9, 16], [0.9, 16]]) box(0.15, 0.75, 0.15, darkWood, lx, 0, lz);
-    for (let z = 6.5; z <= 15.5; z += 1.5) block(0, z, 1.1, 0, 1);
-    for (let z = 6.5; z <= 15.5; z += 1.8) { chair(-1.6, z, 0, Math.PI / 2); chair(1.6, z, 0, -Math.PI / 2); }
-    chair(0, 4.6, 0, 0);
+    box(2.2, 0.1, 11, wood, 0, 0.75, R + 11);
+    for (const [lx, lz] of [[-0.9, 6], [0.9, 6], [-0.9, 16], [0.9, 16]]) box(0.15, 0.75, 0.15, darkWood, lx, 0, R + lz);
+    for (let z = 6.5; z <= 15.5; z += 1.5) block(0, R + z, 1.1, 0, 1);
+    for (let z = 6.5; z <= 15.5; z += 1.8) { chair(-1.6, R + z, 0, Math.PI / 2); chair(1.6, R + z, 0, -Math.PI / 2); }
+    chair(0, R + 4.6, 0, 0);
     // the throne on its dais
     const TZ = D - 3.6; // at the head of the table, in front of the middle chamber's door, with room to walk round
     box(5, 0.4, 3, stone, 0, 0, TZ);
-    box(1.4, 0.6, 1.2, mat('#c8a040', { metalness: 0.8, roughness: 0.3 }), 0, 0.4, TZ + 0.4);
-    box(1.4, 2.4, 0.25, mat('#c8a040', { metalness: 0.8, roughness: 0.3 }), 0, 0.4, TZ + 0.95);
+    box(1.4, 0.6, 1.2, gold, 0, 0.4, TZ + 0.4);
+    box(1.4, 2.4, 0.25, gold, 0, 0.4, TZ + 0.95);
     for (const sx of [-1.6, 0, 1.6]) block(sx, TZ, 1, 0, 2);
     // pillars and banners
-    for (const z of [4, 10, 16]) for (const sx of [-1, 1]) { cyl(0.6, 0.7, H, stone, sx * (W / 2 - 4), 0, z, 12); block(sx * (W / 2 - 4), z, 0.8, 0, H); }
-    for (const z of [6, 13]) for (const sx of [-1, 1]) box(0.05, 4, 1.6, cloth, sx * (W / 2 - 0.2), 4, z);
-    chandelier(0, H - 2, 7); chandelier(0, H - 2, 15);
-    lamp(-9, 5, 3); lamp(9, 5, 19);
+    for (const z of [4, 10, 16]) for (const sx of [-1, 1]) { cyl(0.6, 0.7, H, stone, sx * (W / 2 - 4), 0, R + z, 12); block(sx * (W / 2 - 4), R + z, 0.8, 0, H); }
+    for (const z of [6, 13]) for (const sx of [-1, 1]) box(0.05, 4, 1.6, cloth, sx * (W / 2 - 0.2), 4, R + z);
+    chandelier(0, H - 2, R + 7); chandelier(0, H - 2, R + 15);
+    lamp(-9, 5, R + 3); lamp(9, 5, R + 19);
     // the chambers behind, each with a table
     CASTLE_ROOMS.forEach((room, i) => {
       const x0 = -W / 2 + i * rw, x1 = x0 + rw, cx = (x0 + x1) / 2, cz = (D + Z2) / 2;
@@ -436,13 +474,21 @@ export function buildInterior(shop) {
     const lx = x - OX, lz = z - OZ;
     let h = 0;
     // on the stairs you stand on the step under you (not a slope through them)
-    if (ramp && lx >= ramp.x0 && lx <= ramp.x1 && lz >= ramp.z0 && lz <= ramp.z1) h = (Math.min(STEPS, Math.floor(((lz - ramp.z0) / (ramp.z1 - ramp.z0)) * STEPS) + 1) / STEPS) * UP;
+    if (ramp && lx >= ramp.x0 && lx <= ramp.x1 && lz >= ramp.z0 && lz <= ramp.z1) { const n = ramp.top ? 16 : STEPS; h = (Math.min(n, Math.floor(((lz - ramp.z0) / (ramp.z1 - ramp.z0)) * n) + 1) / n) * (ramp.top || UP); }
     else if (kind === 'guild' && lz > D) h = UP;
     out.h = h; out.water = -1e6; out.region = 'indoors'; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0;
     return out;
   }
   const tmp = {};
+  // where you stand, knowing how high you are now: on the castle's gallery only if you're up there
+  // (underneath it is the ground floor)
+  const standAt = (x, z, fromY) => {
+    const lz = z - OZ;
+    if (ramp?.gallery && lz > ramp.gallery.z0 - 0.05 && lz < ramp.gallery.z1 && fromY > ramp.top - 0.9) return ramp.top;
+    return sampleAt(x, z, tmp).h;
+  };
   return {
+    standAt,
     kind, group: g, solid, seats, rooms, nooks, spots, counter, exit, start,
     sample: sampleAt,
     floorAt: (x, z) => sampleAt(x, z, tmp).h,
