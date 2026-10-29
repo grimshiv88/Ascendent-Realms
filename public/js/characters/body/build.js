@@ -64,11 +64,12 @@ export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips =
       geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(part.skinIndex, 4));
       geo.setAttribute('skinWeight', new THREE.BufferAttribute(part.skinWeight, 4));
       geo.setAttribute('color', new THREE.BufferAttribute(colourPoints(part, colours, plan), 3));
+      if (part.lines) { geo.setAttribute('lines', new THREE.BufferAttribute(part.lines, 4)); geo.setAttribute('lines2', new THREE.BufferAttribute(part.lines2, 4)); }
       geo.setIndex(new THREE.BufferAttribute(part.indices, 1));
       geo.computeBoundingSphere();
       made.geos[gk] = geo;
     }
-    const mesh = new THREE.SkinnedMesh(geo, name === 'body' ? mat : mat.fine);
+    const mesh = new THREE.SkinnedMesh(geo, name === 'body' ? mat : part.lines ? mat.hand : mat.fine);
     mesh.name = name;
     mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.frustumCulled = false;
@@ -153,6 +154,9 @@ function skinMaterial(hex) {
   const mat = new THREE.MeshStandardMaterial(base);
   mat.fine = new THREE.MeshStandardMaterial({ ...base, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
   for (const m of [mat, mat.fine]) m.onBeforeCompile = wrapLight;
+  mat.hand = new THREE.MeshStandardMaterial({ ...base, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
+  mat.hand.onBeforeCompile = (sh) => { wrapLight(sh); handSkin(sh); };
+  mat.hand.customProgramCacheKey = () => 'hand-skin';
   skinMats.set(hex, mat);
   return mat;
 }
@@ -165,6 +169,52 @@ function wrapLight(shader) {
     'vec3 totalDiffuse = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;',
     'vec3 totalDiffuse = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse * 1.12 + diffuseColor.rgb * vec3(0.11, 0.035, 0.02);',
   );
+}
+
+// The skin of the hands, drawn finely: creases across the fingers at each joint (crisp on the palm's
+// side, loose wrinkles over the knuckles), the three big lines of the palm, and the ridges of the
+// fingertips, fading out when too fine to see. (The lines' places come from sculptor.js handLines.)
+function handSkin(sh) {
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute vec4 lines;\nattribute vec4 lines2;\nvarying vec4 vLines;\nvarying vec4 vLines2;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLines = lines;\nvLines2 = lines2;');
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', `#include <common>
+varying vec4 vLines;
+varying vec4 vLines2;
+// a line of width w (in the units of d) where d is 0, smoothed over a pixel
+float lineAt(float d, float w) { float f = fwidth(d) + 1e-6; return 1.0 - smoothstep(w * 0.5, w * 0.5 + f, abs(d)); }
+// how much a pattern that repeats every p (in the units of d) can still be seen
+float seen(float d, float p) { return 1.0 - smoothstep(p * 0.35, p * 0.8, fwidth(d)); }`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+{
+  float x = vLines.x, palm = vLines.y, lat = vLines.z, pad = vLines.w;
+  float finger = vLines2.x, u = vLines2.y, v = vLines2.z;
+  float onPalm = smoothstep(0.05, 0.45, palm), onBack = smoothstep(0.05, 0.5, -palm);
+  // (only where every corner of the triangle agrees it is on a finger, or on the palm)
+  float onFinger = smoothstep(0.97, 1.0, finger), offFinger = 1.0 - smoothstep(0.0, 0.03, finger);
+  float mark = 0.0;
+  // across each joint: a deep crease and a fainter one beside it on the palm's side
+  mark += onFinger * onPalm * max(lineAt(x, 0.0006), 0.55 * lineAt(abs(x) - 0.0012, 0.0004));
+  // over the knuckles: two or three wrinkles, bowed round the joint and shorter at its sides
+  float bow = abs(x) + 30.0 * lat * lat;
+  float rings = lineAt(fract(bow / 0.0009 + 0.5) - 0.5, 0.3) * seen(bow, 0.0009);
+  mark += onFinger * onBack * 0.5 * rings * (1.0 - smoothstep(0.0018, 0.003, abs(bow))) * (1.0 - smoothstep(0.0045, 0.0065, abs(lat)));
+  // the fingertip's ridges: loops round the middle of the pad
+  float r = length(vec2(pad, lat));
+  float ridges = 0.5 + 0.5 * cos(r * 6.2832 / 0.00046);
+  mark += onFinger * onPalm * 0.3 * smoothstep(0.5, 1.0, ridges) * seen(r, 0.00046) * (1.0 - smoothstep(0.006, 0.0085, r));
+  // the palm: the heart line, the head line and the life line round the thumb's mound
+  float heart = u - (0.8 + 0.07 * smoothstep(1.0, -0.6, v));
+  float head = u - (0.71 - 0.16 * clamp((v + 1.0) / 1.6, 0.0, 1.0));
+  float life = v - (-0.35 - 0.65 * sqrt(max(0.0, 1.0 - pow((0.72 - u) / 0.64, 2.0))));
+  float palmLines = lineAt(heart, 0.012) * smoothstep(-0.7, -0.5, v) * (1.0 - smoothstep(0.85, 1.0, v));
+  palmLines = max(palmLines, lineAt(head, 0.011) * (1.0 - smoothstep(0.45, 0.65, v)) * smoothstep(-1.0, -0.85, v));
+  palmLines = max(palmLines, lineAt(life, 0.025) * smoothstep(0.06, 0.14, u) * (1.0 - smoothstep(0.66, 0.74, u)));
+  mark += offFinger * onPalm * palmLines;
+  mark = clamp(mark, 0.0, 1.0);
+  diffuseColor.rgb *= 1.0 - mark * vec3(0.26, 0.32, 0.32);
+}`);
 }
 
 function paint(skin, lips, nails, hair, furHex) {

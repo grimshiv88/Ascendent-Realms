@@ -144,6 +144,7 @@ export function sculpt(plan, quality = 'high', { hair = 'short', hairSeed = 1, o
     hideCovered(parts.body, pieces, (x, y, z) => fieldDist(bare, x, y, z), pose.neck.t[1] - 0.3);
   }
   for (const part of [...Object.values(parts), ...Object.values(clothes)]) skinPart(part, shapes, plan);
+  for (const L of ['left', 'right']) if (parts[`${L}Hand`]) handLines(parts[`${L}Hand`], pose, L);
   const face = faceSheet(plan, shapes, boneIndex.head);
   const headShapes = shapes.filter((s) => s.bone === 'head' && !s.sub && !s.part); // (hair grows round ears and beards)
   const locks = growHair(hair, headShapes, plan, hairSeed);
@@ -355,5 +356,70 @@ const scale = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const norm3 = (a) => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
 const smooth01 = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+
+// The lines of the skin of a hand, for the skin shader to draw (see build.js): the creases across
+// each finger at its joints, the lines of the palm and the ridges of the fingertips. Two values
+// per point, each four numbers:
+//   lines: [x, palm, lat, pad]: x how far the point is from the nearest joint's crease along its
+//     finger (metres near a crease, signed; 1 off the fingers); palm how much it faces the palm's way (-1 the
+//     back of the hand .. 1 the palm); lat how far it is to the side of the finger's middle line;
+//     pad how far along the fingertip from the middle of its pad (1 off the last segments)
+//   lines2: [finger (1 on a finger or thumb, else 0), u, v, 0]: u how far from the wrist towards the
+//     knuckles (0..1), v across the palm (-1 at the index's side .. 1 at the little finger's)
+// (Each is smooth across the skin, so the shader can draw thin lines by where they cross zero.)
+function handLines(part, pose, L) {
+  const s = L === 'left' ? 1 : -1;
+  const at = (n) => pose[`${L}${n}`].t;
+  const palmN = norm3(apply3(pose[`${L}Hand`].R, [-s, 0, 0]));
+  const segs = [];
+  for (const F of ['Index', 'Middle', 'Ring', 'Little', 'Thumb']) {
+    const names = F === 'Thumb' ? ['ThumbMetacarpal', 'ThumbProximal', 'ThumbDistal'] : ['Proximal', 'Intermediate', 'Distal'].map((g) => F + g);
+    for (let i = 0; i < 3; i++) {
+      const a = at(names[i]);
+      const b = i < 2 ? at(names[i + 1]) : add(a, scale(sub(a, at(names[i - 1])), 0.92));
+      segs.push({ a, b, thumb: F === 'Thumb', first: i === 0, last: i === 2, metacarpal: F === 'Thumb' && i === 0 });
+    }
+  }
+  for (const g of segs) { g.len = dist(g.a, g.b); g.dir = scale(sub(g.b, g.a), 1 / g.len); g.across = norm3(cross3(g.dir, palmN)); }
+  const wrist = at('Hand'), knuck = at('MiddleProximal');
+  const up = sub(knuck, wrist), upLen = Math.hypot(...up), upDir = scale(up, 1 / upLen);
+  const acrossPalm = sub(at('LittleProximal'), at('IndexProximal')), acrossLen = Math.hypot(...acrossPalm) / 2;
+  const acrossDir = scale(acrossPalm, 1 / (acrossLen * 2));
+  const mid = scale(add(at('LittleProximal'), at('IndexProximal')), 0.5);
+  const P = part.positions, N = part.normals, n = P.length / 3;
+  const lines = new Float32Array(n * 4), lines2 = new Float32Array(n * 4);
+  for (let v = 0; v < n; v++) {
+    const p = [P[v * 3], P[v * 3 + 1], P[v * 3 + 2]];
+    const nn = [N[v * 3], N[v * 3 + 1], N[v * 3 + 2]];
+    const palm = dot(nn, palmN);
+    const q = sub(p, wrist);
+    const u = dot(q, upDir) / upLen, w = dot(sub(p, mid), acrossDir) / acrossLen;
+    // the nearest finger bone (if the point is on a finger at all)
+    let best = null, bd = 0.016, bs = 0;
+    for (const g of segs) {
+      const t = dot(sub(p, g.a), g.dir);
+      const tc = Math.min(Math.max(t, g.first ? 0 : -0.004), g.len + (g.last ? 0.012 : 0.004));
+      const dd = dist(p, add(g.a, scale(g.dir, tc)));
+      if (dd < bd && !(g.first && !g.thumb && t < 0)) { bd = dd; best = g; bs = t; }
+    }
+    if (best && !best.metacarpal) {
+      // the creases lie at the joints (the one at a finger's root a little out from the knuckle)
+      const start = best.first && !best.thumb ? best.len * 0.3 : 0;
+      // (a wave along the finger: 0 at each crease and growing like the distance from it near one,
+      // changing sign from one bone to the next, so it runs smoothly along the whole finger)
+      const Lb = best.len - start, k = best.first ? 0 : best.last ? 2 : 1;
+      const x = (k % 2 ? -1 : 1) * (best.last ? (2 * Lb / Math.PI) * Math.sin((Math.PI / 2) * Math.min(1, (bs - start) / Lb)) : (Lb / Math.PI) * Math.sin(Math.PI * (bs - start) / Lb));
+      const lat = dot(sub(p, best.a), best.across);
+      const pad = best.last ? (bs - best.len * 0.62) / 1.35 : 1;
+      lines.set([x, palm, lat, pad], v * 4);
+      lines2.set([1, u, w, 0], v * 4);
+    } else {
+      lines.set([1, palm, 0, 1], v * 4);
+      lines2.set([0, u, w, 0], v * 4);
+    }
+  }
+  part.lines = lines; part.lines2 = lines2;
+}
