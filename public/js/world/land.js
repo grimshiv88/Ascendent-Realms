@@ -304,6 +304,10 @@ export function makeColliderGrid() {
             const ox = pos.x - t.x, oz = pos.z - t.z;
             const d = Math.hypot(ox, oz);
             const min = t.r + radius;
+            // something built on an upper storey only stops you on that storey (you walk under or over it)
+            if (t.y !== undefined && pos.y !== undefined && (pos.y >= t.y + (t.height || 8) - 0.4 || pos.y + 1.7 < t.y)) continue;
+            // low things you can climb onto (a log, a step) don't stop you: you walk up onto them
+            if (t.step && pos.y !== undefined && t.y + t.height <= pos.y + 0.8) continue;
             if (t.r > 0 && d < min && d > 1e-4) {
               pos.x = t.x + (ox / d) * min;
               pos.z = t.z + (oz / d) * min;

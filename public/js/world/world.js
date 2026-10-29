@@ -221,6 +221,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const reach = Math.max(g, fromY) + 0.8;
         for (const t of tops) if (t <= reach && t > g) g = t;
       }
+      // low solid things you can climb onto (logs, steps), and platforms such as a city's bridges
+      for (const e of colliders.near(x, z, 1)) {
+        if (!e.step || Math.hypot(e.x - x, e.z - z) > e.r + 0.1) continue;
+        const top = e.y + e.height;
+        if (top > g && top <= Math.max(g, fromY) + 0.8) g = top;
+      }
+      for (const s of sites) { const top = s.built?.deckAt?.(x, z); if (top !== undefined && top > g && top <= Math.max(g, fromY) + 0.8) g = top; }
     }
     return g;
   }
@@ -594,7 +601,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     creatures.clear();
     depth = { cave, built, back: site.built.mouth, leftExit: false };
     pos.set(built.start.x, built.floorAt(built.start.x, built.start.z), built.start.z);
-    heading = built.start.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0;
+    heading = built.start.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; snapCam = true;
     const lvl = game.character.level;
     const T = built.theme;
     for (const n of built.nests) { n.hp = n.maxHp = Math.round(30 + lvl * 8); }
@@ -635,7 +642,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setUnderground(null);
     depth = null;
     pos.set(back.x, heightAt(back.x, back.z), back.z);
-    heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0;
+    heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; snapCam = true;
     scene.fog.density = 0.00024;
     scene.environment = skyEnv;
     scene.background = null;
@@ -679,7 +686,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const out = Math.atan2(pos.x - shop.x, pos.z - shop.z);
     inside = { built, shop, leftExit: false, back: { x: shop.x, z: shop.z, heading: heading + Math.PI } };
     pos.set(built.start.x, built.floorAt(built.start.x, built.start.z), built.start.z);
-    heading = built.start.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; autoWalk = false;
+    heading = built.start.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; autoWalk = false; snapCam = true;
     void out;
     applyIndoor();
     say(shop.name, 'note');
@@ -695,7 +702,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setUnderground(null);
     inside = null;
     pos.set(back.x, heightAt(back.x, back.z), back.z);
-    heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0;
+    heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; snapCam = true;
     scene.fog.density = 0.00024;
     scene.environment = skyEnv;
     scene.background = null;
@@ -1309,6 +1316,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let speedNow = 0;
   // Pressing back turns you round to face behind you (the camera swings round too); keep holding it
   // and you walk on in the new direction
+  let moatAt = -10; // when you last fell in a moat
+  let snapCam = true; // the camera jumps straight to its place (after a door, a portal, a fall in the moat)
   let backWas = false, aboutFace = false, turnLeft = 0, backYaw = 0, backHeading = 0;
   let lastSave = 0;
   let regenAcc = 0;
@@ -1403,7 +1412,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else { fx = 0; fz = 0; pos.set(sitting.x, sitting.y, sitting.z); heading = sitting.heading; }
     }
     const fp = firstNow();
-    const backNow = !fp && fz < -0.4 && Math.abs(fx) < 0.6; // in first person, back is a step back
+    // Follow camera: back turns you round. Free camera: you turn and walk towards the camera, which
+    // stays where it is. First person: back is a step back.
+    const backNow = cameraMode === 'follow' && !fp && fz < -0.4 && Math.abs(fx) < 0.6;
     if (backNow && !backWas && !look) { aboutFace = true; turnLeft = Math.PI; backYaw = yaw + Math.PI; backHeading = heading + Math.PI; }
     if (fz > -0.1) aboutFace = false;
     backWas = backNow;
@@ -1469,6 +1480,22 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
 
+    // The city moats are deep: those who live in the city are hauled out by the watch, and anyone
+    // who doesn't belong there (a monster in a players' city, a player in a Monster City) drowns
+    if (!inside && !depth && !dead && !airborne && t - moatAt > 1) {
+      const city = sites.find((s) => s.place.city && s.built?.inMoat?.(pos.x, pos.z));
+      if (city) {
+        moatAt = t;
+        const monster = RACES[character.race].side === 'monster';
+        if (monster !== !!city.place.monster) { say('You sink into the moat and drown…', 'hurt'); defeated({ kind: { name: 'the moat' } }); }
+        else {
+          const back = city.built.rescue(pos.x, pos.z);
+          pos.set(back.x, pos.y, back.z); pos.y = groundAt(pos.x, pos.z); speedNow = 0; autoWalk = false;
+          snapCam = true;
+          say('Splash! The city watch hauls you out of the moat.', 'note');
+        }
+      }
+    }
     // Ground, jumping, the shrine platforms, and swimming in deep water
     let ground = groundAt(pos.x, pos.z);
     const water = sample(pos.x, pos.z, tmpS).water;
@@ -1628,12 +1655,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const focus = new THREE.Vector3(pos.x, pos.y + bodyH * 0.8, pos.z);
     const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     let want = dist;
-    for (let d = 1; d < dist; d += 0.75) {
+    // (indoors the walls keep the camera in instead: pulling it in for every chair and table made it shake)
+    for (let d = 1; d < (inside ? 0 : dist); d += 0.75) {
       const px = focus.x + dir.x * d, py = focus.y + dir.y * d, pz = focus.z + dir.z * d;
       const hit = (depth && depth.built.shape(px, pz).d > -0.4) || colliders.near(px, pz, 0.6).some((e) => e.r > 0 && py - (e.y ?? groundAt(e.x, e.z)) < (e.height || 8) && Math.hypot(px - e.x, pz - e.z) < Math.min(e.r * (e.kind === 'wall' ? 1.2 : 4), 3.5));
       if (hit) { want = Math.max(1.2, d - 0.6); break; }
     }
     camDist += (want - camDist) * Math.min(1, dt * (want < camDist ? 14 : 3));
+    if (snapCam) camDist = want;
     const cam = focus.clone().addScaledVector(dir, camDist);
     cam.y = Math.max(cam.y, heightAt(cam.x, cam.z) + 0.5, water + 0.3);
     if (depth) cam.y = Math.min(cam.y, depth.built.roofAt(cam.x, cam.z) - 0.5);
@@ -1654,9 +1683,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       camera.lookAt(eye.x - dir.x, eye.y - dir.y, eye.z - dir.z);
       camDist = 0;
     } else {
-      camera.position.lerp(cam, Math.min(1, dt * 10));
+      // after going through a door (or a portal), the camera jumps with you instead of flying across
+      if (snapCam) camera.position.copy(cam); else camera.position.lerp(cam, Math.min(1, dt * 10));
       camera.lookAt(focus);
     }
+    snapCam = false;
 
     if (t - lastTime > 0.5) { lastTime = t; applyTime(); }
     lantern.position.set(pos.x, pos.y + bodyH + 1, pos.z);
@@ -1765,6 +1796,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     pos.y = groundAt(pos.x, pos.z);
     velY = 0;
     atPortal = nearestPortal(pos.x, pos.z, 6);
+    snapCam = true;
     saveNow();
     return true;
   }
@@ -1813,6 +1845,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setRooms(map) { allowedRooms = { ...map }; },
     setCastleAccess(a) { castleAccess = { ...a }; },
     leaveBuilding: () => leaveBuilding(),
+    // for testing: go into a city building by its id
+    debugEnter(id) { for (const c of builtCities()) { const sh = c.built.shops.find((q) => q.id === id); if (sh) { pos.set(sh.x, pos.y, sh.z); enterBuilding(sh); return true; } } return false; },
     refreshHelper,
     sleep: toggleSleep,
     placeTorch,

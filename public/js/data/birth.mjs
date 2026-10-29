@@ -24,7 +24,10 @@ export const KIDS_PER_HOUSE = 4;
 // ---------- the houses of a city (the same list in the game and on the server) ----------
 // Rows of houses on rings between the plaza and the inner wall, their doors facing the middle,
 // leaving the streets (north, south, east, west) clear. Positions are from the city's middle.
-const CASTLE = { x: 52, z: -52 };
+// the Emperors' Castle in the Central City: in the east, at the end of the east street, away from
+// the two gates (north and south) so it isn't the first thing in the face of those who come in
+export const CASTLE_SPOT = { x: 74, z: 0 };
+const CASTLE = CASTLE_SPOT;
 export function cityHouses(placeId) {
   const out = [];
   const place = PLACES.find((p) => p.id === placeId);

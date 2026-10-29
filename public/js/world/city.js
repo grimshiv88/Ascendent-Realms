@@ -8,7 +8,7 @@ import { buildSpawn, textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill } from './merge.js';
-import { cityHouses, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
+import { cityHouses, CASTLE_SPOT, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
 
 const PLAZA_R = 34;
 
@@ -16,18 +16,18 @@ const PLAZA_R = 34;
 const CITY_SHOPS = [
   ['guild', -Math.PI / 2, 18, 12, 9, '#cdbf9e', '#5a2a24'],
   ['city_potions', -Math.PI / 2 + 0.95, 8, 7, 5, '#d8cdb0', '#3a6a3a'],
-  ['city_smith', -Math.PI / 2 + 1.8, 9, 8, 5, '#9a8e7e', '#3a3632'],
-  ['city_armoury', -Math.PI / 2 + 2.65, 9, 8, 5.5, '#b0a690', '#4a4a5a'],
-  ['city_tailor', Math.PI / 2 + 0.6, 8, 7, 5, '#e0d4c0', '#7a3a5a'],
-  ['city_food', Math.PI / 2 - 0.4, 10, 8, 5, '#e2d2a8', '#8a5a2a'],
+  ['city_smith', 0.2, 9, 8, 5, '#9a8e7e', '#3a3632'],
+  ['city_armoury', 0.95, 9, 8, 5.5, '#b0a690', '#4a4a5a'],
+  ['city_tailor', -2.3, 8, 7, 5, '#e0d4c0', '#7a3a5a'],
+  ['city_food', 2.1, 10, 8, 5, '#e2d2a8', '#8a5a2a'],
   ['tavern', -Math.PI / 2 - 1.4, 12, 9, 7, '#c8b48e', '#6a3a1e'],
   // where children train at the school of their choice before the Ceremony
-  ['academy', 2.6, 12, 9, 7, '#e4dcc8', '#2a4a7a'],
+  ['academy', 2.75, 12, 9, 7, '#e4dcc8', '#2a4a7a'],
 ];
 // The walls: the outer fortress wall, the moat inside it, then the inner wall. Only two gates (north
 // and south), each with a bridge over the moat that can be raised to shut the inner gate.
 export const INNER_R = 96;
-export const MOAT = [99.5, 107];
+export const MOAT = [INNER_R + 0.8, CITY_R - 1]; // right up to both walls: no strip of land to stand on
 export const GATE_ANGLES = [0, Math.PI]; // the gates, along the south-north street (angle as sin = x, cos = z)
 const GATE_HALF = 5; // metres either side of a gate's middle
 export const GUILD_NAME = 'Main Guild Hall';
@@ -68,13 +68,15 @@ function house(w, d, h, wall, roof, label) {
   const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
   body.position.y = h / 2;
   g.add(body);
-  // a pitched roof along the width
-  const roofGeo = new THREE.CylinderGeometry(0.01, d * 0.72, w + 0.6, 4, 1);
-  roofGeo.rotateZ(Math.PI / 2);
-  roofGeo.rotateX(Math.PI / 4);
-  const r = new THREE.Mesh(roofGeo, roofMat);
-  r.scale.set(1, 0.55, 1);
-  r.position.y = h + d * 0.2;
+  // a closed pitched roof along the width: a ridge on top, sloping down over the front and back,
+  // with the gable ends filled in in the wall's colour
+  const rise = d * 0.42, eave = 0.35;
+  const tri = new THREE.Shape([new THREE.Vector2(-d / 2 - eave, 0), new THREE.Vector2(d / 2 + eave, 0), new THREE.Vector2(0, rise)]);
+  const roofGeo = new THREE.ExtrudeGeometry(tri, { depth: w + 0.6, bevelEnabled: false });
+  roofGeo.translate(0, 0, -(w + 0.6) / 2);
+  roofGeo.rotateY(Math.PI / 2);
+  const r = new THREE.Mesh(roofGeo, [wallMat, roofMat]); // ends in the wall's colour, slopes in the roof's
+  r.position.y = h - 0.05;
   g.add(r);
   // door and windows on the front (+z)
   const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.12), trim);
@@ -121,7 +123,7 @@ export function buildCity(place, opts = {}) {
   const centre = buildSpawn(place, { market: false, lanterns: false });
   const g = centre.group;
   const cx = place.x, cz = place.z;
-  const solid = [];
+  const solid = [...centre.solid];
   const shops = [];
 
   // the paved plaza
@@ -159,9 +161,9 @@ export function buildCity(place, opts = {}) {
   tower.castShadow = true;
   g.add(tower);
 
-  // the Emperors' Castle in the north-east of the city: a great keep with four towers
+  // the Emperors' Castle in the east of the city: a great keep with four towers
   // (only the Central City has it)
-  const CASTLE = monster ? { x: 1e6, z: 1e6 } : { x: 52, z: -52, w: 30, d: 24 };
+  const CASTLE = monster ? { x: 1e6, z: 1e6 } : { ...CASTLE_SPOT, w: 30, d: 24 };
   if (!monster) {
     const stoneMat = new THREE.MeshStandardMaterial({ color: '#9a9284', roughness: 0.95 });
     const roofMat = new THREE.MeshStandardMaterial({ color: '#3a3e5a', roughness: 0.8 });
@@ -294,8 +296,19 @@ export function buildCity(place, opts = {}) {
   };
   // raise or lower the bridges over the moat (raised, they shut the inner gates)
   const setRaised = (up, colliders) => { for (const b of bridges) b.raise(up, colliders); };
+  // walking on a lowered bridge: its deck, to stand on
+  const deckAt = (x, z) => { for (const b of bridges) { const y = b.deckAt(x, z); if (y !== undefined) return y; } return undefined; };
+  // in the moat's water (and not on a bridge)
+  const inMoat = (x, z) => { const d = Math.hypot(x - cx, z - cz); return d > MOAT[0] && d < MOAT[1] && deckAt(x, z) === undefined; };
 
-  return { group: g, update, shops, solid, gates, npcs, setRaised, centre: { x: cx, z: cz } };
+  // pulled out of the moat: onto the middle of the nearest bridge, the same way along it
+  const rescue = (x, z) => {
+    const dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz);
+    const ga = GATE_ANGLES.reduce((b, a) => (Math.sin(a) * dx + Math.cos(a) * dz > Math.sin(b) * dx + Math.cos(b) * dz ? a : b));
+    return { x: cx + Math.sin(ga) * d, z: cz + Math.cos(ga) * d };
+  };
+
+  return { group: g, update, shops, solid, gates, npcs, setRaised, deckAt, inMoat, rescue, centre: { x: cx, z: cz } };
 }
 
 // The outer fortress wall at CITY_R with two great gates, the moat inside it, and the inner wall at
@@ -354,14 +367,8 @@ function walls(g, live, S, wallMat, cx, cz, solid) {
     kerb.position.y = 0.12;
     g.add(kerb);
   }
-  // you can't wade the moat: solid all round except under the bridges
-  const mid = (m0 + m1) / 2, half = (m1 - m0) / 2;
-  const n = Math.round((2 * Math.PI * mid) / (half * 1.2));
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    if (GATE_ANGLES.some((ga) => angleOff(a, ga) < (GATE_HALF - 1) / mid)) continue;
-    solid.push({ x: cx + Math.sin(a) * mid, z: cz + Math.cos(a) * mid, r: half, kind: 'wall', height: 0.5 });
-  }
+  // the moat is deep: anyone who falls in is pulled out by the watch, or drowns if they don't
+  // belong in the city (see inMoat and world.js)
 
   // the bridges: hinged at the inner gate; raised, they stand up and shut it
   const wood = new THREE.MeshStandardMaterial({ color: '#6a4a2a', roughness: 0.9 });
@@ -381,7 +388,15 @@ function walls(g, live, S, wallMat, cx, cz, solid) {
     const block = [];
     for (let s2 = -GATE_HALF + 1; s2 <= GATE_HALF - 1; s2 += 1.6) block.push({ x: cx + Math.sin(ga) * (INNER_R + 1) + Math.cos(ga) * s2, z: cz + Math.cos(ga) * (INNER_R + 1) - Math.sin(ga) * s2, r: 1, kind: 'wall', height: 8 });
     let up = false, tilt = 0;
+    const baseY = heightAt(cx, cz);
     return {
+      // the top of the deck under (x, z), if it is lowered and you are on it
+      deckAt(x, z) {
+        if (up) return undefined;
+        const dx = x - cx, dz = z - cz;
+        const along = dx * Math.sin(ga) + dz * Math.cos(ga), lat = dx * Math.cos(ga) - dz * Math.sin(ga);
+        return along > INNER_R - 0.5 && along < INNER_R + 0.6 + len + 0.5 && Math.abs(lat) < GATE_HALF - 0.4 ? baseY + 0.2 + 0.175 : undefined;
+      },
       // `colliders` is the world's store: the gap is made solid while the bridge is up
       raise(v, colliders) {
         if (!!v === up) return;
@@ -481,7 +496,7 @@ export function buildVillage(place) {
   const centre = buildSpawn(place);
   const g = centre.group;
   const cx = place.x, cz = place.z, baseY = heightAt(cx, cz);
-  const solid = [];
+  const solid = [...centre.solid];
   const shops = centre.market ? [{ ...centre.market, name: MARKETS[centre.market.id].name }] : [];
   const spots = [[-0.6, 30, 'tavern'], [0.9, 32], [1.9, 28], [2.8, 34], [3.9, 30], [5.0, 33]];
   for (const [a, r, id] of spots) {

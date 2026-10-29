@@ -193,17 +193,18 @@ export function buildPieces(pieces, flatOf, { look = null, now = Date.now(), sto
   return g;
 }
 
-// Solid spots for walking into: ground-floor walls and pillars, as small circles along each edge
+// Solid spots for walking into: walls and pillars on every storey (each only stops you on its own
+// storey), as small circles along each edge, and the things that stand on floors
 export function pieceColliders(pieces, flatOf) {
   const out = [];
   for (const p of pieces) {
-    if (p.l !== 0) continue;
-    const y = storeyY(flatOf(p), 0);
+    const y = storeyY(flatOf(p), p.l || 0);
     if (PIECES[p.t].on === 'edge') {
       const spots = p.t === 'door' ? [0.6, CELL - 0.6] : p.t === 'gate' ? [0.25, CELL - 0.25] : [0.6, CELL / 2, CELL - 0.6];
       for (const s of spots) out.push({ x: p.e === 'n' ? p.x * CELL + s : p.x * CELL, z: p.e === 'n' ? p.z * CELL : p.z * CELL + s, r: 0.75, kind: 'wall', built: true, height: STOREY, y });
     } else if (p.t === 'pillar') out.push({ x: p.x * CELL, z: p.z * CELL, r: 0.4, kind: 'wall', built: true, height: STOREY, y });
     else if (p.t === 'wall_tower') out.push({ x: p.x * CELL, z: p.z * CELL, r: 1.2, kind: 'wall', built: true, height: STOREY, y });
+    else if (p.t === 'anvil' || p.t === 'stand' || p.t === 'spawn') out.push({ x: (p.x + 0.5) * CELL, z: (p.z + 0.5) * CELL, r: p.t === 'stand' ? 0.6 : 0.9, kind: 'wall', built: true, height: 1.2, y });
   }
   return out;
 }

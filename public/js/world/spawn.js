@@ -9,6 +9,9 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
   const cx = place.x, cz = place.z;
   const baseY = heightAt(cx, cz);
   g.position.set(cx, baseY, cz);
+  // solid things you bump into (low ones, like the logs, you can climb onto)
+  const solid = [];
+  const put = (x, z, r, height, step = false) => solid.push({ x: cx + x, z: cz + z, r, kind: 'wall', height, y: heightAt(cx + x, cz + z), step });
   const stone = new THREE.MeshStandardMaterial({ color: '#8a857a', roughness: 0.9 });
   const darkStone = new THREE.MeshStandardMaterial({ color: '#6a665e', roughness: 0.95 });
   const gold = new THREE.MeshStandardMaterial({ color: '#f5c84c', emissive: '#f5a81c', emissiveIntensity: 1.6, roughness: 0.3 });
@@ -45,6 +48,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
     s.position.set(Math.cos(a) * 9.5, heightAt(cx + Math.cos(a) * 9.5, cz + Math.sin(a) * 9.5) - baseY + h / 2 - 0.1, Math.sin(a) * 9.5);
     s.rotation.y = -a;
     s.rotation.z = (i % 2 ? 1 : -1) * 0.04;
+    put(Math.cos(a) * 9.5, Math.sin(a) * 9.5, 0.55, h);
     s.castShadow = true;
     s.receiveShadow = true;
     g.add(s);
@@ -99,10 +103,12 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
     const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 2, 10), logMat);
     seat.rotation.set(0, ry, Math.PI / 2);
     seat.position.set(x, 0.28, z);
+    for (const k of [-0.75, 0, 0.75]) put(9.5 + x + Math.cos(ry) * k, -11 + z - Math.sin(ry) * k, 0.32, 0.58, true);
     seat.castShadow = true;
     fire.add(seat);
   }
   g.add(fire);
+  put(9.5, -11, 0.55, 0.5); // the fire
 
   // Signpost pointing north along the path
   const post = new THREE.Group();
@@ -123,6 +129,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
   post.add(signBack);
   post.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   g.add(post);
+  put(-4.5, -16, 0.15, 2.4);
 
   // The safe zone's edge: a ring of lantern posts. Monsters never cross it.
   const lanternMat = new THREE.MeshStandardMaterial({ color: '#ffe2a0', emissive: '#ffb84a', emissiveIntensity: 1.4 });
@@ -135,6 +142,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 0.22), lanternMat);
     lamp.position.y = 1.9;
     lp.add(pole, lamp);
+    put(x, z, 0.12, 2);
     g.add(lp);
   }
 
@@ -148,6 +156,8 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
     stall.rotation.y = -Math.PI / 2 + Math.atan2(mx, mz) + Math.PI; // facing the shrine
     const table = new THREE.Mesh(new THREE.BoxGeometry(3, 0.9, 1.2), wood);
     table.position.y = 0.45;
+    const ra = stall.rotation.y;
+    for (const k of [-1, 0, 1]) put(mx + Math.cos(ra) * k, mz - Math.sin(ra) * k, 0.65, 0.9);
     const cloth = new THREE.MeshStandardMaterial({ color: '#a8322a', roughness: 0.9, side: THREE.DoubleSide });
     const roof = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.08, 1.8), cloth);
     roof.position.set(0, 2.5, -0.1);
@@ -176,6 +186,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
   return {
     group: g,
     market: marketAt,
+    solid,
     update(t) {
       crystal.rotation.y = t * 0.6;
       crystal.position.y = 2.6 + Math.sin(t * 1.3) * 0.15;
