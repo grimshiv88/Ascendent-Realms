@@ -3,12 +3,13 @@
 // hips and legs for trousers) and cut off at its hems. So clothes fit every race and build, and bend
 // with the body (they are skinned to the same bones). Skin a garment covers is not drawn.
 // Plain numbers and arrays only (no three.js).
-import { cone, ell } from './sdf.js';
+import { cone, ell, rotXYZ } from './sdf.js';
 
 // The pieces of an outfit. Each: thick (metres), region (shapes; the piece is inside any of them),
 // cuts (bone, point, normal: the piece keeps the side the normal points away from), extra (shapes
 // added to the piece, like a boot's sole), hole (shapes cut out, like the neck of a shirt).
-// `o` picks the cut: { sleeves: 'long'|'short'|'none', legs: 'long'|'short', boots: true }
+// `o` picks the cut: { sleeves: 'long'|'short'|'none', legs: 'long'|'short', boots: true }; shirt: false
+// or trousers: false leaves that piece off; loincloth: { length, colour } a ragged cloth round the hips
 export function outfitPlan(plan, o = {}) {
   const pos = Object.fromEntries(plan.bones.map((b) => [b.name, b.pos]));
   // how big round the body is (the regions must hold a broad dwarf as well as a slim elf)
@@ -20,7 +21,7 @@ export function outfitPlan(plan, o = {}) {
   const legs = o.legs || 'long';
 
   // shirt (or tunic)
-  {
+  if (o.shirt !== false) {
     const region = [cone([0, hipY - 0.4, 0], [0, torsoTop - 0.06, 0], 0.27 * wide, 0.25 * wide, { bone: 'spine' })];
     const cuts = [
       { bone: 'hips', p: [0, hipY - (o.tunic ? 0.16 : 0.07), 0], n: [0, -1, 0] }, // the hem
@@ -53,11 +54,11 @@ export function outfitPlan(plan, o = {}) {
     // the neck of the shirt
     // (an ellipsoid reaching through front to back, so its edge meets the skin square on)
     const hole = [ell([0, neckY - 0.012, 0.09], [0.06, 0.062, 0.13], { bone: 'neck' }), ell([0, neckY + 0.015, -0.03], [0.064, 0.05, 0.16], { bone: 'neck' }), cone([0, neckY + 0.03, -0.01], [0, neckY + 0.3, -0.02], 0.06, 0.06, { bone: 'neck' }), ...armholes];
-    pieces.push({ name: 'shirt', thick: o.tunic ? 0.012 : 0.006, region, cuts, hole, skirt: o.tunic ? [hipY + 0.06, hipY - 0.17, 0.035] : null, tubes: sleeves === 'none' ? [] : ['left', 'right'].flatMap((L) => [[`${L}UpperArm`, `${L}LowerArm`, 0.004], ...(sleeves === 'long' ? [[`${L}LowerArm`, `${L}Hand`, 0.01]] : [])]), colour: o.shirt || '#d8d0c0', cloth: 'linen' });
+    pieces.push({ name: 'shirt', thick: o.tunic ? 0.012 : 0.006, region, cuts, hole, skirt: o.tunic ? [hipY + 0.06, hipY - 0.17, 0.035] : null, tubes: sleeves === 'none' ? [] : ['left', 'right'].flatMap((L) => [[`${L}UpperArm`, `${L}LowerArm`, 0.004], ...(sleeves === 'long' ? [[`${L}LowerArm`, `${L}Hand`, 0.01]] : [])]), colour: o.shirt || '#d8d0c0', cloth: o.shirtCloth || 'linen' });
   }
 
   // trousers
-  {
+  if (o.trousers !== false) {
     const region = [cone([0, hipY - 0.16, 0], [0, hipY + 0.12, 0], 0.23 * wide, 0.23 * wide, { bone: 'hips' })];
     const cuts = [{ bone: 'hips', p: [0, hipY + 0.085, 0], n: [0, 1, 0] }];
     for (const L of ['left', 'right']) {
@@ -73,6 +74,22 @@ export function outfitPlan(plan, o = {}) {
       }
     }
     pieces.push({ name: 'trousers', thick: 0.008, region, cuts, tubes: ['left', 'right'].flatMap((L) => [[`${L}UpperLeg`, `${L}LowerLeg`, 0.004], ...(legs === 'long' ? [[`${L}LowerLeg`, `${L}Foot`, 0.007]] : [])]), colour: o.trousers || '#4a3a2c', cloth: 'wool' });
+  }
+
+  // a loincloth: rough cloth wrapped round the hips, hanging as a short skirt torn at the hem
+  if (o.loincloth) {
+    const len = (o.loincloth.length || 0.28) * Math.max(0.6, P.legs), hem = hipY - len;
+    const region = [cone([0, hipY + 0.12, 0], [0, hem - 0.12, 0], 0.32 * wide, 0.32 * wide, { bone: 'hips' })];
+    const cuts = [{ bone: 'hips', p: [0, hipY + 0.06, 0], n: [0, 1, 0] }, { bone: 'hips', p: [0, hem, 0], n: [0, -1, 0] }];
+    // the tears: narrow pointed gaps up from the hem, all round
+    const hole = [];
+    let rs = 7;
+    const rnd = () => { rs = (rs * 16807) % 2147483647; return rs / 2147483647; };
+    for (let i = 0; i < 22; i++) {
+      const a = (i / 22) * Math.PI * 2 + rnd() * 0.2, h = (0.025 + 0.06 * rnd()) * Math.min(1.3, len / 0.28);
+      hole.push(ell([Math.sin(a) * 0.2 * wide, hem, Math.cos(a) * 0.2 * wide], [0.006 + 0.008 * rnd(), h, 0.26 * wide], { bone: 'hips', m: rotXYZ(0, a, 0) }));
+    }
+    pieces.push({ name: 'loincloth', thick: 0.008, region, cuts, hole, skirt: [hipY + 0.03, hem - 0.01, 0.03 + 0.06 * len], tubes: [], colour: o.loincloth.colour || '#6a5a44', cloth: 'linen' });
   }
 
   // boots, with a sole and a heel

@@ -126,7 +126,9 @@ export function sculpt(plan, quality = 'high', { hair = 'short', hairSeed = 1, o
       // a skirt (a tunic's lower part): one cone hanging round both legs, flaring out a little
       if (pc.skirt) {
         const [y0, y1, flare] = pc.skirt;
-        const whole = (x, y, z) => fieldDist(near, x, y, z);
+        // (round the body and legs, not the arms hanging beside it)
+        const trunk = near.filter((s) => !/Arm|Hand|Thumb|Index|Middle|Ring|Little/.test(s.bone));
+        const whole = (x, y, z) => fieldDist(trunk, x, y, z);
         const a = [0, y0, -0.01], b = [0, y1, -0.01];
         pc.tubes.push(cone(a, b, outline(whole, a) + 0.006, outline(whole, b) + 0.006 + flare, { blend: 0.04 }));
       }
@@ -146,7 +148,7 @@ export function sculpt(plan, quality = 'high', { hair = 'short', hairSeed = 1, o
   for (const part of [...Object.values(parts), ...Object.values(clothes)]) skinPart(part, shapes, plan);
   for (const L of ['left', 'right']) if (parts[`${L}Hand`]) handLines(parts[`${L}Hand`], pose, L);
   const face = faceSheet(plan, shapes, boneIndex.head);
-  const headShapes = shapes.filter((s) => s.bone === 'head' && !s.sub && !s.part); // (hair grows round ears and beards)
+  const headShapes = shapes.filter((s) => s.bone === 'head' && !s.sub && !s.part && !s.ear); // (hair grows round beards, and ears stand out through it)
   const locks = growHair(hair, headShapes, plan, hairSeed);
   if (locks) {
     const n = locks.positions.length / 3;
@@ -310,7 +312,7 @@ function skinPart(part, allShapes, plan) {
   const hasParts = shapes.some((s) => s.part);
   const n = part.positions.length / 3;
   const skinIndex = new Uint16Array(n * 4), skinWeight = new Float32Array(n * 4), tint = new Uint8Array(n);
-  const PARTS = { lips: 1, nail: 2, claw: 3, fur: 4, tusk: 5 };
+  const PARTS = { lips: 1, nail: 2, claw: 3, fur: 4, tusk: 5, horn: 6 };
   const d = new Float64Array(shapes.length);
   const acc = new Map();
   for (let v = 0; v < n; v++) {

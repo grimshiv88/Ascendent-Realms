@@ -92,6 +92,11 @@ export function growHair(styleName, shapes, plan, seed = 1) {
         if (hugging) p = add(p, scale(g, lift * (1 - 0.35 * t) - d));
         else {
           if (d < lift * 0.6) p = add(p, scale(g, lift * 0.6 - d));
+          // a falling lock never crosses the face: it is kept out to the side of it
+          if (p[2] > o[2] + 0.01 * hd && p[1] > o[1] - 0.06 * hd) {
+            const side = 0.078 * hd + lift, ax = Math.abs(p[0]);
+            if (ax < side) p = [Math.sign(p[0] || 1) * side, p[1], p[2]];
+          }
           // and lie over the neck and shoulders instead of through them
           const db = body(p);
           if (db < lift) {

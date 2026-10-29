@@ -20,7 +20,7 @@ export function sculptedBody(opts = {}, quality = 'high', hair = 'short', outfit
 
 // A new body: { root, bones: {name: Bone}, skeleton, meshes, plan }.
 // skin: the skin colour. Bones start in the rest pose (arms hanging, fingers straight).
-export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips = null, nails = null, face = {}, hair = 'short', hairColor = '#3a2a22', outfit = null } = {}) {
+export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips = null, nails = null, face = {}, hair = 'short', hairColor = '#3a2a22', horn = '#1c1a1e', outfit = null } = {}) {
   const made = sculptedBody(opts, quality, hair, outfit);
   const { plan, data } = made;
   const k = opts.height ? opts.height / plan.top : 1;
@@ -53,9 +53,9 @@ export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips =
   const skeleton = new THREE.Skeleton(list);
   const mat = skinMaterial(skin);
   const meshes = {};
-  const colours = paint(skin, lips, nails, data.hair ? hairColor : null, hairColor);
+  const colours = paint(skin, lips, nails, data.hair ? hairColor : null, hairColor, horn);
   for (const [name, part] of Object.entries(data.parts)) {
-    const gk = name + skin + hairColor;
+    const gk = name + skin + hairColor + horn;
     let geo = made.geos[gk];
     if (!geo) {
       geo = new THREE.BufferGeometry();
@@ -217,7 +217,7 @@ float seen(float d, float p) { return 1.0 - smoothstep(p * 0.35, p * 0.8, fwidth
 }`);
 }
 
-function paint(skin, lips, nails, hair, furHex) {
+function paint(skin, lips, nails, hair, furHex, hornHex) {
   const s = new THREE.Color(skin);
   const hsl = {}; s.getHSL(hsl);
   return {
@@ -227,6 +227,7 @@ function paint(skin, lips, nails, hair, furHex) {
     claw: new THREE.Color('#2a2420'),
     fur: new THREE.Color(furHex || '#5a4030'),
     tusk: new THREE.Color('#e8dfc8'),
+    horn: new THREE.Color(hornHex || '#1c1a1e'),
     warm: s.clone().lerp(new THREE.Color('#e07868'), 0.22),
     pale: s.clone().lerp(new THREE.Color('#fff4ec'), 0.18),
     hair: hair ? new THREE.Color(hair).multiplyScalar(0.7) : null,
@@ -253,6 +254,11 @@ function colourPoints(part, C, plan) {
       const streak = 0.5 + 0.5 * Math.sin(a * 90 + Math.sin(y * 40) * 2) * Math.sin(a * 37 + 1.3);
       c.copy(C.fur).multiplyScalar(0.72 + 0.4 * streak);
     } else if (t === 5) c.copy(C.tusk);
+    else if (t === 6) {
+      // horn: darker at the root, a little lighter and warmer towards the tip, with fine rings
+      const up = Math.min(1, Math.max(0, (y - head[1] - 0.15 * hd) / (0.09 * hd)));
+      c.copy(C.horn).multiplyScalar(0.8 + 0.5 * up * up).multiplyScalar(0.92 + 0.08 * Math.sin(y * 900));
+    }
     else {
       // cheeks
       for (const s of [-1, 1]) {
@@ -355,7 +361,8 @@ function hairMaterial() {
 }
 function hairGeometry(H, hex, plan) {
   const base = new THREE.Color(hex);
-  const dark = base.clone().multiplyScalar(0.55), light = base.clone().lerp(new THREE.Color('#ffffff'), 0.12), shine = base.clone().lerp(new THREE.Color('#fff6e8'), 0.42);
+  // (lighter by lightness, not towards white, so a red stays red and does not turn pink)
+  const dark = base.clone().multiplyScalar(0.55), light = base.clone().offsetHSL(0, 0, 0.03), shine = base.clone().offsetHSL(0, 0.05, 0.14);
   const n = H.positions.length / 3;
   const col = new Float32Array(n * 3);
   const ringY = plan.headO[1] + 0.135 * plan.hd;

@@ -30,6 +30,12 @@ export const BASE = {
   tail: null,       // 'wolf', 'cat', 'fox'
   beard: 0,         // 0 none .. 1 a full, long beard (dwarves)
   tusks: 0,         // small tusks from the lower jaw (giants), 0 .. 1
+  horns: 0,         // 0 none, 1 one horn in the middle of the forehead, 2 a pair (oni)
+  hornLen: 1,
+  moustache: 0,     // a thick moustache drooping past the mouth, 0 .. 1 (with a beard)
+  braid: 0,         // a braid hanging from the beard's point, 0 .. 1 (its length)
+  ridges: 0,        // a hard, lined face: furrows across the forehead and deep folds by the nose, 0 .. 1
+  crown: 0,         // a ring of bone spikes round the head (a goblin emperor), 0 .. 1
 };
 
 // Fingers: [name, side offset across the palm (front is +), knuckle drop, segment lengths, radius]
@@ -118,7 +124,7 @@ export function humanoidPlan(opts = {}) {
     if (def > 0.05) {
       // (a broad, low mound; its lower edge is drawn by a groove, as a sculptor would cut it)
       put('upperChest', ell([s * 0.064 * sw, T(0.405), surf(s * 0.064 * sw, 0.4) - 0.03 + 0.004 + 0.008 * def], [0.085 * sw, 0.062, 0.03], { m: rotXYZ(0.2, s * 0.42, s * 0.1), blend: 0.04 }));
-      groove('upperChest', [[s * 0.008, 0.355], [s * 0.05 * sw, 0.343], [s * 0.095 * sw, 0.36], [s * 0.132 * sw, 0.405]], 0.013, 0.0018 + 0.0028 * def);
+      groove('upperChest', [[s * 0.008, 0.355], [s * 0.05 * sw, 0.343], [s * 0.095 * sw, 0.36], [s * 0.132 * sw, 0.405]], 0.013, 0.0018 + 0.0028 * def, { detail: true });
       // the side of the chest under the arm, and the wide back muscles giving the V to the trunk
       put('chest', ell([s * 0.118 * ch, T(0.36), -0.032], [0.03 * b, 0.1, 0.058 * b], { m: rotXYZ(0, 0, s * 0.25), blend: 0.05 }));
       // obliques over the hips
@@ -133,7 +139,7 @@ export function humanoidPlan(opts = {}) {
     // the back of the neck and shoulders, a diamond down the upper back
     put('upperChest', ell([0, T(0.45), -0.068 * b], [0.085 * sw, 0.085, 0.022 + 0.008 * def], { blend: 0.04 }));
     // the groove down the middle of the chest, and of the back along the spine
-    groove('upperChest', [[0, 0.34], [0, 0.46]], 0.011, 0.0015 + 0.002 * def);
+    groove('upperChest', [[0, 0.34], [0, 0.46]], 0.011, 0.0015 + 0.002 * def, { detail: true });
     // the long muscles either side of the spine, and the groove between them
     for (const s of [-1, 1]) put('spine', ell([s * 0.026, T(0.14), -0.074 * b], [0.022, 0.13, 0.018], { blend: 0.035 }));
     const back = ([x, k]) => { const z0 = -0.09 * b; return [x, T(k), -skinAt(x, T(k), -z0, -1) - 0.011 + 0.0016 + 0.0024 * def]; };
@@ -197,13 +203,20 @@ export function humanoidPlan(opts = {}) {
   for (const s of [-1, 1]) {
     const es = P.earSize;
     if (P.ears === 'round') {
-      put('head', ell(H(s * 0.076, 0.056, -0.004), [0.008, 0.024 * es, 0.015 * es], { m: rotXYZ(0, s * -0.35, 0), blend: 0.006 }));
+      put('head', ell(H(s * 0.076, 0.056, -0.004), [0.008, 0.024 * es, 0.015 * es], { m: rotXYZ(0, s * -0.35, 0), blend: 0.006, ear: true }));
+    } else if (P.ears === 'goblin') {
+      // long and broad, standing out sideways and a little back, to a point
+      const root = H(s * 0.072, 0.06, -0.012), tip = H(s * (0.075 + 0.1 * es), 0.085 + 0.012 * es, -0.045);
+      const dir = norm([tip[0] - root[0], tip[1] - root[1], tip[2] - root[2]]);
+      const len = Math.hypot(tip[0] - root[0], tip[1] - root[1], tip[2] - root[2]);
+      put('head', ell(mix(root, tip, 0.42), [0.0065, len * 0.56, 0.026 * es], { m: alongDir(dir, s * 0.6), blend: 0.008, ear: true }));
+      put('head', ell(mix(root, tip, 0.4).map((v, i) => v + [0, 0, 0.007][i]), [0.004, len * 0.4, 0.016 * es], { m: alongDir(dir, s * 0.6), sub: true, blend: 0.006, ear: true })); // hollow in front
     } else if (P.ears === 'elf') {
       const root = H(s * 0.074, 0.055, -0.01), tip = H(s * 0.16 * es, 0.1 * es, -0.05);
       const dir = norm([tip[0] - root[0], tip[1] - root[1], tip[2] - root[2]]);
       const len = Math.hypot(tip[0] - root[0], tip[1] - root[1], tip[2] - root[2]);
-      put('head', ell(mix(root, tip, 0.42), [0.006, len * 0.56, 0.019 * es], { m: alongDir(dir, s * 0.5), blend: 0.006 }));
-      put('head', ell(H(s * 0.077, 0.045, -0.012), [0.008, 0.02, 0.014], { blend: 0.006 })); // the lobe
+      put('head', ell(mix(root, tip, 0.42), [0.006, len * 0.56, 0.019 * es], { m: alongDir(dir, s * 0.5), blend: 0.006, ear: true }));
+      put('head', ell(H(s * 0.077, 0.045, -0.012), [0.008, 0.02, 0.014], { blend: 0.006, ear: true })); // the lobe
     }
   }
 
@@ -227,10 +240,72 @@ export function humanoidPlan(opts = {}) {
     put('head', ell(H(0, -0.028, 0.045), [0.058, 0.04, 0.046], { blend: 0.03, part: 'fur' }));
     for (const sd of [-1, 1]) put('head', ell(H(sd * 0.052, 0.012, 0.022), [0.022, 0.04, 0.036], { blend: 0.025, part: 'fur' }));
     put('head', cone(H(0, -0.05, 0.058), H(0, -0.08 - 0.12 * bd, 0.06 + 0.02 * bd), 0.046, 0.012, { blend: 0.04, part: 'fur' }));
-    for (const sd of [-1, 1]) put('head', cone(H(sd * 0.004, 0.026, 0.078), H(sd * 0.032, 0.008, 0.07), 0.0065, 0.0035, { blend: 0.006, part: 'fur' }));
+    if (!P.moustache) for (const sd of [-1, 1]) put('head', cone(H(sd * 0.004, 0.026, 0.078), H(sd * 0.032, 0.008, 0.07), 0.0065, 0.0035, { blend: 0.006, part: 'fur' }));
+    // a braid from the beard's point: thick plaits, turning round each other down its length
+    if (P.braid > 0) {
+      const top = H(0, -0.08 - 0.12 * bd, 0.06 + 0.02 * bd), n = Math.round(6 + 6 * P.braid), step = 0.022 * hd;
+      for (let i = 0; i < n; i++) {
+        const y = top[1] - 0.004 - i * step, w = 0.012 * hd * (1 - 0.35 * i / n);
+        const s = i % 2 ? 1 : -1;
+        put('head', ell([top[0] + s * w * 0.32, y, top[2] - 0.004 * i * hd], [w * 0.8, step * 0.72, w * 0.72], { m: rotXYZ(0, 0, s * 0.55), blend: 0.004, part: 'fur' }));
+      }
+      put('head', ell([top[0], top[1] - n * step - 0.006 * hd, top[2] - 0.004 * n * hd], [0.0075 * hd, 0.008 * hd, 0.0075 * hd], { blend: 0.003, part: 'tusk' })); // a ring at its end
+    }
+  }
+  // a thick moustache: from under the nose out over the corners of the mouth, drooping to points
+  if (P.moustache > 0) {
+    const mu = P.moustache;
+    for (const sd of [-1, 1]) {
+      put('head', cone(H(sd * 0.003, 0.027, 0.08), H(sd * 0.026, 0.017, 0.074), 0.009 * mu, 0.0085 * mu, { blend: 0.008, part: 'fur' }));
+      put('head', cone(H(sd * 0.026, 0.017, 0.074), H(sd * 0.036, -0.012 - 0.02 * mu, 0.066), 0.0085 * mu, 0.003, { blend: 0.008, part: 'fur' }));
+    }
   }
   if (P.tusks > 0) {
-    for (const sd of [-1, 1]) put('head', cone(H(sd * 0.021, 0.0, 0.07), H(sd * 0.03, 0.03 + 0.012 * P.tusks, 0.086), 0.0065 * P.tusks, 0.002, { blend: 0.002, part: 'tusk' }));
+    for (const sd of [-1, 1]) put('head', cone(H(sd * 0.017, 0.001, 0.064), H(sd * 0.023, 0.024 + 0.01 * P.tusks, 0.077), 0.0055 * P.tusks, 0.0015, { blend: 0.002, part: 'tusk' })); // from the lower jaw, up past the lip
+  }
+  // horns (oni): from the top of the forehead, through the hair, sweeping up and back to a sharp point
+  if (P.horns > 0) {
+    const hl = P.hornLen;
+    const roots = P.horns === 1 ? [[0, 0]] : [[-1, 0.036], [1, 0.036]];
+    for (const [s, x] of roots) {
+      const N = 6;
+      const at = (t) => H(s * x + s * 0.016 * t * hl, 0.152 + 0.1 * t * hl, 0.052 + (0.02 * t - 0.055 * t * t) * hl);
+      for (let i = 0; i < N; i++) {
+        const t0 = i / N, t1 = (i + 1) / N;
+        const r = (t) => (0.0115 * Math.pow(1 - t, 0.85) + 0.0012) * hd * (P.horns === 1 ? 1.1 : 1);
+        put('head', cone(at(t0), at(t1), r(t0), r(t1), { blend: i ? 0.002 : 0.006, part: 'horn' }));
+      }
+    }
+  }
+  // a crown of bone spikes, standing up round the head
+  if (P.crown > 0) {
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+      const base = H(sa * 0.072, 0.152, -0.01 + ca * 0.086), tip = H(sa * 0.082, 0.152 + (0.05 + 0.025 * (i % 2 ? 0 : 1) + (i === 0 ? 0.02 : 0)) * P.crown, -0.01 + ca * 0.098);
+      put('head', cone(base, tip, 0.012 * hd, 0.0015 * hd, { blend: 0.003, part: 'horn' }));
+    }
+    // the band
+    for (let i = 0; i < n * 2; i++) {
+      const a0 = (i / (n * 2)) * Math.PI * 2, a1 = ((i + 1) / (n * 2)) * Math.PI * 2;
+      put('head', cone(H(Math.sin(a0) * 0.084, 0.148, -0.01 + Math.cos(a0) * 0.1), H(Math.sin(a1) * 0.084, 0.148, -0.01 + Math.cos(a1) * 0.1), 0.007 * hd, 0.007 * hd, { blend: 0.002, part: 'horn' }));
+    }
+  }
+  // a hard, weathered face: furrows across the forehead, a deep line between the brows, heavy folds
+  // from the nose past the mouth, and a lined ridge under each eye
+  if (P.ridges > 0) {
+    const rg = P.ridges;
+    for (let i = 0; i < 3; i++) {
+      const y = 0.112 + 0.014 * i;
+      put('head', cone(H(-0.04, y - 0.003, 0.074), H(0, y + 0.002, 0.084), 0.0028, 0.0028, { sub: true, blend: 0.004, detail: true }));
+      put('head', cone(H(0, y + 0.002, 0.084), H(0.04, y - 0.003, 0.074), 0.0028, 0.0028, { sub: true, blend: 0.004, detail: true }));
+    }
+    for (const sd of [-1, 1]) {
+      put('head', cone(H(sd * 0.006, 0.075, 0.091), H(sd * 0.008, 0.093, 0.088), 0.0026, 0.0022, { sub: true, blend: 0.004, detail: true }));
+      // the fold from beside the nose to past the corner of the mouth, and the cheek over it
+      put('head', cone(H(sd * 0.018, 0.044, 0.084), H(sd * 0.03, 0.01, 0.07), 0.006 * rg, 0.005 * rg, { blend: 0.014, detail: true }));
+      put('head', cone(H(sd * 0.014, 0.042, 0.087), H(sd * 0.026, 0.008, 0.073), 0.0025, 0.0025, { sub: true, blend: 0.006, detail: true }));
+    }
   }
 
   // ---- arms and hands ----

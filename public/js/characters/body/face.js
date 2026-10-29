@@ -158,7 +158,7 @@ function paint(A, look, shut) {
     for (let i = 0; i < 3; i++) { const y = ey + (0.05 + 0.012 * i) * hd; line([[-0.04 * hd, y - 0.002 * hd], [0, y + 0.003 * hd], [0.04 * hd, y - 0.002 * hd]], lw * (1 - i * 0.2)); }
     for (const s of [-1, 1]) {
       line([[s * 0.008 * hd, ey + 0.022 * hd], [s * 0.01 * hd, ey + 0.032 * hd], [s * 0.007 * hd, ey + 0.042 * hd]], lw * 0.9);
-      for (let i = 0; i < 3; i++) line([[s * (ex + 0.018 * hd), ey + (0.004 - 0.006 * i) * hd], [s * (ex + 0.026 * hd), ey + (0.006 - 0.009 * i) * hd], [s * (ex + 0.032 * hd), ey + (0.009 - 0.013 * i) * hd]], lw * 0.7);
+      for (let i = 0; i < 3; i++) line([[s * (ex + 0.02 * hd), ey + (0.002 - 0.005 * i) * hd], [s * (ex + 0.024 * hd), ey + (0.003 - 0.006 * i) * hd], [s * (ex + 0.028 * hd), ey + (0.005 - 0.008 * i) * hd]], lw * 0.45);
       line([[s * 0.017 * hd, A.mouthY + 0.03 * hd], [s * 0.027 * hd, A.mouthY + 0.012 * hd], [s * 0.025 * hd, A.mouthY - 0.008 * hd]], lw * 1.3);
       line([[s * (ex - 0.012 * hd), ey - 0.012 * hd], [s * ex, ey - 0.018 * hd], [s * (ex + 0.014 * hd), ey - 0.013 * hd]], lw * 0.7);
     }
