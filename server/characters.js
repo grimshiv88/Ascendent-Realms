@@ -105,6 +105,37 @@ function saveLocation(accountId, loc) {
   return { ok: true };
 }
 
+// One bag entry from the game, checked and with only the fields that matter (null if it is not real)
+function cleanItem(s) {
+  const int = (v, min, max) => (Number.isInteger(v) && v >= min && v <= max ? v : null);
+  if (typeof s?.id !== 'string' || !/^[a-z_]{1,32}$/.test(s.id) || !int(s.n, 1, 1e6)) return null;
+  const item = { id: s.id, n: s.n };
+  if (s.uid !== undefined) {
+    if (typeof s.uid !== 'string' || !/^g[a-z0-9]{1,24}$/.test(s.uid)) return null;
+    item.uid = s.uid;
+  }
+  if (s.plus !== undefined) {
+    if (int(s.plus, 0, 10) === null) return null;
+    item.plus = s.plus;
+  }
+  // a coating a Blacksmith put on a weapon: its effect and the hits left
+  if (s.coat !== undefined) {
+    if (!EFFECTS[s.coat?.id] || int(s.coat?.hits, 1, 100) === null) return null;
+    item.coat = { id: s.coat.id, hits: s.coat.hits };
+  }
+  // spells attached to a staff
+  if (s.spells !== undefined) {
+    if (!Array.isArray(s.spells) || s.spells.length > 5 || !s.spells.every((id) => typeof id === 'string' && SPELLS[id])) return null;
+    item.spells = [...new Set(s.spells)];
+  }
+  // skills from Skill Stones set into a piece of gear (5 at most)
+  if (s.skills !== undefined) {
+    if (!Array.isArray(s.skills) || s.skills.length > 5 || !s.skills.every((id) => typeof id === 'string' && SKILLS[id])) return null;
+    item.skills = [...new Set(s.skills)];
+  }
+  return item;
+}
+
 // Saves level, EXP, coins, HP, stats and the bag. The game runs these rules in the browser for now;
 // once multiplayer arrives the server will check every change itself.
 function saveProgress(accountId, p) {
@@ -132,31 +163,8 @@ function saveProgress(accountId, p) {
   if (!Array.isArray(p.inventory) || p.inventory.length > 60) return { error: 'Bad inventory.' };
   const inventory = [];
   for (const s of p.inventory) {
-    if (typeof s?.id !== 'string' || !/^[a-z_]{1,32}$/.test(s.id) || !int(s.n, 1, 1e6)) return { error: 'Bad inventory item.' };
-    const item = { id: s.id, n: s.n };
-    if (s.uid !== undefined) {
-      if (typeof s.uid !== 'string' || !/^g[a-z0-9]{1,24}$/.test(s.uid)) return { error: 'Bad inventory item.' };
-      item.uid = s.uid;
-    }
-    if (s.plus !== undefined) {
-      if (int(s.plus, 0, 10) === null) return { error: 'Bad inventory item.' };
-      item.plus = s.plus;
-    }
-    // a coating a Blacksmith put on a weapon: its effect and the hits left
-    if (s.coat !== undefined) {
-      if (!EFFECTS[s.coat?.id] || int(s.coat?.hits, 1, 100) === null) return { error: 'Bad inventory item.' };
-      item.coat = { id: s.coat.id, hits: s.coat.hits };
-    }
-    // spells attached to a staff
-    if (s.spells !== undefined) {
-      if (!Array.isArray(s.spells) || s.spells.length > 5 || !s.spells.every((id) => typeof id === 'string' && SPELLS[id])) return { error: 'Bad inventory item.' };
-      item.spells = [...new Set(s.spells)];
-    }
-    // skills from Skill Stones set into a piece of gear (5 at most)
-    if (s.skills !== undefined) {
-      if (!Array.isArray(s.skills) || s.skills.length > 5 || !s.skills.every((id) => typeof id === 'string' && SKILLS[id])) return { error: 'Bad inventory item.' };
-      item.skills = [...new Set(s.skills)];
-    }
+    const item = cleanItem(s);
+    if (!item) return { error: 'Bad inventory item.' };
     inventory.push(item);
   }
   const equipped = {};
@@ -276,4 +284,4 @@ function top(limit = 10) {
     .slice(0, limit);
 }
 
-module.exports = { create, fall, load, store, saveLocation, saveProgress, top, ceremony, keepAppraisalHeld };
+module.exports = { cleanItem, create, fall, load, store, saveLocation, saveProgress, top, ceremony, keepAppraisalHeld };

@@ -46,6 +46,33 @@ function describeGear(it, plus = 0) {
   return 'Material';
 }
 
+// The pop-up an item opens when you touch it in a shop, at the Blacksmith or on a display stand:
+// its picture, what it is, and everything it does. `e` is a bag entry (or what's on a stand), if any.
+export function itemInfoHtml(id, e = null, { extra = '', form = null } = {}) {
+  const it = ITEMS[id];
+  if (!it) return '';
+  wearerForm = form;
+  const plus = e?.plus || 0;
+  const name = e ? nameOf(e) : formName(it, form);
+  const myth = isGear(it) ? mythicSkill(it, plus) : null;
+  const skills = (e?.skills || []).map((k) => SKILLS[k]).filter(Boolean);
+  const stone = it.kind === 'stone' ? SKILLS[it.skill] : null;
+  return `<div class="item-pop-box" role="dialog" aria-label="${esc(name)}">
+      <button type="button" class="sw-close" data-pop-close aria-label="Close">×</button>
+      <div class="bag-detail"><span class="bag-big">${pic(id, plus, '')}</span><div>
+        <h3>${esc(name)}</h3>
+        <p>${esc(it.text || '')}</p>
+        <p class="bag-stat">${describe(it, plus)}${e?.coat ? `<br>${EFFECTS[e.coat.id].icon} Coated with ${EFFECTS[e.coat.id].name}: ${e.coat.hits} hits left` : ''}</p>
+        ${stone ? `<p class="bag-stat">${stone.icon} <b>${esc(stone.name)}</b> · ${esc(stone.text)}</p>` : ''}
+        ${myth ? `<p class="gear-myth">🌟 <b>${esc(myth.name)}</b> · ${esc(myth.text)}</p>` : ''}
+        ${skills.length ? `<p class="bag-stat"><b>Skills set in it:</b> ${skills.map((k) => `${k.icon} ${esc(k.name)}`).join(', ')}</p>` : ''}
+        ${isGear(it) && !myth && gearSkillSlots(it, plus) ? `<p class="bag-hint">Holds up to ${gearSkillSlots(it, plus)} skills from Skill Stones.</p>` : ''}
+        <p class="bag-hint">Price in the shop: ${it.price} G</p>
+        ${extra}
+      </div></div>
+    </div>`;
+}
+
 // The skills set into a piece of gear (from Skill Stones), and the Mythic weapon's own skill
 function gearSkillsHtml(game, e, it) {
   const slots = gearSkillSlots(it, e.plus || 0);
@@ -142,10 +169,9 @@ export function renderShop(el, game, message = '', market = null) {
       const it = ITEMS[id];
       const price = mk ? marketPrice(market, id) : it.price;
       const poor = c.coins < price;
-      return `<div class="sys-card${poor ? ' poor' : ''}">
+      return `<div class="sys-card sys-item${poor ? ' poor' : ''}" data-info="${id}" title="Touch to see what it does">
         <div class="sys-pic">${pic(id, 0, 'sys-emoji')}</div>
-        <b>${esc(formName(it, c.form))}</b><small>${describe(it)}</small>
-        <div class="sys-buy"><span class="sys-price">${price} G</span>
+        <div class="sys-side"><b>${esc(formName(it, c.form))}</b><span class="sys-price">${price} G</span>
         <button type="button" class="sys-button" data-buy="${id}">${poor ? 'Not enough' : 'Buy'}</button></div></div>`;
     }).join('');
     return cards ? `<h3 class="sys-sub">${title}</h3><div class="sys-grid">${cards}</div>` : '';
@@ -153,7 +179,7 @@ export function renderShop(el, game, message = '', market = null) {
   const sellable = c.inventory.filter((e) => !game.isEquipped(e) && !ITEMS[e.id]?.bound);
   const sell = sellable.length ? sellable.map((e) => {
     const it = ITEMS[e.id];
-    return `<div class="sys-row"><span class="sys-mini">${pic(e.id, e.plus)}</span><span class="sys-name"><b>${esc(nameOf(e))}</b><small>You have ${e.n} · shop price ${it.price} G</small></span>
+    return `<div class="sys-row" data-info-entry="${keyOf(e)}"><span class="sys-mini">${pic(e.id, e.plus)}</span><span class="sys-name"><b>${esc(nameOf(e))}</b><small>You have ${e.n} · shop price ${it.price} G</small></span>
       <span class="sys-price">${game.sellPrice(e, market)} G</span><span class="sys-sell-btns"><button type="button" class="sys-button ghost" data-sell="${keyOf(e)}">Sell one</button>${e.n > 1 ? `<button type="button" class="sys-button" data-sell-all="${keyOf(e)}">Sell all ${e.n} · ${game.sellPrice(e, market) * e.n} G</button>` : ''}</span></div>`;
   }).join('') : '<p class="sys-hint">Nothing to sell yet. Gather wood and berries, or defeat monsters for their drops. Take gear off before selling it.</p>';
   const bad = /\bnot\b|\bneed|bag is full/i.test(message);
@@ -166,6 +192,7 @@ export function renderShop(el, game, message = '', market = null) {
       ${mk ? `<p class="sys-hint">${esc(mk.text)}${mk.bot ? ' City shops charge more and pay less than player shops.' : ''}</p>` : ''}
       <p class="sys-top">Coins <b>${c.coins} G</b> <span>·</span> Level <b>${c.level}</b>${next < Infinity ? ` <span>·</span> New items at level <b>${next}</b>` : ''}</p>
       <p class="sys-msg${bad ? ' bad' : ''}" role="status">${esc(message)}</p>
+      <p class="sys-hint">Touch an item to see what it does.</p>
       ${market === 'tavern' ? roomHtml(game) : ''}
       ${group('Weapons', 'weapon')}
       ${group(market === 'city_tailor' ? 'Clothes' : 'Armour', 'armour')}
@@ -217,7 +244,7 @@ export function renderSmith(el, game, pick = [], message = '', { workshop = fals
     const which = a && keyOf(a) === keyOf(e) ? 'first' : b && keyOf(b) === keyOf(e) ? 'second' : '';
     const fits = !a || which || subOf(ITEMS[a.id]) === subOf(it);
     return `<button type="button" class="shop-row smith-row${which ? ` ${which}` : ''}" data-pick="${keyOf(e)}" ${fits ? '' : 'disabled'}>
-      <span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(nameOf(e))}</b><small>${describe(it, e.plus)}${game.isEquipped(e) ? ' · equipped' : ''}</small></span>
+      <span class="smith-pic" data-info-entry="${keyOf(e)}" title="See what it does">${pic(e.id, e.plus)}</span><span class="shop-name"><b>${esc(nameOf(e))}</b><small>${rankTag(it, e.plus)}${game.isEquipped(e) ? ' · equipped' : ''}</small></span>
       <span class="smith-tag">${which === 'first' ? 'Keep' : which === 'second' ? 'Melt in' : ''}</span></button>`;
   };
   const weapons = gear.filter((e) => ITEMS[e.id].kind === 'weapon'), armour = gear.filter((e) => ITEMS[e.id].kind !== 'weapon');
@@ -248,7 +275,11 @@ export function renderSmith(el, game, pick = [], message = '', { workshop = fals
         title="${fc.needs.map(([n, k]) => `${k} ${ITEMS[n].name} (you have ${game.count(n)})`).join(', ')}">${fc.bonus ? `+${fc.bonus} with ${esc(ITEMS[fc.ore].name)}` : 'Forge'} · ${fc.coins} G</button>`;
     }).join('');
     const base = opts[0];
-    return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}${it.forged ? ' <em class="forged-tag">· forged only</em>' : it.workshop ? ' <em class="forged-tag">· own anvil</em>' : ''}</b><small>${describe(it)}<br>Needs ${base.needs.map(([n, k]) => `${k} ${esc(ITEMS[n].name)} (you have ${game.count(n)})`).join(' + ')}</small></span>
+    const need = base.needs.map(([n, k]) => `<span class="need${game.count(n) >= k ? ' ok' : ''}">${ITEMS[n].icon} ${k} ${esc(ITEMS[n].name)} <small>(you have ${game.count(n)})</small></span>`).join('');
+    return `<div class="shop-row forge-row" data-info="${id}">
+      <span class="smith-pic">${pic(id)}</span>
+      <span class="shop-name"><b>${esc(it.name)}${it.forged ? ' <em class="forged-tag">· forged only</em>' : it.workshop ? ' <em class="forged-tag">· own anvil</em>' : ''}</b>
+        <span class="forge-needs">${need}<span class="need${c.coins >= base.coins ? ' ok' : ''}">🪙 ${base.coins} G <small>for the smith's labour</small></span></span></span>
       <span class="forge-btns">${btns}</span></div>`;
   };
   const forgeable = [...FORGE, ...(workshop ? FORGE_WORKSHOP : [])].filter(([, lvl]) => c.level >= lvl).sort((x, y) => x[1] - y[1]);
@@ -268,6 +299,7 @@ export function renderSmith(el, game, pick = [], message = '', { workshop = fals
       ${workshop ? `<p class="bag-hint"><b>Your own anvil:</b> here you can also forge the ${FORGE_WORKSHOP.length} workshop pieces (marked “own anvil”), which no shop sells.</p>` : `<p class="bag-hint">Build an Anvil on your own land to forge ${FORGE_WORKSHOP.length} more pieces there.</p>`}
       <p class="shop-msg" role="status">${esc(message)}</p>
       ${summary}
+      <p class="bag-hint">Touch a picture to see what a piece does.</p>
       <h3 class="bag-sub">Current Weapons <small>(${weapons.length})</small></h3>
       <div class="smith-list">${weapons.map(row).join('') || '<p class="bag-hint">No weapons in your bag.</p>'}</div>
       <h3 class="bag-sub">Current Armour <small>(${armour.length})</small></h3>

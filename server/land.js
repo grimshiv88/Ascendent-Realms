@@ -5,6 +5,7 @@ const { PURPOSES, PURPOSE_FEE, checkPurchase, prepareCost, levelHeight, clearCos
 const { setPreparedPlots } = require('../public/js/data/world-layout.mjs');
 const { caveById, cavePrice } = require('../public/js/data/depths.mjs');
 const B = require('../public/js/data/building.mjs');
+const { ITEMS, isGear } = require('../public/js/data/items.mjs');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS lands (
@@ -144,4 +145,24 @@ function buyCave(accountId, body) {
   return { ok: true, coins: paid.coins, ...caves(accountId) };
 }
 
-module.exports = { list, buy, setPurpose, prepare, caves, buyCave, build };
+// A Blacksmith's display stand: put a weapon or piece of armour on it for everyone to see, or take
+// it back off. The game moves it in and out of the bag.
+function show(accountId, body) {
+  const c = characters.load(accountId);
+  if (!c) return { error: 'No character yet.' };
+  let item = null;
+  if (body.item) {
+    if (c.cls !== 'blacksmith') return { error: 'Only a Blacksmith can show their work on a stand.' };
+    item = characters.cleanItem(body.item);
+    if (!item || !isGear(ITEMS[item.id])) return { error: 'Only weapons and armour go on a stand.' };
+    item.n = 1;
+  }
+  const mine = all().filter((p) => p.accountId === accountId);
+  const at = { x: body.x, z: body.z, l: body.l };
+  const r = B.setStand(mine, at, item);
+  if (r.error) return r;
+  db.prepare('UPDATE lands SET build = ? WHERE ix = ? AND iz = ? AND account_id = ?').run(JSON.stringify(r.plot.pieces), r.plot.ix, r.plot.iz, accountId);
+  return { ok: true, old: r.old, ...list(accountId) };
+}
+
+module.exports = { list, buy, setPurpose, prepare, caves, buyCave, build, show };

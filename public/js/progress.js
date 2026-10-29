@@ -161,6 +161,23 @@ export function createProgress(c, { save, onChange, onEvent }) {
     entry,
     addItem,
     removeItem,
+    // a whole piece of gear leaving the bag as it is (onto a display stand), and coming back
+    takeOut(key) {
+      const e = entry(key);
+      if (!e?.uid) return null;
+      c.inventory.splice(c.inventory.indexOf(e), 1);
+      for (const [slot, v] of Object.entries(c.equipped)) if (v === e.uid) c.equipped[slot] = null;
+      changed('bag');
+      return e;
+    },
+    putBack(e) {
+      if (e.uid && c.inventory.some((x) => x.uid === e.uid)) return true;
+      if (used() >= BAG_SLOTS) return false;
+      c.inventory.push({ ...e, n: 1 });
+      changed('bag');
+      return true;
+    },
+    bagFull: () => used() >= BAG_SLOTS,
     gearIn,
     weapon: () => gearIn('weapon'),
     isEquipped: (e) => !!e.uid && Object.values(c.equipped).includes(e.uid),

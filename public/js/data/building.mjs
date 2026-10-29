@@ -46,6 +46,7 @@ export const PIECES = {
   stairs: { name: 'Stairs', on: 'cell', price: 60, text: 'Up to the next storey. Needs a floor under it.' },
   roof: { name: 'Roof', on: 'cell', price: 45, text: 'Sits on top of the walls of its storey. Add more storeys and roof them again.' },
   anvil: { name: 'Anvil and Forge', on: 'cell', price: 400, text: 'A Blacksmith\'s own anvil, forge and mould. A Blacksmith working here can forge more pieces than anywhere else. Stands on a foundation or floor.' },
+  stand: { name: 'Display stand', on: 'cell', price: 50, text: 'A Blacksmith puts a weapon or piece of armour they made on it, so everyone who comes by can see their work and touch it to read about it. Stands on a foundation or floor.' },
   spawn: { name: 'Spawn Shrine', on: 'cell', price: 800, text: 'When you fall, you wake up here instead of back home. One per player. Stands on a foundation or floor.' },
   // fortress and castle walls: stone, thick, and they can stand straight on levelled ground
   stone_wall: { name: 'Fortress wall', on: 'edge', price: 55, wall: true, ground: true, text: 'Thick stone. Stands on levelled ground, a foundation, or another wall.' },
@@ -64,7 +65,7 @@ export const PIECE_GROUPS = [
   ['Walls', ['wall', 'door', 'window', 'pillar']],
   ['Fortress and castle', ['stone_wall', 'slit_wall', 'battlement', 'gate', 'wall_tower']],
   ['Fences', ['palisade', 'fence', 'iron_fence']],
-  ['Special', ['anvil', 'spawn']],
+  ['Special', ['anvil', 'stand', 'spawn']],
 ];
 const WALLISH = new Set(Object.keys(PIECES).filter((t) => t === 'wall' || t === 'door' || t === 'window' || PIECES[t].wall));
 export const MAX_SPAWNS = 1;
@@ -81,7 +82,7 @@ export function homePlot(p, ok) {
   return null;
 }
 // one piece per slot: floors and foundations share a cell's floor, the three walls share an edge
-const slotOf = (p) => (PIECES[p.t].on === 'edge' ? `e${p.e}` : p.t === 'foundation' || p.t === 'floor' ? 'f' : p.t === 'roof' ? 'r' : p.t === 'stairs' ? 's' : p.t === 'spawn' || p.t === 'anvil' ? 'p' : 'c');
+const slotOf = (p) => (PIECES[p.t].on === 'edge' ? `e${p.e}` : p.t === 'foundation' || p.t === 'floor' ? 'f' : p.t === 'roof' ? 'r' : p.t === 'stairs' ? 's' : p.t === 'spawn' || p.t === 'anvil' || p.t === 'stand' ? 'p' : 'c');
 export const pieceKey = (p) => `${slotOf(p)}:${p.x},${p.z},${p.l}`;
 
 // Is this a well-formed piece? (types, whole numbers, levels in range)
@@ -124,7 +125,7 @@ export function unsupported(pieces, ground) {
       case 'pillar': case 'wall_tower':
         return [[x, z], [x - 1, z], [x, z - 1], [x - 1, z - 1]].some(([a, b]) => has(floorAt(a, b, l)) || (l === 0 && PIECES[p.t].ground && onGround(a, b))) || has(`c:${x},${z},${l - 1}`);
       case 'stairs': return has(floorAt(x, z, l)) || has(`s:${x},${z},${l - 1}`);
-      case 'spawn': case 'anvil': return has(floorAt(x, z, l));
+      case 'spawn': case 'anvil': case 'stand': return has(floorAt(x, z, l));
       case 'roof':
         return edgeKeys(x, z, l).some(has) || cornerKeys(x, z, l).some(has) || near(x, z).some(([a, b]) => has(`r:${a},${b},${l}`));
       default: {
@@ -221,7 +222,7 @@ export const BUILDINGS = {
   cottage: { name: 'Cottage', size: [3, 3], pieces: () => box(3, 3, 1), text: 'A snug home with windows.' },
   house: { name: 'House', size: [3, 4], pieces: () => box(3, 4, 2), text: 'Two storeys, with stairs.' },
   shop: { name: 'Shop', size: [4, 3], pieces: () => box(4, 3, 1, { doors: [[1, 3], [2, 3]] }), text: 'A wide front with two doors.' },
-  smithy: { name: 'Smithy', size: [3, 3], pieces: () => [...box(3, 3, 1, { doors: [[0, 3], [1, 3], [2, 3]], windows: false }), { t: 'anvil', x: 1, z: 1, l: 0 }], text: 'Open to the street, with an anvil and forge inside.' },
+  smithy: { name: 'Smithy', size: [3, 3], pieces: () => [...box(3, 3, 1, { doors: [[0, 3], [1, 3], [2, 3]], windows: false }), { t: 'anvil', x: 1, z: 1, l: 0 }, { t: 'stand', x: 0, z: 2, l: 0 }, { t: 'stand', x: 2, z: 2, l: 0 }], text: 'Open to the street, with an anvil and forge inside, and two display stands at the front to show off your work.' },
   barn: { name: 'Barn', size: [4, 5], pieces: () => box(4, 5, 2, { doors: [[1, 5], [2, 5]], windows: false }), text: 'Tall and wide, for animals and crops.' },
   tower: { name: 'Watchtower', size: [2, 2], pieces: () => box(2, 2, 4), text: 'Four storeys to see far across your land.' },
   manor: { name: 'Manor', size: [5, 5], pieces: () => box(5, 5, 3, { doors: [[2, 5]] }), text: 'Three grand storeys.' },
@@ -316,6 +317,7 @@ export function applyBuild(plots, body, cls, now) {
     cost = piecesCost(add, cls);
   }
   const remove = new Set(Array.isArray(body?.remove) ? body.remove.map(String) : []);
+  if (current.some((p) => p.show && remove.has(pieceKey(p)))) return { error: 'Take the piece off the display stand before you take the stand down.' };
   const kept = current.filter((p) => !remove.has(pieceKey(p)));
   cost += removeCost(current.filter((p) => remove.has(pieceKey(p))), cls);
   const taken = new Set(kept.map(pieceKey));
@@ -344,5 +346,22 @@ export function applyBuild(plots, body, cls, now) {
   for (const p of kept) { const k = homeKey(p, ground); if (byPlot.has(k)) byPlot.get(k).push(p); }
   for (const [p, h] of homes) byPlot.get(`${h.ix},${h.iz}`).push(p);
   return { cost, byPlot };
+}
+
+// Put a piece of gear on one of your display stands ({ x, z, l }), or take it off (item null).
+// Changes the stand in `plots` and returns { plot, old } (old: what was on it), or { error }.
+export function setStand(plots, at, item, now = Date.now()) {
+  for (const p of plots) {
+    for (const q of p.pieces || []) {
+      if (q.t !== 'stand' || q.x !== at?.x || q.z !== at?.z || q.l !== at?.l) continue;
+      if (q.u && q.u > now) return { error: 'The stand is not finished yet.' };
+      if (item && q.show) return { error: 'Something is already on this stand. Take it off first.' };
+      if (!item && !q.show) return { error: 'The stand is empty.' };
+      const old = q.show || null;
+      if (item) q.show = item; else delete q.show;
+      return { plot: p, old };
+    }
+  }
+  return { error: 'There is no display stand of yours there.' };
 }
 const homeKey = (p, ok) => { const h = homePlot(p, ok); return h ? `${h.ix},${h.iz}` : ''; };

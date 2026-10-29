@@ -192,6 +192,12 @@ function modelFor(it, plus) {
   return null;
 }
 
+// The item's 3D model on its own (for display stands), or null when it has none
+export function itemModel(id, plus = 0) {
+  const it = ITEMS[id];
+  return it ? modelFor(it, plus) : null;
+}
+
 // Returns an image URL for the item, or null when it has no model
 export function itemIcon(id, plus = 0) {
   const it = ITEMS[id];

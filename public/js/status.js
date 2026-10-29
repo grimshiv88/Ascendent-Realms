@@ -62,7 +62,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
       <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
       ${portal ? `<button type="button" class="hud-points portal" data-act="portal">${esc(portal.name)}: travel (G)</button>` : ''}
-      ${cave ? `<button type="button" class="hud-points" data-open="cave">${esc(cave.name)}: about this cave</button>` : ''}
+      ${cave ? `<button type="button" class="hud-points" data-open="cave">${esc(cave.name)}: about this ${cave.dungeon ? 'dungeon' : 'cave'}</button>` : ''}
     </div>`}
     <div class="hud-menu">
       <button type="button" class="menu-btn" data-menu aria-label="Menu" aria-expanded="${menuOpen}">

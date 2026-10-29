@@ -955,3 +955,26 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .appraise-bag { columns: 2; font-size: 0.85rem; padding-left: 18px; }
 .appraise-bag small { color: var(--ink-quiet); }
 @media (max-width: 600px) { .appraise-bag { columns: 1; } }
+
+/* Shop cards: the picture, with the name and price beside it; touch for the details */
+.sys-grid:has(.sys-item) { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.sys-card.sys-item { flex-direction: row; align-items: center; gap: 10px; cursor: pointer; }
+.sys-item .sys-pic { flex: none; width: 92px; height: 92px; margin: 0; }
+.sys-item .sys-emoji { font-size: 2.4rem; }
+.sys-side { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.sys-side .sys-button { margin-top: 4px; }
+.sys-row[data-info-entry] .sys-mini, .sys-row[data-info-entry] .sys-name b { cursor: pointer; }
+@media (max-width: 520px) { .sys-grid:has(.sys-item) { grid-template-columns: 1fr; } }
+/* the Blacksmith's rows: a real picture, and what each piece needs */
+.smith-pic { position: relative; flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 4px; background: radial-gradient(circle, rgba(242, 181, 30, 0.18), transparent 70%); cursor: pointer; }
+.smith-pic .bag-icon { font-size: 1.7rem; }
+.forge-row { cursor: pointer; }
+.forge-needs { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; }
+.forge-needs .need { font: 0.8rem Georgia, serif; color: #ff9a8a; }
+.forge-needs .need.ok { color: #b9e0a0; }
+.forge-needs .need small { color: #b9ab8a; }
+/* the pop-up an item opens */
+.item-pop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.55); }
+.item-pop-box { position: relative; width: min(460px, 100%); max-height: 85vh; overflow: auto; padding: 18px 18px 14px; background: #120d06; border: 1px solid #6a5220; border-radius: 6px; color: #fff3cf; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
+.item-pop-box .bag-big { width: 110px; height: 110px; }
+.item-pop-box .bag-actions { margin-top: 8px; }

@@ -459,6 +459,23 @@ export async function landBuild(body) {
   return request('api/land/build', { method: 'POST', body });
 }
 
+// Put a piece of gear on one of your display stands ({ x, z, l, item }), or take it off (item null).
+// Returns { old } (what was on it) and the land list.
+export async function landShow(body) {
+  if (await isPreviewMode()) {
+    const BM = await import('./data/building.mjs');
+    let old = null;
+    const r = await previewLand.run((plots, acc) => {
+      if (body.item && acc.character.cls !== 'blacksmith') throw new Error('Only a Blacksmith can show their work on a stand.');
+      const res = BM.setStand(plots.filter((p) => p.owner === acc.character.name), body, body.item ? { ...body.item, n: 1 } : null);
+      if (res.error) throw new Error(res.error);
+      old = res.old;
+    });
+    return { ...r, old };
+  }
+  return request('api/land/show', { method: 'POST', body });
+}
+
 // ---------- the Monster Kings' courts ----------
 const previewKings = {
   saved() { try { return JSON.parse(storage.get('ar.preview.kings')) || []; } catch { return []; } },

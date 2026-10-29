@@ -2,6 +2,7 @@
 // Used both in the world and in the Builder View.
 import * as THREE from 'three';
 import { CELL, STOREY, SLAB, PIECES } from '../data/building.mjs';
+import { itemModel } from '../characters/icons.js';
 
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra });
 export const MATS = {
@@ -17,6 +18,7 @@ export const MATS = {
   keepTrim: mat('#6f6a60', { roughness: 0.95 }),
   slate: mat('#4a4f5a'),
   iron: mat('#3e4046', { metalness: 0.8, roughness: 0.4 }),
+  cloth: mat('#7a2a2a', { roughness: 0.95 }),
   coals: new THREE.MeshStandardMaterial({ color: '#ff6a18', emissive: '#ff4a08', emissiveIntensity: 2 }),
   crystal: new THREE.MeshStandardMaterial({ color: '#7fd8ff', emissive: '#3fb0ff', emissiveIntensity: 1.2, roughness: 0.2, transparent: true, opacity: 0.9 }),
 };
@@ -141,6 +143,31 @@ function drawPiece(g, p, y0, look, stone) {
       block(g, look || MATS.iron, cx + 0.2, y0 + 0.6, cz, 0.75, 0.2, 0.3);
       block(g, m('stone'), cx + 1.0, y0 + 0.35, cz - 0.5, 0.6, 0.7, 0.5);
       block(g, look || MATS.iron, cx + 1.0, y0 + 0.74, cz - 0.5, 0.5, 0.08, 0.3);
+      break;
+    }
+    case 'stand': {
+      // a low wooden table with a padded top and a rack behind; the piece shown sits on it
+      const cx = X + CELL / 2, cz = Z + CELL / 2;
+      for (const [dx, dz] of [[-0.6, -0.35], [0.6, -0.35], [-0.6, 0.35], [0.6, 0.35]]) block(g, look || MATS.timber, cx + dx, y0 + 0.4, cz + dz, 0.08, 0.8, 0.08);
+      block(g, look || MATS.floor, cx, y0 + 0.83, cz, 1.4, 0.07, 0.9);
+      block(g, look || MATS.cloth, cx, y0 + 0.88, cz, 1.25, 0.03, 0.75);
+      block(g, look || MATS.timber, cx, y0 + 1.35, cz - 0.42, 1.4, 0.06, 0.06);
+      for (const dx of [-0.66, 0.66]) block(g, look || MATS.timber, cx + dx, y0 + 1.1, cz - 0.42, 0.06, 0.55, 0.06);
+      if (p.show && !look) {
+        const m = itemModel(p.show.id, p.show.plus || 0);
+        if (m) {
+          // stand it up on the table, about as tall as a short sword, slowly turned to the street
+          const holder = new THREE.Group();
+          holder.add(m);
+          const box = new THREE.Box3().setFromObject(holder);
+          const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+          const k = 0.85 / Math.max(size.x, size.y, size.z, 0.01);
+          holder.scale.setScalar(k);
+          holder.position.set(cx - mid.x * k, y0 + 0.9 - box.min.y * k + 0.02, cz - mid.z * k);
+          holder.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+          g.add(holder);
+        }
+      }
       break;
     }
     default:

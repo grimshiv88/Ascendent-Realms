@@ -1,6 +1,6 @@
 // The depths: every cave on the map leads down into its own underground warren of chambers.
 // Shared by the game and the server, so both agree on what each cave holds and what it costs to buy.
-import { placesWithPositions, sample } from './world-layout.mjs';
+import { placesWithPositions, sample, heightAt } from './world-layout.mjs';
 
 // What lives in each kind of cave, what can be mined there (with how often each ore turns up),
 // and the boss waiting in the last chamber
@@ -41,6 +41,10 @@ export const THEMES = {
     ores: [['copper_ore', 40], ['gold_ore', 35], ['ruby', 15], ['sapphire', 10]],
   },
 };
+// Caves whose mouths open high on a mountainside are Dungeons: one size bigger, with more false routes
+export const DUNGEON_HEIGHT = 150;
+const DUNGEON_NAME = { goblin: 'Goblin Dungeon', warren: 'Warren Dungeon', slime: 'Slime Dungeon', serpent: 'Serpent Dungeon', drake: 'Drake Dungeon', fae: 'Glimmer Dungeon', sand: 'Sandstone Dungeon' };
+const BIGGER = { small: 'medium', medium: 'deep', deep: 'deep' };
 const BY_REGION = { warrens: 'warren', heart: 'goblin', mire: 'serpent', peaks: 'drake', frost: 'slime', fae: 'fae', sun: 'sand' };
 
 export const SIZES = {
@@ -65,19 +69,24 @@ export function allCaves() {
     const rnd = seeded(i + 7);
     if (theme === 'goblin' && i % 3 === 0) theme = 'slime'; // a third of the Heartland's caves are slime grottos
     const far = Math.hypot(p.x, p.z);
-    const size = far < 3000 ? 'small' : far < 12000 ? (rnd() < 0.6 ? 'medium' : 'small') : rnd() < 0.5 ? 'deep' : 'medium';
-    return { id: p.id, index: i, place: p, theme, size, name: `${THEMES[theme].name}` };
+    let size = far < 3000 ? 'small' : far < 12000 ? (rnd() < 0.6 ? 'medium' : 'small') : rnd() < 0.5 ? 'deep' : 'medium';
+    const dungeon = heightAt(p.x, p.z) >= DUNGEON_HEIGHT;
+    if (dungeon) size = BIGGER[size];
+    return { id: p.id, index: i, place: p, theme, size, dungeon, name: dungeon ? DUNGEON_NAME[theme] : THEMES[theme].name };
   });
   // the nearest cave to the spawn is always a small goblin den, to learn on
   const first = caches.reduce((a, b) => (Math.hypot(b.place.x, b.place.z) < Math.hypot(a.place.x, a.place.z) ? b : a));
-  first.theme = 'goblin'; first.size = 'small'; first.name = THEMES.goblin.name;
+  first.theme = 'goblin'; first.size = 'small'; first.dungeon = false; first.name = THEMES.goblin.name;
   return caches;
 }
 export const caveById = (id) => allCaves().find((c) => c.id === id) || null;
 export const cavePrice = (cave) => SIZES[cave.size].price;
+export const caveWord = (cave) => (cave.dungeon ? 'dungeon' : 'cave');
 
 // The chambers underground, each lower than the last, joined by winding tunnels.
 // Laid out far beyond the edge of the map so nothing up top gets in the way.
+// Off the true way down run false routes: side tunnels that look just the same and also go deep,
+// through chamber after chamber, only to end in rock. Dungeons have more of them, and longer.
 export function caveLayout(cave) {
   const rnd = seeded(cave.index * 31 + 3);
   const n = SIZES[cave.size].chambers;
@@ -96,7 +105,69 @@ export function caveLayout(cave) {
     chambers.push({ x, z, y, r, boss });
   }
   const tunnels = chambers.slice(1).map((c, i) => ({ a: chambers[i], b: c, w: 3.6 }));
-  return { chambers, tunnels, entry: chambers[0], rnd };
+  const branches = falseRoutes(cave, chambers, tunnels);
+  return { chambers, branches, all: [...chambers, ...branches], tunnels, entry: chambers[0], rnd };
+}
+
+// distance from a point to a line segment, flat (x, z)
+function segDist(px, pz, a, b) {
+  const ax = b.x - a.x, az = b.z - a.z, l2 = ax * ax + az * az || 1;
+  const k = Math.max(0, Math.min(1, ((px - a.x) * ax + (pz - a.z) * az) / l2));
+  return Math.hypot(px - (a.x + ax * k), pz - (a.z + az * k));
+}
+// The false routes, added to `tunnels`; returns their chambers (each marked false: true)
+function falseRoutes(cave, chambers, tunnels) {
+  const rnd = seeded(cave.index * 53 + 11); // its own dice, so the true way stays the same
+  const big = cave.dungeon;
+  const out = [];
+  const all = () => [...chambers, ...out];
+  // a new chamber (and the tunnel to it) must keep well clear of every other one, so false
+  // routes never join up and make a short cut
+  const fits = (from, c) => {
+    for (const o of all()) if (o !== from && Math.hypot(c.x - o.x, c.z - o.z) < c.r + o.r + 9) return false;
+    for (const t of tunnels) if (segDist(c.x, c.z, t.a, t.b) < c.r + 6) return false;
+    for (let s = 0.2; s <= 0.8; s += 0.1) {
+      const px = from.x + (c.x - from.x) * s, pz = from.z + (c.z - from.z) * s;
+      for (const o of all()) if (o !== from && Math.hypot(px - o.x, pz - o.z) < o.r + 5) return false;
+      for (const t of tunnels) if (t.a !== from && t.b !== from && segDist(px, pz, t.a, t.b) < 7) return false;
+    }
+    return true;
+  };
+  // grow one route from chamber `from`, `left` chambers long, heading roughly `dir`
+  const grow = (from, dir, left, forkAt) => {
+    let at = from;
+    for (let k = 0; k < left; k++) {
+      let made = null;
+      for (let tries = 0; tries < 8 && !made; tries++) {
+        const r = 6 + rnd() * 4;
+        const d = dir + (rnd() - 0.5) * (1.2 + tries * 0.5);
+        const len = at.r + r + 10 + rnd() * 14;
+        const c = { x: at.x + Math.cos(d) * len, z: at.z + Math.sin(d) * len, y: at.y - (4 + rnd() * 5), r, false: true };
+        if (fits(at, c)) { made = c; dir = d; }
+      }
+      if (!made) return;
+      out.push(made);
+      tunnels.push({ a: at, b: made, w: 3.6 });
+      // in a dungeon a false route can split again, so even turning back is a guess
+      if (k === forkAt) grow(made, dir + (rnd() < 0.5 ? 1 : -1) * (0.9 + rnd() * 0.6), 1 + Math.floor(rnd() * 3), -1);
+      at = made;
+    }
+  };
+  // every chamber but the boss's may have a false route leading off it
+  for (let i = 0; i < chambers.length - 1; i++) {
+    if (rnd() > (big ? 0.85 : 0.6)) continue;
+    const c = chambers[i], next = chambers[i + 1];
+    const onward = Math.atan2(next.z - c.z, next.x - c.x);
+    const dir = onward + (rnd() < 0.5 ? 1 : -1) * (0.8 + rnd() * 1.2);
+    const len = big ? 3 + Math.floor(rnd() * 3) : 2 + Math.floor(rnd() * 2);
+    grow(c, dir, len, big ? 1 : -1);
+  }
+  // every cave has at least one
+  for (let i = 0; i < chambers.length - 1 && !out.length; i++) {
+    const c = chambers[i], next = chambers[i + 1];
+    for (const side of [1, -1]) if (!out.length) grow(c, Math.atan2(next.z - c.z, next.x - c.x) + side * 1.4, 2, -1);
+  }
+  return out;
 }
 
 // What a cleared boss leaves in its chest depends on who beat it: each class finds what it uses

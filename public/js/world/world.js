@@ -605,6 +605,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const n = 1 + Math.floor(Math.random() * 3);
       for (let k = 0; k < n; k++) creatures.spawnAt(T.kinds[Math.floor(Math.random() * T.kinds.length)], lvl + Math.round(Math.random() * 3 - 2), ...spots(k), { keep: true, depth: true });
     });
+    // the false routes have a few monsters too, so they look like the way on
+    for (const c of built.layout.branches) {
+      if (Math.random() < 0.5) continue;
+      const a = Math.random() * Math.PI * 2, r = c.r * 0.4;
+      creatures.spawnAt(T.kinds[Math.floor(Math.random() * T.kinds.length)], lvl + Math.round(Math.random() * 2 - 2), c.x + Math.cos(a) * r, c.z + Math.sin(a) * r, { keep: true, depth: true });
+    }
     applyDark();
     say(holding ? `${cave.name}` : 'Pitch dark. Light a torch (T)', holding ? 'note' : 'hurt');
     onEvent?.('depths', { cave });
@@ -806,6 +812,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const took = game.takeTorch(pos.x, pos.z);
       if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
       if (nearTent(pos.x, pos.z, TENT_IN + 1)) { pitchTent(); return; }
+      const stand = standNear(pos.x, pos.z);
+      if (stand) { onEvent?.('stand', stand); return; }
       if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
       const npc = npcNear(pos.x, pos.z);
       if (npc) { onEvent?.('npc', npc); return; }
@@ -1668,6 +1676,20 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
     return null;
+  }
+  // a finished display stand close by (anyone's): { piece, mine, owner }
+  function standNear(x, z, r = 2.1) {
+    const now = Date.now();
+    let best = null, bd = r;
+    for (const p of lastLands) {
+      if (!Number.isFinite(p.flat)) continue;
+      for (const q of p.pieces || []) {
+        if (q.t !== 'stand' || q.u > now || Math.abs(storeyY(p.flat, q.l) - pos.y) > 2.5) continue;
+        const d = Math.hypot((q.x + 0.5) * CELL - x, (q.z + 0.5) * CELL - z);
+        if (d < bd) { bd = d; best = { piece: q, mine: !!p.mine, owner: p.owner }; }
+      }
+    }
+    return best;
   }
   function showStructures(list) {
     lastLands = list;

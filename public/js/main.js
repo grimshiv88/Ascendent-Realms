@@ -8,7 +8,7 @@ import { renderMap, createMinimap } from './mapview.js';
 import { villageName } from './data/mobvillages.mjs';
 import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, renderChallenge, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
-import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass } from './bag.js';
+import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass, itemInfoHtml } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
 import { playWork } from './workscene.js';
 import { renderAssess } from './idcard.js';
@@ -385,6 +385,48 @@ function startGame(character) {
 
   // Land: L shows the grid of plots around you; tap one to see it in the Land window
   // everyone's plots go to the world; yours are kept for the map
+  // A display stand (anyone's): see what's on it; at your own, a Blacksmith puts their work on it
+  // or takes it back
+  function showStand(st, message = '') {
+    const at = { x: st.piece.x, z: st.piece.z, l: st.piece.l };
+    const shown = st.piece.show;
+    const msg = message ? `<p class="shop-msg" role="status">${message}</p>` : '';
+    const send = async (item, close) => {
+      try {
+        const r = await api.landShow({ ...at, item });
+        if (item) game.takeOut(item.uid);
+        else if (r.old) game.putBack(r.old);
+        setLands(r.plots || []);
+        close();
+        showArea(item ? 'Your work is on the stand for everyone to see.' : 'You take it back off the stand.');
+      } catch (err) { showStand(st, err.message || 'That did not work.'); }
+    };
+    if (shown) {
+      const extra = st.mine
+        ? `${msg}<div class="bag-actions"><button type="button" class="gold-button small" data-stand-take>Take it back</button></div>`
+        : `<p class="bag-hint">Made by <b>${esc(st.owner)}</b>, shown on their stand.</p>`;
+      showItemPop(itemInfoHtml(shown.id, shown, { extra, form: character.form }), (e, close) => {
+        if (!e.target.closest('[data-stand-take]')) return;
+        if (game.bagFull()) { showStand(st, 'Your bag is full.'); return; }
+        send(null, close);
+      });
+      return;
+    }
+    if (!st.mine) { showArea(`${esc(st.owner)}'s display stand is empty.`); return; }
+    if (character.cls !== 'blacksmith') { showArea('Only a Blacksmith can put their work on a display stand.'); return; }
+    const gear = character.inventory.filter((e) => e.uid && !game.isEquipped(e));
+    const list = gear.map((e) => `<button type="button" class="shop-row smith-row" data-stand-put="${e.uid}"><span class="smith-pic"><img class="item-pic" data-icon="${e.id}" data-plus="${e.plus || 0}" alt=""><span class="bag-icon">${ITEMS[e.id].icon}</span></span><span class="shop-name"><b>${esc(ITEMS[e.id].name)}${e.plus ? ` +${e.plus}` : ''}</b></span></button>`).join('');
+    showItemPop(`<div class="item-pop-box" role="dialog" aria-label="Display stand">
+        <button type="button" class="sw-close" data-pop-close aria-label="Close">×</button>
+        <h3>Your display stand</h3>${msg}
+        <p class="bag-hint">Choose a weapon or piece of armour to put on show. Everyone who walks by can touch it to see what it does. It stays yours: take it back whenever you like.</p>
+        <div class="smith-list">${list || '<p class="bag-hint">No weapons or armour in your bag (take off what you are wearing first).</p>'}</div>
+      </div>`, (e, close) => {
+      const k = e.target.closest('[data-stand-put]')?.dataset.standPut;
+      const item = k && game.entry(k);
+      if (item) send(item, close);
+    });
+  }
   function setLands(list) { ui.myPlots = list.filter((p) => p.mine); ui.otherPlots = list.filter((p) => !p.mine); world.setLands(list); }
   const loadCaves = () => api.caveList().then((r) => { ui.caves = r.caves || []; }).catch(() => {});
   function toggleLand() {
@@ -513,7 +555,7 @@ function startGame(character) {
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();
     if (name === 'map') updateMapBasket();
-    if (name === 'bag' || name === 'shop' || name === 'market') fillIcons(overlay);
+    if (name === 'bag' || name === 'shop' || name === 'market' || name === 'smith') fillIcons(overlay);
   }
   const openPanel = (name) => {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
@@ -722,6 +764,14 @@ function startGame(character) {
   }
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay || e.target.closest('[data-close]')) { closePanel(); return; }
+    // touching an item (its picture, name or box) shows what it does; its buttons still do their job
+    const info = e.target.closest('[data-info],[data-info-entry]'), btn = e.target.closest('button');
+    if (info && (!btn || btn.contains(info))) {
+      const k = info.dataset.infoEntry;
+      const entry = k ? game.entry(k) : null;
+      showItemPop(itemInfoHtml(entry?.id || info.dataset.info, entry, { form: character.form }));
+      return;
+    }
     const t = (attr) => e.target.closest(`[${attr}]`)?.getAttribute(attr);
     let v;
     if ((v = t('data-act')) != null && overlay.dataset.panel === 'options') { closePanel(); runAct(v); return; }
@@ -1031,7 +1081,7 @@ function startGame(character) {
         if (realmTime().night) missionStep('night');
       }
       if (type === 'depths') $('minimap').classList.add('hidden'); // no map underground
-      if (type === 'depths') showArea(`${data.cave.name}: ${{ small: 'a small cave', medium: 'a winding cave', deep: 'a deep cave' }[data.cave.size]}. ${world?.holding ? '' : 'Pitch dark: light a torch (T). '}Mine glowing ore veins, break nests, and find the boss at the bottom.`);
+      if (type === 'depths') showArea(`${data.cave.name}: ${{ small: 'a small', medium: 'a winding', deep: 'a deep' }[data.cave.size]} ${data.cave.dungeon ? 'dungeon in the mountain' : 'cave'}. Not every tunnel leads down to the boss: some are false routes that go deep and end in rock. ${world?.holding ? '' : 'Pitch dark: light a torch (T). '}Mine glowing ore veins, break nests, and find the boss at the bottom.`);
       if (type === 'surface') { ui.atCave = null; drawHud(); $('minimap').classList.remove('hidden'); }
       if (type === 'cave') {
         ui.atCave = data; ui.caveMsg = '';
@@ -1056,6 +1106,7 @@ function startGame(character) {
       }
       if (type === 'outdoors') $('minimap').classList.remove('hidden');
       if (type === 'castle') { ui.roomsCastle = true; ui.roomPick = null; ui.roomMsg = ''; loadRooms(); openPanel('rooms'); }
+      if (type === 'stand') showStand(data);
       if (type === 'anvil') {
         // your own anvil: the Blacksmith window, with the workshop pieces to forge too
         openPanel('smith');
@@ -1173,6 +1224,27 @@ function startGame(character) {
 
 // The region name fades in at the top of the screen when you enter a new area
 let areaTimer = null;
+// The pop-up an item opens (see bag.js itemInfoHtml). `onClick(e, close)` handles its buttons.
+function showItemPop(html, onClick = null) {
+  let pop = document.getElementById('item-pop');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'item-pop';
+    pop.className = 'item-pop';
+    document.body.appendChild(pop);
+    pop.addEventListener('click', (e) => {
+      if (e.target === pop || e.target.closest('[data-pop-close]')) { pop.remove(); return; }
+      pop.onPick?.(e, () => pop.remove());
+    });
+    pop.addEventListener('keydown', (e) => { if (e.key === 'Escape') pop.remove(); });
+  }
+  pop.innerHTML = html;
+  pop.onPick = onClick;
+  fillIcons(pop);
+  pop.querySelector('[data-pop-close]')?.focus();
+  return pop;
+}
+
 function showArea(name) {
   const el = $('area');
   el.textContent = name;

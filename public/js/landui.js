@@ -71,7 +71,7 @@ export function renderCave(el, cave, game, { owner = null, mine = false, message
     <div class="system-window" role="dialog" aria-label="Cave">
       <button type="button" class="sys-close" data-close aria-label="Close">×</button>
       <div class="sys-title"><span class="sys-bang">!</span><h2>${esc(cave.name)}</h2></div>
-      <p class="sys-top">${SIZES[cave.size].name} cave <span>·</span> ${SIZES[cave.size].chambers} chambers deep <span>·</span> Boss: <b>${game.bossHome(cave.id) ? 'waiting below' : 'beaten (back within a day)'}</b></p>
+      <p class="sys-top">${SIZES[cave.size].name} ${cave.dungeon ? 'dungeon' : 'cave'} <span>·</span> ${SIZES[cave.size].chambers} chambers deep <span>·</span> Boss: <b>${game.bossHome(cave.id) ? 'waiting below' : 'beaten (back within a day)'}</b></p>
       <p class="sys-hint">Walk into the dark shaft at the back to go down. It's pitch black below: light a torch in your hand with T. Swing at ore veins to mine them, break nests before they fill the cave with monsters, and the boss's chest holds treasure chosen for your class.</p>
       <h3 class="sys-sub">Found down here</h3>
       <p class="sys-hint">${t.ores.map(([id]) => `${ITEMS[id].icon} ${esc(ITEMS[id].name)}`).join(' · ')}</p>

@@ -1,5 +1,6 @@
 // A cave's depths: chambers going ever deeper, joined by tunnels, pitch dark without a torch.
 // Ore veins to mine, monster nests, a boss in the last chamber guarding a chest, and the way out.
+// False routes (see data/depths.mjs) look the same as the true way and end in rock.
 import * as THREE from 'three';
 import { caveLayout, THEMES, pickOre } from '../data/depths.mjs';
 import { ITEMS } from '../data/items.mjs';
@@ -22,7 +23,7 @@ export function buildDepths(cave) {
   // In a tunnel the floor slopes evenly from one chamber's floor to the next.
   function shape(x, z) {
     let d = Infinity, floor = 0;
-    for (const c of L.chambers) {
+    for (const c of L.all) {
       const k = Math.hypot(x - c.x, z - c.z) - c.r;
       if (k < d) { d = k; floor = c.y; }
     }
@@ -52,7 +53,7 @@ export function buildDepths(cave) {
   const g = new THREE.Group();
   // ---------- the rock: floor and walls in one sheet, and the roof above ----------
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const c of L.chambers) { minX = Math.min(minX, c.x - c.r); maxX = Math.max(maxX, c.x + c.r); minZ = Math.min(minZ, c.z - c.r); maxZ = Math.max(maxZ, c.z + c.r); }
+  for (const c of L.all) { minX = Math.min(minX, c.x - c.r); maxX = Math.max(maxX, c.x + c.r); minZ = Math.min(minZ, c.z - c.r); maxZ = Math.max(maxZ, c.z + c.r); }
   minX -= 8; maxX += 8; minZ -= 8; maxZ += 8;
   const nx = Math.ceil((maxX - minX) / STEP) + 1, nz = Math.ceil((maxZ - minZ) / STEP) + 1;
   const floorPos = new Float32Array(nx * nz * 3), roofPos = new Float32Array(nx * nz * 3), cols = new Float32Array(nx * nz * 3);
@@ -95,7 +96,7 @@ export function buildDepths(cave) {
   const crystalMat = new THREE.MeshStandardMaterial({ color: T.glow, emissive: T.glow, emissiveIntensity: 1.4, roughness: 0.3 });
   const crystal = new THREE.OctahedronGeometry(0.35, 0);
   const rnd = L.rnd;
-  for (const c of L.chambers) {
+  for (const c of L.all) {
     for (let i = 0; i < 3 + Math.floor(rnd() * 3); i++) {
       const a = rnd() * Math.PI * 2, r = c.r - 0.6;
       const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
@@ -127,14 +128,15 @@ export function buildDepths(cave) {
   const rock = new THREE.DodecahedronGeometry(0.75, 0);
   const rockMat = new THREE.MeshStandardMaterial({ color: T.rock, roughness: 0.95, flatShading: true });
   const veins = [];
-  L.chambers.forEach((c, ci) => {
-    const n = 2 + Math.floor(rnd() * 3) + (c.boss ? 1 : 0);
+  L.all.forEach((c, ci) => {
+    // a false route's chambers now and then hold a poor vein, so they look worth the walk
+    const n = c.false ? (rnd() < 0.3 ? 1 : 0) : 2 + Math.floor(rnd() * 3) + (c.boss ? 1 : 0);
     for (let i = 0; i < n; i++) {
       const a = rnd() * Math.PI * 2, r = c.r - 1.1;
       const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
       if (shape(x, z).d > -0.5) continue;
       // deeper chambers hold rarer ore
-      const ore = pickOre(T.ores, Math.random, ci / L.chambers.length);
+      const ore = pickOre(T.ores, Math.random, c.false ? 0 : ci / L.chambers.length);
       const v = new THREE.Group();
       const body = new THREE.Mesh(rock, rockMat);
       body.scale.set(1.2, 0.9, 1.1);
