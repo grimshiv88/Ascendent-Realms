@@ -6,8 +6,9 @@ import { heightAt, CITY_R } from '../data/world-layout.mjs';
 import { MARKETS, ITEMS } from '../data/items.mjs';
 import { buildSpawn, textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { joinCrowd, bakeCharacter } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
-import { mergeStill } from './merge.js';
+import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, paved, TOWN_TONES } from './houses.js';
 import { cityHouses, CASTLE_SPOT, LANES, CROSS_STREETS, HOUSE_D, LANE_W, PLAYGROUND, TRAINING_GROUND, TRAINING_STATIONS, SCHOOLS, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
 
@@ -158,6 +159,10 @@ export function buildCity(place, opts = {}) {
     lay(x1 - x0, 5, S.street, (x0 + x1) / 2, cz);
   }
 
+  // buildings and walls never move: they are merged into a few meshes at the end
+  const fixed = new THREE.Group();
+  g.add(fixed);
+
   // the city's own buildings, quarter by quarter
   CITY_SHOPS.forEach(([id, x, z, [fx, fz], w, d, h, wall0, roof0], i) => {
     const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
@@ -165,14 +170,14 @@ export function buildCity(place, opts = {}) {
     const b = house(w, d, h, wall, roof, name);
     doors.add(b);
     if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
-    const at = placeAt(g, b, x, z, fx, fz, d);
+    const at = placeAt(fixed, b, x, z, fx, fz, d);
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid, b.userData.height);
     shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: id !== 'academy' });
     // the Guild Hall gets a bell tower at its back
     if (id === 'guild') {
       const tower = buildTower({ size: 3.6, height: 16, wall: monster ? S.tones[0][0] : '#d8ccb0', roof });
       tower.position.set(x - fx * (d / 2 - 1.5), 0, z - fz * (d / 2 - 1.5));
-      g.add(tower);
+      fixed.add(tower);
     }
   });
   const open = quarters(g, S, solid, cx, cz, monster);
@@ -223,9 +228,6 @@ export function buildCity(place, opts = {}) {
   }
 
   // the houses of the townsfolk, where every newborn's family lives (see data/birth.mjs)
-  // (houses and walls never move: they are merged into a few meshes at the end)
-  const fixed = new THREE.Group();
-  g.add(fixed);
   const tones = monster ? S.tones : TOWN_TONES;
   const houses = cityHouses(place.id);
   for (const h of houses) {
@@ -240,7 +242,7 @@ export function buildCity(place, opts = {}) {
   // the walls: outer fortress wall, moat, inner wall (see walls())
   const wallMat = matOf(S.wall, 0.95);
   const bridges = walls(fixed, g, S, wallMat, cx, cz, solid);
-  mergeStill(fixed);
+  mergeStill(fixed, { cell: 48 });
 
   // street lamps round the plaza
   const lampMat = new THREE.MeshStandardMaterial({ color: S.lamp[0], emissive: S.lamp[1], emissiveIntensity: 1.6 });
@@ -267,6 +269,7 @@ export function buildCity(place, opts = {}) {
       const race = guardRaces[(k * 2 + (side > 0 ? 1 : 0)) % guardRaces.length];
       const body = buildCharacter({ race, form: 'humanoid', look: {} });
       wearGear(body, guardGear);
+      joinCrowd(bakeCharacter(body));
       const r = CITY_R + 3.5, lat = side * 3.4;
       const x = ox * r + oz * lat, z = oz * r - ox * lat;
       body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz), z);
@@ -283,6 +286,7 @@ export function buildCity(place, opts = {}) {
     body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz) + (S.decor === 'reeds' ? 0.6 : 0), z);
     body.rotation.y = faceA;
     if (info.small) body.scale.setScalar(0.58);
+    joinCrowd(bakeCharacter(body));
     g.add(body);
     // your own parents carry a sign over their heads, so you can find them in a crowd
     if (info.mine) { const sign = parentSign(); sign.position.y = (body.userData.height || 1.8) + 0.55; body.add(sign); }
@@ -356,8 +360,10 @@ export function buildCity(place, opts = {}) {
   });
 
   const glow = decorate(g, S, cx, cz, solid);
+  let detailAt = -1;
   const update = (t, you) => {
     centre.update?.(t);
+    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z); }
     doors.update(you);
     for (const b of guards) animateCharacter(b, t, 0);
     walkFolk(t, you);
@@ -524,6 +530,7 @@ function buildCastleGrounds(k, C, rot, cx, cz, solid, S) {
   const guard = (lx, lz, y, face, race) => {
     const b = buildCharacter({ race, form: 'humanoid', look: {} });
     wearGear(b, gearOf);
+    joinCrowd(bakeCharacter(b));
     b.position.set(lx, y, lz); b.rotation.y = face;
     k.add(b); guards.push(b);
     if (!y) put(lx, lz, 0.6, 2);
@@ -787,6 +794,7 @@ export function buildVillage(place) {
       const gx = ox * (R + 2.2) + sx * side * 2.2, gz = oz * (R + 2.2) + sz * side * 2.2;
       const b = buildCharacter({ race: ['dwarf', 'elf', 'beastkin', 'hobbit'][(guards.length + place.id.length) % 4], form: 'humanoid', look: {} });
       wearGear(b, gearOf);
+      joinCrowd(bakeCharacter(b));
       b.position.set(gx, heightAt(cx + gx, cz + gz) - baseY, gz);
       b.rotation.y = ga;
       g.add(b); guards.push(b);

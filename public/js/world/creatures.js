@@ -1,6 +1,7 @@
 // Wild monsters that roam the land around you. Each region has its own kinds and levels.
 import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { joinCrowd, bakeCharacter } from '../characters/crowd.js';
 import { sample, toWorld, PLACES, safeZoneAt } from '../data/world-layout.mjs';
 import { EVOLUTIONS, rollKillExp } from '../data/game-data.mjs';
 import { wildLevelAt, stageForLevel, wardedAt } from '../data/wilds.mjs';
@@ -138,6 +139,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const kind = KINDS[kindId];
     const stage = extra.stage ?? kind.body.stage ?? 0;
     const body = buildCharacter({ race: kind.body.race, form: kind.body.form, stage, look: { ...(kind.body.look || {}), size: kind.body.size || 1 } });
+    joinCrowd(bakeCharacter(body));
     body.position.set(x, y, z);
     const h = body.userData.height;
     const tag = plate(extra.title || kind.name, level);

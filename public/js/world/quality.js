@@ -21,12 +21,13 @@ export const QUALITY = {
     lods: [[1, 64], [3, 32], [6, 16], [11, 8]], veg: 3, grass: 1, grassDensity: 0.75, nearTrees: 110, fog: 0.00024,
   },
   high: {
-    name: 'Far view', pixelRatio: 2, shadows: true, shadowSize: 2048, fps: 0,
+    name: 'Far view', pixelRatio: 1.5, shadows: true, shadowSize: 2048, fps: 0,
     lods: [[1, 64], [4, 32], [9, 16], [15, 8]], veg: 5, grass: 2, grassDensity: 1, nearTrees: 170, fog: 0.00015,
   },
 };
 
 export function pickQuality(choice) {
-  const key = QUALITY[choice] ? choice : isMobile() ? 'low' : 'high';
+  // 'auto': phones save battery; computers get the balanced setting (Far view is a choice in Settings)
+  const key = QUALITY[choice] ? choice : isMobile() ? 'low' : 'medium';
   return { key, ...QUALITY[key] };
 }

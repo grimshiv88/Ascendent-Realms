@@ -24,6 +24,7 @@ import { placeBuilding, CELL } from '../data/building.mjs';
 import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { updateCrowd } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
@@ -208,6 +209,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const d = Math.hypot(x - s.place.x, z - s.place.z);
       if (d < 1000 && !s.built) {
         s.built = s.place.cave ? buildCave(s.place) : s.place.city ? buildCity(s.place, { home: homeOf() }) : s.place.village ? buildVillage(s.place) : buildSpawn(s.place);
+        s.built.group.name ||= s.place.id || 'place';
         scene.add(s.built.group);
         if (s.built.solid) colliders.add(s.built.solid);
         if (cityRaised[s.place.id]) s.built.setRaised?.(true, colliders);
@@ -447,7 +449,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   // Sleeping (Z, only somewhere safe) and collapsing from exhaustion
   let inTent = false; // asleep inside your tent: hidden, and resting faster
-  let sleeping = false, collapsed = 0, fatigueAcc = 0, warnedTired = false, lastTime = -1;
+  let sleeping = false, collapsed = 0, fatigueAcc = 0, warnedTired = false, lastTime = -1, lastCrowd = -1;
   const resting = () => sleeping || collapsed > 0;
   function toggleSleep() {
     if (!game || dead) return;
@@ -1896,6 +1898,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     sky.follow(camera);
 
     if (camOverride) { camera.position.set(...camOverride[0]); camera.lookAt(...camOverride[1]); avatar.visible = false; }
+    if (t - lastCrowd > 0.25) { lastCrowd = t; updateCrowd(camera.position.x, camera.position.y, camera.position.z, scene); }
     renderer.render(scene, camera);
 
     // floating text rises and fades
@@ -2020,6 +2023,22 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugSlayVillage(id) { for (const m of creatures.list.filter((q) => q.village === id && !q.dead)) finishHit(m, creatures.hit(m, m.hp)); },
     debugUse: () => interact(),
     debugTalkParent() { for (const c of builtCities()) { const n = c.built.npcs.find((q) => q.kind === 'parent' && q.mine); if (n) { pos.set(n.x + 1, pos.y, n.z); talkTo(n); return true; } } return false; },
+    // for testing: what a frame draws, grouped by what it is
+    debugCensus() {
+      const frus = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+      const out = {}; let calls = 0, tris = 0, shadowCalls = 0;
+      scene.traverseVisible((o) => {
+        if (!o.isMesh && !o.isPoints && !o.isLine) return;
+        const g = o.geometry; const n = (g.index ? g.index.count : g.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1);
+        if (o.frustumCulled !== false && g.boundingSphere !== null && !frus.intersectsObject(o)) { if (o.castShadow) shadowCalls++; return; }
+        let top = o; const chain = []; while (top.parent && top.parent !== scene) { if (top.name) chain.push(top.name); top = top.parent; }
+        let k = (top.name || top.userData.kind || top.type) + '/' + (chain[chain.length - 1] || '') + '/' + g.type + (o.isInstancedMesh ? '[inst]' : '') + (o.isSkinnedMesh ? '[skin]' : '');
+        const e = out[k] || (out[k] = { n: 0, tris: 0, shadow: 0 }); e.n++; e.tris += n; if (o.castShadow) { e.shadow++; shadowCalls++; }
+        calls++; tris += n;
+      });
+      return { calls, tris: Math.round(tris), shadowCalls, top: Object.entries(out).sort((a, b) => b[1].n - a[1].n).slice(0, 25).map(([k, v]) => `${k}: ${v.n} draws ${Math.round(v.tris / 1000)}k tris ${v.shadow} shadow`) };
+    },
+    debugScene: () => scene,
     debugCam(at, look) { camOverride = at ? [at, look] : null; if (!at) avatar.visible = true; },
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
     debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`), villages: game?.villages().map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.length, dead: v.dead.length, built: mobVillages.has(v.id) })) }),

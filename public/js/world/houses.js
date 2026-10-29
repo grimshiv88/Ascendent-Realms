@@ -132,12 +132,16 @@ function project(geo, size) {
 const TEX_SIZE = { tiles: 2, plaster: 3, stone: 2.2, wood: 1.2, cobble: 1.6 };
 function sizeFor(m) { for (const [k, s] of Object.entries(TEX_SIZE)) if (m.map === TEX?.[k]) return s; return 1; }
 // a box of w × h × d with its middle at (x, y, z), added to `g`
+// small parts (window frames, braces, rails) are marked as detail: the city stops drawing them far away
+let DETAIL = false;
+const detail = (f) => { const was = DETAIL; DETAIL = true; f(); DETAIL = was; };
 function box(g, w, h, d, m, x, y, z, rot = null) {
   const geo = new THREE.BoxGeometry(w, h, d);
   if (m.map) project(geo, sizeFor(m));
   const mesh = new THREE.Mesh(geo, m);
   mesh.position.set(x, y, z);
   if (rot) mesh.rotation.set(rot[0] || 0, rot[1] || 0, rot[2] || 0);
+  if (DETAIL) mesh.userData.detail = true;
   g.add(mesh);
   return mesh;
 }
@@ -198,8 +202,12 @@ function gableRoof(g, len, span, pitch, o) {
 // A window on a wall facing +z at (x, y) (its middle), with a frame, cross bars, a sill and,
 // if wanted, open shutters and a box of flowers
 function windowAt(g, x, y, ww, wh, o) {
-  const { frameM, glassM, shutterM = null, flowers = null, arch = false } = o;
+  const { glassM } = o;
   box(g, ww, wh, 0.06, glassM, x, y, 0.01);
+  detail(() => windowParts(g, x, y, ww, wh, o));
+}
+function windowParts(g, x, y, ww, wh, o) {
+  const { frameM, shutterM = null, flowers = null, arch = false } = o;
   const f = 0.11;
   box(g, ww + f * 2, f, 0.14, frameM, x, y + wh / 2 + f / 2, 0.05);
   box(g, ww + f * 2, f, 0.14, frameM, x, y - wh / 2 - f / 2, 0.05);
@@ -226,9 +234,11 @@ function windowAt(g, x, y, ww, wh, o) {
       const fx = x - ww / 2 + (i + 0.5) * (ww / 6);
       const lf = new THREE.Mesh(new THREE.IcosahedronGeometry(0.13, 0), leaf);
       lf.position.set(fx, by + 0.2, 0.24 + ((i % 2) - 0.5) * 0.08);
+      lf.userData.detail = true;
       g.add(lf);
       const fl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.075, 0), bloom);
       fl.position.set(fx + 0.04, by + 0.3, 0.3 - (i % 2) * 0.06);
+      fl.userData.detail = true;
       g.add(fl);
     }
   }
@@ -279,7 +289,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
       const n = Math.max(2, Math.round(w / 1.4));
       for (let i = 0; i <= n; i++) {
         const bx = -w / 2 + 0.15 + (i * (w - 0.3)) / n;
-        for (const s of [-1, 1]) box(g, 0.16, 0.5, jetty + 0.05, timberM, bx, y - 0.2, s * (d / 2 + jetty / 2), [s * -0.5]);
+        detail(() => { for (const s of [-1, 1]) box(g, 0.16, 0.5, jetty + 0.05, timberM, bx, y - 0.2, s * (d / 2 + jetty / 2), [s * -0.5]); });
       }
     }
   }
@@ -311,13 +321,13 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
           if (f > 0 && timbered && (i + f) % 2 === 0) windowAt(F, bx, y0 + 1.75, 0.7, 1.05, { frameM, glassM });
           else if (timbered) {
             const bh = 0.95 - 0.1, bl = Math.hypot(bw - 0.2, bh);
-            box(F, 0.12, bl, 0.07, timberM, bx, y0 + 0.5, 0.035, [0, 0, Math.atan2(bw - 0.2, bh)]);
+            detail(() => box(F, 0.12, bl, 0.07, timberM, bx, y0 + 0.5, 0.035, [0, 0, Math.atan2(bw - 0.2, bh)]));
           }
           continue;
         }
         if (timbered) {
           // the braces under the windows, as in old timber houses
-          for (const k of [-1, 1]) box(F, 0.11, Math.hypot(bw / 2 - 0.1, 0.85), 0.06, timberM, bx + k * bw / 4, y0 + 0.5, 0.035, [0, 0, k * Math.atan2(bw / 2 - 0.1, 0.85)]);
+          for (const k of [-1, 1]) detail(() => box(F, 0.11, Math.hypot(bw / 2 - 0.1, 0.85), 0.06, timberM, bx + k * bw / 4, y0 + 0.5, 0.035, [0, 0, k * Math.atan2(bw / 2 - 0.1, 0.85)]));
         }
         const ww = Math.min(1.15, bw - 0.9), wh = f ? 1.35 : 1.25;
         windowAt(F, bx, y0 + 1.75, ww, wh, { frameM: stoneGround && !f ? stoneM : frameM, glassM, shutterM: front && bw > 1.9 ? shutterM : null, flowers: front && f > 0 && R() < 0.6 ? flowers : null, boxM, arch: stoneGround && !f });
@@ -355,10 +365,12 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
     const bwid = Math.min(w - 1.5, 4.6), y = PL + FH + 0.3, z = dU / 2;
     box(g, bwid, 0.14, 1.1, timberM, 0, y - 0.07, z + 0.55);
     const rail = mat('plain', '#4a3020');
+    DETAIL = true;
     box(g, bwid, 0.08, 0.08, rail, 0, y + 1, z + 1.06);
     for (const s of [-1, 1]) box(g, 0.08, 0.08, 1.1, rail, s * bwid / 2, y + 1, z + 0.55);
     for (let i = 0; i <= Math.round(bwid / 0.28); i++) box(g, 0.05, 1, 0.05, rail, -bwid / 2 + i * (bwid / Math.round(bwid / 0.28)), y + 0.5, z + 1.06);
     for (const s of [-1, 1]) box(g, 0.12, 0.9, 0.12, timberM, s * (bwid / 2 - 0.2), y - 0.45, z + 0.5, [-0.7]);
+    DETAIL = false;
   }
 
   // the roof: the main gable along the street, a gable to the front or dormers, and a chimney

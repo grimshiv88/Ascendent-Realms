@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { heightAt } from '../data/world-layout.mjs';
 import { ITEMS } from '../data/items.mjs';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { joinCrowd, bakeCharacter } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 
 // Each portal stands inside a closed stone hall with one door (facing south) and two guards
@@ -107,6 +108,7 @@ export function buildPortal(p) {
   const guards = [-1, 1].map((side, i) => {
     const b = buildCharacter({ race: races[i], form: 'humanoid', look: {} });
     wearGear(b, guardGear);
+    joinCrowd(bakeCharacter(b));
     b.position.set(side * (door + 1.2), heightAt(p.x + side * (door + 1.2), p.z + HALL + 1.4) - y, HALL + 1.4);
     group.add(b);
     put(side * (door + 1.2), HALL + 1.4, 0.6, 2);
