@@ -109,7 +109,7 @@ function mat(kind, color) {
   if (MATS.has(k)) return MATS.get(k);
   const T = textures();
   let m;
-  if (kind === 'glass') m = new THREE.MeshStandardMaterial({ color, roughness: 0.12, metalness: 0.5, emissive: '#e09a48', emissiveIntensity: 0.28 });
+  if (kind === 'glass') m = new THREE.MeshStandardMaterial({ color, roughness: 0.15, metalness: 0.1, emissive: '#f0b060', emissiveIntensity: 0.06 });
   else if (kind === 'plain') m = new THREE.MeshStandardMaterial({ color, roughness: 0.85 });
   else m = new THREE.MeshStandardMaterial({ color, map: T[kind], roughness: kind === 'tiles' ? 0.7 : 0.92 });
   MATS.set(k, m);
