@@ -37,7 +37,8 @@ export function meshField(shapes, box, cell, clip = null, { clipNormals = false 
     const blk = { i0, j0, k0, i1, j1, k1, local };
     if (!local.some((s) => !s.sub)) { fills.push([blk, 1]); continue; }
     const c = fieldDist(local, (wx0 + wx1) / 2, (wy0 + wy1) / 2, (wz0 + wz1) / 2, clip);
-    if (Math.abs(c) > blockR + cell) { fills.push([blk, Math.sign(c)]); continue; }
+    // (with room to spare: a loft's or a blend's distance is only roughly true)
+    if (Math.abs(c) > (blockR + cell) * 1.4) { fills.push([blk, Math.sign(c)]); continue; }
     active.push(blk);
   }
   // blocks with no surface: every corner has the same sign as the block's middle
