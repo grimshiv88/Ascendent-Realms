@@ -9,10 +9,10 @@ import { fieldDist, shapeDist, cone } from './sdf.js';
 // head; lift: how far each layer stands off the head; tip: how much the tips curl; count: locks
 // per layer; drop: extra length that falls free below the skull (long hair)
 export const HAIR_STYLES = {
-  short: { layers: [0.008, 0.017], count: 22, width: 0.044, len: (a) => lerpA(a, 0.235, 0.23, 0.2), tip: 0.5, messy: 0.35, drop: 0 },
-  medium: { layers: [0.008, 0.016, 0.023], count: 22, width: 0.046, len: (a) => lerpA(a, 0.24, 0.27, 0.27), tip: 0.4, messy: 0.25, drop: 0.06 },
-  long: { layers: [0.008, 0.016, 0.023], count: 24, width: 0.048, len: (a) => lerpA(a, 0.235, 0.36, 0.42), tip: 0.25, messy: 0.15, drop: 0.3 },
-  spiky: { layers: [0.01, 0.022], count: 18, width: 0.046, len: (a) => lerpA(a, 0.23, 0.21, 0.22), tip: 0.2, messy: 0.6, drop: 0, spikes: 1 },
+  short: { layers: [0.008, 0.014, 0.02], count: 30, width: 0.036, len: (a) => lerpA(a, 0.235, 0.23, 0.2), tip: 0.5, messy: 0.35, drop: 0 },
+  medium: { layers: [0.008, 0.014, 0.02, 0.026], count: 30, width: 0.038, len: (a) => lerpA(a, 0.24, 0.27, 0.27), tip: 0.4, messy: 0.25, drop: 0.06 },
+  long: { layers: [0.007, 0.012, 0.017, 0.022, 0.027], count: 34, width: 0.04, len: (a) => lerpA(a, 0.235, 0.36, 0.42), tip: 0.25, messy: 0.15, drop: 0.3 },
+  spiky: { layers: [0.01, 0.018, 0.026], count: 24, width: 0.042, len: (a) => lerpA(a, 0.23, 0.21, 0.22), tip: 0.2, messy: 0.6, drop: 0, spikes: 1 },
   curly: { layers: [0.01, 0.02, 0.028], count: 20, width: 0.044, len: (a) => lerpA(a, 0.21, 0.22, 0.22), tip: 1.2, messy: 0.5, drop: 0, curls: 1 },
   bald: null,
 };
@@ -52,7 +52,7 @@ export function growHair(styleName, shapes, plan, seed = 1) {
   const earY = o[1] + 0.03 * hd; // below this a lock falls free instead of hugging the head
   const brow = plan.eyes.y + 0.022 * hd; // bangs stop about at the brows
 
-  const P = [], N = [], T = [], L = [], I = [];
+  const P = [], N = [], T = [], L = [], I = [], X = [], K = [], TG = [];
   const SEG = 14, RING = 6;
   S.layers.forEach((lift0, layer) => {
     const count = Math.round(S.count * (layer === 0 ? 1 : 0.85));
@@ -109,6 +109,7 @@ export function growHair(styleName, shapes, plan, seed = 1) {
 
   function ribbon(pts, width, lift, layer, S, rnd, hug = 1) {
     const n = pts.length;
+    const lockId = rnd();
     // smooth out the small jolts from keeping the lock off the head and shoulders
     for (let it = 0; it < 6; it++) for (let k = 2; k < n - 1; k++) {
       const a = pts[k - 1], b = pts[k], c = pts[k + 1];
@@ -139,7 +140,7 @@ export function growHair(styleName, shapes, plan, seed = 1) {
         P.push(p[0] + off[0], p[1] + off[1], p[2] + off[2]);
         const nn = norm(add(scale(side, cs * th), scale(up, sn * w)));
         N.push(nn[0], nn[1], nn[2]);
-        T.push(t); L.push(layer);
+        T.push(t); L.push(layer); X.push(cs); K.push(lockId); TG.push(fwd[0], fwd[1], fwd[2]);
       }
     }
     for (let k = 0; k < n - 1; k++) for (let r = 0; r < RING; r++) {
@@ -147,7 +148,7 @@ export function growHair(styleName, shapes, plan, seed = 1) {
       I.push(a, c, b, b, c, d);
     }
   }
-  return { positions: new Float32Array(P), normals: new Float32Array(N), along: new Float32Array(T), layer: new Float32Array(L), indices: new Uint32Array(I) };
+  return { positions: new Float32Array(P), normals: new Float32Array(N), along: new Float32Array(T), layer: new Float32Array(L), across: new Float32Array(X), lock: new Float32Array(K), tangent: new Float32Array(TG), indices: new Uint32Array(I) };
 }
 
 // the point on the surface found going out from `from` along `dir`

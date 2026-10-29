@@ -2,7 +2,7 @@
 // are sculpted onto each bone (bones, muscles, joints, the face). Everything is laid out standing
 // straight with the arms hanging ("rest"), in metres, facing +z, with the body's left at +x.
 // The bones' names follow the VRM humanoid standard, so motions can be shared with other models.
-import { cone, ell, loft, rotXYZ, alongDir, norm } from './sdf.js';
+import { cone, ell, loft, rotXYZ, alongDir, norm, fieldDist } from './sdf.js';
 
 // The default: a young adult of 1.75 m. Every race changes some of these (see races.js).
 export const BASE = {
@@ -77,49 +77,119 @@ export function humanoidPlan(opts = {}) {
   const bl = P.belly;
   const R = (k, rx, f, bk, cz = 0) => [T(k), rx * b, f * b, bk * b, cz];
   put('hips', loft([
-    R(-0.1, 0.11 * hw, 0.068, 0.07),
-    R(-0.05, 0.15 * hw, 0.08, 0.1, -0.006),
-    R(0.0, 0.152 * hw, 0.083 + bl * 0.01, 0.098, -0.006),
-    R(0.07, 0.142 * (hw + ww) / 2, 0.084 + bl * 0.03, 0.082),
-    R(0.15, 0.125 * ww, 0.083 + bl * 0.045, 0.074),
-    R(0.23, 0.13 * (ww + ch) / 2, 0.087 + bl * 0.03, 0.078),
-    R(0.3, 0.142 * ch, 0.095, 0.085),
-    R(0.37, 0.152 * ch, 0.1, 0.09),
-    R(0.44, 0.156 * ch * sw, 0.094, 0.088, -0.004),
-    R(0.5, 0.142 * sw, 0.07, 0.075, -0.01),
+    R(-0.1, 0.112 * hw, 0.066, 0.072),
+    R(-0.05, 0.15 * hw, 0.078, 0.098, -0.008),
+    R(0.0, 0.153 * hw, 0.08 + bl * 0.01, 0.096, -0.008),
+    R(0.07, 0.138 * (hw + ww) / 2, 0.081 + bl * 0.03, 0.08),
+    R(0.15, 0.121 * ww, 0.08 + bl * 0.045, 0.072),
+    R(0.23, 0.133 * (ww + ch) / 2, 0.085 + bl * 0.03, 0.077),
+    R(0.3, 0.149 * ch, 0.093, 0.085),
+    R(0.37, 0.16 * ch, 0.098, 0.091),
+    R(0.44, 0.165 * ch * sw, 0.094, 0.09, -0.004),
+    R(0.5, 0.145 * sw, 0.07, 0.077, -0.01),
     R(0.55, 0.075, 0.042, 0.052, -0.02),
   ], { blend: 0.02, span: [['hips', T(0.02)], ['spine', T(0.15)], ['chest', T(0.29)], ['upperChest', T(0.42)]] }));
+  // The muscles over the trunk, more defined the more muscled (def 0 soft .. 1 cut): each lies on
+  // the skin with a soft edge, and the grooves between them are carved
+  const def = Math.min(1, Math.max(0, (m - 0.15) / 0.6));
+  const front = (k) => { // how far forward the trunk's front is at height k (roughly)
+    const ks = [[0.07, 0.081], [0.15, 0.08], [0.23, 0.085], [0.3, 0.093], [0.37, 0.098], [0.44, 0.094]];
+    for (let i = 1; i < ks.length; i++) if (k <= ks[i][0]) { const t = (k - ks[i - 1][0]) / (ks[i][0] - ks[i - 1][0]); return (ks[i - 1][1] + (ks[i][1] - ks[i - 1][1]) * Math.max(0, t)) * b; }
+    return 0.094 * b;
+  };
+  // the skin's place at the front, x across and k up the trunk (an ellipse round each slice)
+  const rxAt = (k) => (k < 0.23 ? 0.121 * ww + (0.133 * (ww + ch) / 2 - 0.121 * ww) * Math.max(0, (k - 0.15) / 0.08) : k < 0.37 ? 0.133 * (ww + ch) / 2 + (0.16 * ch - 0.133 * (ww + ch) / 2) * Math.min(1, (k - 0.23) / 0.14) : 0.16 * ch) * b;
+  const surf = (x, k) => front(k) * Math.sqrt(Math.max(0.05, 1 - (x / rxAt(k)) ** 2));
+  // a groove carved along points [x, k] on the front of the trunk, r wide, `depth` deep
+  // (measured on the skin as sculpted so far, so a groove is as deep as asked over any muscle)
+  // (dir -1: on the back, marching from behind; the result is then the depth behind, as a positive z)
+  const skinAt = (x, y, z0, dir = 1) => {
+    const solid = shapes.filter((q) => !q.sub && !q.ghost);
+    let z = z0;
+    for (let i = 0; i < 60; i++) { const d = fieldDist(solid, x, y, dir * z); if (Math.abs(d) < 2e-5) break; z -= d; }
+    return z;
+  };
+  const groove = (bn, pts, r, depth, opts = {}) => {
+    const at = ([x, k]) => [x, T(k), skinAt(x, T(k), surf(x, k)) + r - depth];
+    for (let i = 1; i < pts.length; i++) put(bn, cone(at(pts[i - 1]), at(pts[i]), r, r, { sub: true, blend: r * 1.6, ...opts }));
+  };
   for (const s of [-1, 1]) {
-    const pk = 0.6 + m * 0.7;
-    // chest muscles, only on the muscled
-    if (m > 0.4) put('upperChest', ell([s * 0.06 * sw, T(0.395), 0.072 * ch * b - 0.022], [0.068 * sw, 0.048, 0.03 + 0.02 * (m - 0.3)], { m: rotXYZ(0, s * 0.25, s * 0.12), blend: 0.035 }));
-    // the slope from the neck to the shoulders
-    put('upperChest', cone([s * 0.024, T(0.535), -0.024], [s * 0.14 * sw, T(0.48), -0.016], 0.03 * (0.8 + m * 0.5), 0.024, { blend: 0.05 }));
-  }
-  if (m > 0.35) {
-    // stomach muscles
-    for (let row = 0; row < 3; row++) for (const s of [-1, 1]) {
-      put('spine', ell([s * 0.024, T(0.1 + row * 0.07), 0.077 * b], [0.022, 0.03, 0.01 * (m - 0.2)], { blend: 0.012, detail: true }));
+    // chest: a broad fan from the breastbone to the shoulder, its lower edge crisp on the muscled
+    if (def > 0.05) {
+      // (a broad, low mound; its lower edge is drawn by a groove, as a sculptor would cut it)
+      put('upperChest', ell([s * 0.064 * sw, T(0.405), surf(s * 0.064 * sw, 0.4) - 0.03 + 0.004 + 0.008 * def], [0.085 * sw, 0.062, 0.03], { m: rotXYZ(0.2, s * 0.42, s * 0.1), blend: 0.04 }));
+      groove('upperChest', [[s * 0.008, 0.355], [s * 0.05 * sw, 0.343], [s * 0.095 * sw, 0.36], [s * 0.132 * sw, 0.405]], 0.013, 0.0018 + 0.0028 * def);
+      // the side of the chest under the arm, and the wide back muscles giving the V to the trunk
+      put('chest', ell([s * 0.118 * ch, T(0.36), -0.032], [0.03 * b, 0.1, 0.058 * b], { m: rotXYZ(0, 0, s * 0.25), blend: 0.05 }));
+      // obliques over the hips
+      put('spine', ell([s * 0.108 * ww, T(0.12), 0.012], [0.026 * b, 0.07, 0.055 * b], { blend: 0.045 }));
     }
+    // the slope from the neck to the shoulders (the trapezius)
+    put('upperChest', cone([s * 0.024, T(0.535), -0.024], [s * 0.14 * sw, T(0.48), -0.016], 0.03 * (0.8 + m * 0.5), 0.024, { blend: 0.05 }));
+    // the seat
+    put('hips', ell([s * 0.06 * hw, T(-0.045), -0.066 * b], [0.062 * b, 0.07, 0.046 * b], { m: rotXYZ(0.15, 0, s * 0.12), blend: 0.045 }));
+  }
+  if (def > 0.05) {
+    // the back of the neck and shoulders, a diamond down the upper back
+    put('upperChest', ell([0, T(0.45), -0.068 * b], [0.085 * sw, 0.085, 0.022 + 0.008 * def], { blend: 0.04 }));
+    // the groove down the middle of the chest, and of the back along the spine
+    groove('upperChest', [[0, 0.34], [0, 0.46]], 0.011, 0.0015 + 0.002 * def);
+    // the long muscles either side of the spine, and the groove between them
+    for (const s of [-1, 1]) put('spine', ell([s * 0.026, T(0.14), -0.074 * b], [0.022, 0.13, 0.018], { blend: 0.035 }));
+    const back = ([x, k]) => { const z0 = -0.09 * b; return [x, T(k), -skinAt(x, T(k), -z0, -1) - 0.011 + 0.0016 + 0.0024 * def]; };
+    for (const [p0, p1] of [[[0, 0.03], [0, 0.2]], [[0, 0.2], [0, 0.36]], [[0, 0.36], [0, 0.47]]]) put('chest', cone(back(p0), back(p1), 0.011, 0.011, { sub: true, blend: 0.018 }));
+  }
+  if (def > 0.25) {
+    // stomach muscles: a low swell, cut by the line down the middle and three lines across
+    const d2 = (def - 0.25) / 0.75;
+    for (const s of [-1, 1]) put('spine', ell([s * 0.03, T(0.17), front(0.17) - 0.03 + 0.004 + 0.003 * d2], [0.034, 0.12, 0.03], { blend: 0.03, detail: true }));
+    groove('spine', [[0, 0.05], [0, 0.3]], 0.01, 0.001 + 0.0018 * d2, { detail: true });
+    for (const k of [0.132, 0.2, 0.266]) groove('spine', [[-0.05, k - 0.006], [-0.025, k], [0, k + 0.004], [0.025, k], [0.05, k - 0.006]], 0.009, 0.0008 + 0.0014 * d2, { detail: true });
+    // the lines from the hip bones down to the groin
+    for (const s of [-1, 1]) put('hips', cone([s * 0.105 * hw, T(0.05), front(0.07) - 0.012], [s * 0.035, T(-0.07), 0.066 * b], 0.004, 0.003, { sub: true, blend: 0.012, detail: true }));
   }
 
   // ---- neck and head ----
-  const nr = 0.041 * P.neck * Math.sqrt(b);
-  put('neck', cone([0, T(0.49), -0.022], [0, headO[1] + 0.012, -0.012], nr * 1.08, nr, { blend: 0.035 }));
+  const nr = 0.038 * P.neck * Math.sqrt(b);
+  // (the neck meets the skull behind the jaw, so the jaw's line stands clear of it)
+  put('neck', cone([0, T(0.49), -0.022], [0, headO[1] - 0.004, -0.02], nr * 1.08, nr * 0.96, { blend: 0.03 }));
 
-  // skull, face, jaw and chin (anime-realistic: a big round skull, a small soft face, a narrow jaw
-  // coming to a small chin). The eyes, brows and mouth are painted on afterwards (see face.js).
-  put('head', ell(H(0, 0.097, -0.01), [0.08, 0.089, 0.096], { blend: 0.02 }));
-  put('head', ell(H(0, 0.05, 0.02), [0.058, 0.062, 0.07], { blend: 0.045 }));
-  put('head', cone(H(0, 0.056, 0.0), H(0, -0.017, 0.062 + 0.004 * P.chin), 0.05 * P.jaw, 0.012 * P.chin, { blend: 0.04 }));
-  put('head', ell(H(0, -0.019, 0.063), [0.011 * P.chin, 0.008, 0.008], { blend: 0.014 })); // the point of the chin
+  // skull, face, jaw and chin (anime-realistic: a big round skull, a fine face, a clean jawline from
+  // under the ear to a defined chin, high cheekbones). The eyes, brows and mouth are painted on
+  // afterwards (see face.js).
+  const jw = P.jaw, cn = P.chin;
+  put('head', ell(H(0, 0.104, -0.01), [0.08, 0.084, 0.096], { blend: 0.02 }));
+  // the face, drawn slice by slice like the trunk: [height, half width, depth in front, depth behind,
+  // middle], from under the chin up to the brow. Its outline from the front: straight down from the
+  // temples past the cheekbones, then a clean slant in to a narrow chin; from the side: a flat brow,
+  // the eyes set in, and a firm chin a little behind the mouth.
+  const F = (y, rx, f, bk, cz, wx = 1) => [headO[1] + y * hd, rx * hd * wx, f * hd, bk * hd, headO[2] + cz * hd];
+  put('head', loft([
+    F(-0.027, 0.009, 0.012, 0.012, 0.054, cn),
+    F(-0.018, 0.019, 0.022, 0.04, 0.049, cn),
+    F(-0.006, 0.031, 0.034, 0.06, 0.043, (jw + cn) / 2),
+    F(0.008, 0.041, 0.046, 0.066, 0.033, jw),
+    F(0.022, 0.049, 0.057, 0.066, 0.025, jw),
+    F(0.038, 0.056, 0.066, 0.066, 0.02),
+    F(0.055, 0.058, 0.071, 0.07, 0.018),
+    F(0.072, 0.06, 0.074, 0.075, 0.016),
+    F(0.092, 0.062, 0.07, 0.08, 0.014),
+  ], { blend: 0.012 }));
+  // the jaw's edge, from under the ear to the chin, and the cheekbones, faintly
+  for (const s of [-1, 1]) {
+    const corner = H(s * 0.047 * jw, 0.012, -0.022), front = H(s * 0.01 * cn, -0.02, 0.063);
+    put('head', cone(H(s * 0.052 * jw, 0.045, -0.024), corner, 0.008 * jw, 0.0075 * jw, { blend: 0.016 }));
+    put('head', cone(corner, front, 0.0075 * jw, 0.007 * cn, { blend: 0.014 }));
+    put('head', ell(H(s * 0.047, 0.058, 0.052), [0.012, 0.007, 0.01], { m: rotXYZ(0, s * 0.5, s * -0.2), blend: 0.026 }));
+  }
+  put('head', ell(H(0, -0.017, 0.064), [0.012 * cn, 0.009, 0.008], { blend: 0.012 })); // the point of the chin
   for (const s of [-1, 1]) {
     put('head', ell(H(s * 0.034, 0.063, 0.094), [0.021 * P.eyes, 0.012 * P.eyes, 0.0055], { sub: true, blend: 0.014 })); // a shallow bed for the eye
   }
   if (P.brow > 0.4) put('head', ell(H(0, 0.086, 0.07), [0.058, 0.011, 0.016], { blend: 0.03 * P.brow })); // a heavy brow
   // the nose: a fine bridge and a small soft tip
   const nz = P.nose;
-  put('head', cone(H(0, 0.052, 0.089), H(0, 0.039, 0.0955 + 0.006 * nz), 0.003, 0.0048 * nz, { blend: 0.012 }));
+  put('head', cone(H(0, 0.054, 0.088), H(0, 0.04, 0.094 + 0.005 * nz), 0.003, 0.0046 * nz, { blend: 0.012 }));
   // soft lips, barely raised (the mouth's line is painted)
   put('head', ell(H(0, 0.0125, 0.0675), [0.011, 0.003, 0.0045], { blend: 0.008 }));
   put('head', ell(H(0, 0.0045, 0.0665), [0.009, 0.0036, 0.0046], { blend: 0.008 }));
@@ -178,10 +248,10 @@ export function humanoidPlan(opts = {}) {
     const ua = `${L}UpperArm`, la = `${L}LowerArm`, hn = `${L}Hand`;
     const mk = 0.75 + m * 0.6;
     // shoulder cap, upper arm, biceps and triceps
-    put(ua, ell(add(sh, [s * 0.01, -0.042, 0]), [0.043 * b * mk, 0.07, 0.05 * b * mk], { blend: 0.045 }));
+    put(ua, ell(add(sh, [s * 0.012, -0.05, 0.002]), [0.047 * b * mk, 0.085, 0.054 * b * mk], { m: rotXYZ(0, 0, s * 0.12), blend: 0.034 }));
     put(ua, cone(sh, el, 0.043 * b, 0.032 * b, { blend: 0.03 }));
-    put(ua, ell(add(sh, [0, -upLen * 0.52, 0.016 * b]), [0.034 * b * mk, upLen * 0.27, 0.03 * b * mk], { blend: 0.03 }));
-    put(ua, ell(add(sh, [0, -upLen * 0.4, -0.018 * b]), [0.033 * b * mk, upLen * 0.3, 0.03 * b * mk], { blend: 0.03 }));
+    put(ua, ell(add(sh, [0, -upLen * 0.55, 0.017 * b]), [0.035 * b * mk, upLen * 0.27, 0.032 * b * mk], { blend: 0.026 })); // biceps
+    put(ua, ell(add(sh, [0, -upLen * 0.42, -0.019 * b]), [0.035 * b * mk, upLen * 0.32, 0.031 * b * mk], { blend: 0.026 })); // triceps
     // elbow and forearm, wider at the top, flat at the wrist
     put(la, ell(add(el, [0, 0.004, -0.018]), [0.018, 0.018, 0.012], { blend: 0.012 }));
     put(la, cone(el, add(wr, [0, 0.01, 0]), 0.033 * b, 0.022 * b, { blend: 0.01 }));
@@ -252,19 +322,22 @@ export function humanoidPlan(opts = {}) {
     const ball = [s * 0.092 * hw, 0.022 * ft, 0.128 * ft];
     bone(`${L}Toes`, `${L}Foot`, ball);
     const ul = `${L}UpperLeg`, ll = `${L}LowerLeg`, fo = `${L}Foot`, to = `${L}Toes`;
-    const mk = 0.8 + m * 0.5;
+    const mk = 0.78 + m * 0.6;
     const thighLen = hipY - kneeY;
     // thigh: the main mass, the front muscles, the inner thigh and the outer sweep
     put(ul, cone(add(hip, [0, 0.01, -0.01]), add(kn, [0, 0.045, 0]), 0.077 * b, 0.054 * b, { blend: 0.05 }));
-    put(ul, ell(add(hip, [s * 0.004, -thighLen * 0.45, 0.032 * b]), [0.053 * b * mk, thighLen * 0.36, 0.044 * b * mk], { blend: 0.035 }));
-    put(ul, ell(add(hip, [-s * 0.03, -thighLen * 0.3, 0.0]), [0.04 * b, thighLen * 0.28, 0.05 * b], { blend: 0.045 }));
-    put(ul, ell(add(hip, [s * 0.038, -thighLen * 0.32, -0.008]), [0.03 * b, thighLen * 0.3, 0.052 * b], { blend: 0.045 }));
+    put(ul, ell(add(hip, [s * 0.004, -thighLen * 0.45, 0.03 * b]), [0.05 * b * mk, thighLen * 0.38, 0.045 * b * mk], { blend: 0.032 })); // the front of the thigh
+    put(ul, ell(add(hip, [-s * 0.03, -thighLen * 0.28, 0.0]), [0.04 * b, thighLen * 0.28, 0.05 * b], { blend: 0.045 })); // inner thigh
+    put(ul, ell(add(hip, [s * 0.04, -thighLen * 0.42, -0.004]), [0.032 * b * mk, thighLen * 0.36, 0.05 * b], { blend: 0.035 })); // the outer sweep
+    put(ul, ell(add(kn, [-s * 0.024, thighLen * 0.2, 0.026 * b]), [0.026 * b * mk, thighLen * 0.15, 0.026 * b * mk], { m: rotXYZ(0, 0, -s * 0.25), blend: 0.022 })); // the teardrop above the knee
+    put(ul, ell(add(hip, [0, -thighLen * 0.5, -0.04 * b]), [0.045 * b, thighLen * 0.36, 0.034 * b * mk], { blend: 0.04 })); // the back of the thigh
     // knee and shin, the calf with its two heads, the ankle bones
     const shinLen = kneeY - ankleY;
     put(ll, ell(add(kn, [0, 0.012, 0.03]), [0.024, 0.028, 0.014], { blend: 0.015 }));
     put(ll, cone(add(kn, [0, -0.005, 0]), add(an, [0, 0.03, 0]), 0.046 * b, 0.027 * b, { blend: 0.012 }));
-    put(ll, ell(add(kn, [-s * 0.012, -shinLen * 0.3, -0.03 * b]), [0.039 * b * mk, shinLen * 0.25, 0.04 * b * mk], { blend: 0.035 }));
-    put(ll, ell(add(kn, [s * 0.016, -shinLen * 0.25, -0.028 * b]), [0.034 * b * mk, shinLen * 0.22, 0.036 * b * mk], { blend: 0.035 }));
+    put(ll, ell(add(kn, [-s * 0.013, -shinLen * 0.29, -0.032 * b]), [0.036 * b * mk, shinLen * 0.25, 0.038 * b * mk], { blend: 0.028 })); // the calf: inner head, lower
+    put(ll, ell(add(kn, [s * 0.016, -shinLen * 0.24, -0.03 * b]), [0.031 * b * mk, shinLen * 0.21, 0.034 * b * mk], { blend: 0.028 })); // outer head
+    put(ll, ell(add(kn, [s * 0.018, -shinLen * 0.3, 0.014 * b]), [0.016 * b * mk, shinLen * 0.3, 0.016 * b * mk], { blend: 0.025 })); // the muscle beside the shin bone
     put(ll, cone(add(an, [0, 0.06, -0.035]), add(an, [0, -0.01, -0.045]), 0.013, 0.015, { blend: 0.025 })); // the heel cord
     for (const k of [-1, 1]) put(ll, ell(add(an, [k * 0.024, 0.0, 0.002]), [0.01, 0.012, 0.012], { blend: 0.012 }));
     // the foot: heel, arch and the ball of the foot, then the toes

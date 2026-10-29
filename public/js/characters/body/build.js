@@ -307,8 +307,50 @@ const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b
 // Hair: darker at the roots and on the inner layers, lighter towards the tips, with the bright
 // "ring" of shine around the crown that anime hair has
 let hairMat = null;
+// Hair: silky, with fine strands down each lock and a sheen that runs across the locks (as light
+// catches hair, along a band at right angles to the strands), shifted a little so it reads as a
+// soft ring round the head
 function hairMaterial() {
-  if (!hairMat) hairMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.05 });
+  if (hairMat) return hairMat;
+  hairMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.0 });
+  hairMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 hairData;\nattribute vec3 hairTangent;\nvarying vec3 vHair;\nvarying vec3 vHairT;')
+      .replace('#include <skinnormal_vertex>', `#include <skinnormal_vertex>
+  vec3 hT = hairTangent;
+  #ifdef USE_SKINNING
+  hT = (skinMatrix * vec4(hT, 0.0)).xyz;
+  #endif
+  vHairT = normalize(normalMatrix * hT);`)
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHair = hairData;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHair;\nvarying vec3 vHairT;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+  {
+    // strands: fine streaks across the lock, each lock its own
+    float a = vHair.y * 3.1416 * 0.5;
+    float st = sin(vHair.y * 23.0 + vHair.z * 40.0) * 0.5 + sin(vHair.y * 57.0 + vHair.z * 13.0 + vHair.x * 3.0) * 0.35;
+    diffuseColor.rgb *= 1.0 + st * 0.11;
+  }`)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+  #if NUM_DIR_LIGHTS > 0
+  {
+    // the direction the strands run
+    vec3 T = vHairT;
+    if (dot(T, T) > 1e-6) {
+      T = normalize(T);
+      vec3 V = normalize(vViewPosition);
+      vec3 Ld = directionalLights[0].direction;
+      vec3 Hh = normalize(Ld + V);
+      // two lobes: a sharp white one and a broader one tinted with the hair's colour
+      float t1 = dot(normalize(T + normal * 0.12), Hh), t2 = dot(normalize(T - normal * 0.18), Hh);
+      float s1 = pow(sqrt(max(0.0, 1.0 - t1 * t1)), 320.0), s2 = pow(sqrt(max(0.0, 1.0 - t2 * t2)), 70.0);
+      float shade = clamp(dot(normal, Ld) * 0.6 + 0.4, 0.0, 1.0);
+      reflectedLight.directSpecular += directionalLights[0].color * shade * (s1 * 0.1 + s2 * 0.05 * diffuseColor.rgb);
+    }
+  }
+  #endif`);
+  };
   return hairMat;
 }
 function hairGeometry(H, hex, plan) {
@@ -323,13 +365,17 @@ function hairGeometry(H, hex, plan) {
     c.copy(dark).lerp(light, Math.min(1, t * 1.4 + layer * 0.12));
     const y = H.positions[v * 3 + 1], z = H.positions[v * 3 + 2] - plan.headO[2];
     const ring = Math.max(0, 1 - Math.abs(y - ringY) / (0.012 * plan.hd)) * (z > -0.04 ? 1 : 0.4);
-    if (ring > 0) c.lerp(shine, ring * 0.7);
+    if (ring > 0) c.lerp(shine, ring * 0.25);
     col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(H.positions, 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(H.normals, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const hd = new Float32Array(n * 3);
+  for (let v = 0; v < n; v++) { hd[v * 3] = H.along[v]; hd[v * 3 + 1] = H.across[v]; hd[v * 3 + 2] = H.lock[v]; }
+  geo.setAttribute('hairData', new THREE.BufferAttribute(hd, 3));
+  geo.setAttribute('hairTangent', new THREE.BufferAttribute(H.tangent, 3));
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(H.skinIndex, 4));
   geo.setAttribute('skinWeight', new THREE.BufferAttribute(H.skinWeight, 4));
   geo.setIndex(new THREE.BufferAttribute(H.indices, 1));

@@ -27,17 +27,21 @@ function paint(A, look, shut) {
   const lash = look.lashes || '#1c1310';
   const brow = look.brows || '#3a2a20';
   const tall = look.eyeShape || 1;
+  // sharp: 0 round, wide-open eyes .. 1 narrow, keen eyes with the outer corner lifted, the lid
+  // lying over the top of the iris (most faces are a little sharp)
+  const sharp = look.sharp ?? 0.55;
 
   for (const s of [-1, 1]) {
     const cx = px(s * A.eyeX), cy = py(A.eyeY);
-    const w = 0.029 * hd * k * (look.eyeSize || 1), h = 0.0178 * hd * k * tall * (look.eyeSize || 1);
-    const inner = [cx - s * w * 0.5, cy + h * 0.1], outer = [cx + s * w * 0.52, cy - h * 0.06];
+    const w = 0.029 * hd * k * (look.eyeSize || 1) * (1 + 0.06 * sharp), h0 = 0.0178 * hd * k * tall * (look.eyeSize || 1);
+    const h = h0 * (1 - 0.38 * sharp);
+    const inner = [cx - s * w * 0.5, cy + h * (0.1 + 0.25 * sharp)], outer = [cx + s * w * 0.53, cy - h * (0.06 + 0.42 * sharp)];
     const upper = (ctx) => {
       ctx.moveTo(...inner);
-      ctx.bezierCurveTo(cx - s * w * 0.36, cy - h * 0.62, cx + s * w * 0.2, cy - h * 0.78, ...outer);
+      ctx.bezierCurveTo(cx - s * w * 0.36, cy - h * (0.62 + 0.1 * sharp), cx + s * w * 0.2, cy - h * (0.78 + 0.12 * sharp), ...outer);
     };
     const lower = (ctx) => {
-      ctx.bezierCurveTo(cx + s * w * 0.3, cy + h * 0.42, cx - s * w * 0.25, cy + h * 0.5, ...inner);
+      ctx.bezierCurveTo(cx + s * w * 0.3, cy + h * (0.42 + 0.1 * sharp), cx - s * w * 0.25, cy + h * (0.5 + 0.12 * sharp), ...inner);
     };
     if (shut) {
       // closed: the lid's curve with its lashes, and the crease
@@ -57,7 +61,8 @@ function paint(A, look, shut) {
     g.fillStyle = white;
     g.fillRect(cx - w, cy - h, w * 2, h * 2);
     // the iris: tall, dark at the top, bright at the bottom, with a dark rim and fine streaks
-    const ix = cx + s * w * 0.03, iy = cy + h * 0.02, rx = w * 0.3, ry = h * 0.6;
+    // (the iris keeps its size as the eye narrows: the lids cover its top and bottom)
+    const ix = cx + s * w * 0.03, iy = cy + h * 0.02 + h0 * 0.08 * sharp, rx = w * 0.3 * (1 - 0.06 * sharp), ry = h0 * 0.6 * (1 - 0.12 * sharp);
     const grad = g.createLinearGradient(0, iy - ry, 0, iy + ry);
     grad.addColorStop(0, '#' + iris.clone().multiplyScalar(0.25).getHexString());
     grad.addColorStop(0.45, '#' + iris.clone().multiplyScalar(0.75).getHexString());
@@ -93,10 +98,10 @@ function paint(A, look, shut) {
     g.fillStyle = lash;
     g.beginPath();
     g.moveTo(...inner);
-    g.bezierCurveTo(cx - s * w * 0.36, cy - h * 0.62, cx + s * w * 0.2, cy - h * 0.78, ...outer);
+    g.bezierCurveTo(cx - s * w * 0.36, cy - h * (0.62 + 0.1 * sharp), cx + s * w * 0.2, cy - h * (0.78 + 0.12 * sharp), ...outer);
     g.quadraticCurveTo(outer[0] + s * w * 0.12, outer[1] - h * 0.06, outer[0] + s * w * 0.2, outer[1] - h * 0.3); // the flick
     g.quadraticCurveTo(outer[0] + s * w * 0.04, outer[1] - h * 0.22, outer[0] - s * w * 0.06, outer[1] - h * 0.26);
-    g.bezierCurveTo(cx + s * w * 0.18, cy - h * 1.0, cx - s * w * 0.36, cy - h * 0.86, inner[0] + s * w * 0.03, inner[1] - h * 0.16);
+    g.bezierCurveTo(cx + s * w * 0.18, cy - h * (1.0 + 0.3 * sharp), cx - s * w * 0.36, cy - h * (0.86 + 0.25 * sharp), inner[0] + s * w * 0.03, inner[1] - h * 0.16);
     g.closePath();
     g.fill();
     // the lower lashes: a fine line on the outer third
@@ -107,17 +112,56 @@ function paint(A, look, shut) {
     g.beginPath(); g.moveTo(cx - s * w * 0.22, cy - h * 0.86); g.bezierCurveTo(cx - s * w * 0.05, cy - h * 1.02, cx + s * w * 0.24, cy - h * 0.98, cx + s * w * 0.4, cy - h * 0.66); g.stroke();
     g.globalAlpha = 1;
   }
-  // brows: fine, thicker at the inner end, gently arched
+  // brows: thicker at the inner end; on a sharp face straighter and lower at the inner end (a keen,
+  // level look); thick: heavier brows (dwarves)
+  const thick = look.browThick || 1;
   for (const s of [-1, 1]) {
-    const bx = px(s * A.eyeX * 1.06), by = py(A.eyeY + 0.03 * hd * (look.browLift || 1));
-    const w = 0.03 * hd * k, t = 0.0024 * hd * k;
+    const bx = px(s * A.eyeX * 1.06), by = py(A.eyeY + 0.03 * hd * (look.browLift || 1) - 0.004 * hd * sharp);
+    const w = 0.031 * hd * k * (1 + 0.1 * (thick - 1)), t = 0.0024 * hd * k * thick;
+    const tilt = 0.006 * hd * k * sharp; // the inner end down, the outer end up
     g.fillStyle = brow;
     g.beginPath();
-    g.moveTo(bx - s * w * 0.5, by + t * 0.6);
-    g.quadraticCurveTo(bx, by - t * 1.6, bx + s * w * 0.55, by + t * 0.9);
-    g.quadraticCurveTo(bx, by - t * 0.4, bx - s * w * 0.48, by + t * 1.9);
+    g.moveTo(bx - s * w * 0.5, by + t * 0.6 + tilt);
+    g.quadraticCurveTo(bx, by - t * (1.6 - 0.8 * sharp) - tilt * 0.2, bx + s * w * 0.55, by + t * 0.9 - tilt * 0.5);
+    g.quadraticCurveTo(bx, by - t * 0.4 + tilt * 0.2, bx - s * w * 0.48, by + t * 1.9 + tilt);
     g.closePath();
     g.fill();
+    if (thick > 1.3) {
+      // bushy: short hairs along the brow
+      g.strokeStyle = brow; g.lineWidth = Math.max(1, t * 0.18); g.lineCap = 'round';
+      for (let i = 0; i < 26; i++) {
+        const f = i / 25, x = bx - s * w * 0.5 + s * w * 1.05 * f, y = by + t * 0.9 + tilt * (1 - f * 1.5) - Math.sin(f * Math.PI) * t * 0.8;
+        g.beginPath(); g.moveTo(x, y + t * 0.6); g.lineTo(x + s * t * (0.6 + 0.6 * f), y - t * (0.8 + 0.4 * Math.sin(i * 2.3))); g.stroke();
+      }
+    }
+  }
+  // tired, shadowed eyes: a soft dark crescent under each (beastkin)
+  if (look.darkCircles) {
+    for (const s of [-1, 1]) {
+      const cx = px(s * A.eyeX), cy = py(A.eyeY - 0.012 * hd);
+      const w = 0.03 * hd * k, h = 0.009 * hd * k;
+      const grad = g.createRadialGradient(cx, cy, 0, cx, cy, w * 0.6);
+      grad.addColorStop(0, `rgba(70,30,40,${0.35 * look.darkCircles})`); grad.addColorStop(1, 'rgba(70,30,40,0)');
+      g.fillStyle = grad;
+      g.beginPath(); g.ellipse(cx, cy, w * 0.6, h, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = `rgba(60,25,30,${0.4 * look.darkCircles})`; g.lineWidth = h * 0.12;
+      g.beginPath(); g.moveTo(cx - s * w * 0.42, cy - h * 0.3); g.quadraticCurveTo(cx, cy + h * 0.55, cx + s * w * 0.4, cy - h * 0.55); g.stroke();
+    }
+  }
+  // the lines of an older, hard-worked face (dwarves): across the forehead, a frown between the
+  // brows, crow's feet at the corners of the eyes, and the folds from the nose to the mouth
+  if (look.wrinkles) {
+    const a = look.wrinkles;
+    g.strokeStyle = `rgba(90,45,30,${0.45 * a})`; g.lineCap = 'round';
+    const line = (pts, wd) => { g.lineWidth = wd; g.beginPath(); g.moveTo(px(pts[0][0]), py(pts[0][1])); for (let i = 1; i < pts.length - 1; i += 2) g.quadraticCurveTo(px(pts[i][0]), py(pts[i][1]), px(pts[i + 1][0]), py(pts[i + 1][1])); g.stroke(); };
+    const ey = A.eyeY, ex = A.eyeX, lw = 0.0011 * hd * k;
+    for (let i = 0; i < 3; i++) { const y = ey + (0.05 + 0.012 * i) * hd; line([[-0.04 * hd, y - 0.002 * hd], [0, y + 0.003 * hd], [0.04 * hd, y - 0.002 * hd]], lw * (1 - i * 0.2)); }
+    for (const s of [-1, 1]) {
+      line([[s * 0.008 * hd, ey + 0.022 * hd], [s * 0.01 * hd, ey + 0.032 * hd], [s * 0.007 * hd, ey + 0.042 * hd]], lw * 0.9);
+      for (let i = 0; i < 3; i++) line([[s * (ex + 0.018 * hd), ey + (0.004 - 0.006 * i) * hd], [s * (ex + 0.026 * hd), ey + (0.006 - 0.009 * i) * hd], [s * (ex + 0.032 * hd), ey + (0.009 - 0.013 * i) * hd]], lw * 0.7);
+      line([[s * 0.017 * hd, A.mouthY + 0.03 * hd], [s * 0.027 * hd, A.mouthY + 0.012 * hd], [s * 0.025 * hd, A.mouthY - 0.008 * hd]], lw * 1.3);
+      line([[s * (ex - 0.012 * hd), ey - 0.012 * hd], [s * ex, ey - 0.018 * hd], [s * (ex + 0.014 * hd), ey - 0.013 * hd]], lw * 0.7);
+    }
   }
   // the mouth: a short soft line, a touch of shadow under the lower lip
   const mx = px(0), my = py(A.mouthY);
