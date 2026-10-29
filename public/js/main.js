@@ -979,6 +979,7 @@ function startGame(character) {
     if ((v = t('data-control')) != null) { ui.bindingControl = v; ui.controlMsg = ''; drawPanel(); return; }
     if (e.target.closest('[data-controls-reset]')) { resetKeys(); ui.controlMsg = 'Every key is back to how it started.'; drawPanel(); return; }
     if ((v = t('data-mouse')) != null) { settings.mouse = v; saveSettings(); world?.setMouseMode(v); drawPanel(); return; }
+    if ((v = t('data-view')) != null) { settings.view = v; saveSettings(); world?.setView(v); drawPanel(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if ((v = t('data-privacy')) != null) {
@@ -1059,7 +1060,8 @@ function startGame(character) {
 
   world = startWorld($('world'), character, {
     game,
-    view: { camera: settings.camera, mouse: settings.mouse },
+    view: { camera: settings.camera, mouse: settings.mouse, view: settings.view },
+    onView(v) { settings.view = v; saveSettings(); showArea(v === 'first' ? 'First person view' : 'Third person view'); if (overlay.dataset.panel === 'settings' && !overlay.classList.contains('hidden')) drawPanel(); },
     onArea: (name) => showArea(name),
     onPlot(info) {
       tapPlot(info.ix, info.iz);
@@ -1170,6 +1172,7 @@ function startGame(character) {
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); else if (act === 'unique') trySkill('unique'); else if (act === 'mythic') trySkill('mythic'); }
       if (act === 'land') toggleLand();
+      if (act === 'view') { e.preventDefault(); if (!e.repeat) world?.toggleView(); }
       if (act === 'chat') { e.preventDefault(); world?.releaseMouse(); social?.focusChat(); }
       // Esc opens the options; Esc again (or on any window) closes it
       if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }

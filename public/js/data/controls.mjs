@@ -10,6 +10,7 @@ export const CONTROLS = [
   ['right', 'Right', 'KeyD', 'Moving'],
   ['run', 'Run (hold)', 'ShiftLeft', 'Moving'],
   ['jump', 'Jump', 'Space', 'Moving'],
+  ['view', 'First / third person', 'F5', 'Moving'],
   ['attack', 'Attack', 'KeyF', 'Doing'],
   ['interact', 'Open / pick up', 'KeyE', 'Doing'],
   ['spell', 'Change spell (staff)', 'KeyX', 'Doing'],

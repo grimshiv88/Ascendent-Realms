@@ -42,7 +42,7 @@ const STEER_RUN = 0.9;
 
 // `game` is the progress object (HP, bag, gear). `onEvent(type, data)` reports kills, pickups,
 // defeat and level-ups to the page.
-export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onMouseFreed, windowOpen, view } = {}) {
+export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onMouseFreed, onView, windowOpen, view } = {}) {
   allCastles(); // levels the ground under the Monster Kings' castles before any land is built
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // sharper costs a lot of speed on iPads
@@ -252,6 +252,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let camDist = dist;
   // 'free': you turn the camera yourself and move relative to it. 'follow': it stays behind your body.
   let cameraMode = view?.camera === 'follow' ? 'follow' : 'free';
+  // 'third': the camera is behind you. 'first': you see through your character's eyes (head hidden,
+  // arms and weapon still there). Scrolling all the way in goes to first person, scrolling out comes back.
+  let viewMode = view?.view === 'first' ? 'first' : 'third';
+  const firstNow = () => viewMode === 'first' && !dead && !sleeping;
+  const pitchLo = () => (firstNow() ? -1.35 : -0.15), pitchHi = () => (firstNow() ? 1.35 : 1.2);
+  function setView(mode, tell) {
+    viewMode = mode === 'first' ? 'first' : 'third';
+    if (viewMode === 'third') { pitch = THREE.MathUtils.clamp(pitch, 0.1, 1.2); dist = Math.max(dist, 3); camDist = Math.min(camDist, 1.2); }
+    if (tell) onView?.(viewMode);
+  }
 
   // ---------- floating text (damage numbers, pickups) ----------
   const floatLayer = document.createElement('div');
@@ -1234,7 +1244,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   document.addEventListener('mousemove', (e) => {
     if (!locked() || windowOpen?.()) return;
     yaw -= e.movementX * 0.0025;
-    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018, -0.15, 1.2);
+    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018, pitchLo(), pitchHi());
   });
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && locked()) { if (e.button === 0) attack(); return; }
@@ -1265,7 +1275,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // a finger turns the camera more gently than a mouse, so small swipes are small turns
       const k = look.mouse ? 1 : 0.55;
       yaw -= (e.clientX - look.x) * 0.006 * k;
-      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k, -0.15, 1.2);
+      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k, pitchLo(), pitchHi());
       look.x = e.clientX; look.y = e.clientY;
     }
   });
@@ -1287,7 +1297,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   canvas.addEventListener('pointerup', release);
   canvas.addEventListener('pointercancel', release);
   canvas.addEventListener('wheel', (e) => {
-    dist = THREE.MathUtils.clamp(dist + e.deltaY * 0.01, 2, 30);
+    if (viewMode === 'first') { if (e.deltaY > 0) setView('third', true); }
+    else if (dist <= 2 && e.deltaY < 0) setView('first', true);
+    else dist = THREE.MathUtils.clamp(dist + e.deltaY * 0.01, 2, 30);
     e.preventDefault();
   }, { passive: false });
 
@@ -1390,7 +1402,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (Math.abs(fx) > 0.3 || Math.abs(fz) > 0.3) standUp();
       else { fx = 0; fz = 0; pos.set(sitting.x, sitting.y, sitting.z); heading = sitting.heading; }
     }
-    const backNow = fz < -0.4 && Math.abs(fx) < 0.6;
+    const fp = firstNow();
+    const backNow = !fp && fz < -0.4 && Math.abs(fx) < 0.6; // in first person, back is a step back
     if (backNow && !backWas && !look) { aboutFace = true; turnLeft = Math.PI; backYaw = yaw + Math.PI; backHeading = heading + Math.PI; }
     if (fz > -0.1) aboutFace = false;
     backWas = backNow;
@@ -1404,7 +1417,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const running = held('run') || (codeFor('run') === 'ShiftLeft' && keys.has('ShiftRight')) || Math.hypot(stick.x, stick.y) > 0.9;
     const amount = Math.min(1, Math.hypot(fx, fz));
     let target = 0;
-    if (cameraMode === 'follow') {
+    if (cameraMode === 'follow' && !fp) {
       // Follow camera: left and right turn your body, forward and back walk the way you face,
       // and the camera swings round behind you
       heading -= fx * dt * (running ? STEER_RUN : STEER);
@@ -1420,7 +1433,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     } else if (amount > 0.05) {
       // Steering: while you go forward (walking or sprinting), left and right turn you gently,
       // as much as you press, and the camera turns with you. Only sideways on its own steps sideways.
-      const steering = fz > 0.1 && !look;
+      const steering = fz > 0.1 && !look && !fp; // in first person, left and right step sideways
       if (steering) { const turn = fx * dt * (running ? STEER_RUN : STEER); yaw -= turn; backYaw -= turn; }
       const ya = aboutFace ? backYaw : yaw; // turning round: walk the new way while the camera catches up
       const camFwd = v3.set(-Math.sin(ya), 0, -Math.cos(ya));
@@ -1429,9 +1442,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const want = Math.atan2(move.x, move.z);
       let diff = want - heading;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-      heading += diff * Math.min(1, dt * TURN);
+      if (!fp) heading += diff * Math.min(1, dt * TURN);
       // move the way you want to go, even while still turning to face it
-      target = (running ? RUN : WALK) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
+      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
@@ -1488,11 +1501,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (!airborne) fallFrom = pos.y;
 
+    const eyes = firstNow();
+    if (eyes && !sitting) heading = yaw - Math.PI; // in first person your body faces where you look
     avatar.position.copy(pos);
     avatar.rotation.y = heading;
     avatar.rotation.z = dead || resting() ? Math.min(Math.PI / 2, (avatar.rotation.z || 0) + dt * 3) : 0;
     avatar.visible = !(sleeping && inTent); // hidden inside the tent
     const rig = avatar.userData.rig;
+    if (rig.head) rig.head.visible = !eyes; // so your own head (and helmet) doesn't fill the view
     rig.root.position.z = 0;
     animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 1.6);
     if (sitting) { poseSit(rig); avatar.position.y = sitting.y + 0.5 - bodyH * 0.27; }
@@ -1627,8 +1643,20 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const rm = inside.built.rooms.find((r) => pos.x > r.x0 && pos.x < r.x1 && pos.z > r.z0 && pos.z < r.z1);
       if (rm) { cam.x = Math.max(rm.x0 + 0.4, Math.min(rm.x1 - 0.4, cam.x)); cam.z = Math.max(rm.z0 + 0.4, Math.min(rm.z1 - 0.4, cam.z)); }
       cam.y = Math.min(cam.y, inside.built.roofAt(cam.x, cam.z) - 0.2); }
-    camera.position.lerp(cam, Math.min(1, dt * 10));
-    camera.lookAt(focus);
+    const near = eyes ? 0.08 : 0.2;
+    if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
+    if (eyes) {
+      // First person: at the eyes, a little in front of the face, looking the way the camera faces
+      if (rig.head) avatar.updateMatrixWorld(true);
+      const eye = rig.head ? rig.head.getWorldPosition(v3) : v3.set(pos.x, pos.y + bodyH * 0.92, pos.z);
+      eye.addScaledVector(dir, -(rig.headR || 0.12) * 0.9);
+      camera.position.copy(eye);
+      camera.lookAt(eye.x - dir.x, eye.y - dir.y, eye.z - dir.z);
+      camDist = 0;
+    } else {
+      camera.position.lerp(cam, Math.min(1, dt * 10));
+      camera.lookAt(focus);
+    }
 
     if (t - lastTime > 0.5) { lastTime = t; applyTime(); }
     lantern.position.set(pos.x, pos.y + bodyH + 1, pos.z);
@@ -1816,6 +1844,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     releaseMouse() { if (locked()) { letGo = true; document.exitPointerLock(); } },
     setMouseMode(mode) { freeMouse = mode === 'free'; if (freeMouse && locked()) { letGo = true; document.exitPointerLock(); } },
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
+    setView(mode) { setView(mode); },
+    toggleView() { setView(viewMode === 'first' ? 'third' : 'first', true); },
     stop() {
       saveNow();
       renderer.setAnimationLoop(null);

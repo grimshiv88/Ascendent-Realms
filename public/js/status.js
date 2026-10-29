@@ -175,6 +175,12 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
     <div class="status-window settings-window" role="dialog" aria-label="Settings">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       <h2>Settings</h2>
+      <h3 class="bag-sub">View</h3>
+      <div class="setting-opts">
+        <button type="button" class="setting-opt" data-view="third" aria-pressed="${settings.view !== 'first'}"><b>Third person</b><span>The camera is behind your character, so you see yourself and what is around you.</span></button>
+        <button type="button" class="setting-opt" data-view="first" aria-pressed="${settings.view === 'first'}"><b>First person</b><span>You see through your character's eyes, with your arms and weapon in front of you. Look down to see your body.</span></button>
+      </div>
+      <p class="bag-hint">Switch any time with ${esc(keyName(codeFor('view')))}, or scroll all the way in for first person and back out for third.</p>
       <h3 class="bag-sub">Camera</h3>
       <div class="setting-opts">
         ${opt('free', 'Free camera', 'You turn the camera yourself (drag the mouse, or drag on the right of the screen). Your character walks the way you push, relative to the camera.')}
