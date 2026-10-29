@@ -246,7 +246,8 @@ export function track(keys, t, e = ease.inOut) {
 // Where a hand must be, and how turned, to hold a bar (a hilt, a handle) running along `axis`
 // through `at` (world), the palm facing `palm` (roughly; it is squared to the bar). The thumb's
 // side of the fist points along `axis`. Returns { pos, quat } for the hand bone, for reach().
-export function gripHold(body, side, at, axis, palm) {
+// radius: the bar's (with it, the hand sits where a grip fitted to that bar rings round it; see fitGrip)
+export function gripHold(body, side, at, axis, palm, radius = 0) {
   const s = side === 'left' ? 1 : -1;
   const Zw = axis.clone().normalize();                      // the hand's z: thumb side, along the bar
   const P = palm.clone().addScaledVector(Zw, -palm.dot(Zw)).normalize(); // the palm's facing
@@ -255,6 +256,65 @@ export function gripHold(body, side, at, axis, palm) {
   const quat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(Xw, Yw, Zw));
   // the bar lies across the curled fingers, in front of the palm and down by the middle knuckles
   const k = body.scale;
-  const off = new THREE.Vector3(-s * 0.026, -0.078, 0.004).multiplyScalar(k).applyQuaternion(quat);
+  const off = (radius ? fitGrip(body, side, radius).centre.clone() : new THREE.Vector3(-s * 0.026, -0.078, 0.004)).multiplyScalar(k).applyQuaternion(quat);
   return { pos: at.clone().sub(off), quat };
+}
+
+// A grip that fits a bar of radius `radius` (metres, in the world): the fingers curl just as far as
+// it takes to close round it, and the bar's middle is where the curled fingers ring round. Found
+// by trying the curl on the body's own hand (each race's fingers are their own length). Returns
+// { spec (a hand pose), centre (the bar's middle, in the hand bone's own space) }.
+export function fitGrip(body, side, radius) {
+  const key = `${side}:${radius.toFixed(4)}`;
+  body._grips ||= {};
+  if (body._grips[key]) return body._grips[key];
+  const hand = body.bones[`${side}Hand`];
+  const names = Object.keys(handPose(side, 'grip'));
+  const saved = names.map((n) => body.bones[n].quaternion.clone());
+  const inv = new THREE.Matrix4();
+  const local = (name, t = 0) => {
+    const b = body.bones[name];
+    const p = b.getWorldPosition(new THREE.Vector3());
+    if (t) {
+      // past the last joint: the fingertip, a little shorter than the bone before it
+      const prev = body.bones[name.replace('Distal', 'Intermediate')].getWorldPosition(new THREE.Vector3());
+      p.add(new THREE.Vector3(0, -1, 0).applyQuaternion(b.getWorldQuaternion(new THREE.Quaternion())).multiplyScalar(p.distanceTo(prev) * t));
+    }
+    return p.applyMatrix4(inv);
+  };
+  const scale = hand.getWorldScale(new THREE.Vector3()).x;
+  const r = radius / scale, fingerR = 0.0085;
+  const G = HANDS.grip;
+  const measure = (f) => {
+    const spec = { ...G, curl: G.curl.map((c) => c * f) };
+    const q = handPose(side, spec);
+    for (const n of names) body.bones[n].quaternion.copy(q[n]);
+    hand.updateMatrixWorld(true);
+    inv.copy(hand.matrixWorld).invert();
+    // the ring the middle and ring fingers make: the circle through knuckle, middle joint and tip
+    const ring = ['Middle', 'Ring'].map((F) => circle(local(`${side}${F}Proximal`), local(`${side}${F}Intermediate`), local(`${side}${F}Distal`, 0.85)));
+    const centre = ring[0].c.clone().lerp(ring[1].c, 0.5);
+    const inner = (ring[0].r + ring[1].r) / 2 - fingerR;
+    return { spec, centre, inner };
+  };
+  // more curl, a smaller ring: find the curl whose ring just holds the bar
+  let lo = 0.55, hi = 1.25, best = measure(1);
+  for (let i = 0; i < 14; i++) {
+    const mid = (lo + hi) / 2, m = measure(mid);
+    best = m;
+    if (m.inner > r) lo = mid; else hi = mid;
+  }
+  names.forEach((n, i) => body.bones[n].quaternion.copy(saved[i]));
+  hand.updateMatrixWorld(true);
+  return (body._grips[key] = { spec: best.spec, centre: best.centre });
+}
+// the circle through three points: its middle and radius
+function circle(a, b, c) {
+  const ab = b.clone().sub(a), ac = c.clone().sub(a);
+  const n = new THREE.Vector3().crossVectors(ab, ac);
+  const d = 2 * n.lengthSq();
+  if (d < 1e-12) return { c: a.clone().lerp(c, 0.5), r: a.distanceTo(c) / 2 };
+  const o = new THREE.Vector3().crossVectors(n, ab).multiplyScalar(ac.lengthSq())
+    .add(new THREE.Vector3().crossVectors(ac, n).multiplyScalar(ab.lengthSq())).multiplyScalar(1 / d);
+  return { c: a.clone().add(o), r: o.length() };
 }
