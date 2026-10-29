@@ -8,6 +8,7 @@ import {
   piecesCost, removeCost, buildingCost, hireMinutes, applyBuild, READY_MARKUP, PIECE_GROUPS, BUILDING_GROUPS,
 } from './data/building.mjs';
 import { buildPieces, storeyY } from './world/buildings.js';
+import { money } from './data/money.mjs';
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const ghost = (color) => new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false });
@@ -162,7 +163,7 @@ export function openBuilder(host, opts) {
 
   // ---------- the panel ----------
   function drawPanel() {
-    $('.bv-coins').textContent = `${opts.coins().toLocaleString()} G`;
+    $('.bv-coins').textContent = `${money(opts.coins())}`;
     for (const b of root.querySelectorAll('[data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
     const builder = opts.cls === 'builder';
     const downCost = removeCost(builtPieces().filter((q) => removing.has(pieceKey(q))), opts.cls);
@@ -172,7 +173,7 @@ export function openBuilder(host, opts) {
       ${groups ? `<span class="bv-sections">${groups.map(([name], i) => `<button type="button" class="bv-section${section[tab] === i ? ' on' : ''}" data-section="${i}">${esc(name)}</button>`).join('')}</span>` : ''}
       ${tab !== 'ready' ? `<span class="bv-level">Storey <button type="button" data-bv="down" aria-label="Down a storey" ${level ? '' : 'disabled'}>−</button> <b>${level + 1}</b> <button type="button" data-bv="up" aria-label="Up a storey" ${level < MAX_LEVEL ? '' : 'disabled'}>+</button></span>` : ''}
       ${tab !== 'remove' ? `<button type="button" data-bv="turn">Turn <kbd>R</kbd></button>` : ''}
-      ${plan.length || removing.size ? `<span class="bv-plan">Plan: ${plan.length ? `${plan.length} piece${plan.length === 1 ? '' : 's'} · <b>${(planCost - downCost).toLocaleString()} G</b>` : ''}${removing.size ? ` ${removing.size} to remove (${downCost.toLocaleString()} G)` : ''}${plan.length && removing.size ? ` · total <b>${planCost.toLocaleString()} G</b>` : ''}</span>
+      ${plan.length || removing.size ? `<span class="bv-plan">Plan: ${plan.length ? `${plan.length} piece${plan.length === 1 ? '' : 's'} · <b>${money((planCost - downCost))}</b>` : ''}${removing.size ? ` ${removing.size} to remove (${money(downCost)})` : ''}${plan.length && removing.size ? ` · total <b>${money(planCost)}</b>` : ''}</span>
         <button type="button" class="gold-button" data-bv="build" ${busy ? 'disabled' : ''}>Build</button>
         <button type="button" data-bv="clear">Clear plan</button>` : ''}`;
     if (offer) {
@@ -181,8 +182,8 @@ export function openBuilder(host, opts) {
       $('.bv-cards').innerHTML = `
         <div class="bv-offer">
           <p><b>${esc(b.name)}</b> here. How do you want it built?</p>
-          <button type="button" class="gold-button" data-bv="hire" ${busy ? 'disabled' : ''}>Hire a builder (quest): ${hire.toLocaleString()} G <small>ready in ${hireMinutes(offer.type)} min</small></button>
-          <button type="button" class="${builder ? 'gold-button' : ''}" data-bv="self" ${busy ? 'disabled' : ''}>${builder ? 'Build it now (Builder price)' : 'Build it now yourself'}: ${self.toLocaleString()} G</button>
+          <button type="button" class="gold-button" data-bv="hire" ${busy ? 'disabled' : ''}>Hire a builder (quest): ${money(hire)} <small>ready in ${hireMinutes(offer.type)} min</small></button>
+          <button type="button" class="${builder ? 'gold-button' : ''}" data-bv="self" ${busy ? 'disabled' : ''}>${builder ? 'Build it now (Builder price)' : 'Build it now yourself'}: ${money(self)}</button>
           <button type="button" data-bv="cancel">Cancel</button>
           <p class="bv-hint">${builder ? 'As a Builder you raise ready buildings for less than hiring one.' : `Raising it yourself costs ${READY_MARKUP}× what a hired builder charges. A Builder pays far less.`}</p>
         </div>`;
@@ -194,13 +195,13 @@ export function openBuilder(host, opts) {
         const [w, d] = b.size;
         return `<button type="button" class="bv-card${choice === id ? ' on' : ''}" data-pick="${id}" ${locked ? 'disabled' : ''}>
           <b>${esc(b.name)}</b><small>${w * CELL} × ${d * CELL} m</small>
-          <span>Hire: ${buildingCost(id, opts.cls, 'hire').toLocaleString()} G</span>
-          <span>${builder ? 'Builder' : 'Yourself'}: ${buildingCost(id, opts.cls, 'self').toLocaleString()} G</span>
+          <span>Hire: ${money(buildingCost(id, opts.cls, 'hire'))}</span>
+          <span>${builder ? 'Builder' : 'Yourself'}: ${money(buildingCost(id, opts.cls, 'self'))}</span>
           <small>${locked ? `Rulers only (${COUNTRY_PLOTS}+ joined plots)` : esc(b.text)}</small></button>`;
       }).join('');
     } else if (tab === 'pieces') {
       $('.bv-cards').innerHTML = PIECE_GROUPS[section.pieces][1].map((id) => `<button type="button" class="bv-card${piece === id ? ' on' : ''}" data-piece="${id}">
-          <b>${PIECES[id].name}</b><span>${Math.round(PIECES[id].price * (builder ? 0.6 : 1))} G</span><small>${PIECES[id].text}</small></button>`).join('');
+          <b>${PIECES[id].name}</b><span>${money(Math.round(PIECES[id].price * (builder ? 0.6 : 1)))}</span><small>${PIECES[id].text}</small></button>`).join('');
     } else {
       $('.bv-cards').innerHTML = '<p class="bv-hint">Tap a piece you built to mark it for removal (tap again to keep it), then press Build. Taking pieces down costs about a third of their build price. Pieces holding others up can only come down with them.</p>';
     }

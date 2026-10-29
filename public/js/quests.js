@@ -11,6 +11,7 @@ import { placesWithPositions, regionName, sample } from './data/world-layout.mjs
 import { gameTime, now, DAY_MS } from './data/clock.mjs';
 import { KINDS, BY_REGION, GOBLIN_LINE } from './world/creatures.js';
 import { CARD_RANKS, rankIndex, rankHard, rankForLevel, CARD_FEE, mayTake } from './data/guildcard.mjs';
+import { money } from './data/money.mjs';
 
 export const BOARD = 4;
 export const QUESTS_PER_DAY = 3;
@@ -151,7 +152,7 @@ function questCards(game, board) {
     const done = q.accepted && have >= q.need;
     const r = q.reward;
     const locked = board === 'guild' && (!c.guildCard?.rank || (q.rank && !mayTake(c.guildCard, q.rank)));
-    const reward = [`${r.exp} EXP`, `${r.coins} G`, r.item ? ITEMS[r.item].name : null].filter(Boolean).join(' · ');
+    const reward = [`${r.exp} EXP`, `${money(r.coins)}`, r.item ? ITEMS[r.item].name : null].filter(Boolean).join(' · ');
     const at = `data-board="${board}"`;
     const action = !q.accepted
       ? `<button type="button" class="sys-button" data-quest-accept="${i}" ${at} ${blocked || locked ? 'disabled' : ''}>${locked ? (c.guildCard?.rank ? `Needs rank ${q.rank}` : 'Needs a Guild Card') : 'Accept'}</button>`
@@ -196,14 +197,14 @@ export function renderGuild(el, game, message = '', bounty = null) {
   const rank = card?.rank ? CARD_RANKS[rankIndex(card.rank)] : null;
   const cardHtml = !card
     ? `<p class="sys-hint">To take guild requests you need a <b>Hunter's Guild Card</b>. Ask for one here, then go to the Assessment Room (the glowing crystal in the back left corner) to have your level and stats read.</p>
-       <button type="button" class="gold-button small" data-card-request>Ask for a Hunter Card · ${CARD_FEE} G</button>`
+       <button type="button" class="gold-button small" data-card-request>Ask for a Hunter Card · ${money(CARD_FEE)}</button>`
     : card.pending
       ? '<p class="sys-hint">Your card is waiting. Go to the <b>Assessment Room</b> in the back left corner and press E at the crystal to have it read.</p>'
       : `<div class="guild-card"><span class="gc-rank">${rank.id}</span><span><b>${esc(c.name)}</b><small>Rank ${rank.id} · ${rank.name} hunter · read at level ${card.level}</small></span></div>
          <p class="sys-hint">You can take requests of rank ${rank.id} and below.${rankForLevel(c.level).id !== rank.id ? ' <b>You have grown since your card was read:</b> touch the crystal again to raise its rank.' : ''}</p>`;
   const board = bounty?.board || [];
   const rows = board.map((b) => `<div class="bounty${b.featured ? ' featured' : ''}"><b>${esc(b.target)}</b>
-      <span>${b.total + b.gift} G${b.gift ? ` <small>(${b.total} from hunters + ${b.gift} from the guild)</small>` : ''}${b.mine ? ` <small>· ${b.mine} G of it is yours</small>` : ''}</span>${b.featured ? '<em>Wanted today</em>' : ''}</div>`).join('');
+      <span>${money(b.total + b.gift)}${b.gift ? ` <small>(${b.total} from hunters + ${b.gift} from the guild)</small>` : ''}${b.mine ? ` <small>· ${money(b.mine)} of it is yours</small>` : ''}</span>${b.featured ? '<em>Wanted today</em>' : ''}</div>`).join('');
   el.innerHTML = `
     <div class="system-window quest-window" role="dialog" aria-label="Main Guild Hall">
       <button type="button" class="sys-close" data-close aria-label="Close">×</button>
@@ -219,7 +220,7 @@ export function renderGuild(el, game, message = '', bounty = null) {
       <div class="bounty-list">${bounty ? rows || '<p class="sys-hint">No bounties posted.</p>' : '<p class="sys-hint">Reading the board…</p>'}</div>
       <form class="bounty-form" data-bounty-form>
         <input name="target" maxlength="24" placeholder="Name" autocomplete="off" required>
-        <input name="prize" type="number" min="100" step="10" placeholder="Prize (G)" required>
+        <input name="prize" type="number" min="100" step="10" placeholder="Prize in Copper (100 = 1 Silver)" required>
         <button type="submit" class="gold-button small">Post bounty</button>
       </form>
       ${bounty?.message ? `<p class="sys-msg">${esc(bounty.message)}</p>` : ''}

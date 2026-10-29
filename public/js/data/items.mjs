@@ -22,17 +22,19 @@ export const ITEMS = {
   drake_horn: { name: 'Drake Horn', icon: '🦴', kind: 'material', price: 40, text: 'A young drake\'s horn. Prized by smiths.' },
   frost_core: { name: 'Frost Core', icon: '❄️', kind: 'material', price: 25, text: 'A cold heart from a frost slime.' },
   // mined in the depths; rank shows how rare each one is
-  copper_ore: { name: 'Copper Ore', icon: '🟠', kind: 'material', rank: 1, price: 8, text: 'Soft reddish ore, common in shallow caves.' },
+  copper_ore: { name: 'Copper Ore', icon: '🟠', kind: 'material', rank: 1, price: 3, text: 'Soft reddish ore, common in shallow caves. Minted into Copper coins, or forged into cheap copper gear.' },
   iron_ore: { name: 'Iron Ore', icon: '⚫', kind: 'material', rank: 1, price: 14, text: 'The smith\'s bread and butter.' },
   crystal_shard: { name: 'Crystal Shard', icon: '🔷', kind: 'material', rank: 2, price: 22, text: 'A shard of the glowing crystal that lights the caves.' },
-  silver_ore: { name: 'Silver Ore', icon: '⚪', kind: 'material', rank: 2, price: 30, text: 'Bright ore that monsters seem to fear.' },
-  gold_ore: { name: 'Gold Ore', icon: '🟡', kind: 'material', rank: 3, price: 60, text: 'Heavy, soft and valuable.' },
+  silver_ore: { name: 'Silver Ore', icon: '🩶', kind: 'material', rank: 2, price: 30, text: 'Bright ore that monsters seem to fear. Four of them mint a Silver coin.' },
+  gold_ore: { name: 'Gold Ore', icon: '🪙', kind: 'material', rank: 3, price: 120, text: 'Heavy, soft and valuable. Each one mints a Silver coin; a hundred of them, a Gold coin.' },
   emerald: { name: 'Emerald', icon: '💚', kind: 'material', rank: 3, price: 90, text: 'A green gem from the damp hollows of the Mire.' },
   sapphire: { name: 'Sapphire', icon: '💙', kind: 'material', rank: 3, price: 110, text: 'A deep blue gem, cold to the touch.' },
   ruby: { name: 'Ruby', icon: '❤️', kind: 'material', rank: 4, price: 180, text: 'A blood-red gem that glows faintly in the dark.' },
   // the Order of the Dawn's gift to those who become Light: it can't be sold or traded
   dawn_book: { name: 'Book of the Dawn', icon: '📖', kind: 'material', price: 0, bound: true, text: 'A worn holy book. Kept in your bag, it stops Dark Side spells that hit you. Its level is your Intelligence: the whole hit when that reaches the spell\'s strength, part of it otherwise.' },
   moonstone: { name: 'Moonstone', icon: '🌙', kind: 'material', rank: 5, price: 450, text: 'Found only in the deepest places. Said to hold moonlight.' },
+  diamond: { name: 'Diamond', icon: '💎', kind: 'material', rank: 5, price: 800, text: 'The hardest stone there is. Set into an edge, it never dulls. Found deep in drake lairs, warrens and glimmer caves.' },
+  orichalcum: { name: 'Orichalcum', icon: '🔶', kind: 'material', rank: 6, price: 1500, text: 'A legendary red-gold metal, lighter than steel and harder than diamond. Found only in the deepest chambers of mountain Dungeons.' },
   dragonite: { name: 'Dragonite', icon: '🐲', kind: 'material', rank: 5, price: 600, text: 'Ore fused by dragon fire. Only drakes\' lairs hold it.' },
   // food and potions
   torch: { name: 'Torch', icon: '🔥', kind: 'material', price: 12, text: 'Stand it in the ground with T; press T beside it to pick it back up. In the dark caves, T lights it in your hand instead. Its light keeps monsters away at night, and lets you sleep (Z) beside it.' },
@@ -101,8 +103,13 @@ export const ITEMS = {
   riding_boots: { name: 'Riding Boots', icon: '👢', kind: 'armour', slot: 'feet', rank: 1, def: 1, fashion: true, price: 90, look: { color: '#2a1e16' }, text: 'Tall, polished leather.' },
   // weapons
   // forged only: blacksmiths make these, no shop sells them. `model` borrows another weapon's shape.
+  copper_sword: { name: 'Copper Sword', icon: '🗡️', kind: 'weapon', type: 'sword', model: 'iron_sword', metal: 'copper', ore: 'copper_ore', power: 3, speed: 0.55, chop: 0.8, rank: 0, price: 18, forged: true, text: 'Soft copper, beaten into a blade. It bends, but it cuts.' },
+  copper_dagger: { name: 'Copper Dagger', icon: '🔪', kind: 'weapon', type: 'dagger', model: 'iron_dagger', metal: 'copper', ore: 'copper_ore', power: 2, speed: 0.36, chop: 0.4, rank: 0, price: 14, forged: true, text: 'A little copper knife. Quick, if not deadly.' },
+  copper_hatchet: { name: 'Copper Hatchet', icon: '🪓', kind: 'weapon', type: 'axe', model: 'hand_axe', metal: 'copper', ore: 'copper_ore', power: 3, speed: 0.65, chop: 2, rank: 0, price: 20, forged: true, text: 'A copper head on an ash handle. Good for firewood.' },
+  copper_cap: { name: 'Copper Cap', icon: '⛑️', kind: 'armour', slot: 'head', rank: 0, def: 1, ore: 'copper_ore', price: 14, forged: true, look: { color: '#c0703a', metal: true }, text: 'A thin copper bowl with a leather lining.' },
+  copper_buckler: { name: 'Copper Buckler', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 0, def: 2, ore: 'copper_ore', price: 20, forged: true, look: { color: '#c0703a', metal: true }, text: 'A small round shield of hammered copper.' },
   crude_dagger: { name: 'Crude Dagger', icon: '🔪', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 5, speed: 0.38, chop: 0.5, rank: 0, price: 30, forged: true, text: 'A sharpened iron spike with a leather grip.' },
-  copper_spear: { name: 'Copper Spear', icon: '🔱', kind: 'weapon', type: 'spear', model: 'iron_spear', power: 6, speed: 0.6, chop: 0.5, rank: 0, price: 45, forged: true, text: 'A copper point on a straight pole.' },
+  copper_spear: { name: 'Copper Spear', icon: '🔱', kind: 'weapon', type: 'spear', model: 'iron_spear', metal: 'copper', ore: 'copper_ore', power: 6, speed: 0.6, chop: 0.5, rank: 0, price: 45, forged: true, text: 'A copper point on a straight pole.' },
   willow_staff: { name: 'Willow Staff', icon: '🪄', kind: 'weapon', type: 'staff', power: 6, speed: 0.6, chop: 0.6, magic: true, rank: 0, price: 50, forged: true, text: 'A bent willow rod bound with copper wire.' },
   hide_vest: { name: 'Hide Vest', icon: '🦺', kind: 'armour', slot: 'body', rank: 0, def: 4, price: 40, forged: true, look: { color: '#7a5a3a' }, text: 'Tanned hide, stitched tight.' },
   bronze_sword: { name: 'Bronze Sword', icon: '🗡️', kind: 'weapon', type: 'sword', model: 'iron_sword', power: 8, speed: 0.55, chop: 1, rank: 1, price: 70, forged: true, text: 'A smith\'s first good blade.' },
@@ -119,6 +126,9 @@ export const ITEMS = {
   runeblade: { name: 'Runeblade', icon: '⚔️', kind: 'weapon', type: 'sword', model: 'knight_blade', power: 46, speed: 0.48, chop: 1.1, rank: 4, effect: { id: 'drain', chance: 1 }, price: 5200, forged: true, text: 'Its runes drink a little life with every cut.' },
   titan_axe: { name: 'Titan Axe', icon: '🪓', kind: 'weapon', type: 'axe', model: 'war_axe', power: 54, speed: 0.75, chop: 4, rank: 4, effect: { id: 'bleed', chance: 0.3 }, price: 6000, forged: true, text: 'Made for giants; a strong arm can swing it.' },
   runic_aegis: { name: 'Runic Aegis', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 4, def: 30, mdef: 12, price: 5500, forged: true, look: { color: '#8fa8d8', metal: true }, text: 'A shield that hums when spells come near.' },
+  diamond_edge: { name: 'Diamond Edge', icon: '⚔️', kind: 'weapon', type: 'sword', model: 'knight_blade', metal: 'diamond', ore: 'diamond', power: 50, speed: 0.47, chop: 1.2, rank: 4, effect: { id: 'bleed', chance: 0.35 }, price: 6500, forged: true, text: 'Steel with a cutting edge of set diamonds. It never dulls.' },
+  orichalcum_blade: { name: 'Orichalcum Blade', icon: '⚔️', kind: 'weapon', type: 'sword', model: 'knight_blade', metal: 'orichalcum', ore: 'orichalcum', power: 84, speed: 0.45, chop: 1.3, rank: 5, effect: { id: 'burn', chance: 0.4 }, price: 26000, forged: true, text: 'Red-gold and feather-light. It glows like a coal when it bites.' },
+  orichalcum_plate: { name: 'Orichalcum Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 5, def: 64, mdef: 24, ore: 'orichalcum', price: 27000, forged: true, look: { color: '#d9773a', metal: true }, text: 'Armour of the legendary red-gold metal: light as leather, harder than any steel.' },
   sunforged_glaive: { name: 'Sunforged Glaive', icon: '🔱', kind: 'weapon', type: 'spear', model: 'steel_glaive', power: 78, speed: 0.62, chop: 1.4, rank: 5, effect: { id: 'burn', chance: 0.4 }, price: 22000, forged: true, text: 'Forged in dragon fire; the blade never cools.' },
   dragonscale_plate: { name: 'Dragonscale Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 5, def: 60, mdef: 20, price: 24000, forged: true, look: { color: '#7a2a24', metal: true }, text: 'Scales of an elder dragon set in steel.' },
   dragonscale_helm: { name: 'Dragonscale Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 5, def: 34, mdef: 12, price: 15000, forged: true, look: { color: '#7a2a24', metal: true }, text: 'Horned, and hot to the touch.' },
@@ -346,10 +356,12 @@ export function categoryOf(it) {
 // forged; only the Kings hold those. What a smith can make: everything in the shop plus the forge-only pieces.
 export const FORGE_RANK_LEVEL = [1, 20, 50, 100, 200, 500, Infinity];
 // metal for each rank (iron for Basic and Common up to dragonite for Legendary). Forging with a better metal
-// than needed makes the piece stronger: +1 for each step up, at most +2.
-export const FORGE_ORES = ['iron_ore', 'silver_ore', 'gold_ore', 'ruby', 'dragonite'];
+// than needed makes the piece stronger: +1 for each step up, at most +2 (diamond and orichalcum are
+// the best there are). Pieces made of one metal of their own (copper gear, the diamond and
+// orichalcum pieces) name it as `ore` and always use it.
+export const FORGE_ORES = ['iron_ore', 'silver_ore', 'gold_ore', 'ruby', 'dragonite', 'diamond', 'orichalcum'];
 export const FORGE_MAX_BONUS = 2;
-const FORGE_ONLY_LEVEL = { crude_dagger: 1, copper_spear: 3, willow_staff: 5, hide_vest: 4, bronze_sword: 4, stone_maul: 6, hunting_spear: 8, bronze_helm: 5, bronze_cuirass: 10, tempered_sword: 22, iron_waraxe: 25, iron_cuirass: 24,
+const FORGE_ONLY_LEVEL = { copper_sword: 1, copper_dagger: 1, copper_hatchet: 1, copper_cap: 1, copper_buckler: 1, diamond_edge: 120, orichalcum_blade: 220, orichalcum_plate: 230, crude_dagger: 1, copper_spear: 3, willow_staff: 5, hide_vest: 4, bronze_sword: 4, stone_maul: 6, hunting_spear: 8, bronze_helm: 5, bronze_cuirass: 10, tempered_sword: 22, iron_waraxe: 25, iron_cuirass: 24,
   runed_sword: 55, steel_warhammer: 60, runed_plate: 58, runeblade: 100, titan_axe: 110, runic_aegis: 105, sunforged_glaive: 210, dragonscale_plate: 200, dragonscale_helm: 205 };
 // [id, level a Blacksmith needs] for everything forgeable, lowest first
 export const FORGE = [
@@ -364,9 +376,14 @@ export const FORGE_WORKSHOP = Object.values(ITEMS).filter((it) => it.workshop)
   .sort((a, b) => a[1] - b[1]);
 export const workshopLevel = (id) => FORGE_WORKSHOP.find(([f]) => f === id)?.[1] ?? forgeLevel(id);
 // the cost to forge `it` with `ore` (the rank's own metal when left out): coins, materials and the bonus
-const oreTier = (it) => Math.min(Math.max(0, (it.rank || 0) - 1), FORGE_ORES.length - 1);
+const oreTier = (it) => Math.min(Math.max(0, (it.rank || 0) - 1), 4);
 export function forgeCost(it, ore = null) {
   const r = oreTier(it);
+  if (it.ore) {
+    if (ore && ore !== it.ore) return null;
+    return { coins: Math.round((it.price * 0.45 * (1 + r * 0.6)) / 5) * 5 || 5, bonus: 0, ore: it.ore,
+      needs: [[it.ore, it.ore === 'copper_ore' ? 4 : 2 + r], ...(r >= 2 ? [['iron_ore', 3]] : [])] };
+  }
   const tier = ore ? FORGE_ORES.indexOf(ore) : r;
   if (tier < r) return null;
   const bonus = Math.min(FORGE_MAX_BONUS, tier - r);
@@ -374,7 +391,7 @@ export function forgeCost(it, ore = null) {
     needs: [[FORGE_ORES[tier], 2 + r * 2], ...(r >= 2 ? [['iron_ore', 3]] : [])] };
 }
 // the metals a piece can be forged with: its own, then up to two better ones
-export const forgeOres = (it) => FORGE_ORES.slice(oreTier(it), oreTier(it) + 1 + FORGE_MAX_BONUS);
+export const forgeOres = (it) => (it.ore ? [it.ore] : FORGE_ORES.slice(oreTier(it), oreTier(it) + 1 + FORGE_MAX_BONUS));
 
 // The game's own markets, one beside each waystone (inside its safe zone). Each has a speciality:
 // more of it, and its specialities unlock 5 levels before the ordinary shop sells them. They also

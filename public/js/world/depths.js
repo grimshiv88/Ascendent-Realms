@@ -2,7 +2,7 @@
 // Ore veins to mine, monster nests, a boss in the last chamber guarding a chest, and the way out.
 // False routes (see data/depths.mjs) look the same as the true way and end in rock.
 import * as THREE from 'three';
-import { caveLayout, THEMES, pickOre } from '../data/depths.mjs';
+import { caveLayout, THEMES, pickOre, pickVein, ORICHALCUM_CHANCE } from '../data/depths.mjs';
 import { ITEMS } from '../data/items.mjs';
 
 const STEP = 0.9;         // metres between points of the cave mesh
@@ -10,6 +10,7 @@ const CEILING = 6.5;      // how high the roof is above the floor
 const ORE_COLOR = {
   copper_ore: '#d9782e', iron_ore: '#8a8f99', silver_ore: '#e6eef5', gold_ore: '#ffd04a', crystal_shard: '#7fd8ff',
   emerald: '#3aff7a', sapphire: '#3a6aff', ruby: '#ff2a4a', moonstone: '#e8e0ff', dragonite: '#ff5a1a',
+  diamond: '#f4fbff', orichalcum: '#ff8a3a',
 };
 
 const bump = (x, z) => Math.sin(x * 0.9) * Math.cos(z * 0.7) * 0.18 + Math.sin(x * 0.23 + z * 0.31) * 0.25;
@@ -136,7 +137,10 @@ export function buildDepths(cave) {
       const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
       if (shape(x, z).d > -0.5) continue;
       // deeper chambers hold rarer ore
-      const ore = pickOre(T.ores, Math.random, c.false ? 0 : ci / L.chambers.length);
+      const deep = c.false ? 0 : ci / L.chambers.length;
+      // the deepest chambers of a Dungeon now and then hold orichalcum
+      const ore = cave.dungeon && deep >= 0.6 && Math.random() < ORICHALCUM_CHANCE ? 'orichalcum' : pickOre(T.ores, Math.random, deep);
+      const size = pickVein(ore, Math.random, deep);
       const v = new THREE.Group();
       const body = new THREE.Mesh(rock, rockMat);
       body.scale.set(1.2, 0.9, 1.1);
@@ -148,10 +152,11 @@ export function buildDepths(cave) {
         s.position.set(Math.cos(u) * 0.75 * Math.cos(w), Math.sin(w) * 0.6 + 0.1, Math.sin(u) * 0.75 * Math.cos(w));
         v.add(s);
       }
-      v.position.set(x, sampleAt(x, z, tmp).h + 0.4, z);
+      v.scale.setScalar(size.scale);
+      v.position.set(x, sampleAt(x, z, tmp).h + 0.4 * size.scale, z);
       v.rotation.y = rnd() * 6;
       g.add(v);
-      const e = { x, z, r: 0.85, kind: 'vein', ore, hits: 3, mesh: v, height: 1.5 };
+      const e = { x, z, r: 0.85 * size.scale, kind: 'vein', ore, size, hits: size.hits, mesh: v, height: 1.5 * size.scale };
       veins.push(e); solid.push(e);
     }
   });

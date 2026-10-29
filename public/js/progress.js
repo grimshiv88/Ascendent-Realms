@@ -1,6 +1,7 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
 import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } from './data/game-data.mjs';
+import { MINT } from './data/money.mjs';
 import { ITEMS, shopFor, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, gearSkillSlots, mythicSkill, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
 import { ageOf, childStatShare, classOdds, SCHOOLS, TRAIN_FULL_MS } from './data/birth.mjs';
@@ -178,6 +179,16 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return true;
     },
     bagFull: () => used() >= BAG_SLOTS,
+    // Mint every piece of one ore you carry into coins (see data/money.mjs MINT); returns the Copper made
+    mint(id) {
+      const n = count(id);
+      if (!MINT[id] || !n) return 0;
+      removeItem(id, n);
+      const made = n * MINT[id];
+      c.coins += made;
+      changed('coins');
+      return made;
+    },
     gearIn,
     weapon: () => gearIn('weapon'),
     isEquipped: (e) => !!e.uid && Object.values(c.equipped).includes(e.uid),

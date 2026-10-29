@@ -1,5 +1,6 @@
 // Meeting rooms in the Main Guild Hall, rented for coins (see data/interiors.mjs).
 const db = require('./db');
+const { moneyWords } = require('../public/js/data/money.mjs');
 const characters = require('./characters');
 const R = require('../public/js/data/interiors.mjs');
 const groups = require('./groups');
@@ -34,7 +35,7 @@ function rent(me, body) {
   if (missing.length) return { error: `No player is called ${missing.join(', ')}.` };
   const c = characters.load(me);
   if (!c) return { error: 'No character yet.' };
-  if (c.coins < check.cost) return { error: `You need ${check.cost} coins.` };
+  if (c.coins < check.cost) return { error: `You need ${moneyWords(check.cost)}.`, need: check.cost };
   c.coins -= check.cost;
   characters.store(me, c);
   db.prepare('INSERT INTO rentals (room, renter_id, renter, guests, until) VALUES (?, ?, ?, ?, ?)').run(check.room.id, me, name, JSON.stringify(guests), Date.now() + check.minutes * 60000);

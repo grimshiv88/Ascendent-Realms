@@ -1,6 +1,7 @@
 // The Bounty Board in the Main Guild Hall (see data/guildcard.mjs). The guild holds each prize
 // until the target is brought down, then pays the hunter.
 const db = require('./db');
+const { moneyWords } = require('../public/js/data/money.mjs');
 const characters = require('./characters');
 const B = require('../public/js/data/guildcard.mjs');
 
@@ -32,7 +33,7 @@ function place(me, body) {
   if (!c) return { error: 'No character yet.' };
   if ((c.level || 1) < B.GUILD_HALL_LEVEL) return { error: `Only hunters of level ${B.GUILD_HALL_LEVEL} or more may use the Guild Hall.` };
   const cost = check.prize + check.fee;
-  if (c.coins < cost) return { error: `You need ${cost} coins: the ${check.prize} prize and a ${check.fee} fee.` };
+  if (c.coins < cost) return { error: `You need ${moneyWords(cost)}: the ${moneyWords(check.prize)} prize and a ${moneyWords(check.fee)} fee.`, need: cost };
   c.coins -= cost;
   characters.store(me, c);
   db.prepare('INSERT INTO bounties (target, by_id, by_name, prize, placed_at) VALUES (?, ?, ?, ?, ?)').run(target, me, name, check.prize, Date.now());

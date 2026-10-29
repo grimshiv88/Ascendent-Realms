@@ -9,6 +9,7 @@ import {
   piecesCost, buildingCost, hireMinutes, applyBuild, PIECE_GROUPS, BUILDING_GROUPS,
 } from '../data/building.mjs';
 import { buildPieces } from './buildings.js';
+import { money } from '../data/money.mjs';
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const ghost = (color, opacity = 0.5) => new THREE.MeshStandardMaterial({ color, transparent: true, opacity, depthWrite: false });
@@ -90,17 +91,17 @@ export function startWalkBuild(scene, host, opts) {
     const groups = mode === 'pieces' ? PIECE_GROUPS : BUILDING_GROUPS;
     const sections = groups.map(([name], i) => `<button type="button" class="wb-sec${section[mode] === i ? ' on' : ''}" data-wb-sec="${i}">${esc(name)}</button>`).join('');
     const chips = mode === 'pieces'
-      ? PIECE_GROUPS[section.pieces][1].map((id) => `<button type="button" class="wb-chip${piece === id ? ' on' : ''}" data-wb-piece="${id}">${PIECES[id].name} <small>${Math.round(PIECES[id].price * (builder ? 0.6 : 1))} G</small></button>`).join('')
-      : BUILDING_GROUPS[section.ready][1].map((id) => [id, BUILDINGS[id]]).map(([id, b]) => `<button type="button" class="wb-chip${choice === id ? ' on' : ''}" data-wb-pick="${id}" ${b.ruler && !isRuler(mineOf()) ? 'disabled' : ''}>${esc(b.name)} <small>${buildingCost(id, opts.cls, 'hire').toLocaleString()} G</small></button>`).join('');
+      ? PIECE_GROUPS[section.pieces][1].map((id) => `<button type="button" class="wb-chip${piece === id ? ' on' : ''}" data-wb-piece="${id}">${PIECES[id].name} <small>${money(Math.round(PIECES[id].price * (builder ? 0.6 : 1)))}</small></button>`).join('')
+      : BUILDING_GROUPS[section.ready][1].map((id) => [id, BUILDINGS[id]]).map(([id, b]) => `<button type="button" class="wb-chip${choice === id ? ' on' : ''}" data-wb-pick="${id}" ${b.ruler && !isRuler(mineOf()) ? 'disabled' : ''}>${esc(b.name)} <small>${money(buildingCost(id, opts.cls, 'hire'))}</small></button>`).join('');
     const offerHtml = offer ? (() => {
       const self = buildingCost(offer.type, opts.cls, 'self'), hire = buildingCost(offer.type, opts.cls, 'hire');
       return `<div class="wb-offer"><b>${esc(BUILDINGS[offer.type].name)} here.</b>
-        <button type="button" class="gold-button small" data-wb="hire" ${busy ? 'disabled' : ''}>Hire a builder: ${hire.toLocaleString()} G (${hireMinutes(offer.type)} min)</button>
-        <button type="button" class="gold-button small" data-wb="self" ${busy ? 'disabled' : ''}>Build it now${builder ? ' (Builder price)' : ' yourself'}: ${self.toLocaleString()} G</button>
+        <button type="button" class="gold-button small" data-wb="hire" ${busy ? 'disabled' : ''}>Hire a builder: ${money(hire)} (${hireMinutes(offer.type)} min)</button>
+        <button type="button" class="gold-button small" data-wb="self" ${busy ? 'disabled' : ''}>Build it now${builder ? ' (Builder price)' : ' yourself'}: ${money(self)}</button>
         <button type="button" data-wb="cancel">Cancel</button></div>`;
     })() : '';
     bar.innerHTML = `
-      <div class="wb-top"><b>Building</b> <span class="wb-coins">${opts.coins().toLocaleString()} G</span>
+      <div class="wb-top"><b>Building</b> <span class="wb-coins">${money(opts.coins())}</span>
         <button type="button" class="${mode === 'pieces' ? 'on' : ''}" data-wb-mode="pieces">Pieces</button>
         <button type="button" class="${mode === 'ready' ? 'on' : ''}" data-wb-mode="ready">Ready buildings</button>
         <button type="button" class="wb-x" data-wb="close" aria-label="Stop building">×</button></div>
@@ -111,7 +112,7 @@ export function startWalkBuild(scene, host, opts) {
         <button type="button" data-wb="turn">Turn <kbd>R</kbd></button>
         ${mode === 'pieces' ? `<span class="wb-level">Storey <button type="button" data-wb="down" ${level ? '' : 'disabled'}>−</button> <b>${level + 1}</b> <button type="button" data-wb="up" ${level < MAX_LEVEL ? '' : 'disabled'}>+</button></span>` : ''}
         ${plan.length ? `<button type="button" data-wb="undo">Undo</button>
-          <button type="button" class="gold-button" data-wb="build" ${busy ? 'disabled' : ''}>Build ${plan.length} for ${cost.toLocaleString()} G</button>` : ''}
+          <button type="button" class="gold-button" data-wb="build" ${busy ? 'disabled' : ''}>Build ${plan.length} for ${money(cost)}</button>` : ''}
       </div>`}`;
   }
 

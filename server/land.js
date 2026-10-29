@@ -1,5 +1,6 @@
 // Land plots: who owns which square of the Heartland, what it is for, and whether it has been levelled.
 const db = require('./db');
+const { moneyWords } = require('../public/js/data/money.mjs');
 const characters = require('./characters');
 const { PURPOSES, PURPOSE_FEE, checkPurchase, prepareCost, levelHeight, clearCost } = require('../public/js/data/land.mjs');
 const { setPreparedPlots } = require('../public/js/data/world-layout.mjs');
@@ -44,7 +45,7 @@ const ownPlot = (accountId, ix, iz) => db.prepare('SELECT * FROM lands WHERE ix 
 function spend(accountId, cost) {
   const c = characters.load(accountId);
   if (!c) return { error: 'No character yet.' };
-  if (c.coins < cost) return { error: `You need ${cost} coins.` };
+  if (c.coins < cost) return { error: `You need ${moneyWords(cost)}.`, need: cost };
   c.coins -= cost;
   characters.store(accountId, c);
   return { coins: c.coins, character: c };

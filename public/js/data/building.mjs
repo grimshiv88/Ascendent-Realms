@@ -275,7 +275,7 @@ export const buildingSize = (type, r = 0) => { const [w, d] = BUILDINGS[type].si
 const piecesPrice = (pieces) => pieces.reduce((a, p) => a + PIECES[p.t].price, 0);
 // Building piece by piece in the Builder View
 export const piecesCost = (pieces, cls) => Math.round(piecesPrice(pieces) * (cls === 'builder' ? BUILDER_SHARE : 1));
-// Taking pieces down costs too: about a third of what they cost to build (at least 1 G each)
+// Taking pieces down costs too: about a third of what they cost to build (at least 1 Copper each)
 export const REMOVE_SHARE = 0.3;
 export const removeCost = (pieces, cls) => pieces.length ? Math.max(pieces.length, Math.round(piecesCost(pieces, cls) * REMOVE_SHARE)) : 0;
 

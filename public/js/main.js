@@ -49,6 +49,7 @@ import { ageOf, isChild, ceremonyDue, SCHOOLS, PARENT_JOBS } from './data/birth.
 import { renderAcademy, renderCeremony } from './schoolui.js';
 import { renderAppraise } from './appraiseui.js';
 import { piecesCost } from './data/building.mjs';
+import { money, moneyWords } from './data/money.mjs';
 
 paintCloudBanks();
 
@@ -196,7 +197,7 @@ function startGame(character) {
     let el = document.getElementById('no-funds');
     if (!el) { el = document.createElement('div'); el.id = 'no-funds'; el.setAttribute('role', 'alert'); document.body.appendChild(el); }
     const have = character.coins;
-    el.innerHTML = `<b>Insufficient funds</b>${need ? `<span>You need ${Number(need).toLocaleString()} G and have ${Number(have).toLocaleString()} G${need > have ? ` (${(need - have).toLocaleString()} G short)` : ''}.</span>` : ''}`;
+    el.innerHTML = `<b>Insufficient funds</b>${need ? `<span>You need ${money(need)} and have ${money(have)}${need > have ? ` (${money((need - have))} short)` : ''}.</span>` : ''}`;
     el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
     clearTimeout(fundsTimer);
     fundsTimer = setTimeout(() => el.classList.remove('show'), 2600);
@@ -278,7 +279,7 @@ function startGame(character) {
       (ui.missionBusy ||= {})[m.id] = true;
       api.cultAct({ action: 'done', id: m.id }).then((r) => {
         game.gainCoins(r.coins || 0);
-        world?.say(`Mission done: +${r.coins} G`, 'exp');
+        world?.say(`Mission done: +${money(r.coins)}`, 'exp');
         takeCult(r);
       }).catch(() => { ui.missionBusy[m.id] = false; });
     }
@@ -465,7 +466,7 @@ function startGame(character) {
     if (!bar) return;
     bar.hidden = !ui.basket.length && !ui.landMsg;
     bar.innerHTML = ui.basket.length
-      ? `<span>${ui.basket.length} plot${ui.basket.length === 1 ? '' : 's'} chosen · ${basketTotal()} G</span><button type="button" class="sys-button" data-land-open>Buy…</button><button type="button" class="sys-button ghost" data-land-clear>Clear</button>`
+      ? `<span>${ui.basket.length} plot${ui.basket.length === 1 ? '' : 's'} chosen · ${money(basketTotal())}</span><button type="button" class="sys-button" data-land-open>Buy…</button><button type="button" class="sys-button ghost" data-land-clear>Clear</button>`
       : `<span>${ui.landMsg}</span>`;
   }
 
@@ -691,9 +692,9 @@ function startGame(character) {
     if (!box) return;
     const fee = portalFee(ui.trip.from, to);
     box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away</p>
-      <p>Fee: <b>${fee} G</b> <small>(you have ${character.coins} G)</small></p>
+      <p>Fee: <b>${money(fee)}</b> <small>(you have ${money(character.coins)})</small></p>
       ${message ? `<p class="error">${message}</p>` : ''}
-      <button type="button" class="gold-button" data-portal-go="${to.id}">Pay ${fee} G and travel</button>`;
+      <button type="button" class="gold-button" data-portal-go="${to.id}">Pay ${money(fee)} and travel</button>`;
   }
   function openPortal() {
     if (world?.underground) { showArea(world.indoors ? 'Go outside to use a portal.' : 'There are no portals underground.'); return; }
@@ -802,7 +803,7 @@ function startGame(character) {
     if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here(), board); ui.questMsg = 'Given up. A new one is posted every 20 minutes.'; drawPanel(); return; }
     if ((v = t('data-quest-claim')) != null) {
       const r = game.questClaim(Number(v), here(), board);
-      if (r) { ui.questMsg = `Quest complete: +${r.exp} EXP, +${r.coins} G${r.item ? `, ${r.item.replace(/_/g, ' ')}` : ''}.`; world?.say('Quest complete!', 'exp'); }
+      if (r) { ui.questMsg = `Quest complete: +${r.exp} EXP, +${money(r.coins)}${r.item ? `, ${r.item.replace(/_/g, ' ')}` : ''}.`; world?.say('Quest complete!', 'exp'); }
       drawPanel(); return;
     }
     if ((v = t('data-land-pick')) != null) { ui.landChoice = v; ui.landMsg = ''; drawPanel(); return; }
@@ -993,13 +994,18 @@ function startGame(character) {
     if ((v = t('data-drop')) != null) { game.removeItem(v, 1); if (!game.entry(v)) ui.selected = null; return; }
     if ((v = t('data-craft')) != null) { game.craft(game.recipes.find((r) => r.makes === v)); return; }
     if ((v = t('data-item')) != null) { ui.selected = ui.selected === v ? null : v; drawPanel(); return; }
+    if ((v = t('data-mint')) != null) {
+      const made = game.mint(v);
+      ui.smithMsg = made ? `The Blacksmith strikes your ${ITEMS[v].name} into ${moneyWords(made)}.` : 'You have none of that ore.';
+      drawHud(); drawPanel(); return;
+    }
     if ((v = t('data-buy')) != null) { ui.shopMsg = SHOP_SAYS[game.buy(v, overlay.dataset.panel === 'market' ? ui.market : null)]; drawPanel(); return; }
     if ((v = t('data-sell')) != null || (v = t('data-sell-all')) != null) {
       const all = t('data-sell-all') != null;
       const n = all ? game.entry(v)?.n : 1;
       const got = game.sell(v, n, overlay.dataset.panel === 'market' ? ui.market : null);
       ui.shopMsg = got ? `Sold ${all ? `${n} ` : ''}for ${got} coins.` : '';
-      if (got) world?.say(`+${got} G`, 'exp');
+      if (got) world?.say(`+${money(got)}`, 'exp');
       // a Businessman's trade: a big sale, or a deal at a market stall in the dark
       if (got && character.cls === 'businessman') {
         if (got >= 2000) deed('big_sale');
@@ -1148,7 +1154,7 @@ function startGame(character) {
         if (r === 'none') showArea('The crystal stays dark. Ask for a Hunter Card at the counter first.');
         else { ui.assessed = r; openPanel('assess'); }
       }
-      if (type === 'chest') showArea(`The chest held ${data.coins} G, ${data.items.join(', ')}.`);
+      if (type === 'chest') showArea(`The chest held ${money(data.coins)}, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();
       if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);

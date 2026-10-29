@@ -1,6 +1,7 @@
 // The meeting rooms window: which of the Guild Hall's rooms are free, renting one, and choosing
 // who else may come in. Each rented room has its own private chat for the people let in.
 import { MEETING_ROOMS, CASTLE_ROOMS, CASTLE_DAYS, castleDay, ROOM_TIMES, roomCost, MAX_GUESTS } from './data/interiors.mjs';
+import { money } from './data/money.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const left = (until) => { const m = Math.max(0, Math.ceil((until - Date.now()) / 60000)); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
@@ -24,13 +25,13 @@ export function renderRooms(el, game, { rentals, pick, message = '', busy = fals
     <h3 class="bag-sub">${castle ? 'Open' : 'Rent'} the ${esc(chosen.name)}</h3>
     <div class="room-form">
       <label>For how long
-        <select data-room-minutes>${ROOM_TIMES.map((m) => `<option value="${m}">${m < 60 ? `${m} minutes` : `${m / 60} hour${m > 60 ? 's' : ''}`}${castle ? '' : `: ${roomCost(m)} G`}</option>`).join('')}</select>
+        <select data-room-minutes>${ROOM_TIMES.map((m) => `<option value="${m}">${m < 60 ? `${m} minutes` : `${m / 60} hour${m > 60 ? 's' : ''}`}${castle ? '' : `: ${money(roomCost(m))}`}</option>`).join('')}</select>
       </label>
       <label>Who else may come in <small>(usernames, separated by commas; up to ${MAX_GUESTS})</small>
         <input type="text" data-room-guests maxlength="240" placeholder="e.g. Aria, Borin" autocomplete="off">
       </label>
       <button type="button" class="gold-button" data-room-rent="${chosen.id}" ${busy ? 'disabled' : ''}>${castle ? 'Open the chamber (free)' : 'Pay and rent'}</button>
-      <p class="bag-hint">${castle ? 'On trade days, the guests you list here may enter the castle.' : `You have ${c.coins} G.`} When the time is up, everyone in the room is sent back to the ${castle ? 'great hall' : 'hallway'}.</p>
+      <p class="bag-hint">${castle ? 'On trade days, the guests you list here may enter the castle.' : `You have ${money(c.coins)}.`} When the time is up, everyone in the room is sent back to the ${castle ? 'great hall' : 'hallway'}.</p>
     </div>` : '';
   const mine = (rentals || []).filter((r) => r.mine).map((r) => {
     const room = [...MEETING_ROOMS, ...CASTLE_ROOMS].find((m) => m.id === r.room);

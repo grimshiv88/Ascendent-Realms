@@ -2,13 +2,14 @@
 // Everything here is secret: only you see it, and a cult member sees only their own rank and below.
 import { CULT_RANKS, CULT_FOUND_LEVEL, ORDER_NAME, MISSIONS, JOIN_COINS, PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, bookLevel, ACCEPT_TEXT, REJECT_TEXT } from './data/cults.mjs';
 import { RACES } from './data/game-data.mjs';
+import { money } from './data/money.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 function missionRows(list, counts) {
   if (!list?.length) return '<p class="bag-hint">No missions right now.</p>';
   return `<ul class="cult-missions">${list.map((m) => `<li><b>${m.from === 'above' ? 'From above' : 'Your own'}</b> · ${esc(m.text)}
-    <small>${Math.min(counts(m), m.need)} / ${m.need} · reward ${m.reward} G</small></li>`).join('')}</ul>`;
+    <small>${Math.min(counts(m), m.need)} / ${m.need} · reward ${money(m.reward)}</small></li>`).join('')}</ul>`;
 }
 
 // `v` is the view from the server (see data/cults.mjs view); `counts(mission)` is how far along it is

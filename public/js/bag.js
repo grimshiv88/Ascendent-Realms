@@ -4,6 +4,7 @@ import { ITEMS, shopFor, formName, SLOTS, isGear, slotOf, upgraded, reachText, R
 import { SKILLS } from './data/skills.mjs';
 import { codeFor, keyName } from './data/controls.mjs';
 import { subOf, LADDERS, MERGES, MERGE_COUNT, mergesWith, ladderName } from './data/merges.mjs';
+import { money, MINT } from './data/money.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const keyOf = (e) => e.uid || e.id;
@@ -67,7 +68,7 @@ export function itemInfoHtml(id, e = null, { extra = '', form = null } = {}) {
         ${myth ? `<p class="gear-myth">🌟 <b>${esc(myth.name)}</b> · ${esc(myth.text)}</p>` : ''}
         ${skills.length ? `<p class="bag-stat"><b>Skills set in it:</b> ${skills.map((k) => `${k.icon} ${esc(k.name)}`).join(', ')}</p>` : ''}
         ${isGear(it) && !myth && gearSkillSlots(it, plus) ? `<p class="bag-hint">Holds up to ${gearSkillSlots(it, plus)} skills from Skill Stones.</p>` : ''}
-        <p class="bag-hint">Price in the shop: ${it.price} G</p>
+        <p class="bag-hint">Price in the shop: ${money(it.price)}</p>
         ${extra}
       </div></div>
     </div>`;
@@ -137,7 +138,7 @@ export function renderBag(el, game, selected) {
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       ${tabsHtml('bag')}
       <h2>Bag</h2>
-      <p class="bag-top"><span>Coins: <b>${c.coins}</b></span><span>HP: <b>${Math.round(c.hp)} / ${s.hp}</b></span><span>SP: <b>${Math.round(c.sp)} / ${s.sp}</b></span>
+      <p class="bag-top"><span>Coins: <b>${money(c.coins)}</b></span><span>HP: <b>${Math.round(c.hp)} / ${s.hp}</b></span><span>SP: <b>${Math.round(c.sp)} / ${s.sp}</b></span>
         <span>ATK <b>${s.atk}</b> · DEF <b>${s.def}</b> · MATK <b>${s.matk}</b> · MDEF <b>${s.mdef}</b></span></p>
       <div class="bag-layout">
         <div class="bag-doll">
@@ -171,7 +172,7 @@ export function renderShop(el, game, message = '', market = null) {
       const poor = c.coins < price;
       return `<div class="sys-card sys-item${poor ? ' poor' : ''}" data-info="${id}" title="Touch to see what it does">
         <div class="sys-pic">${pic(id, 0, 'sys-emoji')}</div>
-        <div class="sys-side"><b>${esc(formName(it, c.form))}</b><span class="sys-price">${price} G</span>
+        <div class="sys-side"><b>${esc(formName(it, c.form))}</b><span class="sys-price">${money(price)}</span>
         <button type="button" class="sys-button" data-buy="${id}">${poor ? 'Not enough' : 'Buy'}</button></div></div>`;
     }).join('');
     return cards ? `<h3 class="sys-sub">${title}</h3><div class="sys-grid">${cards}</div>` : '';
@@ -179,8 +180,8 @@ export function renderShop(el, game, message = '', market = null) {
   const sellable = c.inventory.filter((e) => !game.isEquipped(e) && !ITEMS[e.id]?.bound);
   const sell = sellable.length ? sellable.map((e) => {
     const it = ITEMS[e.id];
-    return `<div class="sys-row" data-info-entry="${keyOf(e)}"><span class="sys-mini">${pic(e.id, e.plus)}</span><span class="sys-name"><b>${esc(nameOf(e))}</b><small>You have ${e.n} · shop price ${it.price} G</small></span>
-      <span class="sys-price">${game.sellPrice(e, market)} G</span><span class="sys-sell-btns"><button type="button" class="sys-button ghost" data-sell="${keyOf(e)}">Sell one</button>${e.n > 1 ? `<button type="button" class="sys-button" data-sell-all="${keyOf(e)}">Sell all ${e.n} · ${game.sellPrice(e, market) * e.n} G</button>` : ''}</span></div>`;
+    return `<div class="sys-row" data-info-entry="${keyOf(e)}"><span class="sys-mini">${pic(e.id, e.plus)}</span><span class="sys-name"><b>${esc(nameOf(e))}</b><small>You have ${e.n} · shop price ${money(it.price)}</small></span>
+      <span class="sys-price">${money(game.sellPrice(e, market))}</span><span class="sys-sell-btns"><button type="button" class="sys-button ghost" data-sell="${keyOf(e)}">Sell one</button>${e.n > 1 ? `<button type="button" class="sys-button" data-sell-all="${keyOf(e)}">Sell all ${e.n} · ${money(game.sellPrice(e, market) * e.n)}</button>` : ''}</span></div>`;
   }).join('') : '<p class="sys-hint">Nothing to sell yet. Gather wood and berries, or defeat monsters for their drops. Take gear off before selling it.</p>';
   const bad = /\bnot\b|\bneed|bag is full/i.test(message);
   el.innerHTML = `
@@ -190,7 +191,7 @@ export function renderShop(el, game, message = '', market = null) {
       <div class="sys-title"><span class="sys-bang">!</span><h2>${mk ? esc(mk.name) : dark ? 'Dark Market' : 'Shop'}</h2></div>
       ${dark ? '<p class="sys-hint">Gear made for monsters: cut for claws, horns, tails and hides. When you take humanoid form it reshapes to fit you.</p>' : ''}
       ${mk ? `<p class="sys-hint">${esc(mk.text)}${mk.bot ? ' City shops charge more and pay less than player shops.' : ''}</p>` : ''}
-      <p class="sys-top">Coins <b>${c.coins} G</b> <span>·</span> Level <b>${c.level}</b>${next < Infinity ? ` <span>·</span> New items at level <b>${next}</b>` : ''}</p>
+      <p class="sys-top">Coins <b>${money(c.coins)}</b> <span>·</span> Level <b>${c.level}</b>${next < Infinity ? ` <span>·</span> New items at level <b>${next}</b>` : ''}</p>
       <p class="sys-msg${bad ? ' bad' : ''}" role="status">${esc(message)}</p>
       <p class="sys-hint">Touch an item to see what it does.</p>
       ${market === 'tavern' ? roomHtml(game) : ''}
@@ -210,7 +211,7 @@ function roomHtml(game) {
   const price = game.roomPrice();
   return `<h3 class="sys-sub">Rooms</h3>
     <div class="sys-row"><span class="sys-name"><b>${room ? `Your room: ${room.minutes} min left` : 'A room for the day'}</b><small>${room ? 'Sleep here to wake with full HP and SP and no Fatigue.' : 'No land or money for a house? Rent a room for a day of the realm (one real hour). Sleep in it to wake fully rested.'}</small></span>
-      ${room ? '<button type="button" class="sys-button" data-room="sleep">Sleep in your room</button>' : `<button type="button" class="sys-button" data-room="rent">Rent · ${price} G</button>`}</div>`;
+      ${room ? '<button type="button" class="sys-button" data-room="sleep">Sleep in your room</button>' : `<button type="button" class="sys-button" data-room="rent">Rent · ${money(price)}</button>`}</div>`;
 }
 
 // Merging: pick a piece, then a second of the same sub-category; the merge book shows what each
@@ -254,7 +255,7 @@ export function renderSmith(el, game, pick = [], message = '', { workshop = fals
       ? '<p class="shop-msg">These two are different sub-categories. Merge a sword with a sword, a helmet with a helmet, and so on.</p>'
       : `<p class="smith-result">${esc(nameOf(a))} + ${esc(nameOf(b))} makes <b>${esc(evolvedName(ITEMS[result.id], result.plus))}${result.plus ? ` +${result.plus}` : ''}</b> (${KIND_SAYS[result.kind]}).</p>
          <p class="bag-hint">${describe(ITEMS[result.id], result.plus)}</p>
-         <p class="bag-hint">Cost: <b>${cost.coins} G</b>${cost.needs.map(([id, n]) => ` + <b>${n} ${esc(ITEMS[id].name)}</b> (you have ${game.count(id)})`).join('')}</p>
+         <p class="bag-hint">Cost: <b>${money(cost.coins)}</b>${cost.needs.map(([id, n]) => ` + <b>${n} ${esc(ITEMS[id].name)}</b> (you have ${game.count(id)})`).join('')}</p>
          <button type="button" class="gold-button small" data-merge ${can && game.canPay(cost) ? '' : 'disabled'}>${game.canPay(cost) ? 'Merge' : 'Not enough to pay'}</button>`;
   }
   // Coatings: brush a potion onto your weapon
@@ -264,6 +265,13 @@ export function renderSmith(el, game, pick = [], message = '', { workshop = fals
     + (coatings.length ? coatings.map((e) => { const it = ITEMS[e.id]; return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}</b><small>You have ${e.n} · ${esc(EFFECTS[it.coat].text)} on each of the next ${it.hits} hits</small></span>
       <button type="button" class="gold-button small" data-coat="${e.id}" ${can && w ? '' : 'disabled'}>${w ? `Coat ${esc(nameOf(w.entry))}` : 'Equip a weapon'}</button></div>`; }).join('')
     : '<p class="bag-hint">No coatings. Buy a Poison Potion, Fire Oil or Frost Oil in the shop (or ask a Potion Maker) to coat your weapon.</p>');
+  // Minting: anyone can have their ore struck into coins here
+  const mintHtml = Object.entries(MINT).map(([id, v]) => {
+    const n = game.count(id);
+    return `<div class="shop-row" data-info="${id}"><span class="smith-pic">${pic(id)}</span>
+      <span class="shop-name"><b>${esc(ITEMS[id].name)}</b><small>Each one mints ${money(v)} · you have ${n}</small></span>
+      <button type="button" class="gold-button small" data-mint="${id}" ${n ? '' : 'disabled'}>${n ? `Mint ${n} into ${money(n * v)}` : 'None to mint'}</button></div>`;
+  }).join('');
   // Forging: only what the smith's level allows. Each rank opens at a class advancement, and a
   // better metal than the rank needs gives a stronger piece (+1 or +2).
   const forgeRow = ([id]) => {
@@ -272,14 +280,14 @@ export function renderSmith(el, game, pick = [], message = '', { workshop = fals
     const btns = opts.map((fc) => {
       const pay = c.coins >= fc.coins && fc.needs.every(([n, k]) => game.count(n) >= k);
       return `<button type="button" class="gold-button small" data-forge="${id}" data-ore="${fc.ore}"${workshop ? ' data-workshop' : ''} ${can && pay ? '' : 'disabled'}
-        title="${fc.needs.map(([n, k]) => `${k} ${ITEMS[n].name} (you have ${game.count(n)})`).join(', ')}">${fc.bonus ? `+${fc.bonus} with ${esc(ITEMS[fc.ore].name)}` : 'Forge'} · ${fc.coins} G</button>`;
+        title="${fc.needs.map(([n, k]) => `${k} ${ITEMS[n].name} (you have ${game.count(n)})`).join(', ')}">${fc.bonus ? `+${fc.bonus} with ${esc(ITEMS[fc.ore].name)}` : 'Forge'} · ${money(fc.coins)}</button>`;
     }).join('');
     const base = opts[0];
     const need = base.needs.map(([n, k]) => `<span class="need${game.count(n) >= k ? ' ok' : ''}">${ITEMS[n].icon} ${k} ${esc(ITEMS[n].name)} <small>(you have ${game.count(n)})</small></span>`).join('');
     return `<div class="shop-row forge-row" data-info="${id}">
       <span class="smith-pic">${pic(id)}</span>
       <span class="shop-name"><b>${esc(it.name)}${it.forged ? ' <em class="forged-tag">· forged only</em>' : it.workshop ? ' <em class="forged-tag">· own anvil</em>' : ''}</b>
-        <span class="forge-needs">${need}<span class="need${c.coins >= base.coins ? ' ok' : ''}">🪙 ${base.coins} G <small>for the smith's labour</small></span></span></span>
+        <span class="forge-needs">${need}<span class="need${c.coins >= base.coins ? ' ok' : ''}">${money(base.coins)} <small>for the smith's labour</small></span></span></span>
       <span class="forge-btns">${btns}</span></div>`;
   };
   const forgeable = [...FORGE, ...(workshop ? FORGE_WORKSHOP : [])].filter(([, lvl]) => c.level >= lvl).sort((x, y) => x[1] - y[1]);
@@ -294,7 +302,7 @@ export function renderSmith(el, game, pick = [], message = '', { workshop = fals
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       ${tabsHtml('smith')}
       <h2>${workshop ? 'Your Anvil' : 'Blacksmith'}</h2>
-      <p class="bag-top">${can ? '<span>As a Blacksmith you can merge, coat and forge.</span>' : '<span><b>Only the Blacksmith class can merge, coat and forge.</b> You can still see how it works here.</span>'}<span>Coins: <b>${c.coins} G</b></span></p>
+      <p class="bag-top">${can ? '<span>As a Blacksmith you can merge, coat and forge.</span>' : '<span><b>Only the Blacksmith class can merge, coat and forge.</b> You can still see how it works here.</span>'}<span>Coins: <b>${money(c.coins)}</b></span></p>
       <p class="bag-hint">Merging: two pieces of the same sub-category. Two of the same piece make it +1 and keep both pieces' upgrades. Two different pieces of about the same strength make a new, stronger piece. A weak piece melted into a much stronger one makes the stronger one +1. Each + is 12% stronger, up to +10. Weapons evolve at +3, +6 and +9 and climb a rank.</p>
       ${workshop ? `<p class="bag-hint"><b>Your own anvil:</b> here you can also forge the ${FORGE_WORKSHOP.length} workshop pieces (marked “own anvil”), which no shop sells.</p>` : `<p class="bag-hint">Build an Anvil on your own land to forge ${FORGE_WORKSHOP.length} more pieces there.</p>`}
       <p class="shop-msg" role="status">${esc(message)}</p>
@@ -306,6 +314,9 @@ export function renderSmith(el, game, pick = [], message = '', { workshop = fals
       <div class="smith-list">${armour.map(row).join('') || '<p class="bag-hint">No armour in your bag.</p>'}</div>
       <h3 class="bag-sub">Current Coats</h3>
       ${coatHtml}
+      <h3 class="bag-sub">Mint Coins <small>(anyone can; 100 Copper make 1 Silver, 100 Silver make 1 Gold)</small></h3>
+      <p class="bag-hint">Bring ore from the caves and the Blacksmith strikes it into coins. Bigger veins break into more ore, so a huge copper vein makes about 16 Copper and a small one 2.</p>
+      <div class="smith-list">${mintHtml}</div>
       <h3 class="bag-sub">Can Build <small>(forge from ore and coins; better and higher-ranked pieces cost more)</small></h3>
       <p class="bag-hint">${forgeNote} A better metal than a piece needs makes it stronger (+1 or +2).</p>
       <h4 class="bag-sub2">Weapons</h4>
@@ -331,8 +342,8 @@ export function renderPotions(el, game, message = '') {
     const it = ITEMS[id];
     const price = brewCost(id), herbs = brewHerbs(id);
     const ok = can && c.coins >= price && game.count('herb') >= herbs && (pm?.queue?.length || 0) < POTION_MAKER.queue;
-    return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}</b><small>${describe(it)} · ${brewSeconds(id)}s to brew${it.brewOnly ? ' · <b>not sold in shops</b>' : ` · shop price ${it.price} G`}</small></span>
-      <button type="button" class="gold-button small" data-brew="${id}" ${ok ? '' : 'disabled'}>Brew · ${herbs} 🌿 + ${price} G</button></div>`;
+    return `<div class="shop-row"><span class="bag-icon">${it.icon}</span><span class="shop-name"><b>${esc(it.name)}</b><small>${describe(it)} · ${brewSeconds(id)}s to brew${it.brewOnly ? ' · <b>not sold in shops</b>' : ` · shop price ${money(it.price)}`}</small></span>
+      <button type="button" class="gold-button small" data-brew="${id}" ${ok ? '' : 'disabled'}>Brew · ${herbs} 🌿 + ${money(price)}</button></div>`;
   }).join('');
   el.innerHTML = `
     <div class="status-window bag-window" role="dialog" aria-label="Potion-Maker">
@@ -340,7 +351,7 @@ export function renderPotions(el, game, message = '') {
       ${tabsHtml('potions')}
       <h2>Potion-Maker</h2>
       <p class="bag-top">${top}</p>
-      <p class="bag-top"><span>Coins: <b>${c.coins} G</b></span></p>
+      <p class="bag-top"><span>Coins: <b>${money(c.coins)}</b></span></p>
       <p class="shop-msg" role="status">${esc(message)}</p>
       <h3 class="bag-sub">Brewing <small>(up to ${POTION_MAKER.queue} at a time; finished potions go into your bag)</small></h3>
       ${queue}

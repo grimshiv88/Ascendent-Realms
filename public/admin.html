@@ -96,7 +96,7 @@ function draw() {
     <tr>
       <td><span class="dot${a.signedIn ? ' on' : ''}" title="${a.signedIn ? 'Signed in on a device' : 'Signed out'}"></span><b>${esc(a.username)}</b>${a.admin ? '<span class="tag">admin</span>' : ''}<small>${esc(a.email)}</small></td>
       <td>${a.character ? `${esc(a.character.name)}<small>${esc(a.character.race)} · ${esc(a.character.cls)}${a.character.form === 'humanoid' ? ' · humanoid form' : ''}</small>` : '<small>No character yet</small>'}</td>
-      <td>${a.character ? `Lv ${a.character.level}<small>${a.character.coins} coins</small>` : '—'}</td>
+      <td>${a.character ? `Lv ${a.character.level}<small>${a.character.coins} Copper</small>` : '—'}</td>
       <td>${when(a.createdAt)}</td>
       <td>${when(a.lastPlayed)}</td>
       <td>${a.plots ? `${a.plots} plot${a.plots > 1 ? 's' : ''}` : '—'}</td>

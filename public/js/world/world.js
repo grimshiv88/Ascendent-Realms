@@ -31,6 +31,7 @@ import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs'
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
 import { ageOf, isChild, ACADEMY_NAME } from '../data/birth.mjs';
+import { money } from '../data/money.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -509,7 +510,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const [id, n] of loot.items) game.addItem(id, n);
     game.gainCoins(loot.coins);
     q.built.openChest();
-    say(`+${loot.coins} G and treasure! The village is abandoned`, 'exp');
+    say(`+${money(loot.coins)} and treasure! The village is abandoned`, 'exp');
     onEvent?.('chest', { village: true, coins: loot.coins, items: loot.items.map(([id, n]) => `${n > 1 ? `${n} ` : ''}${ITEMS[id].name}`) });
     // the village is gone; another springs up somewhere else later
     game.lootVillage(q.v.id, VILLAGE_RETURNS_MS);
@@ -760,9 +761,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     e.hits -= w?.type === 'axe' || w?.type === 'mace' ? 2 : 1; // heavy heads break rock faster
     floatText('⛏', new THREE.Vector3(e.x, e.mesh.position.y + 1, e.z), 'dmg');
     if (e.hits > 0) return;
-    const n = 1 + Math.floor(Math.random() * 3);
+    // bigger veins break into more ore
+    const [lo, hi] = e.size?.ore || [1, 3];
+    const n = lo + Math.floor(Math.random() * (hi - lo + 1));
     if (!game.addItem(e.ore, n)) return;
-    say(`+${n} ${ITEMS[e.ore].name}`, 'exp');
+    say(`+${n} ${ITEMS[e.ore].name}${e.size ? ` (${e.size.name.toLowerCase()} vein)` : ''}`, 'exp');
     colliders.remove([e]);
     depth.built.removeSolid(e);
   }
@@ -776,7 +779,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const exp = Math.round(5 + lvl * 2), coins = Math.round(15 + lvl * 4);
     game.gainExp(exp); game.gainCoins(coins);
     floatText(`+${exp} EXP`, new THREE.Vector3(e.x, e.mesh.position.y + 1.8, e.z), 'exp');
-    say(`Nest destroyed! +${coins} G`, 'exp');
+    say(`Nest destroyed! +${money(coins)}`, 'exp');
     colliders.remove([e]);
     depth.built.removeSolid(e);
   }
@@ -789,7 +792,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const [id, n] of loot.items) game.addItem(id, n);
     game.gainCoins(loot.coins);
     depth.built.openChest();
-    say(`+${loot.coins} G and treasure!`, 'exp');
+    say(`+${money(loot.coins)} and treasure!`, 'exp');
     onEvent?.('chest', { coins: loot.coins, items: loot.items.map(([id, n]) => `${n > 1 ? `${n} ` : ''}${ITEMS[id].name}`) });
   }
 

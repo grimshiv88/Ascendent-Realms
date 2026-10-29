@@ -21,8 +21,12 @@ const METALS = {
   steel: ['#d6dbe2', 1, 0.22], iron: ['#9ea4ac', 1, 0.38], rust: ['#8a5636', 0.55, 0.75], dark: ['#2c3038', 1, 0.3],
   gold: ['#e0b85a', 1, 0.25], bone: ['#e6dcc2', 0, 0.45], leather: ['#3a2418', 0, 0.8], wood: ['#6b4a2e', 0, 0.75],
   darkwood: ['#3e2a1c', 0, 0.7], cloth: ['#7a2a22', 0, 0.9],
+  copper: ['#c0703a', 1, 0.35], diamond: ['#e8f6ff', 0.6, 0.05], orichalcum: ['#e0783a', 1, 0.2],
 };
+// a piece made of another metal (copper, diamond, orichalcum) draws its steel parts in that metal
+let swap = null;
 function metal(name, plus = 0) {
+  if (swap && (name === 'steel' || name === 'iron' || name === 'rust')) name = swap;
   const [color, metalness, roughness] = METALS[name];
   const c = new THREE.Color(color);
   if (plus >= 5 && metalness > 0.5 && name !== 'gold') c.lerp(new THREE.Color('#f2dc9a'), 0.25);
@@ -106,8 +110,12 @@ function axeHead(z, size, m, { double = false, beard = 0.4 } = {}) {
 
 // A weapon model in the hand's space: the grip at the fist, the business end pointing forward (+z).
 export function weaponModel(item, plus = 0) {
-  const g = new THREE.Group();
   const own = item.id || item.entry?.id;
+  swap = item.metal || ITEMS[own]?.metal || null;
+  try { return shapeWeapon(item, own, plus); } finally { swap = null; }
+}
+function shapeWeapon(item, own, plus) {
+  const g = new THREE.Group();
   const id = item.model || ITEMS[own]?.model || own;
   switch (id) {
     case 'wooden_club': {

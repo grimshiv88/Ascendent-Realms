@@ -11,6 +11,7 @@ import { ageOf, CEREMONY_AGE, PARENT_JOBS } from './data/birth.mjs';
 import { PRIVACY, privacyOf } from './data/social.mjs';
 import { gameTime, clockText } from './data/clock.mjs';
 import { SKILLS, UPGRADE_EVERY } from './data/skills.mjs';
+import { money } from './data/money.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -110,7 +111,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${c.child ? row('Age', `${ageOf(c).toFixed(1)} <small>(the Ceremony at ${CEREMONY_AGE})</small>`) : ''}
           ${(c.child?.family || c.family) ? row('Parents', (c.child?.family || c.family).parents.map((p) => `${esc(p.name)} <small>(${esc(PARENT_JOBS[p.job]?.name || p.job)})</small>`).join(', ')) : ''}
           ${row('EXP', `${c.exp} / ${need}`)}
-          ${row('Coins', c.coins)}
+          ${row('Coins', money(c.coins))}
           ${lifeRows(c).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
         </dl>
         <dl>
@@ -201,7 +202,7 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
         <button type="button" class="gold-button small" data-switch>Switch account</button></div>
       ${accounts ? `<h3 class="bag-sub">Saved accounts</h3>
       <p class="bag-hint">${cloud ? 'Saved privately online, so they follow you to any device you open the game on.' : 'Kept in this browser only.'} Passwords are stored scrambled, so they can't be shown.</p>
-      <ul class="device-accounts">${accounts.map((a) => `<li><b>${esc(a.username)}</b> <small>${esc(a.email)}</small><br>${a.character ? `${esc(a.character.name)} · ${esc(RACES[a.character.race]?.name || a.character.race)} ${esc(CLASSES[a.character.cls]?.name || a.character.cls)} · Lv ${a.character.level} · ${a.character.coins} coins` : 'No character yet'}</li>`).join('') || '<li>None</li>'}</ul>` : ''}
+      <ul class="device-accounts">${accounts.map((a) => `<li><b>${esc(a.username)}</b> <small>${esc(a.email)}</small><br>${a.character ? `${esc(a.character.name)} · ${esc(RACES[a.character.race]?.name || a.character.race)} ${esc(CLASSES[a.character.cls]?.name || a.character.cls)} · Lv ${a.character.level} · ${money(a.character.coins)}` : 'No character yet'}</li>`).join('') || '<li>None</li>'}</ul>` : ''}
     </div>`;
 }
 

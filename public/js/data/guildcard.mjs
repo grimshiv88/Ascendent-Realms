@@ -11,6 +11,7 @@
 // the prize and pay it to the guild with a small fee; the guild holds it and pays the hunter who
 // brings the target down. Every day the guild picks 3 to 7 wanted names from the board and adds a
 // prize of its own to each.
+import { moneyWords } from './money.mjs';
 export const GUILD_HALL_LEVEL = 20;
 export const CARD_FEE = 200;
 export const CARD_RANKS = [
@@ -49,7 +50,7 @@ export function checkBounty(body, me) {
   const prize = Number(body?.prize);
   if (!target) return { error: 'Whose head is the bounty on?' };
   if (target.toLowerCase() === String(me).toLowerCase()) return { error: "You can't put a bounty on yourself." };
-  if (!Number.isInteger(prize) || prize < BOUNTY_MIN || prize > BOUNTY_MAX) return { error: `The prize is ${BOUNTY_MIN} to ${BOUNTY_MAX} coins.` };
+  if (!Number.isInteger(prize) || prize < BOUNTY_MIN || prize > BOUNTY_MAX) return { error: `The prize is ${moneyWords(BOUNTY_MIN)} to ${moneyWords(BOUNTY_MAX)}.` };
   return { target, prize, fee: bountyFee(prize) };
 }
 // The board as players see it: one line per wanted name with the total prize, featured first

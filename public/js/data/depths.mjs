@@ -1,6 +1,8 @@
 // The depths: every cave on the map leads down into its own underground warren of chambers.
 // Shared by the game and the server, so both agree on what each cave holds and what it costs to buy.
 import { placesWithPositions, sample, heightAt } from './world-layout.mjs';
+import { ITEMS } from './items.mjs';
+const oreRank = (id) => ITEMS[id]?.rank || 0;
 
 // What lives in each kind of cave, what can be mined there (with how often each ore turns up),
 // and the boss waiting in the last chamber
@@ -13,7 +15,7 @@ export const THEMES = {
   warren: {
     name: 'Goblin Warren', rock: '#463c33', glow: '#ff6a2a',
     kinds: ['hobgoblin', 'chieftain', 'chieftain'], boss: 'goblinlord', nest: 'hobgoblin', guards: 'hobgoblin',
-    ores: [['iron_ore', 45], ['silver_ore', 30], ['gold_ore', 18], ['ruby', 6], ['moonstone', 1]],
+    ores: [['iron_ore', 45], ['silver_ore', 30], ['gold_ore', 18], ['ruby', 6], ['diamond', 2], ['moonstone', 1]],
   },
   slime: {
     name: 'Slime Grotto', rock: '#3d4a52', glow: '#5ad0ff',
@@ -28,12 +30,12 @@ export const THEMES = {
   drake: {
     name: 'Drake Lair', rock: '#4a332c', glow: '#ff4a2a',
     kinds: ['drake', 'drake', 'drake'], boss: 'drake', nest: 'drake',
-    ores: [['iron_ore', 30], ['gold_ore', 30], ['ruby', 22], ['dragonite', 15], ['moonstone', 3]],
+    ores: [['iron_ore', 30], ['gold_ore', 30], ['ruby', 22], ['dragonite', 15], ['diamond', 4], ['moonstone', 3]],
   },
   fae: {
     name: 'Glimmer Cave', rock: '#3f3a52', glow: '#c88aff',
     kinds: ['wisp', 'wisp', 'slime'], boss: 'wisp', nest: 'wisp',
-    ores: [['crystal_shard', 50], ['silver_ore', 25], ['sapphire', 15], ['moonstone', 10]],
+    ores: [['crystal_shard', 50], ['silver_ore', 25], ['sapphire', 15], ['diamond', 3], ['moonstone', 10]],
   },
   sand: {
     name: 'Sandstone Burrow', rock: '#6a5438', glow: '#ffc85a',
@@ -52,6 +54,25 @@ export const SIZES = {
   medium: { name: 'Medium', chambers: 5, price: 2500 },
   deep: { name: 'Deep', chambers: 8, price: 8000 },
 };
+
+// How big an ore vein is, and how many pieces of ore it breaks into. Rarer ore comes in smaller
+// veins. A huge copper vein mints about 16 Copper; a small one, 2.
+export const VEIN_SIZES = [
+  { id: 'small', name: 'Small', scale: 0.75, hits: 2, ore: [1, 1], weight: 40 },
+  { id: 'medium', name: 'Medium', scale: 1, hits: 3, ore: [2, 3], weight: 35 },
+  { id: 'large', name: 'Large', scale: 1.35, hits: 5, ore: [4, 6], weight: 18 },
+  { id: 'huge', name: 'Huge', scale: 1.7, hits: 7, ore: [7, 8], weight: 7 },
+];
+// `deep` (0-1) is how far down the chamber is: deeper chambers hold bigger veins
+export function pickVein(ore, rnd = Math.random, deep = 0) {
+  const top = oreRank(ore) >= 5 ? 1 : oreRank(ore) >= 3 ? 2 : 3; // gems and rare metals: small or medium (or large)
+  const w = VEIN_SIZES.slice(0, top + 1).map((v, i) => v.weight * (1 + deep * i));
+  let r = rnd() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < w.length; i++) { r -= w[i]; if (r <= 0) return VEIN_SIZES[i]; }
+  return VEIN_SIZES[0];
+}
+// Orichalcum turns up only in Dungeons, in their deepest chambers
+export const ORICHALCUM_CHANCE = 0.06;
 
 // how long before a beaten boss (and its chest) comes back
 export const BOSS_RETURNS_MS = 24 * 3600 * 1000;
@@ -195,6 +216,7 @@ export function chestLoot(cave, cls, level) {
   items.push([fit[0], 1]);
   // a handful of the cave's own ores, rarer ones for bigger caves
   for (let i = 0; i < 2 + Math.floor(big / 2); i++) items.push([pickOre(t.ores, rnd, big / 8), 1 + Math.floor(rnd() * 3)]);
+  if (cave.dungeon && rnd() < 0.25) items.push(['orichalcum', 1]);
   items.push([level >= 20 ? 'big_potion' : 'potion', 1 + Math.floor(rnd() * 2)]);
   const coins = Math.round((40 + level * 12) * big * (cls === 'businessman' ? 1.6 : 1));
   return { items, coins };

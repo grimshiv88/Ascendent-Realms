@@ -1,6 +1,7 @@
 // Parties and guilds (rules in data/groups.mjs). The whole state is small, so it is kept as one
 // JSON value and changed one request at a time.
 const db = require('./db');
+const { moneyWords } = require('../public/js/data/money.mjs');
 const characters = require('./characters');
 const G = require('../public/js/data/groups.mjs');
 const { RACES } = require('../public/js/data/game-data.mjs');
@@ -40,7 +41,7 @@ function act(me, body = {}) {
     case 'found': {
       const c = characters.load(me);
       if (!c) return { error: 'No character yet.' };
-      if (c.coins < G.GUILD_FEE) return { error: `You need ${G.GUILD_FEE} coins to found a guild.` };
+      if (c.coins < G.GUILD_FEE) return { error: `You need ${moneyWords(G.GUILD_FEE)} to found a guild.`, need: G.GUILD_FEE };
       r = G.found(s, name, body.name, c.level || 1, Date.now(), { dark: RACES[c.race]?.side === 'monster' });
       if (r.ok) { c.coins -= G.GUILD_FEE; characters.store(me, c); coins = c.coins; }
       break;

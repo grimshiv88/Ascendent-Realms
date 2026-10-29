@@ -1,6 +1,7 @@
 // Talks to the game server. If no server is reachable (for example, a static preview page),
 // it falls back to a preview mode that keeps accounts in this browser only.
 import { fallenKeep, rebornWith, growUp } from './data/game-data.mjs';
+import { moneyWords } from './data/money.mjs';
 import * as birthData from './data/birth.mjs';
 import { setServerNow } from './data/clock.mjs';
 
@@ -25,10 +26,9 @@ const token = {
 };
 
 // Not enough coins for something: the game shows "Insufficient funds" on screen
-export const FUNDS_RE = /you need ([\d,]+) coins/i;
-function poor(text) {
-  const m = FUNDS_RE.exec(text);
-  if (m) window.dispatchEvent(new CustomEvent('ar-no-funds', { detail: { need: Number(m[1].replace(/,/g, '')) } }));
+// (`need` is the price in Copper; the server sends it with its "You need …" message)
+function poor(text, need = null) {
+  if (need != null) window.dispatchEvent(new CustomEvent('ar-no-funds', { detail: { need } }));
   return new Error(text);
 }
 async function request(path, { method = 'GET', body } = {}) {
@@ -37,7 +37,7 @@ async function request(path, { method = 'GET', body } = {}) {
   if (t) headers.Authorization = `Bearer ${t}`;
   const res = await fetch(path, { method, headers, body: body && JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw poor(data.error || 'Something went wrong. Please try again.');
+  if (!res.ok) throw poor(data.error || 'Something went wrong. Please try again.', data.need ?? null);
   return data;
 }
 
@@ -350,7 +350,7 @@ const previewLand = {
     const rules = await import('./data/land.mjs');
     return updatePreviewAccount((acc) => {
       const plots = this.all();
-      const spend = (cost) => { if (acc.character.coins < cost) throw poor(`You need ${cost} coins.`); acc.character.coins -= cost; };
+      const spend = (cost) => { if (acc.character.coins < cost) throw poor(`You need ${moneyWords(cost)}.`, cost); acc.character.coins -= cost; };
       fn(plots, acc, spend, rules);
       this.save(plots);
       return { ok: true, coins: acc.character.coins, plots: plots.map((p) => ({ ...p, mine: p.owner === acc.character.name })) };
@@ -378,7 +378,7 @@ export async function caveBuy(id) {
       if (list.some((c) => c.cave === id)) throw new Error('Someone already owns this cave.');
       if (!acc.character.caves?.[id]) throw new Error('Beat the boss in its depths first.');
       const price = R.cavePrice(cave);
-      if (acc.character.coins < price) throw poor(`You need ${price} coins.`);
+      if (acc.character.coins < price) throw poor(`You need ${moneyWords(price)}.`, price);
       acc.character.coins -= price;
       list.push({ cave: id, owner: acc.character.name });
       previewCaves.save(list);
@@ -810,7 +810,7 @@ export async function groupsAct(body) {
     else if (body.action === 'rename-nation') r = G.renameNation(d.groups, me.username, body.name);
     else if (body.action === 'found') {
       const c = me.character;
-      if (!c || c.coins < G.GUILD_FEE) throw poor(`You need ${G.GUILD_FEE} coins to found a guild.`);
+      if (!c || c.coins < G.GUILD_FEE) throw poor(`You need ${moneyWords(G.GUILD_FEE)} to found a guild.`, G.GUILD_FEE);
       const { RACES } = await import('./data/game-data.mjs');
       r = G.found(d.groups, me.username, body.name, c.level || 1, Date.now(), { dark: RACES[c.race]?.side === 'monster' });
       if (r.ok) coins = updatePreviewAccount((acc) => { acc.character.coins -= G.GUILD_FEE; return acc.character.coins; });
@@ -848,7 +848,7 @@ export async function bountyPost(target, prize) {
     if (!who) throw new Error(`No player or monster is called ${check.target}.`);
     const cost = check.prize + check.fee;
     const coins = updatePreviewAccount((acc) => {
-      if (acc.character.coins < cost) throw poor(`You need ${cost} coins: the ${check.prize} prize and a ${check.fee} fee.`);
+      if (acc.character.coins < cost) throw poor(`You need ${moneyWords(cost)}: the ${moneyWords(check.prize)} prize and a ${moneyWords(check.fee)} fee.`, cost);
       acc.character.coins -= cost;
       return acc.character.coins;
     });
@@ -877,7 +877,7 @@ export async function roomRent(room, minutes, guests) {
     const missing = check.guests.filter((g) => !previewSocial.find(g));
     if (missing.length) throw new Error(`No player is called ${missing.join(', ')}.`);
     const coins = updatePreviewAccount((acc) => {
-      if (acc.character.coins < check.cost) throw poor(`You need ${check.cost} coins.`);
+      if (acc.character.coins < check.cost) throw poor(`You need ${moneyWords(check.cost)}.`, check.cost);
       acc.character.coins -= check.cost;
       return acc.character.coins;
     });
