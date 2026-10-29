@@ -1,7 +1,8 @@
 // The Skills window (K): put your skills on keys, keep spare ones in storage.
 // Also the skill bar at the bottom of the screen, which works by key on desktop and by tap on touch.
 import { SKILLS, SKILL_BAR, UPGRADE_EVERY, keyLabel } from './data/skills.mjs';
-import { SPELLS, KIND_TEXT, spellEvery } from './data/spells.mjs';
+import { SPELLS, KIND_TEXT } from './data/spells.mjs';
+import { DARK_SPELL_EVERY } from './data/cults.mjs';
 import { keyName, codeFor } from './data/controls.mjs';
 import { uniqueAbility, nextTierLevel, TIER_NAMES, UNBOUND_LEVEL } from './data/unique.mjs';
 
@@ -53,8 +54,10 @@ function spellsHtml(game) {
   const c = game.character;
   const st = game.staff();
   const chosen = game.chosenSpell();
+  // only the Dark Side has magic, and nobody else is told it exists
+  if (!c.spells.length && c.pact !== 'dark' && c.cls !== 'mage') return '';
   const head = `<h3 class="bag-sub">Spells ${st ? `<small>(${st.spells.length} of ${st.slots} on your staff)</small>` : ''}</h3>
-    <p class="bag-hint">You learn a spell in your elements every ${spellEvery(c.cls)} levels, given at random. Attach spells to a staff (3, or 5 on a Legendary or Mythic staff), then the attack key casts the chosen one and ${esc(keyName(codeFor('spell')))} changes spell.${st ? '' : ' <b>Hold a staff to attach spells.</b>'}</p>`;
+    <p class="bag-hint">You learn a spell in your elements every ${DARK_SPELL_EVERY} levels, given at random. Attach spells to a staff (3, or 5 on a Legendary or Mythic staff), then the attack key casts the chosen one and ${esc(keyName(codeFor('spell')))} changes spell.${st ? '' : ' <b>Hold a staff to attach spells.</b>'}</p>`;
   if (!c.spells.length) return `${head}<p class="bag-hint">No spells yet.</p>`;
   return head + c.spells.map((id) => {
     const sp = SPELLS[id];

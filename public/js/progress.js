@@ -3,7 +3,7 @@
 import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } from './data/game-data.mjs';
 import { ITEMS, shopFor, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, gearSkillSlots, mythicSkill, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
-import { PACT_PCT } from './data/cults.mjs';
+import { PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, BOOK_ID, bookStops, spellStrength } from './data/cults.mjs';
 import { GUILD_HALL_LEVEL, CARD_FEE, assess, mayTake } from './data/guildcard.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
 import { gameTime, DAY_MS } from './data/clock.mjs';
@@ -11,7 +11,7 @@ import { BOSS_RETURNS_MS } from './data/depths.mjs';
 import { portalById, portalFee } from './data/portals.mjs';
 import { actionFor, FIXED_KEYS } from './data/controls.mjs';
 import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, randomSkill } from './data/skills.mjs';
-import { SPELLS, spellEvery, randomSpell, staffSlots } from './data/spells.mjs';
+import { SPELLS, randomSpell, staffSlots } from './data/spells.mjs';
 
 const BAG_SLOTS = 30;
 const uid = () => `g${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
@@ -29,8 +29,11 @@ function giveSkill(c) {
   return id;
 }
 
-// Spells due by now: a Mage starts with one and learns one every 10 levels, anyone else one every 20
-const spellsDue = (c) => (c.cls === 'mage' ? 1 : 0) + Math.floor(c.level / spellEvery(c.cls));
+// Spells due by now. Magic is the Dark Side's alone: joining gives a spell in each of your elements
+// at once, then one every 10 levels (and one more for a Mage). Nobody else learns spells.
+const magical = (c) => c.pact === 'dark' || c.cls === 'mage';
+const spellGap = () => DARK_SPELL_EVERY;
+const spellsDue = (c) => (!magical(c) ? 0 : (c.cls === 'mage' ? 1 : 0) + (c.pact === 'dark' ? (c.elements?.length || 1) : 0) + Math.floor(c.level / DARK_SPELL_EVERY));
 function giveSpell(c) {
   if (!c.elements?.length) c.elements = [RACES[c.race]?.element].filter(Boolean);
   const id = randomSpell(c);
@@ -265,7 +268,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     // sells `n` of an item (all of them when n is left out); returns the coins earned
     sell(key, n = 1, market = null) {
       const e = entry(key);
-      if (!e) return 0;
+      if (!e || ITEMS[e.id]?.bound) return 0;
       n = Math.min(n ?? e.n, e.n);
       const price = this.sellPrice(e, market);
       if (!removeItem(key, n)) return 0;
@@ -284,17 +287,36 @@ export function createProgress(c, { save, onChange, onEvent }) {
     // A potion's strength still running: % more ATK, DEF or speed
     boostPct(stat) {
       const now = Date.now();
-      // a cult's dark pact strengthens attacks for good; the Order's holy blessing, defence
-      const pact = (c.pact === 'dark' && stat === 'atk') || (c.pact === 'holy' && stat === 'def') ? PACT_PCT : 0;
+      // a cult's dark pact strengthens attacks and magic for good
+      const pact = c.pact !== 'dark' ? 0 : stat === 'atk' ? PACT_PCT : stat === 'matk' ? DARK_MATK_PCT : 0;
       return pact + c.boosts.reduce((n, x) => (x.stat === stat && x.until > now ? n + x.pct : n), 0);
     },
-    // The reward for answering a cult: { pact: 'dark', coins } or { pact: 'holy', str }
+    // The reward for answering a cult: { pact: 'dark', coins } (and magic: the spells now due) or
+    // { pact: 'holy', book: true }. Returns the spells it gave.
     takePact(r) {
-      if (!r) return;
+      if (!r) return [];
       c.pact = r.pact;
       if (r.coins) c.coins += r.coins;
-      if (r.str) c.stats.str += r.str;
-      changed('coins'); changed('stats');
+      if (r.book && !count(BOOK_ID)) addItem(BOOK_ID, 1);
+      const given = [];
+      let id;
+      while (c.spells.length < spellsDue(c) && (id = giveSpell(c))) given.push(id);
+      changed('coins'); changed('stats'); changed('bag');
+      return given;
+    },
+    // A Dark Side spell hits you (once players can fight each other): the Book of the Dawn stops all
+    // or part of it. Returns the damage left.
+    darkSpellHit(dmg, casterInt, power) {
+      if (!count(BOOK_ID)) return dmg;
+      return Math.round(dmg * (1 - bookStops(c.stats.int, spellStrength(casterInt, power))));
+    },
+    // Joined the Dark Side and took the Mage class (the server has done the same)
+    becameMage(cls, stats) {
+      c.cls = cls;
+      c.stats = { ...c.stats, ...stats };
+      let id;
+      while (c.spells.length < spellsDue(c) && (id = giveSpell(c))) onEvent?.('spell', { id });
+      changed('stats');
     },
     // Stripped by the cult: its powers go, and every coin it gave (as far as you have them)
     loseCult(coins) {
@@ -477,7 +499,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
         c.uniquePoints += key ? 5 : 1;
         c.stats[CLASSES[c.cls].main] += 1;
         // every 25th level (an upgrade): a new skill at random, and (between evolutions) a little more of every stat
-        if (c.level % spellEvery(c.cls) === 0 && c.spells.length < spellsDue(c)) {
+        if (c.level % spellGap(c) === 0 && c.spells.length < spellsDue(c)) {
           const sp = giveSpell(c);
           if (sp) onEvent?.('spell', { id: sp });
         }

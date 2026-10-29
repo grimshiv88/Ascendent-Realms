@@ -742,7 +742,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   function hitNest(e) {
     const s = game.stats();
-    const dmg = Math.max(1, Math.round((game.weapon()?.magic ? s.matk : s.atk) * buffed('atk') * (0.9 + Math.random() * 0.2)));
+    const dmg = Math.max(1, Math.round((game.weapon()?.magic ? s.matk * buffed('matk') : s.atk) * buffed('atk') * (0.9 + Math.random() * 0.2)));
     e.hp -= dmg;
     floatText(`${dmg}`, new THREE.Vector3(e.x, e.mesh.position.y + 1.2, e.z), 'dmg');
     if (e.hp > 0) return;
@@ -837,14 +837,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // Skills that raise ATK or DEF for a while
   const buffs = { atk: { pct: 0, until: 0 }, def: { pct: 0, until: 0 } };
   // skill buffs and potion buffs add together
-  const buffed = (stat) => 1 + ((clock.elapsedTime < buffs[stat].until ? buffs[stat].pct : 0) + (game?.boostPct(stat) || 0)) / 100;
+  const buffed = (stat) => 1 + ((buffs[stat] && clock.elapsedTime < buffs[stat].until ? buffs[stat].pct : 0) + (game?.boostPct(stat) || 0)) / 100;
 
   // Hit a monster with your weapon (or fists); `mult` and `magic` come from skills
   function damageMonster(m, mult = 1, magic = null) {
     const w = game?.weapon();
     const s = game.stats();
     const useMagic = magic ?? !!w?.magic;
-    let dmg = (w || magic !== null ? (useMagic ? s.matk : s.atk) : s.base.atk * 0.6 + 2) * mult * buffed('atk');
+    let dmg = (w || magic !== null ? (useMagic ? s.matk * buffed('matk') : s.atk) : s.base.atk * 0.6 + 2) * mult * buffed('atk');
     dmg = dmg * (0.9 + Math.random() * 0.2) - m.def * 0.5;
     const crit = Math.random() < 0.1 + Math.min(character.stats.dex * 0.002, 0.25);
     if (crit) dmg *= 1.6;

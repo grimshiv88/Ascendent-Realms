@@ -30,6 +30,8 @@ export const ITEMS = {
   emerald: { name: 'Emerald', icon: '💚', kind: 'material', rank: 3, price: 90, text: 'A green gem from the damp hollows of the Mire.' },
   sapphire: { name: 'Sapphire', icon: '💙', kind: 'material', rank: 3, price: 110, text: 'A deep blue gem, cold to the touch.' },
   ruby: { name: 'Ruby', icon: '❤️', kind: 'material', rank: 4, price: 180, text: 'A blood-red gem that glows faintly in the dark.' },
+  // the Order of the Dawn's gift to those who become Light: it can't be sold or traded
+  dawn_book: { name: 'Book of the Dawn', icon: '📖', kind: 'material', price: 0, bound: true, text: 'A worn holy book. Kept in your bag, it stops Dark Side spells that hit you. Its level is your Intelligence: the whole hit when that reaches the spell\'s strength, part of it otherwise.' },
   moonstone: { name: 'Moonstone', icon: '🌙', kind: 'material', rank: 5, price: 450, text: 'Found only in the deepest places. Said to hold moonlight.' },
   dragonite: { name: 'Dragonite', icon: '🐲', kind: 'material', rank: 5, price: 600, text: 'Ore fused by dragon fire. Only drakes\' lairs hold it.' },
   // food and potions

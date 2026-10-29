@@ -35,17 +35,30 @@ export const RACES = {
 };
 
 export const CLASSES = {
-  mage:        { name: 'Mage',        bonus: { int: 6, dex: 4 },         main: 'int', blurb: 'Spells cost 10% less SP.' },
+  // only for those who join the Dark Side (see becomeMage): never a starting class
+  mage:        { name: 'Mage',        bonus: { int: 6, dex: 4 },         main: 'int', blurb: 'Spells cost 10% less SP.', dark: true },
   swordsman:   { name: 'Swordsman',   bonus: { str: 5, dex: 3, agi: 2 }, main: 'str', blurb: '+10% ATK with swords.' },
   tank:        { name: 'Tank',        bonus: { sta: 7, str: 3 },         main: 'sta', blurb: 'Taunts enemies. +15% DEF with shields.' },
   assassin:    { name: 'Assassin',    bonus: { agi: 6, dex: 4 },         main: 'agi', blurb: 'Stealth. +20% critical damage from behind.' },
-  healer:      { name: 'Healer',      bonus: { int: 6, sta: 4 },         main: 'int', blurb: 'Healing spells are 20% stronger.' },
+  healer:      { name: 'Healer',      bonus: { int: 6, sta: 4 },         main: 'int', blurb: 'Healing skills are 20% stronger.' },
   blacksmith:  { name: 'Blacksmith',  bonus: { str: 4, sta: 4, dex: 2 }, main: 'str', blurb: 'Crafts and upgrades items 25% cheaper, and can open a shop.' },
   businessman: { name: 'Businessman', bonus: { int: 7, agi: 3 },         main: 'int', blurb: 'Can own trading buildings. Shops pay a Businessman far more for what he sells (70% of the price, not 40%).' },
   builder:     { name: 'Builder',     bonus: { str: 4, sta: 4, int: 2 }, main: 'sta', blurb: 'Builds 30% faster with 20% less material.' },
   potion_maker: { name: 'Potion Maker', bonus: { int: 5, dex: 3, sta: 2 }, main: 'int', blurb: 'Brews potions and elixirs from herbs for far less than the shop asks. The only class with a Potion-Maker\'s kit.' },
   farmer:      { name: 'Farmer',      bonus: { sta: 6, str: 4 },         main: 'sta', blurb: 'Grows crops and raises animals. Food made removes 50% more Fatigue.' },
 };
+
+// The classes a new character can start with (the Mage is the Dark Side's alone)
+export const STARTER_CLASSES = Object.keys(CLASSES).filter((id) => !CLASSES[id].dark);
+// Someone who joined the Dark Side may become a Mage: their old class's bonus points go and the
+// Mage's come in their place (a stat never drops below 1). For good.
+export function becomeMage(c) {
+  if (c.cls === 'mage' || !CLASSES[c.cls]) return false;
+  for (const [k, v] of Object.entries(CLASSES[c.cls].bonus)) c.stats[k] = Math.max(1, (c.stats[k] || 0) - v);
+  for (const [k, v] of Object.entries(CLASSES.mage.bonus)) c.stats[k] = (c.stats[k] || 0) + v;
+  c.cls = 'mage';
+  return true;
+}
 
 // What each class can do and what to aim for: shown when you pick a class, and in Status.
 export const CLASS_GUIDE = {
@@ -57,7 +70,7 @@ export const CLASS_GUIDE = {
     goals: ['Lead groups into caves and boss fights', 'Guard spawn points, roads and towns', 'Rise through the six ranks and become the Tank King'] },
   assassin: { can: ['Move unseen (stealth)', '+20% critical damage from behind', 'Strike fast with daggers'],
     goals: ['Take down lone strong monsters and bounties', 'Scout caves and far lands for others', 'Rise through the six ranks and become the Assassin King'] },
-  healer: { can: ['Heal yourself and others (20% stronger heals)', 'Keep a group alive through long fights', 'Use Light magic with a staff'],
+  healer: { can: ['Heal yourself and others (20% stronger heals)', 'Keep a group alive through long fights', 'Fight from behind the front line with a staff'],
     goals: ['Be the one every cave group needs', 'Keep the front line standing in boss and King fights', 'Rise through the six ranks and become the Healer King'] },
   blacksmith: { can: ['Forge weapons and armour from ore and coins (Blacksmith window, N)', 'Merge two items into a stronger one, and coat weapons', 'Use better metal to make stronger pieces; unlock a new rank at levels 20, 50, 100, 200 and 500'],
     goals: ['Arm the fighters: they depend on your weapons and armour', 'Reach Epic, then Legendary forging', 'Open a shop and become the Blacksmith King'] },
@@ -211,12 +224,21 @@ export const FORM_SWITCH_LEVEL = 100;
 export const mayChangeForm = (c) => c.side === 'monster' && (c.level || 1) >= FORM_SWITCH_LEVEL;
 
 // Death is final. What a fallen character passes on: their Unique Skill (its power follows the new
-// character's level, so it is held back again until they evolve) and a count of the lives lived so far.
-export const fallenKeep = (c) => ({ uniqueSkill: { name: c.uniqueSkill?.name }, lives: (c.lives || 1) + 1, fell: new Date().toISOString() });
+// character's level, so it is held back again until they evolve), a count of the lives lived so far,
+// and what their soul carries: one who served the Dark Side dies a sinner and starts the next life
+// weaker; one sworn to the Light starts it stronger.
+export const PAST_LIFE_STATS = 2; // taken from (sinner) or added to (blessed) every main stat
+export const pastLifeOf = (c) => (c.pact === 'dark' ? 'sinner' : c.pact === 'holy' ? 'blessed' : null);
+export const fallenKeep = (c) => ({ uniqueSkill: { name: c.uniqueSkill?.name }, lives: (c.lives || 1) + 1, soul: pastLifeOf(c), fell: new Date().toISOString() });
 export function rebornWith(character, keep) {
   const skill = uniqueByName(keep?.uniqueSkill?.name);
   if (skill) character.uniqueSkill = uniqueSlot(skill);
   character.lives = Math.max(2, Number(keep?.lives) || 2);
+  const soul = keep?.soul === 'sinner' ? -1 : keep?.soul === 'blessed' ? 1 : 0;
+  if (soul) {
+    for (const k of MAIN_STATS) character.stats[k] = Math.max(1, character.stats[k] + soul * PAST_LIFE_STATS);
+    character.soul = keep.soul;
+  }
   return character;
 }
 
@@ -225,6 +247,7 @@ export function newCharacter(name, { side, race: raceId, cls: classId, form, loo
   const race = RACES[raceId];
   if (!race) return { error: 'Please choose a race.' };
   if (!CLASSES[classId]) return { error: 'Please choose a class.' };
+  if (CLASSES[classId].dark) return { error: 'That class can\'t be chosen.' };
   if (side && side !== race.side) return { error: 'That race is not on the side you chose.' };
   return {
     character: {

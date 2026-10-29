@@ -539,6 +539,7 @@ function startGame(character) {
         <p>${esc(character.name)} was defeated by a ${esc(by)} at level ${character.level}.</p>
         <p>Your journey begins again from the very start: choose your race and class anew.</p>
         <p>Your Unique Skill stays with you: <b>${esc(kept?.name || '')}</b>.</p>
+        ${character.pact === 'dark' ? '<p>You served the dark and die a <b>sinner</b>. Your next life begins weaker.</p>' : character.pact === 'holy' ? '<p>You die in the Light. Your next life begins <b>stronger</b>.</p>' : ''}
         <button type="button" class="gold-button" data-begin-again>Begin again</button>
       </div>`;
     overlay.classList.remove('hidden');
@@ -869,8 +870,12 @@ function startGame(character) {
       if (v === 'found') body.name = overlay.querySelector('[data-cult-found]')?.value;
       if (v === 'give') { body.name = btn.dataset.name; body.pick = Number(overlay.querySelector(`[data-cult-pick="${CSS.escape(btn.dataset.name)}"]`)?.value) || 0; }
       api.cultAct(body).then((r) => {
-        if (r.reward) game.takePact(r.reward);
-        ui.cultMsg = { answer: { dark: 'You have joined the Dark Side. Tell no one.', light: 'You have become Light. Holy power fills you. Tell no one.', none: 'The voice fades. You must never speak of it.' }[body.choice], found: 'Your cult is founded. You are its Cult Leader.',
+        if (r.reward) {
+          // the Dark Side's magic: a spell in each of your elements, at once
+          for (const id of game.takePact(r.reward)) { game.attachSpell(id); world?.say(`New spell: ${SPELLS[id].name}`, 'exp'); newPower({ kind: 'spell', id }); }
+        }
+        if (r.mage) { game.becameMage(r.mage.cls, r.mage.stats); world?.say('You are a Mage now', 'exp'); }
+        ui.cultMsg = { mage: 'You are a Mage now. The Mage ranks are yours to climb.', answer: { dark: 'You have joined the Dark Side. Dark magic fills you. Tell no one.', light: 'You have become Light. The Book of the Dawn is in your bag. Tell no one.', none: 'The voice fades. You must never speak of it.' }[body.choice], found: 'Your cult is founded. You are its Cult Leader.',
           ask: 'A new mission.', give: 'The mission has gone down to them.' }[v] || '';
         takeCult(r);
         if (v === 'answer' && body.choice === 'none') closePanel(); else drawPanel();

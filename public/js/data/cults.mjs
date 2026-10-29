@@ -14,8 +14,13 @@
 // secret even from the code: the server picks a few from the pool below at random, keeps them in its
 // own records and picks again every month, and even then a deed only brings the call now and then.
 //
-// The call offers both sides: join the Dark Side (dark powers and money), or reject it and become
-// Light (holy powers and strength, sworn to the Order of the Dawn, which works against the cults).
+// The call offers both sides: join the Dark Side, or reject it and become Light (sworn to the Order
+// of the Dawn, which works against the cults).
+//  - The Dark Side: money, stronger attacks, magic in your elements (a spell for each at once, then
+//    one every 10 levels, and stronger spells), and the Mage class (only the Dark Side may take it).
+//    But you die a sinner: the next life starts weaker.
+//  - The Light: none of that, but the Book of the Dawn, which stops Dark Side spells that hit you
+//    (as far as its level, your Intelligence, reaches), and the next life starts stronger.
 // Or walk away from both. Whatever you choose, the call is a secret: anyone who has had it can't
 // speak of it in chat (the words are blotted out), and a cult member who gives the cult away loses
 // its powers and its coins. Neither side is ever given a mission that names a player.
@@ -35,8 +40,18 @@ export const PROMOTE_AT = [Infinity, 15, 8, 3, 0]; // favour that lifts a member
 export const ORDER_NAME = 'Order of the Dawn';
 export const INVITE_MS = 3 * 24 * 3600 * 1000; // the call waits this long for an answer
 export const JOIN_COINS = (level) => 1000 + level * 5; // the cult's welcome purse
-export const HOLY_STR = 5;                    // Strength the refusal grants, for good
-export const PACT_PCT = 15;                   // dark: +ATK; holy: +DEF (as a lasting boost)
+export const PACT_PCT = 15;                   // dark: +ATK (as a lasting boost)
+export const DARK_MATK_PCT = 20;              // dark: +MATK, and spells come every 10 levels
+export const DARK_SPELL_EVERY = 10;
+
+// ---------- the Light's book ----------
+// The Book of the Dawn's level is its holder's Intelligence. A Dark Side spell's strength is its
+// caster's Intelligence times the spell's power. The book stops the whole hit when its level is at
+// least the spell's strength, and otherwise the share of it that its level reaches.
+export const BOOK_ID = 'dawn_book';
+export const bookLevel = (int) => Math.max(1, Math.round(int || 0));
+export const spellStrength = (casterInt, power) => Math.max(1, Math.round((casterInt || 0) * (power || 1)));
+export const bookStops = (int, strength) => Math.min(1, bookLevel(int) / Math.max(1, strength));
 
 // the two answers to the call, as the message words them
 export const ACCEPT_TEXT = 'Accept and join the Dark Side';
@@ -141,7 +156,7 @@ export function deed(s, me, id, now = Date.now(), rnd = Math.random) {
   return { ok: true };
 }
 // The answer to the call: 'dark' joins the cult, 'light' joins the Order of the Dawn, 'none' walks
-// away from both. Returns the reward to give: { pact: 'dark', coins } or { pact: 'holy', str }.
+// away from both. Returns the reward to give: { pact: 'dark', coins } or { pact: 'holy', book: true }.
 export function answer(s, me, choice, now = Date.now()) {
   const cult = s.cults.find((c) => c.invites.some((i) => same(i.to, me.name) && now - i.at < INVITE_MS));
   if (!cult) return { error: 'The voice is gone.' };
@@ -156,7 +171,7 @@ export function answer(s, me, choice, now = Date.now()) {
   if (choice === 'light') {
     s.order.push({ name: me.name, joined: now, gained: 0 });
     s.choices[me.name.toLowerCase()] = 'order';
-    return { ok: true, reward: { pact: 'holy', str: HOLY_STR } };
+    return { ok: true, reward: { pact: 'holy', book: true } };
   }
   s.choices[me.name.toLowerCase()] = 'silent';
   return { ok: true, reward: null };
@@ -176,6 +191,27 @@ export function strip(s, name, now = Date.now()) {
     if (next) next.rank = 0; else s.cults = s.cults.filter((c) => c !== cult);
   }
   return { coins: m.gained, cult: cult.name };
+}
+// Only a cult member may become a Mage
+export const mayBecomeMage = (s, name) => !!cultOf(s, name);
+// A character has died: their place in a cult or the Order dies with them (a new life is called anew)
+export function forget(s, name) {
+  const cult = cultOf(s, name);
+  const m = memberOf(cult, name);
+  if (m) {
+    cult.members = cult.members.filter((x) => x !== m);
+    cult.missions = cult.missions.filter((x) => !same(x.to, name));
+    if (m.rank === 0) {
+      const next = [...cult.members].sort((a, b) => a.rank - b.rank || a.joined - b.joined)[0];
+      if (next) next.rank = 0; else s.cults = s.cults.filter((c) => c !== cult);
+    }
+  }
+  s.order = s.order.filter((o) => !same(o.name, name));
+  s.missions = (s.missions || []).filter((x) => !same(x.to, name));
+  for (const c of s.cults) c.invites = c.invites.filter((i) => !same(i.to, name));
+  delete s.choices[String(name).toLowerCase()];
+  s.stripped = s.stripped.filter((x) => !same(x.name, name));
+  return { ok: true };
 }
 // Does this chat message give the cult away? (its name, or the word "cult")
 export const givesAway = (cult, text) => !!cult && (/\bcults?\b/i.test(text) || String(text).toLowerCase().includes(cult.name.toLowerCase()));

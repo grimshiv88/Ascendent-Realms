@@ -49,6 +49,7 @@ app.post('/api/character', requireAccount, (req, res) => {
 });
 
 app.post('/api/character/fall', requireAccount, (req, res) => {
+  cults.forget(req.account.id);
   const result = characters.fall(req.account.id);
   res.status(result.error ? 400 : 200).json(result);
 });

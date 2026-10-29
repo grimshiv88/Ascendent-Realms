@@ -1,6 +1,6 @@
 // The Cult window and the Order of the Dawn, and the call that brings you to one of them.
 // Everything here is secret: only you see it, and a cult member sees only their own rank and below.
-import { CULT_RANKS, CULT_FOUND_LEVEL, ORDER_NAME, MISSIONS, JOIN_COINS, HOLY_STR, PACT_PCT, ACCEPT_TEXT, REJECT_TEXT } from './data/cults.mjs';
+import { CULT_RANKS, CULT_FOUND_LEVEL, ORDER_NAME, MISSIONS, JOIN_COINS, PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, bookLevel, ACCEPT_TEXT, REJECT_TEXT } from './data/cults.mjs';
 import { RACES } from './data/game-data.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -19,8 +19,8 @@ export function renderCult(el, c, v, { message = '', counts = () => 0 } = {}) {
   else if (v.invited) {
     body = `<div class="cult-offer">
       <p><i>A voice speaks out of the dark, meant for you alone. "We have watched you. Few are ever called. The Dark Side would have you: power beyond your kind, and gold. Or turn from us and fight the Evil, and the Light will take you instead. Choose."</i></p>
-      <p class="bag-hint"><b>The Dark Side:</b> dark powers (+${PACT_PCT}% attack, for good) and ${JOIN_COINS(c.level)} coins. You may never say you serve it. If you give it away, you lose the powers and every coin it gave you.<br>
-      <b>The Light:</b> holy powers (+${PACT_PCT}% defence, for good) and +${HOLY_STR} Strength, sworn to the ${ORDER_NAME}, which fights the cults in secret.<br>
+      <p class="bag-hint"><b>The Dark Side:</b> ${JOIN_COINS(c.level)} coins, +${PACT_PCT}% attack, and magic: a spell in each of your elements at once, a new one every ${DARK_SPELL_EVERY} levels, and +${DARK_MATK_PCT}% magic attack. Only the Dark Side may become Mages. You may never say you serve it: give it away and you lose the powers and every coin it gave you. And the dark leaves its mark: die with it and you die a sinner, and your next life begins weaker.<br>
+      <b>The Light:</b> none of the dark's gifts, but the Book of the Dawn, which stops Dark Side spells that hit you (the higher your Intelligence, the stronger the spells it stops). Sworn to the ${ORDER_NAME}, which fights the cults in secret. Die in the Light and your next life begins stronger.<br>
       Whatever you choose, this call is a secret. Speak of it and your words are blotted out.</p>
       <div class="bag-actions cult-choice"><button type="button" class="gold-button cult-dark" data-cult="answer" data-choice="dark">${ACCEPT_TEXT}</button>
       <button type="button" class="gold-button cult-light" data-cult="answer" data-choice="light">${REJECT_TEXT}</button></div>
@@ -30,6 +30,9 @@ export function renderCult(el, c, v, { message = '', counts = () => 0 } = {}) {
     const lower = k.members.filter((m) => m.rank > k.rank);
     body = `<p class="cult-rank">${esc(k.name)} · <b>${esc(k.rankName)}</b> <small>(favour ${k.favour})</small></p>
       <p class="bag-hint">Keep it secret. Nobody outside the cult can see you are in it, and those below you can't see you either. Say the word in chat and you lose the cult's powers and the ${k.gained} coins it has given you.</p>
+      ${c.cls === 'mage' ? '' : `<h3 class="bag-sub">Become a Mage</h3>
+        <p class="bag-hint">Only those who serve the Dark Side may become Mages. Your class bonus is swapped for the Mage's (+6 Intelligence, +4 Dexterity) and you rise through the Mage ranks from now on. This is for good.</p>
+        <button type="button" class="gold-button small cult-dark" data-cult="mage">Become a Mage</button>`}
       <h3 class="bag-sub">Your missions</h3>
       ${missionRows(k.missions, counts)}
       <button type="button" class="gold-button small" data-cult="ask">Ask for a mission</button>
@@ -42,6 +45,7 @@ export function renderCult(el, c, v, { message = '', counts = () => 0 } = {}) {
   } else if (v.order) {
     body = `<p class="cult-rank">${ORDER_NAME} <small>(${v.order.members} sworn)</small></p>
       <p class="bag-hint">The Order works against the cults. Nobody is told who is in a cult, and the Order never names anyone: it keeps the roads and towns safe.</p>
+      <p class="bag-hint">📖 <b>Book of the Dawn</b>, level ${bookLevel(c.stats?.int)} (your Intelligence). Kept in your bag, it stops Dark Side spells that hit you: the whole hit when its level is at least the spell's strength (the caster's Intelligence times the spell's power), and part of it otherwise.</p>
       <h3 class="bag-sub">Your missions</h3>
       ${missionRows(v.order.missions, counts)}
       <button type="button" class="gold-button small" data-cult="ask">Ask for a mission</button>`;

@@ -1,7 +1,7 @@
 // Cults and the Order of the Dawn (rules in data/cults.mjs). One small JSON state, like the guilds.
 const db = require('./db');
 const characters = require('./characters');
-const { RACES } = require('../public/js/data/game-data.mjs');
+const { RACES, becomeMage } = require('../public/js/data/game-data.mjs');
 const C = require('../public/js/data/cults.mjs');
 
 const load = () => { const r = db.prepare("SELECT data FROM world_state WHERE key = 'cults'").get(); return r ? JSON.parse(r.data) : C.emptyCults(); };
@@ -35,6 +35,14 @@ function act(me, body = {}) {
     case 'give': r = C.giveMission(s, w, String(body.name || ''), Number.isInteger(body.pick) ? body.pick : undefined, whoByName(body.name)?.level); break;
     case 'done': r = C.finishMission(s, w, Number(body.id)); break;
     case 'ack': r = C.ackStrip(s, w.name); break;
+    case 'mage': {
+      if (!C.mayBecomeMage(s, w.name)) return { error: 'Only those who serve the Dark Side may become Mages.' };
+      const ch = characters.load(me);
+      if (!becomeMage(ch)) return { error: 'You are a Mage already.' };
+      characters.store(me, ch);
+      r = { ok: true, mage: { cls: ch.cls, stats: ch.stats } };
+      break;
+    }
     default: return { error: 'Do what?' };
   }
   if (r.error) { if (body.action === 'answer') save(s); return r; }
@@ -56,5 +64,13 @@ function censor(accountId, text) {
   return w ? C.censor(load(), w.name, text) : text;
 }
 const seenBy = (viewer, target) => C.seenBy(load(), viewer, target);
+// A character has died: their place in a cult or the Order goes with them
+function forget(accountId) {
+  const w = who(accountId);
+  if (!w) return;
+  const s = load();
+  C.forget(s, w.name);
+  save(s);
+}
 
-module.exports = { list, act, checkChat, censor, seenBy };
+module.exports = { list, act, checkChat, censor, seenBy, forget };

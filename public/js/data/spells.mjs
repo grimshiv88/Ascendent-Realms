@@ -1,5 +1,6 @@
-// Spells: cast with a staff in one of your elements. A Mage learns a new spell every 10 levels,
-// anyone else every 20 (given at random from their elements, like skills). Spells are attached to
+// Spells: cast with a staff in one of your elements. Magic belongs to the Dark Side alone: those
+// who join it get a spell in each of their elements, then a new one every 10 levels (given at random
+// from their elements, like skills); nobody else learns spells (see progress.js spellsDue). Spells are attached to
 // a staff to be cast: 3 to a staff, 5 to a Legendary or Mythic one. The attack key casts the chosen
 // spell; the Spell key (X) changes which one.
 //

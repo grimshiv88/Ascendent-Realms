@@ -4,7 +4,7 @@ import { classGuide } from './status.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { makeStage } from './characters/stage.js';
 import {
-  RACES, CLASSES, MAIN_STATS, STAT_NAMES, APPEARANCE, startingStats, derivedStats,
+  RACES, CLASSES, STARTER_CLASSES, MAIN_STATS, STAT_NAMES, APPEARANCE, startingStats, derivedStats,
 } from './data/game-data.mjs';
 
 const STEPS = ['Path', 'Race', 'Class', 'Look'];
@@ -143,7 +143,7 @@ export function openCreator(root, { username, onCreate }) {
       const d = derivedStats(stats, 1);
       body.innerHTML = `
         <h2>Choose your class</h2>
-        <div class="chip-row">${Object.entries(CLASSES).map(([id, c]) => `<button type="button" class="chip" data-cls="${id}" aria-pressed="${id === choice.cls}">${c.name}</button>`).join('')}</div>
+        <div class="chip-row">${STARTER_CLASSES.map((id) => `<button type="button" class="chip" data-cls="${id}" aria-pressed="${id === choice.cls}">${CLASSES[id].name}</button>`).join('')}</div>
         <p class="blurb">${choice.cls ? CLASSES[choice.cls].blurb : 'Your class adds 10 bonus points and decides your class quests.'}</p>
         ${choice.cls ? classGuide(choice.cls) : ''}
         ${statBars(stats, choice.cls ? CLASSES[choice.cls].bonus : {})}

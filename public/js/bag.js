@@ -150,7 +150,7 @@ export function renderShop(el, game, message = '', market = null) {
     }).join('');
     return cards ? `<h3 class="sys-sub">${title}</h3><div class="sys-grid">${cards}</div>` : '';
   };
-  const sellable = c.inventory.filter((e) => !game.isEquipped(e));
+  const sellable = c.inventory.filter((e) => !game.isEquipped(e) && !ITEMS[e.id]?.bound);
   const sell = sellable.length ? sellable.map((e) => {
     const it = ITEMS[e.id];
     return `<div class="sys-row"><span class="sys-mini">${pic(e.id, e.plus)}</span><span class="sys-name"><b>${esc(nameOf(e))}</b><small>You have ${e.n} · shop price ${it.price} G</small></span>

@@ -270,6 +270,7 @@ export async function fall() {
   if (await isPreviewMode()) {
     return updatePreviewAccount((acc) => {
       if (!acc.character) return { error: 'No character yet.' };
+      forgetPreviewCults(acc.username);
       acc.fallen = fallenKeep(acc.character);
       acc.character = null;
       return { ok: true, kept: acc.fallen };
@@ -646,6 +647,15 @@ async function previewChannels(d, name) {
 }
 
 // ---------- cults and the Order of the Dawn (see data/cults.mjs) ----------
+// a fallen character's place in a cult or the Order goes with them
+async function forgetPreviewCults(name) {
+  const C = await import('./data/cults.mjs');
+  const d = previewSocial.load();
+  if (!d.cults) return;
+  C.forget(d.cults, name);
+  d.cults.t = Date.now();
+  previewSocial.save(d);
+}
 async function previewWho(acc) {
   const { RACES } = await import('./data/game-data.mjs');
   const c = acc?.character;
@@ -683,6 +693,15 @@ export async function cultAct(body) {
       case 'give': r = C.giveMission(s, w, String(body.name || ''), body.pick, (await previewWho(previewSocial.find(body.name)))?.level); break;
       case 'done': r = C.finishMission(s, w, Number(body.id)); break;
       case 'ack': r = C.ackStrip(s, w.name); break;
+      case 'mage': {
+        if (!C.mayBecomeMage(s, w.name)) throw new Error('Only those who serve the Dark Side may become Mages.');
+        const { becomeMage } = await import('./data/game-data.mjs');
+        r = updatePreviewAccount((acc) => {
+          if (!becomeMage(acc.character)) throw new Error('You are a Mage already.');
+          return { ok: true, mage: { cls: acc.character.cls, stats: acc.character.stats } };
+        });
+        break;
+      }
       default: throw new Error('Do what?');
     }
     if (r.error && body.action !== 'answer') throw new Error(r.error);
