@@ -198,7 +198,10 @@ function colourPoints(part, C, plan) {
     else if (t === 3) c.copy(C.claw);
     else if (t === 4) {
       // fur: the hair's colour, lighter at the tips, with a fine streaking
-      c.copy(C.fur).multiplyScalar(0.8 + 0.3 * Math.abs(Math.sin(x * 1300 + Math.sin(y * 60 + z * 40) * 3)));
+      // (strands run downwards: the streaks change round the body, not along a strand)
+      const a = Math.atan2(x, z - head[2]);
+      const streak = 0.5 + 0.5 * Math.sin(a * 90 + Math.sin(y * 40) * 2) * Math.sin(a * 37 + 1.3);
+      c.copy(C.fur).multiplyScalar(0.72 + 0.4 * streak);
     } else if (t === 5) c.copy(C.tusk);
     else {
       // cheeks
@@ -211,11 +214,12 @@ function colourPoints(part, C, plan) {
       if (dn < 1) c.lerp(C.warm, (1 - dn) * 0.35);
       if (Math.abs(x) > 0.07 * hd && Math.abs(y - head[1] - 0.06 * hd) < 0.05 && Math.abs(z - head[2]) < 0.05) c.lerp(C.warm, 0.25);
       // under the hair, the scalp takes the hair's colour (so no gaps show between the locks)
-      if (C.hair) {
+      // (but not on ears that stand out from the side of the head)
+      if (C.hair && Math.abs(x) < 0.088 * hd) {
         const rx = x / hd, ry = (y - head[1]) / hd, rz = (z - head[2] + 0.01 * hd) / hd;
         const front = rz / (Math.hypot(rx, rz) || 1);
         const line = front > 0 ? 0.07 + 0.045 * smoothstep(0.2, 0.85, front) : 0.07 - 0.075 * smoothstep(0, -0.9, front);
-        const k = smoothstep(line - 0.006, line + 0.006, ry);
+        const k = smoothstep(line - 0.006, line + 0.006, ry) * (1 - smoothstep(0.076, 0.088, Math.abs(rx)));
         if (k > 0) c.lerp(C.hair, k);
       }
     }

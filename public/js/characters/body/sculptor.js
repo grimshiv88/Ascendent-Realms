@@ -131,7 +131,8 @@ export function sculpt(plan, quality = 'high', { hair = 'short', hairSeed = 1, o
         pc.tubes.push(cone(a, b, outline(whole, a) + 0.006, outline(whole, b) + 0.006 + flare, { blend: 0.04 }));
       }
       // the cloth lies over the body's main forms, not its small details, the head or a beard
-      const under = near.filter((s) => !s.detail && !s.part && s.bone !== 'head');
+      // (and bridges the hollows between them, like cloth stretched over the chest)
+      const under = near.filter((s) => !s.detail && !s.part && s.bone !== 'head').map((s) => (s.sub ? s : { ...s, blend: Math.max(s.blend, 0.04) }));
       const m = meshField([...under, ...[...pc.extra, ...pc.tubes].map((e) => ({ ...e, ghost: true }))], box, q.body * 0.7, field, { clipNormals: true });
       m.shapes = near;
       dropInner(m, (x, y, z) => fieldDist(under, x, y, z));

@@ -3,7 +3,7 @@
 // down the back. Each lock is a flattened ribbon that tapers to a point. The skin under the hair is
 // darkened to the hair's colour (see build.js), so gaps between locks never show a bald scalp.
 // Plain numbers and arrays only (no three.js).
-import { fieldDist } from './sdf.js';
+import { fieldDist, shapeDist, cone } from './sdf.js';
 
 // Styles. len(a): how far a lock at angle a (0 = front, ±π = back) reaches, in metres along the
 // head; lift: how far each layer stands off the head; tip: how much the tips curl; count: locks
@@ -38,6 +38,14 @@ export function growHair(styleName, shapes, plan, seed = 1) {
   };
   let rs = seed * 9301 + 49297;
   const rnd = () => { rs = (rs * 16807) % 2147483647; return rs / 2147483647; };
+  // the neck and shoulders, roughly, so hair that falls below the head lies over them
+  const B = Object.fromEntries(plan.bones.map((b) => [b.name, b.pos]));
+  const torso = B.neck && B.leftUpperArm ? [
+    cone(B.neck, [B.neck[0], B.neck[1] + 0.06 * hd, B.neck[2]], 0.05 * hd, 0.05 * hd),
+    cone([B.leftUpperArm[0] * 0.9, B.leftUpperArm[1] + 0.01, B.leftUpperArm[2]], [B.rightUpperArm[0] * 0.9, B.rightUpperArm[1] + 0.01, B.rightUpperArm[2]], 0.065, 0.065),
+    cone([0, B.neck[1] - 0.04, B.neck[2] - 0.01], [0, B.neck[1] - 0.4, B.neck[2] - 0.01], 0.13 * plan.P.bulk, 0.13 * plan.P.bulk),
+  ] : [];
+  const body = (p) => torso.reduce((m, c) => Math.min(m, shapeDist(c, p[0], p[1], p[2])), 1e9);
   const centre = [0, o[1] + 0.097 * hd, o[2] - 0.01 * hd];
   // the crown: the top of the head, a little to the back
   const crown = surfaceAlong(f, centre, norm([0, 1, -0.45]));
@@ -74,7 +82,7 @@ export function growHair(styleName, shapes, plan, seed = 1) {
         dir = norm(add(dir, [0, -fall, 0]));
         if (hugging) dir = tangent(dir, g);
         // messy hair: the lock wanders a little to one side
-        dir = norm(add(dir, scale(cross(dir, g), wobble * 0.08)));
+        if (hugging) dir = norm(add(dir, scale(cross(dir, g), wobble * 0.08)));
         // the tip curls (inwards for bangs, outwards at the back)
         if (t > 0.72) dir = norm(add(dir, scale(g, (front > 0.5 ? -1 : 1) * S.tip * 0.18 * (t - 0.72) / 0.28)));
         p = add(p, scale(dir, step));
@@ -82,28 +90,46 @@ export function growHair(styleName, shapes, plan, seed = 1) {
         // stay off the head: hug it above the ears, only keep out of it below
         const d = f(...p);
         if (hugging) p = add(p, scale(g, lift * (1 - 0.35 * t) - d));
-        else if (d < lift * 0.6) p = add(p, scale(g, lift * 0.6 - d));
+        else {
+          if (d < lift * 0.6) p = add(p, scale(g, lift * 0.6 - d));
+          // and lie over the neck and shoulders instead of through them
+          const db = body(p);
+          if (db < lift) {
+            const e = 0.001, gb = norm([body([p[0] + e, p[1], p[2]]) - db, body([p[0], p[1] + e, p[2]]) - db, body([p[0], p[1], p[2] + e]) - db]);
+            p = add(p, scale(gb, lift - db));
+          }
+        }
         // bangs end above the eyes
-        if (front > 0.75 && p[1] < stopAt && p[2] > o[2]) { pts.push(p); break; }
+        if (front > 0.4 && p[1] < stopAt && p[2] > o[2]) { pts.push(p); break; }
         pts.push(p);
       }
-      ribbon(pts, width, lift, layer, S, rnd);
+      ribbon(pts, width, lift, layer, S, rnd, len / total);
     }
   });
 
-  function ribbon(pts, width, lift, layer, S, rnd) {
+  function ribbon(pts, width, lift, layer, S, rnd, hug = 1) {
     const n = pts.length;
+    // smooth out the small jolts from keeping the lock off the head and shoulders
+    for (let it = 0; it < 6; it++) for (let k = 2; k < n - 1; k++) {
+      const a = pts[k - 1], b = pts[k], c = pts[k + 1];
+      pts[k] = [0.25 * a[0] + 0.5 * b[0] + 0.25 * c[0], 0.25 * a[1] + 0.5 * b[1] + 0.25 * c[1], 0.25 * a[2] + 0.5 * b[2] + 0.25 * c[2]];
+    }
     if (n < 3) return;
     const base = P.length / 3;
     for (let k = 0; k < n; k++) {
       const t = k / (n - 1);
       const p = pts[k];
       const fwd = norm(sub(pts[Math.min(n - 1, k + 1)], pts[Math.max(0, k - 1)]));
-      let up = grad(p);
+      // the ribbon faces out from the head; below the ears, out from the body's middle (a steady
+      // direction, so falling hair does not twist)
+      const below = Math.min(1, Math.max(0, (earY - p[1]) / (0.08 * hd)));
+      let up = norm(add(scale(grad(p), 1 - below), scale(norm([p[0], 0, p[2] - o[2]]), below)));
       const side = norm(cross(fwd, up));
       up = norm(cross(side, fwd));
       // wide near the root, swelling a little, then to a sharp point
-      const w = width * (0.75 + 0.5 * Math.sin(Math.min(1, t * 1.6) * Math.PI * 0.5)) * Math.pow(1 - t, 0.7) * 0.5 + 0.0004;
+      // (a long lock keeps its width as it falls, and only narrows over its last part)
+      const tt = hug < 0.95 ? Math.max(0, (t - 0.55) / 0.45) : t;
+      const w = width * (0.75 + 0.5 * Math.sin(Math.min(1, t * 1.6) * Math.PI * 0.5)) * Math.pow(1 - tt, 0.7) * 0.5 + 0.0004;
       const th = Math.max(0.0012, w * 0.32);
       for (let r = 0; r < RING; r++) {
         const ang = (r / RING) * Math.PI * 2;

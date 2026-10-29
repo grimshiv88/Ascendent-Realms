@@ -92,7 +92,7 @@ export function humanoidPlan(opts = {}) {
   for (const s of [-1, 1]) {
     const pk = 0.6 + m * 0.7;
     // chest muscles, only on the muscled
-    if (m > 0.4) put('upperChest', ell([s * 0.06 * sw, T(0.395), 0.072 * ch * b], [0.066 * sw, 0.042, 0.02 * (m - 0.3)], { m: rotXYZ(0, s * 0.25, s * 0.12), blend: 0.022 }));
+    if (m > 0.4) put('upperChest', ell([s * 0.06 * sw, T(0.395), 0.072 * ch * b - 0.022], [0.068 * sw, 0.048, 0.03 + 0.02 * (m - 0.3)], { m: rotXYZ(0, s * 0.25, s * 0.12), blend: 0.035 }));
     // the slope from the neck to the shoulders
     put('upperChest', cone([s * 0.024, T(0.535), -0.024], [s * 0.14 * sw, T(0.48), -0.016], 0.03 * (0.8 + m * 0.5), 0.024, { blend: 0.05 }));
   }

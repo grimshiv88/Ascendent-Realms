@@ -40,13 +40,19 @@ export function outfitPlan(plan, o = {}) {
         cuts.push({ bone: `${L}UpperArm`, p: [sh[0], (sh[1] + el[1]) / 2 - 0.02, sh[2]], n: [0, -1, 0], r: 0.1 * wide });
       }
     }
+    const armholes = [];
+    // (without sleeves, the shirt still runs over the tops of the shoulders)
+    if (sleeves === 'none') region.push(cone(pos.leftUpperArm, pos.rightUpperArm, 0.1 * wide, 0.1 * wide, { bone: 'upperChest' }));
     if (sleeves === 'none') for (const L of ['left', 'right']) {
-      const sh = pos[`${L}UpperArm`];
-      cuts.push({ bone: `${L}UpperArm`, p: [sh[0] - Math.sign(sh[0]) * 0.035, sh[1], sh[2]], n: [Math.sign(sh[0]), 0, 0], r: 0.2 * wide });
+      // the armhole: down past the shoulder joint, rounded under the arm
+      const sh = pos[`${L}UpperArm`], s = Math.sign(sh[0]);
+      cuts.push({ bone: `${L}UpperArm`, p: [sh[0] + s * 0.01, sh[1], sh[2]], n: [s, 0, 0], r: 0.2 * wide });
+      const el = pos[`${L}LowerArm`];
+      armholes.push(cone([sh[0] + s * 0.012, sh[1] - 0.03, sh[2]], el, 0.06 * wide, 0.06 * wide, { bone: `${L}UpperArm` }));
     }
     // the neck of the shirt
     // (an ellipsoid reaching through front to back, so its edge meets the skin square on)
-    const hole = [ell([0, neckY - 0.012, 0.09], [0.06, 0.062, 0.13], { bone: 'neck' }), ell([0, neckY + 0.015, -0.03], [0.064, 0.05, 0.16], { bone: 'neck' }), cone([0, neckY + 0.03, -0.01], [0, neckY + 0.3, -0.02], 0.06, 0.06, { bone: 'neck' })];
+    const hole = [ell([0, neckY - 0.012, 0.09], [0.06, 0.062, 0.13], { bone: 'neck' }), ell([0, neckY + 0.015, -0.03], [0.064, 0.05, 0.16], { bone: 'neck' }), cone([0, neckY + 0.03, -0.01], [0, neckY + 0.3, -0.02], 0.06, 0.06, { bone: 'neck' }), ...armholes];
     pieces.push({ name: 'shirt', thick: o.tunic ? 0.012 : 0.006, region, cuts, hole, skirt: o.tunic ? [hipY + 0.06, hipY - 0.17, 0.035] : null, tubes: sleeves === 'none' ? [] : ['left', 'right'].flatMap((L) => [[`${L}UpperArm`, `${L}LowerArm`, 0.004], ...(sleeves === 'long' ? [[`${L}LowerArm`, `${L}Hand`, 0.01]] : [])]), colour: o.shirt || '#d8d0c0', cloth: 'linen' });
   }
 
