@@ -13,7 +13,7 @@ const studio = {
   build(opts = {}, look = {}) {
     if (body) scene.remove(body.root);
     const t = performance.now();
-    body = makeBody(opts, { quality: look.quality || 'high', skin: look.skin });
+    body = makeBody(opts, { quality: 'high', ...look });
     scene.add(body.root);
     return { ms: Math.round(performance.now() - t), tris: Object.values(body.meshes).reduce((a, m) => a + m.geometry.index.count / 3, 0) };
   },

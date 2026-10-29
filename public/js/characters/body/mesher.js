@@ -8,8 +8,9 @@ const BLOCK = 8; // cells per side of a block that is checked for surface as a w
 
 // shapes: the list from sdf.js. box: [x0,y0,z0,x1,y1,z1] to mesh within. cell: grid size (metres).
 // clip: optional (x, y, z, d) -> d, applied to the shapes' distance (to mesh only part of a body).
+// clipNormals: shade with the clipped field's normal (a garment's hems) instead of the skin's.
 // Returns { positions: Float32Array, normals: Float32Array, indices: Uint32Array }.
-export function meshField(shapes, box, cell, clip = null) {
+export function meshField(shapes, box, cell, clip = null, { clipNormals = false } = {}) {
   const [x0, y0, z0] = box;
   const nx = Math.ceil((box[3] - x0) / cell) + 2, ny = Math.ceil((box[4] - y0) / cell) + 2, nz = Math.ceil((box[5] - z0) / cell) + 2;
   const ox = x0 - cell, oy = y0 - cell, oz = z0 - cell;
@@ -109,7 +110,7 @@ export function meshField(shapes, box, cell, clip = null) {
       x -= gx * step; y -= gy * step; z -= gz * step;
     }
     // the normal is the skin's own (not a cut's), so a part's edge shades like the skin around it
-    grad(false);
+    grad(clipNormals);
     positions[v * 3] = x; positions[v * 3 + 1] = y; positions[v * 3 + 2] = z;
     normals[v * 3] = gx; normals[v * 3 + 1] = gy; normals[v * 3 + 2] = gz;
   }

@@ -2,9 +2,10 @@
 // sculpting pose (arms out, fingers apart, so nothing melts together), meshed in four parts (the
 // body, the head and each hand, the head and hands on a finer grid), and every point gets weights
 // for the bones that move it. Plain numbers and arrays only (no three.js), so it can run in a worker.
-import { fieldDist, shapeDist, shapeBox } from './sdf.js';
+import { fieldDist, shapeDist, shapeBox, cone } from './sdf.js';
 import { meshField } from './mesher.js';
 import { growHair } from './hair.js';
+import { outfitPlan } from './clothes.js';
 
 // grid sizes (metres, at the plan's own size) for each quality
 export const DETAIL = {
@@ -44,7 +45,7 @@ export function sculptPose(plan) {
 }
 
 // Move each shape with its bone from the rest pose into the sculpting pose
-function poseShapes(plan, pose) {
+function poseShapes(plan, pose, list = plan.shapes) {
   const rest = Object.fromEntries(plan.bones.map((b) => [b.name, b.pos]));
   const move = (bone, p) => {
     const { R, t } = pose[bone];
@@ -52,21 +53,22 @@ function poseShapes(plan, pose) {
     const v = apply3(R, [p[0] - r[0], p[1] - r[1], p[2] - r[2]]);
     return [v[0] + t[0], v[1] + t[1], v[2] + t[2]];
   };
-  return plan.shapes.map((s) => {
+  return list.map((s) => {
     const R = pose[s.bone].R;
     if (s.kind === 'cone') return { ...s, a: move(s.bone, s.a), b: move(s.bone, s.b), _ba: undefined };
+    if (s.kind === 'loft') { const d = move(s.bone, [0, 0, 0]); return { ...s, rings: s.rings.map(([y, rx, f, b, c]) => [y + d[1], rx, f, b, c + d[2]]), span: s.span?.map(([n, y]) => [n, y + d[1]]) }; }
     return { ...s, c: move(s.bone, s.c), m: mul3(s.m || I3(), T3(R)) };
   });
 }
 
 // Sculpt the plan. Returns { bones, pose, parts: { body, head, leftHand, rightHand } }, each part
 // { positions, normals, indices, skinIndex, skinWeight, tint } (tint: a colour hint per point).
-export function sculpt(plan, quality = 'high', { hair = 'short', hairSeed = 1 } = {}) {
+export function sculpt(plan, quality = 'high', { hair = 'short', hairSeed = 1, outfit = null } = {}) {
   const q = DETAIL[quality] || DETAIL.high;
   const pose = sculptPose(plan);
   const shapes = poseShapes(plan, pose);
   const boneIndex = Object.fromEntries(plan.bones.map((b, i) => [b.name, i]));
-  shapes.forEach((s) => { s.bi = boneIndex[s.bone]; });
+  shapes.forEach((s) => { s.bi = boneIndex[s.bone]; if (s.span) s.spanIdx = s.span.map(([n, y]) => [boneIndex[n], y]); });
 
   // where the hands and the head are cut from the body
   const cuts = [];
@@ -104,7 +106,32 @@ export function sculpt(plan, quality = 'high', { hair = 'short', hairSeed = 1 } 
     const clip = (x, y, z, d) => Math.max(d, -(side(c, [x, y, z]) + OVER));
     parts[c.name] = meshPart(shapes, box, c.name === 'head' ? q.head : q.hand, clip);
   }
-  for (const part of Object.values(parts)) skinPart(part, shapes, plan);
+  // clothes, each meshed on the body's grid, and the skin they hide taken away
+  const clothes = {};
+  if (outfit) {
+    const pieces = outfitPlan(plan, outfit).map((pc) => posePiece(plan, pose, pc));
+    for (const pc of pieces) {
+      const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      for (const r of [...pc.region, ...pc.extra]) { const b = shapeBox(r); for (let i = 0; i < 3; i++) { box[i] = Math.min(box[i], b[i]); box[i + 3] = Math.max(box[i + 3], b[i + 3]); } }
+      for (let i = 0; i < 3; i++) { box[i] = Math.max(box[i], bounds[i] - 0.03); box[i + 3] = Math.min(box[i + 3], bounds[i + 3] + 0.03); }
+      const field = (x, y, z, d) => garmentDist(pc, x, y, z, d);
+      const near = shapes.filter((s) => overlaps(shapeBox(s), box));
+      pc.tubes = (pc.tubes || []).map(([A, B, ease]) => {
+        const a = pose[A].t, b = pose[B].t;
+        const own = shapes.filter((s) => s.bone === A && !s.sub);
+        const limb = (x, y, z) => fieldDist(own, x, y, z);
+        const a2 = add(a, scale(sub(b, a), 0.3)); // (starting past the shoulder or hip, so it never pads them)
+        return cone(a2, b, girth(limb, a2, b, 0) + ease, girth(limb, b, a, 0.12) + ease * 0.7, { blend: 0.03 });
+      });
+      const m = meshField([...near, ...[...pc.extra, ...pc.tubes].map((e) => ({ ...e, ghost: true }))], box, q.body * 0.7, field, { clipNormals: true });
+      m.shapes = near;
+      dropInner(m, (x, y, z) => fieldDist(near, x, y, z));
+      m.cloth = pc.cloth; m.colour = pc.colour; m.name = pc.name;
+      clothes[pc.name] = m;
+    }
+    hideCovered(parts.body, pieces);
+  }
+  for (const part of [...Object.values(parts), ...Object.values(clothes)]) skinPart(part, shapes, plan);
   const face = faceSheet(plan, shapes, boneIndex.head);
   const headShapes = shapes.filter((s) => s.bone === 'head' && !s.sub);
   const locks = growHair(hair, headShapes, plan, hairSeed);
@@ -113,8 +140,77 @@ export function sculpt(plan, quality = 'high', { hair = 'short', hairSeed = 1 } 
     locks.skinIndex = new Uint16Array(n * 4); locks.skinWeight = new Float32Array(n * 4);
     for (let v = 0; v < n; v++) { locks.skinIndex[v * 4] = boneIndex.head; locks.skinWeight[v * 4] = 1; }
   }
-  return { bones: plan.bones, pose, parts, face, hair: locks };
+  return { bones: plan.bones, pose, parts, clothes, face, hair: locks };
 }
+
+// a garment piece moved into the sculpting pose (its region, cuts and extras ride their bones)
+function posePiece(plan, pose, pc) {
+  const rest = Object.fromEntries(plan.bones.map((b) => [b.name, b.pos]));
+  const cuts = pc.cuts.map((c) => {
+    const { R, t } = pose[c.bone], r = rest[c.bone];
+    const v = apply3(R, sub(c.p, r));
+    return { p: add(v, t), n: norm3(apply3(R, c.n)) };
+  });
+  return { ...pc, region: poseShapes(plan, pose, pc.region), hole: poseShapes(plan, pose, pc.hole || []), extra: poseShapes(plan, pose, pc.extra || []), cuts };
+}
+// how far outside the parts of the body a piece covers (its region, inside its hems, not in a hole);
+// the edges are rounded a little, as a sewn hem is
+function coverDist(pc, x, y, z) {
+  let r = Infinity;
+  for (const s of pc.region) r = Math.min(r, shapeDist(s, x, y, z));
+  for (const c of pc.cuts) r = smax(r, (x - c.p[0]) * c.n[0] + (y - c.p[1]) * c.n[1] + (z - c.p[2]) * c.n[2], 0.008);
+  for (const h of pc.hole) r = smax(r, -shapeDist(h, x, y, z), 0.008);
+  return r;
+}
+// the cloth: a shell from just under the skin to the cloth's thickness above it, where the piece
+// covers the body; sleeves and trouser legs hang as smooth tubes over the muscles under them
+function garmentDist(pc, x, y, z, d) {
+  let base = d;
+  for (const t of pc.tubes) base = smin(base, shapeDist(t, x, y, z), 0.03);
+  let g = smax(base - pc.thick, coverDist(pc, x, y, z), 0.003);
+  g = Math.max(g, -(d + 0.012)); // (deep enough that the grid never misses the shell)
+  for (const e of pc.extra) g = smin(g, shapeDist(e, x, y, z), e.blend);
+  return g;
+}
+const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
+const smax = (a, b, k) => -smin(-a, -b, k);
+// how thick the body is around a point on a limb's axis (from a towards b, a little along): the
+// furthest the skin is from the axis, all round
+function girth(f, a, b, along) {
+  const ax = norm3(sub(b, a));
+  const c = add(a, scale(ax, along * Math.min(1, dist(a, b))));
+  const s1 = norm3(Math.abs(ax[1]) < 0.9 ? [ax[2], 0, -ax[0]] : [1, 0, 0]);
+  const s2 = [ax[1] * s1[2] - ax[2] * s1[1], ax[2] * s1[0] - ax[0] * s1[2], ax[0] * s1[1] - ax[1] * s1[0]];
+  let r = 0;
+  for (let i = 0; i < 12; i++) {
+    const t = (i / 12) * Math.PI * 2, dir = add(scale(s1, Math.cos(t)), scale(s2, Math.sin(t)));
+    let u = 0;
+    for (let k = 0; k < 60; k++) { const d = f(...add(c, scale(dir, u))); if (d > -1e-4) break; u += Math.max(-d, 0.0008); }
+    r = Math.max(r, u);
+  }
+  return r;
+}
+// the inside of a garment's shell lies under the skin, never seen: take it away
+function dropInner(m, bodyAt) {
+  const P = m.positions, n = P.length / 3, under = new Uint8Array(n);
+  for (let v = 0; v < n; v++) under[v] = bodyAt(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]) < -0.007 ? 1 : 0;
+  const I = m.indices, keep = [];
+  for (let t = 0; t < I.length; t += 3) if (!(under[I[t]] && under[I[t + 1]] && under[I[t + 2]])) keep.push(I[t], I[t + 1], I[t + 2]);
+  m.indices = new Uint32Array(keep);
+}
+// take away the body's triangles that lie well inside a piece of clothing
+function hideCovered(part, pieces) {
+  const P = part.positions, n = P.length / 3;
+  const hidden = new Uint8Array(n);
+  for (let v = 0; v < n; v++) {
+    const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
+    for (const pc of pieces) if (coverDist(pc, x, y, z) < -0.014) { hidden[v] = 1; break; }
+  }
+  const I = part.indices, keep = [];
+  for (let t = 0; t < I.length; t += 3) if (!(hidden[I[t]] && hidden[I[t + 1]] && hidden[I[t + 2]])) keep.push(I[t], I[t + 1], I[t + 2]);
+  part.indices = new Uint32Array(keep);
+}
+const overlaps = (a, b) => a[0] <= b[3] && a[3] >= b[0] && a[1] <= b[4] && a[4] >= b[1] && a[2] <= b[5] && a[5] >= b[2];
 
 // A thin sheet lying on the face, for the painted eyes, brows and mouth: a grid seen from the front,
 // each point dropped onto the skin and lifted a hair off it
@@ -163,6 +259,7 @@ function meshPart(shapes, box, cell, clip) {
 function partBox(shapes, c, over) {
   const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
   for (const s of shapes) {
+    if (s.kind === 'loft') continue;
     const pts = s.kind === 'cone' ? [s.a, s.b] : [s.c];
     const r = s.kind === 'cone' ? Math.max(s.ra, s.rb) : Math.max(...s.r);
     for (const p of pts) {
@@ -176,7 +273,7 @@ function partBox(shapes, c, over) {
 // Bone weights for each point: every shape near the surface there pulls on its bone, the nearer the
 // stronger, so joints bend smoothly where two bones' shapes meet
 function skinPart(part, allShapes, plan) {
-  const shapes = part.shapes.filter((s) => !s.sub);
+  const shapes = part.shapes.filter((s) => !s.sub && !s.ghost);
   const n = part.positions.length / 3;
   const skinIndex = new Uint16Array(n * 4), skinWeight = new Float32Array(n * 4), tint = new Uint8Array(n);
   const PARTS = { lips: 1, nail: 2, claw: 3 };
@@ -192,7 +289,18 @@ function skinPart(part, allShapes, plan) {
       const e = (d[k] - m) / tau;
       if (e > 7) continue;
       const w = Math.exp(-e);
-      acc.set(shapes[k].bi, (acc.get(shapes[k].bi) || 0) + w);
+      const sp = shapes[k].spanIdx;
+      if (sp) {
+        // a trunk: its pull is shared by the bones along it, by height
+        for (let j = 0; j < sp.length; j++) {
+          const [bi, yj] = sp[j];
+          const ya = j ? sp[j - 1][1] : -Infinity, yb = j < sp.length - 1 ? sp[j + 1][1] : Infinity;
+          let h = 0;
+          if (y <= yj) h = ya === -Infinity ? 1 : Math.max(0, (y - ya) / (yj - ya));
+          else h = yb === Infinity ? 1 : Math.max(0, (yb - y) / (yb - yj));
+          if (h > 0) acc.set(bi, (acc.get(bi) || 0) + w * smooth01(h));
+        }
+      } else acc.set(shapes[k].bi, (acc.get(shapes[k].bi) || 0) + w);
     }
     const top = [...acc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
     const sum = top.reduce((a, [, w]) => a + w, 0);

@@ -8,11 +8,11 @@ import { faceTextures } from './face.js';
 
 const cache = new Map();
 
-export function sculptedBody(opts = {}, quality = 'high', hair = 'short') {
-  const key = JSON.stringify(opts) + '|' + quality + '|' + hair;
+export function sculptedBody(opts = {}, quality = 'high', hair = 'short', outfit = null) {
+  const key = JSON.stringify(opts) + '|' + quality + '|' + hair + '|' + JSON.stringify(outfit);
   if (!cache.has(key)) {
     const plan = humanoidPlan(opts);
-    const data = sculpt(plan, quality, { hair });
+    const data = sculpt(plan, quality, { hair, outfit });
     cache.set(key, { plan, data, geos: {} });
   }
   return cache.get(key);
@@ -20,8 +20,8 @@ export function sculptedBody(opts = {}, quality = 'high', hair = 'short') {
 
 // A new body: { root, bones: {name: Bone}, skeleton, meshes, plan }.
 // skin: the skin colour. Bones start in the rest pose (arms hanging, fingers straight).
-export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips = null, nails = null, face = {}, hair = 'short', hairColor = '#3a2a22' } = {}) {
-  const made = sculptedBody(opts, quality, hair);
+export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips = null, nails = null, face = {}, hair = 'short', hairColor = '#3a2a22', outfit = null } = {}) {
+  const made = sculptedBody(opts, quality, hair, outfit);
   const { plan, data } = made;
   const k = opts.height ? opts.height / plan.top : 1;
   const root = new THREE.Group();
@@ -69,6 +69,27 @@ export function makeBody(opts = {}, { quality = 'high', skin = '#e9c6a8', lips =
       made.geos[gk] = geo;
     }
     const mesh = new THREE.SkinnedMesh(geo, name === 'body' ? mat : mat.fine);
+    mesh.name = name;
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    scaler.add(mesh);
+    mesh.bind(skeleton, mesh.matrixWorld);
+    meshes[name] = mesh;
+  }
+  // clothes
+  for (const [name, part] of Object.entries(data.clothes || {})) {
+    const gk = 'cloth:' + name;
+    if (!made.geos[gk]) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(part.positions, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(part.normals, 3));
+      geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(part.skinIndex, 4));
+      geo.setAttribute('skinWeight', new THREE.BufferAttribute(part.skinWeight, 4));
+      geo.setIndex(new THREE.BufferAttribute(part.indices, 1));
+      geo.computeBoundingSphere();
+      made.geos[gk] = geo;
+    }
+    const mesh = new THREE.SkinnedMesh(made.geos[gk], clothMaterial(part.cloth, part.colour));
     mesh.name = name;
     mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.frustumCulled = false;
@@ -191,6 +212,30 @@ function colourPoints(part, C, plan) {
     out[v * 3] = c.r; out[v * 3 + 1] = c.g; out[v * 3 + 2] = c.b;
   }
   return out;
+}
+
+// Cloth: rough and matt, with a fine weave (linen, wool) or a soft sheen (leather)
+const CLOTH = { linen: { roughness: 0.92, weave: 1 }, wool: { roughness: 0.95, weave: 0.7 }, leather: { roughness: 0.55, weave: 0 } };
+const clothMats = new Map();
+function clothMaterial(cloth, hex) {
+  const key = cloth + hex;
+  if (!clothMats.has(key)) {
+    const C = CLOTH[cloth] || CLOTH.linen;
+    const mat = new THREE.MeshStandardMaterial({ color: hex, roughness: C.roughness, metalness: 0 });
+    if (C.weave) mat.onBeforeCompile = (sh) => weave(sh, C.weave);
+    clothMats.set(key, mat);
+  }
+  return clothMats.get(key);
+}
+// a fine woven pattern, worked out from where the point sits on the body (so it needs no texture)
+function weave(shader, k) {
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRest;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;');
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vRest;')
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      vec3 q = vRest * 900.0;
+      float w = 0.5 + 0.25 * (sin(q.x + q.z) * sin(q.y * 1.3) + sin(q.y - q.x * 0.7) * sin(q.z * 1.1));
+      diffuseColor.rgb *= 1.0 - ${(0.09).toFixed(2)} * ${k.toFixed(2)} * w;`);
 }
 
 const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };

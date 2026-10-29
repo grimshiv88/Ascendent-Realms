@@ -14,6 +14,13 @@ export function ell(c, r, opts = {}) {
   return { kind: 'ell', c, r, m: opts.m || null, blend: 0.02, ...opts };
 }
 
+// kind 'loft': a smooth trunk through horizontal rings [y, rx, front depth, back depth, z of the
+// middle], from the lowest ring to the highest, with rounded ends. Good for a torso, whose outline
+// a sculptor would draw slice by slice.
+export function loft(rings, opts = {}) {
+  return { kind: 'loft', rings, blend: 0.02, ...opts };
+}
+
 // Rotation matrices for ellipsoids (rows are the shape's local axes in world space)
 export function rotXYZ(x = 0, y = 0, z = 0) {
   const cx = Math.cos(x), sx = Math.sin(x), cy = Math.cos(y), sy = Math.sin(y), cz = Math.cos(z), sz = Math.sin(z);
@@ -46,6 +53,7 @@ export const norm = ([x, y, z]) => { const l = Math.hypot(x, y, z) || 1; return 
 // Distance to one shape
 export function shapeDist(s, px, py, pz) {
   if (s.kind === 'cone') return roundCone(px, py, pz, s);
+  if (s.kind === 'loft') return loftDist(s, px, py, pz);
   let x = px - s.c[0], y = py - s.c[1], z = pz - s.c[2];
   const m = s.m;
   if (m) {
@@ -58,6 +66,37 @@ export function shapeDist(s, px, py, pz) {
   const k0 = Math.sqrt((x / rx) ** 2 + (y / ry) ** 2 + (z / rz) ** 2);
   const k1 = Math.sqrt((x / (rx * rx)) ** 2 + (y / (ry * ry)) ** 2 + (z / (rz * rz)) ** 2);
   return k1 > 1e-9 ? (k0 * (k0 - 1)) / k1 : -Math.min(rx, ry, rz);
+}
+
+// The ring at height y, each measure eased between the rings above and below (Catmull-Rom)
+function ringAt(R, y) {
+  const n = R.length;
+  if (y <= R[0][0]) return R[0];
+  if (y >= R[n - 1][0]) return R[n - 1];
+  let i = 0;
+  while (i < n - 2 && R[i + 1][0] < y) i++;
+  const p0 = R[Math.max(0, i - 1)], p1 = R[i], p2 = R[i + 1], p3 = R[Math.min(n - 1, i + 2)];
+  const t = (y - p1[0]) / (p2[0] - p1[0]);
+  const out = [y];
+  for (let k = 1; k < 5; k++) {
+    const a = p0[k], b = p1[k], c = p2[k], d = p3[k];
+    out.push(0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t));
+  }
+  return out;
+}
+function loftDist(s, px, py, pz) {
+  const R = s.rings;
+  const [, rx, rf, rb, cz] = ringAt(R, py);
+  const x = px, z = pz - cz;
+  const rz = z > 0 ? rf : rb;
+  const k0 = Math.hypot(x / rx, z / rz), k1 = Math.hypot(x / (rx * rx), z / (rz * rz));
+  const d = k1 > 1e-9 ? (k0 * (k0 - 1)) / k1 : -Math.min(rx, rz);
+  // rounded ends: below the lowest ring and above the highest
+  const lo = R[0][0], hi = R[R.length - 1][0];
+  const r0 = Math.min(R[0][1], R[0][2]) * 0.8, r1 = Math.min(R[R.length - 1][1], R[R.length - 1][2]) * 0.8;
+  if (py < lo + r0) { const dy = lo + r0 - py; return Math.max(d, Math.hypot(Math.max(d + r0, 0), dy) - r0); }
+  if (py > hi - r1) { const dy = py - (hi - r1); return Math.max(d, Math.hypot(Math.max(d + r1, 0), dy) - r1); }
+  return d;
 }
 
 // Exact distance to a round cone (Inigo Quilez)
@@ -89,6 +128,11 @@ export function shapeBox(s) {
     return [Math.min(s.a[0], s.b[0]) - r, Math.min(s.a[1], s.b[1]) - r, Math.min(s.a[2], s.b[2]) - r,
       Math.max(s.a[0], s.b[0]) + r, Math.max(s.a[1], s.b[1]) + r, Math.max(s.a[2], s.b[2]) + r];
   }
+  if (s.kind === 'loft') {
+    let rx = 0, rz = 0, z0 = Infinity, z1 = -Infinity;
+    for (const [, x, f, b, c] of s.rings) { rx = Math.max(rx, x); z0 = Math.min(z0, c - b); z1 = Math.max(z1, c + f); }
+    return [-rx - g, s.rings[0][0] - g, z0 - g, rx + g, s.rings[s.rings.length - 1][0] + g, z1 + g];
+  }
   const r = Math.max(...s.r) + g;
   return [s.c[0] - r, s.c[1] - r, s.c[2] - r, s.c[0] + r, s.c[1] + r, s.c[2] + r];
 }
@@ -106,6 +150,7 @@ export function fieldDist(shapes, px, py, pz, clip) {
   let d = 1e9;
   for (let i = 0; i < shapes.length; i++) {
     const s = shapes[i];
+    if (s.ghost) continue; // only marks where a clip adds something (see sculptor.js clothes)
     const e = shapeDist(s, px, py, pz);
     if (s.sub) d = smax(d, -e, s.blend);
     else if (s.inflate) d = smin(d, e - s.inflate, s.blend);

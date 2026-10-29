@@ -2,7 +2,7 @@
 // are sculpted onto each bone (bones, muscles, joints, the face). Everything is laid out standing
 // straight with the arms hanging ("rest"), in metres, facing +z, with the body's left at +x.
 // The bones' names follow the VRM humanoid standard, so motions can be shared with other models.
-import { cone, ell, rotXYZ, alongDir, norm } from './sdf.js';
+import { cone, ell, loft, rotXYZ, alongDir, norm } from './sdf.js';
 
 // The default: a young adult of 1.75 m. Every race changes some of these (see races.js).
 export const BASE = {
@@ -68,37 +68,34 @@ export function humanoidPlan(opts = {}) {
   const H = (x, y, z) => [headO[0] + x * hd, headO[1] + y * hd, headO[2] + z * hd]; // a point on the head
 
   const sw = P.shoulders, hw = P.hips, ww = P.waist, ch = P.chest;
-  // pelvis and belly: a flat lower belly, the hip bones, a firm seat
-  put('hips', ell([0, T(0.02), -0.008], [0.132 * hw * b, 0.092, 0.094 * b], { blend: 0.03 }));
-  put('hips', ell([0, T(0.07), 0.01 + P.belly * 0.025], [0.11 * hw * b, 0.08, (0.07 + P.belly * 0.045) * b], { blend: 0.05 }));
-  for (const s of [-1, 1]) {
-    put('hips', ell([s * 0.058 * hw, T(0.005), -0.052 * b], [0.07 * b, 0.082, 0.064 * b], { blend: 0.04 })); // seat
-    put('hips', ell([s * 0.118 * hw, T(-0.01), -0.004], [0.04 * b, 0.07, 0.06 * b], { blend: 0.05 })); // the side of the hip
-  }
-  // waist, ribs and upper chest: the ribcage is wider than the waist, so the body narrows from the
-  // chest down (the "V" of the back)
-  put('spine', ell([0, T(0.17), 0.002 + P.belly * 0.03], [0.112 * ww * b, 0.1, (0.082 + P.belly * 0.05) * b], { blend: 0.06 }));
-  put('chest', ell([0, T(0.3), -0.004], [0.143 * ch * b, 0.14, 0.088 * ch * b], { blend: 0.06 }));
-  put('upperChest', ell([0, T(0.4), 0.0], [(0.146 + 0.012 * sw) * ch * b, 0.08, 0.094 * ch * b], { blend: 0.07 }));
+  // The trunk, drawn slice by slice from the hips to the base of the neck: the seat behind, a flat
+  // belly, a waist narrower than the ribs, the chest deepest at the front and widest under the arms
+  const bl = P.belly;
+  const R = (k, rx, f, bk, cz = 0) => [T(k), rx * b, f * b, bk * b, cz];
+  put('hips', loft([
+    R(-0.1, 0.11 * hw, 0.068, 0.07),
+    R(-0.05, 0.15 * hw, 0.08, 0.1, -0.006),
+    R(0.0, 0.152 * hw, 0.083 + bl * 0.01, 0.098, -0.006),
+    R(0.07, 0.142 * (hw + ww) / 2, 0.084 + bl * 0.03, 0.082),
+    R(0.15, 0.125 * ww, 0.083 + bl * 0.045, 0.074),
+    R(0.23, 0.13 * (ww + ch) / 2, 0.087 + bl * 0.03, 0.078),
+    R(0.3, 0.142 * ch, 0.095, 0.085),
+    R(0.37, 0.152 * ch, 0.1, 0.09),
+    R(0.44, 0.156 * ch * sw, 0.094, 0.088, -0.004),
+    R(0.5, 0.142 * sw, 0.07, 0.075, -0.01),
+    R(0.55, 0.075, 0.042, 0.052, -0.02),
+  ], { blend: 0.02, span: [['hips', T(0.02)], ['spine', T(0.15)], ['chest', T(0.29)], ['upperChest', T(0.42)]] }));
   for (const s of [-1, 1]) {
     const pk = 0.6 + m * 0.7;
-    // chest muscles, sitting on the front of the ribs
-    put('upperChest', ell([s * 0.062 * sw, T(0.4), 0.08 * ch * b], [0.066 * sw, 0.044, 0.016 + 0.012 * m], { m: rotXYZ(0, s * 0.2, s * 0.15), blend: 0.06 }));
-    // the broad muscles under the arms that give the back its V
-    put('chest', ell([s * 0.105 * sw * ch, T(0.33), -0.05], [0.03 * b * pk, 0.095, 0.05 * b], { m: rotXYZ(0, 0, s * 0.12), blend: 0.055 }));
-    // shoulder blades
-    put('upperChest', ell([s * 0.078 * sw, T(0.39), -0.078 * b], [0.06, 0.08, 0.022], { m: rotXYZ(0, 0, s * -0.15), blend: 0.06 }));
-    // the slope from the neck to the shoulders, and the collarbones
-    put('upperChest', cone([s * 0.024, T(0.535), -0.024], [s * 0.14 * sw, T(0.475), -0.016], 0.034 * (0.8 + m * 0.5), 0.026, { blend: 0.05 }));
-    // the long muscles of the back, either side of the spine
-    put('spine', cone([s * 0.028, T(0.05), -0.07 * b], [s * 0.034, T(0.34), -0.082 * b], 0.024, 0.02, { blend: 0.06 }));
-    // obliques: the sides of the waist
-    put('spine', ell([s * 0.094 * ww, T(0.11), 0.005], [0.028 * b, 0.07, 0.058 * b], { blend: 0.05 }));
+    // chest muscles, only on the muscled
+    if (m > 0.4) put('upperChest', ell([s * 0.06 * sw, T(0.39), 0.074 * ch * b], [0.064 * sw, 0.044, 0.03 * (m - 0.3)], { m: rotXYZ(0, s * 0.25, s * 0.12), blend: 0.06 }));
+    // the slope from the neck to the shoulders
+    put('upperChest', cone([s * 0.024, T(0.535), -0.024], [s * 0.14 * sw, T(0.48), -0.016], 0.03 * (0.8 + m * 0.5), 0.024, { blend: 0.05 }));
   }
   if (m > 0.35) {
     // stomach muscles
     for (let row = 0; row < 3; row++) for (const s of [-1, 1]) {
-      put('spine', ell([s * 0.024, T(0.1 + row * 0.07), 0.08 * b + (row === 2 ? -0.004 : 0)], [0.022, 0.03, 0.012 * (m - 0.2)], { blend: 0.02 }));
+      put('spine', ell([s * 0.024, T(0.1 + row * 0.07), 0.077 * b], [0.022, 0.03, 0.01 * (m - 0.2)], { blend: 0.025 }));
     }
   }
 
