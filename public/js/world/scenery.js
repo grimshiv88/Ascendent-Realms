@@ -324,6 +324,20 @@ export function scenery() {
         dummy.position.set(p.x, p.y - (kind === 'rock' ? sc * 0.3 : 0.1), p.z);
         dummy.rotation.set(kind === 'rock' ? rand() * 3 : 0, rand() * Math.PI * 2, kind === 'rock' ? rand() * 3 : 0);
         dummy.scale.set(sc * (kind === 'rock' ? 0.8 + rand() * 0.6 : 1), sc * (kind === 'rock' ? 0.6 : 0.85 + rand() * 0.3), sc);
+        // a great tree's roots are solid too: high up near the trunk they stop you, and further out,
+        // where they dip into the ground, you can climb over them
+        const roots = [];
+        if (kind === 'great') {
+          const ry = dummy.rotation.y, c = Math.cos(ry), sn = Math.sin(ry), sy = dummy.scale.y;
+          for (let k = 0; k < 7; k++) {
+            const a = (k / 7) * Math.PI * 2;
+            for (const r of [3.5, 4.2, 4.9]) {
+              const lx = Math.cos(a) * r, lz = Math.sin(a) * r;
+              const top = (1.2 - (r - 3) * 0.64 + 0.45 + (5.5 - r) * 0.12) * sy - 0.1;
+              roots.push({ x: p.x + (lx * c + lz * sn) * sc, z: p.z + (-lx * sn + lz * c) * sc, r: 0.45 * sc, y: p.y, height: top, step: true, kind: 'root' });
+            }
+          }
+        }
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
         if (kind === 'rock') tint.set(ROCK_TINT[p.region] || '#888').multiplyScalar(0.85 + rand() * 0.3);
@@ -333,7 +347,8 @@ export function scenery() {
         if (BREAKABLE[kind]) {
           // things you can break keep a link to their instance so they can be removed
           const e = entry || { x: p.x, z: p.z, r: 0 };
-          Object.assign(e, { kind, mesh, index: i, y: p.y, hp: BREAKABLE[kind].hp, key: spotKey(kind, p.x, p.z), height: kind === 'young' ? 3.5 * sc : BREAKABLE[kind].needs ? 5 * sc : 1.2 * sc });
+          solid.push(...roots); // (felled, the tree takes its roots with it)
+          Object.assign(e, { roots, kind, mesh, index: i, y: p.y, hp: BREAKABLE[kind].hp, key: spotKey(kind, p.x, p.z), height: kind === 'young' ? 3.5 * sc : BREAKABLE[kind].needs ? 5 * sc : 1.2 * sc });
           solid.push(e);
         } else if (entry) {
           entry.kind = kind;

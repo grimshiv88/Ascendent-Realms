@@ -477,7 +477,7 @@ export function createLand(scene) {
   // Break a bush or small tree: hide it, stop it blocking, and remember it
   function breakThing(entry) {
     hideInstance(entry.mesh, entry.index);
-    colliders.remove([entry]);
+    colliders.remove([entry, ...(entry.roots || [])]);
     broken.add(entry.key);
     return BREAKABLE[entry.kind];
   }
