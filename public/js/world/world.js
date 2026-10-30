@@ -21,7 +21,7 @@ import { buildPieces, pieceColliders, storeyY } from './buildings.js';
 import { allPortals, nearestPortal } from '../data/portals.mjs';
 import { allCastles, KING_RETURNS_MS } from '../data/kings.mjs';
 import { placeBuilding, CELL } from '../data/building.mjs';
-import { caveById, THEMES, chestLoot } from '../data/depths.mjs';
+import { caveById, THEMES, chestLoot, bossLevel } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { updateCrowd } from '../characters/crowd.js';
@@ -764,7 +764,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const spots = (k) => { const a = Math.random() * Math.PI * 2, r = c.r * (0.3 + Math.random() * 0.4); return [c.x + Math.cos(a) * r, c.z + Math.sin(a) * r]; };
       if (c.boss) {
         if (!game.bossHome(cave.id)) { built.openChest(); return; }
-        const boss = creatures.spawnAt(T.boss, lvl + 3, c.x, c.z, { boss: true, keep: true, depth: true, angry: true, title: `${KINDS[T.boss].name} Boss` });
+        const boss = creatures.spawnAt(T.boss, bossLevel(cave, lvl), c.x, c.z, { boss: true, keep: true, depth: true, angry: true, title: `${KINDS[T.boss].name} Boss` });
         boss.onDeath = () => {
           built.unlockChest();
           game.clearCave(cave.id);

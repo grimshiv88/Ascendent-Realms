@@ -2,7 +2,7 @@
 // Ore veins to mine, monster nests, a boss in the last chamber guarding a chest, and the way out.
 // False routes (see data/depths.mjs) look the same as the true way and end in rock.
 import * as THREE from 'three';
-import { caveLayout, THEMES, pickOre, pickVein, ORICHALCUM_CHANCE } from '../data/depths.mjs';
+import { caveLayout, THEMES, pickOre, pickVein, caveOres, strongCave, ORICHALCUM_CHANCE } from '../data/depths.mjs';
 import { ITEMS } from '../data/items.mjs';
 
 const STEP = 0.9;         // metres between points of the cave mesh
@@ -136,10 +136,10 @@ export function buildDepths(cave) {
       const a = rnd() * Math.PI * 2, r = c.r - 1.1;
       const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
       if (shape(x, z).d > -0.5) continue;
-      // deeper chambers hold rarer ore
+      // deeper chambers hold rarer ore (and only strong caves hold the rare ones at all)
       const deep = c.false ? 0 : ci / L.chambers.length;
-      // the deepest chambers of a Dungeon now and then hold orichalcum
-      const ore = cave.dungeon && deep >= 0.6 && Math.random() < ORICHALCUM_CHANCE ? 'orichalcum' : pickOre(T.ores, Math.random, deep);
+      // the deepest chambers of a strong cave now and then hold orichalcum
+      const ore = strongCave(cave) && deep >= 0.6 && Math.random() < ORICHALCUM_CHANCE ? 'orichalcum' : pickOre(caveOres(cave, deep), Math.random, deep);
       const size = pickVein(ore, Math.random, deep);
       const v = new THREE.Group();
       const body = new THREE.Mesh(rock, rockMat);

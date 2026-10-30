@@ -2,6 +2,7 @@
 // Shared by the game and the server, so both agree on what each cave holds and what it costs to buy.
 import { placesWithPositions, sample, heightAt, DEPTHS_X } from './world-layout.mjs';
 import { ITEMS } from './items.mjs';
+import { wildLevelAt } from './wilds.mjs';
 const oreRank = (id) => ITEMS[id]?.rank || 0;
 
 // What lives in each kind of cave, what can be mined there (with how often each ore turns up),
@@ -71,7 +72,23 @@ export function pickVein(ore, rnd = Math.random, deep = 0) {
   for (let i = 0; i < w.length; i++) { r -= w[i]; if (r <= 0) return VEIN_SIZES[i]; }
   return VEIN_SIZES[0];
 }
-// Orichalcum turns up only in Dungeons, in their deepest chambers
+// Rare ores and gems (ruby, moonstone, diamond, dragonite: rank 4 and up) are hard to find: only
+// strong caves hold them (Dungeons deep in high-level wilds, level 60 and up, with strong bosses),
+// only in their deeper half, and even there not often. Other caves never have them.
+export const RARE_RANK = 4;
+export const STRONG_LEVEL = 60;
+export const strongCave = (cave) => !!cave && cave.dungeon && cave.level >= STRONG_LEVEL;
+// the ores a cave's chamber can hold, `deep` (0-1) being how far down it is
+export function caveOres(cave, deep = 1) {
+  const all = THEMES[cave.theme].ores;
+  const common = all.filter(([id]) => oreRank(id) < RARE_RANK);
+  if (!strongCave(cave) || deep < 0.5) return common;
+  return [...common, ...all.filter(([id]) => oreRank(id) >= RARE_RANK).map(([id, n]) => [id, n * 0.5])];
+}
+// a cave's boss level, for you at `level`: a little above you; a Dungeon's well above; a strong
+// cave's boss at least as strong as the wilds around it
+export const bossLevel = (cave, level) => Math.max(level + (cave.dungeon ? 10 : 3), strongCave(cave) ? cave.level : 0);
+// Orichalcum turns up only in strong caves, in their deepest chambers
 export const ORICHALCUM_CHANCE = 0.06;
 
 // how long before a beaten boss (and its chest) comes back
@@ -93,7 +110,7 @@ export function allCaves() {
     let size = far < 3000 ? 'small' : far < 12000 ? (rnd() < 0.6 ? 'medium' : 'small') : rnd() < 0.5 ? 'deep' : 'medium';
     const dungeon = heightAt(p.x, p.z) >= DUNGEON_HEIGHT;
     if (dungeon) size = BIGGER[size];
-    return { id: p.id, index: i, place: p, theme, size, dungeon, name: dungeon ? DUNGEON_NAME[theme] : THEMES[theme].name };
+    return { id: p.id, index: i, place: p, theme, size, dungeon, level: Math.round(wildLevelAt(p.x, p.z)), name: dungeon ? DUNGEON_NAME[theme] : THEMES[theme].name };
   });
   // the nearest cave to the spawn is always a small goblin den, to learn on
   const first = caches.reduce((a, b) => (Math.hypot(b.place.x, b.place.z) < Math.hypot(a.place.x, a.place.z) ? b : a));
@@ -209,7 +226,6 @@ const CLASS_LOOT = {
 // [item, how many] for the chest, plus coins
 export function chestLoot(cave, cls, level) {
   const rnd = Math.random;
-  const t = THEMES[cave.theme];
   const big = SIZES[cave.size].chambers;
   const items = [];
   // the best piece of class loot the finder's level allows
@@ -217,8 +233,8 @@ export function chestLoot(cave, cls, level) {
   const fit = table.filter(([, lvl]) => level >= lvl).pop() || table[0];
   items.push([fit[0], 1]);
   // a handful of the cave's own ores, rarer ones for bigger caves
-  for (let i = 0; i < 2 + Math.floor(big / 2); i++) items.push([pickOre(t.ores, rnd, big / 8), 1 + Math.floor(rnd() * 3)]);
-  if (cave.dungeon && rnd() < 0.25) items.push(['orichalcum', 1]);
+  for (let i = 0; i < 2 + Math.floor(big / 2); i++) items.push([pickOre(caveOres(cave, 1), rnd, big / 8), 1 + Math.floor(rnd() * 3)]);
+  if (strongCave(cave) && rnd() < 0.25) items.push(['orichalcum', 1]);
   items.push([level >= 20 ? 'big_potion' : 'potion', 1 + Math.floor(rnd() * 2)]);
   const coins = Math.round((40 + level * 12) * big * (cls === 'businessman' ? 1.6 : 1));
   return { items, coins };

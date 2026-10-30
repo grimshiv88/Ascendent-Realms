@@ -63,7 +63,7 @@ export const villageCleared = (v) => v.folk.every((_, i) => v.dead.includes(i));
 export function villageLoot(v, rnd = Math.random) {
   const chief = Math.max(...v.folk.map(([, l]) => l));
   const items = [['big_potion', between(1, 2, rnd)], ['potion', between(2, 4, rnd)]];
-  const rare = ['moonstone', 'gold_ore', 'iron_ore', 'iron_sword', 'chainmail', 'hand_axe', 'iron_mace'];
+  const rare = ['silver_ore', 'gold_ore', 'iron_ore', 'iron_sword', 'chainmail', 'hand_axe', 'iron_mace'];
   for (let i = 0; i < 2; i++) items.push([rare[Math.floor(rnd() * rare.length)], 1]);
   if (v.size === 'big') for (let i = 0; i < 2; i++) items.push([rare[Math.floor(rnd() * rare.length)], 1]);
   return { coins: 300 + chief * 20 + between(0, 200, rnd), items };

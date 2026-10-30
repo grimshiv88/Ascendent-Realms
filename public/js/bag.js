@@ -21,7 +21,7 @@ let playingClass = null;
 export const setTabsClass = (cls) => { playingClass = cls; };
 export function tabsHtml(active) {
   const tab = (id, label, action) => `<button type="button" class="sw-tab" data-open="${id}" aria-pressed="${active === id}">${label}${action ? ` <kbd>${esc(keyName(codeFor(action)))}</kbd>` : ''}</button>`;
-  return `<div class="sw-tabs">${tab('status', 'Status', 'status')}${tab('bag', 'Bag', 'bag')}${tab('shop', 'Shop', 'shop')}${tab('quests', 'Quests', 'quests')}${tab('smith', 'Blacksmith')}${playingClass === 'potion_maker' ? tab('potions', 'Potion-Maker') : ''}</div>`;
+  return `<div class="sw-tabs">${tab('status', 'Status', 'status')}${tab('bag', 'Bag', 'bag')}${tab('shop', 'Shop', 'shop')}${tab('quests', 'Quests', 'quests')}${playingClass === 'blacksmith' ? tab('smith', 'Blacksmith') : ''}${playingClass === 'potion_maker' ? tab('potions', 'Potion-Maker') : ''}</div>`;
 }
 // "Weapon › Sword", "Armour › Helmet": what an item can be merged with
 const catTag = (it) => { const k = categoryOf(it); return `<span class="cat-tag">${k.cat}${k.sub ? ` › ${k.sub}` : ''}</span>`; };

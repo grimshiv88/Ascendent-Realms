@@ -1,7 +1,7 @@
 // The Land window: shows the plot you picked on the grid (press L), and lets you buy it,
 // choose what it is for, and clear and level it.
 import { PURPOSES, PURPOSE_FEE, prepareCost, clearCost, PLOT, REACH } from './data/land.mjs';
-import { THEMES, SIZES, cavePrice } from './data/depths.mjs';
+import { THEMES, SIZES, cavePrice, caveOres, strongCave } from './data/depths.mjs';
 import { ITEMS } from './data/items.mjs';
 import { money } from './data/money.mjs';
 
@@ -75,7 +75,8 @@ export function renderCave(el, cave, game, { owner = null, mine = false, message
       <p class="sys-top">${SIZES[cave.size].name} ${cave.dungeon ? 'dungeon' : 'cave'} <span>·</span> ${SIZES[cave.size].chambers} chambers deep <span>·</span> Boss: <b>${game.bossHome(cave.id) ? 'waiting below' : 'beaten (back within a day)'}</b></p>
       <p class="sys-hint">Walk into the dark shaft at the back to go down. It's pitch black below: light a torch in your hand with T. Swing at ore veins to mine them, break nests before they fill the cave with monsters, and the boss's chest holds treasure chosen for your class.</p>
       <h3 class="sys-sub">Found down here</h3>
-      <p class="sys-hint">${t.ores.map(([id]) => `${ITEMS[id].icon} ${esc(ITEMS[id].name)}`).join(' · ')}</p>
+      <p class="sys-hint">${caveOres(cave, 1).map(([id]) => `${ITEMS[id].icon} ${esc(ITEMS[id].name)}`).join(' · ')}${strongCave(cave) ? ` · ${ITEMS.orichalcum.icon} ${esc(ITEMS.orichalcum.name)}` : ''}</p>
+      <p class="sys-hint">${strongCave(cave) ? `A strong dungeon (level ${cave.level} wilds): its boss is at least level ${cave.level}, and rare ores and gems lie in its deepest chambers.` : 'No rare ores or gems here: those lie only in the deepest chambers of high-level Dungeons (in wilds of level 60 and up), guarded by strong bosses.'}</p>
       <p class="sys-msg${/need|first|owns/i.test(message) ? ' bad' : ''}" role="status">${esc(message)}</p>
       ${action}
     </div>`;

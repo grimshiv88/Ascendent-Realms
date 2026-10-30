@@ -29,13 +29,13 @@ export const ITEMS = {
   gold_ore: { name: 'Gold Ore', icon: '🪙', kind: 'material', rank: 3, price: 120, text: 'Heavy, soft and valuable. Each one mints a Silver coin; a hundred of them, a Gold coin.' },
   emerald: { name: 'Emerald', icon: '💚', kind: 'material', rank: 3, price: 90, text: 'A green gem from the damp hollows of the Mire.' },
   sapphire: { name: 'Sapphire', icon: '💙', kind: 'material', rank: 3, price: 110, text: 'A deep blue gem, cold to the touch.' },
-  ruby: { name: 'Ruby', icon: '❤️', kind: 'material', rank: 4, price: 180, text: 'A blood-red gem that glows faintly in the dark.' },
+  ruby: { name: 'Ruby', icon: '❤️', kind: 'material', rank: 4, price: 180, text: 'A blood-red gem that glows faintly in the dark. Found only deep in high-level Dungeons.' },
   // the Order of the Dawn's gift to those who become Light: it can't be sold or traded
   dawn_book: { name: 'Book of the Dawn', icon: '📖', kind: 'material', price: 0, bound: true, text: 'A worn holy book. Kept in your bag, it stops Dark Side spells that hit you. Its level is your Intelligence: the whole hit when that reaches the spell\'s strength, part of it otherwise.' },
-  moonstone: { name: 'Moonstone', icon: '🌙', kind: 'material', rank: 5, price: 450, text: 'Found only in the deepest places. Said to hold moonlight.' },
-  diamond: { name: 'Diamond', icon: '💎', kind: 'material', rank: 5, price: 800, text: 'The hardest stone there is. Set into an edge, it never dulls. Found deep in drake lairs, warrens and glimmer caves.' },
-  orichalcum: { name: 'Orichalcum', icon: '🔶', kind: 'material', rank: 6, price: 1500, text: 'A legendary red-gold metal, lighter than steel and harder than diamond. Found only in the deepest chambers of mountain Dungeons.' },
-  dragonite: { name: 'Dragonite', icon: '🐲', kind: 'material', rank: 5, price: 600, text: 'Ore fused by dragon fire. Only drakes\' lairs hold it.' },
+  moonstone: { name: 'Moonstone', icon: '🌙', kind: 'material', rank: 5, price: 450, text: 'Found only in the deepest chambers of high-level Dungeons. Said to hold moonlight.' },
+  diamond: { name: 'Diamond', icon: '💎', kind: 'material', rank: 5, price: 800, text: 'The hardest stone there is. Set into an edge, it never dulls. Found only deep in high-level Dungeons: drake lairs, warrens and glimmer caves.' },
+  orichalcum: { name: 'Orichalcum', icon: '🔶', kind: 'material', rank: 6, price: 1500, text: 'A legendary red-gold metal, lighter than steel and harder than diamond. Found only in the deepest chambers of high-level Dungeons.' },
+  dragonite: { name: 'Dragonite', icon: '🐲', kind: 'material', rank: 5, price: 600, text: 'Ore fused by dragon fire. Only high-level drake Dungeons hold it.' },
   // food and potions
   torch: { name: 'Torch', icon: '🔥', kind: 'material', price: 12, text: 'Stand it in the ground with T; press T beside it to pick it back up. In the dark caves, T lights it in your hand instead. Its light keeps monsters away at night, and lets you sleep (Z) beside it.' },
   tent: { name: 'Tent', icon: '⛺', kind: 'material', price: 60, text: 'Pitch it anywhere (P, or from your bag) and sleep inside it (Z) to clear your Fatigue. Monsters leave you alone near it. Pack it up again when you move on.' },
@@ -406,7 +406,7 @@ export const MARKETS = {
   glade: { name: 'Glade Bazaar', text: 'Magic: staves, robes and fae goods.', kinds: ['weapon', 'armour', 'food'], only: (it) => it.kind === 'food' || it.magic || /mage/.test(it.id || ''), extra: ['fae_dust', 'herb', 'crystal_shard'] },
   temple: { name: 'Temple Market', text: 'Potions and gems from the lake.', kinds: ['food', 'coating'], extra: ['sapphire', 'emerald', 'serpent_fang', 'herb'] },
   marsh: { name: 'Marsh Market', text: 'Scale armour and spears.', kinds: ['armour', 'weapon'], only: (it) => it.kind === 'armour' || it.type === 'spear', extra: ['lizard_scale', 'reed', 'herb'] },
-  nests: { name: 'Peak Forge', text: 'The finest weapons and armour, for those who can afford them.', kinds: ['weapon', 'armour'], extra: ['drake_horn', 'gold_ore', 'ruby'] },
+  nests: { name: 'Peak Forge', text: 'The finest weapons and armour, for those who can afford them.', kinds: ['weapon', 'armour'], extra: ['drake_horn', 'gold_ore', 'iron_ore'] }, // (rare ores and gems are never sold: only strong Dungeons hold them)
 };
 // The Central City's shops are run by the city (bots), not players: everything costs more there
 // and they buy for less. Every dish and drink is halal.

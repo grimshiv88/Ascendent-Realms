@@ -595,6 +595,8 @@ function startGame(character) {
     if (name === 'bag' || name === 'shop' || name === 'market' || name === 'smith') fillIcons(overlay);
   }
   const openPanel = (name) => {
+    // the Blacksmith window (forging, merging, minting) is for Blacksmiths alone
+    if (name === 'smith' && character.cls !== 'blacksmith') { showArea('Only a Blacksmith can open the Blacksmith window. A Blacksmith player can forge, merge or mint for you.'); return; }
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
     world?.releaseMouse();
     overlay.dataset.panel = name;
@@ -1241,10 +1243,10 @@ function startGame(character) {
       if (type === 'castle') { ui.roomsCastle = true; ui.roomPick = null; ui.roomMsg = ''; loadRooms(); openPanel('rooms'); }
       if (type === 'stand') showStand(data);
       if (type === 'anvil') {
-        // your own anvil: the Blacksmith window, with the workshop pieces to forge too
+        // your own anvil: the Blacksmith window, with the workshop pieces to forge too (Blacksmiths only)
         openPanel('smith');
+        if (character.cls !== 'blacksmith') return;
         ui.workshop = true;
-        if (character.cls !== 'blacksmith') ui.smithMsg = 'Only a Blacksmith can work an anvil. You can see what one could make here.';
         drawPanel();
       }
       if (type === 'castle-denied') showArea(data.day === 'council' ? "Today is a council day: only Emperors and Guild Masters may enter the Emperors' Castle." : "Today is a trade day: only Emperors and the guests they invited may enter the Emperors' Castle.");
