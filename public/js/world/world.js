@@ -34,7 +34,8 @@ import { skyCard } from './skycard.js';
 import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
-import { ageOf, isChild, ACADEMY_NAME, parentAlive, CEREMONY_SHOW_MS } from '../data/birth.mjs';
+import { ageOf, isChild, parentAlive, ceremonyDue, CEREMONY_SHOW_MS } from '../data/birth.mjs';
+const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine after a new card goes up
 import { money } from '../data/money.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
@@ -158,6 +159,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const builtCities = () => sites.filter((s) => s.place.city && s.built?.npcs);
   // the cards of new Ceremonies, hanging in the sky over each city's shrine (the latest one per city)
   const skyCards = new Map(); // city id -> { at, card, place }
+  let gatherAt = -1;
   function setCeremonies(list = []) {
     const latest = {};
     for (const c of list) if (realmNow() - c.at < CEREMONY_SHOW_MS && (!latest[c.city] || latest[c.city].at < c.at)) latest[c.city] = c;
@@ -233,9 +235,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     f.x = t.x; f.z = t.z;
   }
-  // the school whose station on the Training Grounds you stand at (with its teacher), or null
+  // the school whose Academy's training floor you stand on (inside, by its teacher), or null
   function trainingAt() {
-    for (const s of builtCities()) for (const st of s.built.stations || []) if (Math.hypot(st.x - pos.x, st.z - pos.z) < 4.5) return st.school;
+    const tr = inside?.built.training;
+    if (tr && Math.hypot(tr.x - pos.x, tr.z - pos.z) < tr.r) return inside.shop.school;
     return null;
   }
   function updateSites(x, z) {
@@ -829,7 +832,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const b = inside.built;
     if (sitting) { standUp(); return; }
     if (b.counter && Math.hypot(pos.x - b.counter.x, pos.z - b.counter.z) < 2.6 && Math.abs(pos.y - b.counter.y) < 1) {
-      onEvent?.(inside.shop.id === 'guild' ? 'guild' : inside.shop.id === 'castle' ? 'castle' : 'market', inside.shop.id);
+      if (inside.built.kind === 'academy') onEvent?.('academy', inside.shop.school);
+      else onEvent?.(inside.shop.id === 'guild' ? 'guild' : inside.shop.id === 'castle' ? 'castle' : 'market', inside.shop.id);
       return;
     }
     const spot = (b.spots || []).find((q) => Math.hypot(pos.x - q.x, pos.z - q.z) < q.r && Math.abs(pos.y - q.y) < 1);
@@ -973,7 +977,6 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const npc = npcNear(pos.x, pos.z);
       if (npc) { talkTo(npc); return; }
       const shop = shopNear(pos.x, pos.z);
-      if (shop?.id === 'academy') { onEvent?.('academy'); return; }
       if (shop?.building) { enterBuilding(shop); return; }
       if (shop) { onEvent?.(shop.id === 'guild' ? 'guild' : 'market', shop.id); return; }
     }
@@ -1931,6 +1934,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     sun.position.copy(pos).addScaledVector(lightDir, 120);
     sun.target.position.copy(pos);
     for (const s of sites) s.built?.update?.(t, pos, blockedAt);
+    // a Ceremony: the townsfolk gather round the shrine while you stand there for yours, and while
+    // a new card (yours or anyone's) is fresh in the sky over it
+    if (t - gatherAt > 1) {
+      gatherAt = t;
+      for (const s of builtCities()) {
+        if (!s.built.gather) continue;
+        const k = skyCards.get(s.place.id);
+        if (!inside && !depth && game && ceremonyDue(game.character) && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 12) s.ceremonyAt = t;
+        // (yours: they stay a little while after, until your card shows in the sky)
+        s.built.gather(t - (s.ceremonyAt ?? -1e9) < 30 || (!!k && realmNow() - k.at < GATHER_MS));
+      }
+    }
     for (const q of mobVillages.values()) q.built.update(t);
     walkBuild?.update();
     sky.follow(camera);

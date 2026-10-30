@@ -4,8 +4,8 @@
 // and quarters. North is at the top, as on the rest of the map.
 import { CITY_R } from '../data/world-layout.mjs';
 import { MARKETS } from '../data/items.mjs';
-import { cityHouses, CASTLE_SPOT, LANES, CROSS_STREETS, HOUSE_D, LANE_W, PLAYGROUND, TRAINING_GROUND, ACADEMY_NAME } from '../data/birth.mjs';
-import { CITY_SHOPS, SHOP_LOTS, PLAZA_R, INNER_R, MOAT, GATE_ANGLES, GUILD_NAME, DARK_GUILD_NAME, academyRoof } from './city.js';
+import { cityHouses, CASTLE_SPOT, LANES, CROSS_STREETS, HOUSE_D, LANE_W, PLAYGROUND, ACADEMIES, ACADEMY_STREET, ACADEMY_W, ACADEMY_D, SCHOOLS } from '../data/birth.mjs';
+import { CITY_SHOPS, SHOP_LOTS, PLAZA_R, INNER_R, MOAT, GATE_ANGLES, GUILD_NAME, DARK_GUILD_NAME } from './city.js';
 import { TOWN_TONES } from './houses.js';
 
 const QUARTERS = [['Civic Quarter', 34, -58], ['Market Quarter', 40, 44], ['Royal Quarter', 104, -40], ['Neighbourhood', -72, -24]];
@@ -64,10 +64,10 @@ export function drawCityPlan(ctx, place, at, k, alpha = 1, labels = true) {
     rect(ax, 0, 2, zOf(ax) * 2, 0, street);
   }
   for (const z of CROSS_STREETS) { const x0 = -Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - z * z)); rect((x0 - 3.5) / 2, z, -3.5 - x0, 5, 0, street); }
-  // open ground: shop lots, the training grounds, the playground
+  { const A = ACADEMY_STREET; rect((A.x0 + A.x1) / 2, A.z, A.x1 - A.x0, A.w + 2.6, 0, street); }
+  // open ground: shop lots and the playground
   for (const [x, z] of SHOP_LOTS) rect(x, z, 13, 13, 0, '#cfc6b2', '#7a6a4a', 1);
-  const T = TRAINING_GROUND, PG = PLAYGROUND;
-  rect((T.x0 + T.x1) / 2, (T.z0 + T.z1) / 2, T.x1 - T.x0, T.z1 - T.z0, 0, '#d8c48e', '#7a5a3a', 1);
+  const PG = PLAYGROUND;
   rect((PG.x0 + PG.x1) / 2, (PG.z0 + PG.z1) / 2, PG.x1 - PG.x0, PG.z1 - PG.z0, 0, '#8fb05a', '#5a7a3a', 1);
   // the homes, each in its roof's colour
   for (const h of cityHouses(place.id)) rect(h.x, h.z, h.w, h.d, h.rot, TOWN_TONES[(h.i * 7 + Math.floor(h.i / 3)) % TOWN_TONES.length][1], 'rgba(30, 20, 10, 0.6)', 0.6);
@@ -78,8 +78,13 @@ export function drawCityPlan(ctx, place, at, k, alpha = 1, labels = true) {
   }
   const named = [];
   for (const [id, x, z, [fx, fz], w, d, , , roof] of CITY_SHOPS) {
-    rect(x, z, w, d, Math.atan2(fx, fz), id === 'academy' ? academyRoof(place) : roof, '#ffd76a', 1.6);
-    named.push([id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : id === 'academy' ? ACADEMY_NAME : MARKETS[id]?.name || id, x, z]);
+    rect(x, z, w, d, Math.atan2(fx, fz), roof, '#ffd76a', 1.6);
+    named.push([id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : MARKETS[id]?.name || id, x, z]);
+  }
+  const academies = [];
+  for (const { school, x, z, fx, fz } of ACADEMIES) {
+    rect(x, z, ACADEMY_W, ACADEMY_D, Math.atan2(fx, fz), SCHOOLS[school].roof, '#ffd76a', 1.6);
+    academies.push([SCHOOLS[school].academy, x, z]);
   }
   // names: the quarters first; the buildings once they are big enough to read
   if (!labels) { ctx.restore(); return; }
@@ -88,7 +93,8 @@ export function drawCityPlan(ctx, place, at, k, alpha = 1, labels = true) {
     const size = Math.min(16, Math.max(10, k * 4));
     for (const [name, x, z] of named) label(name, x, z, size);
     if (!monster) label("The Emperors' Castle", CASTLE_SPOT.x, CASTLE_SPOT.z, size);
-    label('Training Grounds', (T.x0 + T.x1) / 2, (T.z0 + T.z1) / 2, size * 0.85);
+    if (k >= 3.5) for (const [name, x, z] of academies) label(name, x, z, size * 0.7);
+    else label('Academy Street', (ACADEMY_STREET.x0 + ACADEMY_STREET.x1) / 2, ACADEMY_STREET.z, size * 0.85);
     label('Playground', (PG.x0 + PG.x1) / 2, (PG.z0 + PG.z1) / 2, size * 0.85);
     label('Plaza', 0, 0, size);
     if (k >= 3.5) for (const [x, z] of SHOP_LOTS) label('Shop lot', x, z, size * 0.7, '#e8dcc0');

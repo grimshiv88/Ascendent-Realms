@@ -442,7 +442,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     // choose the school to train at (training already done at others is kept)
     setSchool(cls) { if (c.child && SCHOOLS[cls]) { c.child.school = cls; changed('child'); } },
     // time spent training at your school, while at the Academy
-    // a minute (or `ms`) of training at your school's station: it counts towards your class, raises
+    // a minute (or `ms`) of training on your Academy's training mat: it counts towards your class, raises
     // your level (up to CHILD_MAX_LEVEL) and in time teaches the school's techniques
     train(ms) {
       const school = c.child?.school;

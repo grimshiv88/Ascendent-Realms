@@ -175,20 +175,22 @@ export const childSize = (age) => 0.5 + 0.06 * (Math.max(BORN_AGE, Math.min(CERE
 // ---------- schools ----------
 // One school for each class a child can grow into (the Mage is the Dark Side's alone)
 export const SCHOOLS = {
-  swordsman: { name: 'School of the Sword', icon: '⚔️', text: 'Footwork, guard and the cut.' },
-  tank: { name: 'School of the Shield', icon: '🛡️', text: 'Stand firm and take the blow for others.' },
-  assassin: { name: 'Scouts\' School', icon: '🗡️', text: 'Move unseen and strike where it counts.' },
-  healer: { name: 'Temple School of Healing', icon: '✚', text: 'Bind wounds and keep others standing.' },
-  blacksmith: { name: 'Smithing School', icon: '⚒️', text: 'Fire, iron and the hammer.' },
-  businessman: { name: 'Merchants\' School', icon: '💰', text: 'Numbers, trade and the art of the deal.' },
-  builder: { name: 'Builders\' School', icon: '🏗️', text: 'Stone, timber and how a house stands.' },
-  potion_maker: { name: 'Herbalists\' School', icon: '⚗️', text: 'Herbs, brews and what each plant can do.' },
-  farmer: { name: 'Farming School', icon: '🌾', text: 'Soil, seed and the care of animals.' },
+  swordsman: { name: 'School of the Sword', academy: 'Academy of the Sword', roof: '#2a4a7a', icon: '⚔️', text: 'Footwork, guard and the cut.' },
+  tank: { name: 'School of the Shield', academy: 'Academy of the Shield', roof: '#5a5a66', icon: '🛡️', text: 'Stand firm and take the blow for others.' },
+  assassin: { name: 'Scouts\' School', academy: 'Scouts\' Academy', roof: '#2a2a3a', icon: '🗡️', text: 'Move unseen and strike where it counts.' },
+  healer: { name: 'Temple School of Healing', academy: 'Academy of Healing', roof: '#e8e2d0', icon: '✚', text: 'Bind wounds and keep others standing.' },
+  blacksmith: { name: 'Smithing School', academy: 'Smiths\' Academy', roof: '#3a3632', icon: '⚒️', text: 'Fire, iron and the hammer.' },
+  businessman: { name: 'Merchants\' School', academy: 'Merchants\' Academy', roof: '#8a6a1a', icon: '💰', text: 'Numbers, trade and the art of the deal.' },
+  builder: { name: 'Builders\' School', academy: 'Builders\' Academy', roof: '#8a3a2a', icon: '🏗️', text: 'Stone, timber and how a house stands.' },
+  potion_maker: { name: 'Herbalists\' School', academy: 'Herbalists\' Academy', roof: '#5a3a8a', icon: '⚗️', text: 'Herbs, brews and what each plant can do.' },
+  farmer: { name: 'Farming School', academy: 'Farmers\' Academy', roof: '#3a6a2a', icon: '🌾', text: 'Soil, seed and the care of animals.' },
 };
-export const ACADEMY_NAME = 'The Academy';
-// Children train on the Academy's Training Grounds, at their school's station with its teacher.
-// Training raises their level (up to CHILD_MAX_LEVEL before the Ceremony) and teaches the school's
-// two techniques, at a quarter and at 60% of full training. Techniques are kept for life.
+export const ACADEMY_NAME = 'The Academies';
+// Every city has an Academy for each class, side by side along Academy Street in the Civic Quarter.
+// A child registers at the counter of the Academy of the class they want, then trains inside, on
+// its training floor beside the teacher. Training raises their level (up to CHILD_MAX_LEVEL before
+// the Ceremony) and teaches the school's two techniques, at a quarter and at 60% of full training.
+// Techniques are kept for life.
 export const CHILD_MAX_LEVEL = 10;
 export const TRAIN_EXP = 0.2;                  // of a level's EXP, per minute of training
 export const TECHNIQUE_AT = [0.25, 0.6];
@@ -197,9 +199,15 @@ export const SCHOOL_TECHNIQUES = {
   healer: ['mend', 'blessing'], blacksmith: ['hammer_blow', 'ground_slam'], businessman: ['coin_toss', 'haggle'],
   builder: ['quick_wall', 'ground_slam'], potion_maker: ['second_wind', 'blessing'], farmer: ['harvest_swing', 'hearty_meal'],
 };
-// the stations on the Training Grounds, one per school (x, z from the city's middle)
-export const TRAINING_GROUND = { x0: 24, x1: 58, z0: -112, z1: -82 };
-export const TRAINING_STATIONS = Object.keys(SCHOOLS).map((school, i) => ({ school, x: 30 + (i % 3) * 11, z: -106 + Math.floor(i / 3) * 9 }));
+// Academy Street: east from the avenue, north of the Guild Hall. Five Academies stand on its north
+// side and four on its south side, their doors on the street (x, z from the city's middle).
+export const ACADEMY_STREET = { z: -104, x0: 3.5, x1: 70, w: 6 };
+export const ACADEMY_W = 10, ACADEMY_D = 9;
+export const ACADEMIES = Object.keys(SCHOOLS).map((school, i) => {
+  const north = i < 5, col = north ? i : i - 5;
+  const z = ACADEMY_STREET.z + (north ? -1 : 1) * (ACADEMY_STREET.w / 2 + 1.2 + ACADEMY_D / 2);
+  return { school, x: 11 + col * 13, z, fx: 0, fz: north ? 1 : -1 };
+});
 // How much each thing weighs on the class a child grows into: every class has a little, each
 // parent's job adds to theirs, and training at a school adds most to its own (up to 10 when fully
 // trained). So a fully trained child usually gets their school's class, but never surely.

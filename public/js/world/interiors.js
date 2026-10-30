@@ -18,8 +18,10 @@ const SEAT_H = 0.48;
 const STEPS = 15; // steps on a staircase
 
 // [width, depth, ceiling] of each kind of room (the Guild Hall's ground floor)
-const SIZES = { castle: [30, 34, 12], guild: [24, 20, 9], tavern: [16, 14, 7], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5] };
-export const kindOf = (shopId) => ({ castle: 'castle', guild: 'guild', tavern: 'tavern', city_potions: 'potions', city_smith: 'smith', city_armoury: 'armoury', city_tailor: 'tailor', city_food: 'food' }[shopId] || 'tavern');
+const SIZES = { castle: [30, 34, 12], guild: [24, 20, 9], tavern: [16, 14, 7], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5], academy: [15, 13, 5.5] };
+export const kindOf = (shopId) => (String(shopId).startsWith('academy_') ? 'academy' : { castle: 'castle', guild: 'guild', tavern: 'tavern', city_potions: 'potions', city_smith: 'smith', city_armoury: 'armoury', city_tailor: 'tailor', city_food: 'food' }[shopId] || 'tavern');
+// an Academy's training floor: a mat on the left, with the teacher beside it (local x, z)
+const MAT = { x: -3.6, z: 5.6, r: 2.6 };
 
 export function buildInterior(shop) {
   const kind = kindOf(shop.id);
@@ -40,6 +42,7 @@ export function buildInterior(shop) {
   const patrons = [];
   let lastLife = null;
   const spots = []; // things to use with E: { x, z, y, event, r }
+  let training = null; // an Academy's training floor (world x, z, r)
   const mats = [];
   const mat = (color, extra = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra }); mats.push(m); return m; };
   const box = (w, h, d, m, x, y, z, ry = 0) => {
@@ -512,12 +515,77 @@ export function buildInterior(shop) {
     } else if (kind === 'armoury') {
       stand(-4, 3.5, '#9aa0a8', true); stand(-4, 6.5, '#6a6e74', true); stand(4, 3.5, '#5a3a24', false); stand(4, 6.5, '#b8b8c0', true);
       lamp(0, H - 0.8, D / 2);
+    } else if (kind === 'academy') {
+      academyHall(shop.school);
     } else if (kind === 'tailor') {
       rack(-3.2, 3.5, ['#7a2a5a', '#2a5a7a', '#e0d4c0', '#3a6a3a']);
       rack(3.2, 3.5, ['#d8b060', '#5a3a7a', '#a02a2a', '#f0f0e8']);
       box(1.2, 2, 0.08, mat('#bcd0e0', { metalness: 0.9, roughness: 0.05 }), -W / 2 + 0.3, 0, 6.5, Math.PI / 2);
       lamp(0, H - 0.8, D / 2);
     }
+  }
+
+  // ---------- an Academy: the registrar at the counter, and the training floor ----------
+  // The mat on the left is where children of the Academy train, beside their teacher; on the right,
+  // the tools of the class it teaches.
+  function academyHall(school) {
+    const straw = mat('#c9a85a'), iron = mat('#9aa0a8', { metalness: 0.8, roughness: 0.35 }), soil = mat('#4a3424'), leaf = mat('#4a8a3a');
+    box(5.2, 0.04, 5.2, mat('#7a2a24'), MAT.x, 0, MAT.z);
+    box(4.6, 0.045, 4.6, mat('#a8463a'), MAT.x, 0, MAT.z);
+    training = { x: OX + MAT.x, z: OZ + MAT.z, r: MAT.r };
+    const teacher = buildCharacter({ race: ['dwarf', 'elf', 'beastkin', 'hobbit'][school.length % 4], form: 'humanoid', look: {} });
+    teacher.position.set(MAT.x - 2.9, 0, MAT.z);
+    teacher.rotation.y = Math.PI / 2;
+    g.add(teacher); people.push(teacher);
+    block(MAT.x - 2.9, MAT.z, 0.35, 0, 2);
+    const dummy = (x, z) => {
+      cyl(0.08, 0.08, 1.8, wood, x, 0, z, 8);
+      cyl(0.3, 0.34, 1, straw, x, 0.75, z, 10);
+      box(1.2, 0.1, 0.1, wood, x, 1.45, z);
+      block(x, z, 0.4, 0, 1.8);
+    };
+    const R = W / 2 - 1.6; // the right-hand side, along the wall
+    if (school === 'swordsman' || school === 'tank' || school === 'assassin') {
+      dummy(MAT.x + 1.2, MAT.z + 1.4);
+      if (school === 'tank') for (const z of [3.2, 5.2, 7.2]) { const sh = cyl(0.55, 0.55, 0.1, iron, R + 1.2, 1.6, z, 18); sh.rotation.z = Math.PI / 2; }
+      else if (school === 'assassin') for (const z of [3.5, 6.5]) {
+        cyl(0.06, 0.06, 1.5, wood, R, 0, z, 6);
+        const t = cyl(0.45, 0.45, 0.06, mat('#e8e0c8'), R, 1.5, z, 18); t.rotation.z = Math.PI / 2;
+        const b = cyl(0.2, 0.2, 0.07, mat('#a02a24'), R - 0.02, 1.5, z, 14); b.rotation.z = Math.PI / 2;
+        block(R, z, 0.4, 0, 2);
+      }
+      else { box(0.3, 1.8, 3, darkWood, R + 1, 0, 5); for (let i = 0; i < 5; i++) box(0.05, 1.2, 0.05, iron, R + 0.8, 0.5, 3.9 + i * 0.55); block(R + 1, 4.2, 0.6, 0, 2); block(R + 1, 5.8, 0.6, 0, 2); }
+    } else if (school === 'healer') {
+      for (const z of [3.2, 6.6]) { box(1, 0.5, 2.1, darkWood, R, 0, z); box(0.95, 0.12, 1.9, mat('#efe6d0'), R, 0.5, z); block(R, z, 0.8, 0, 0.6); }
+      shelf(MAT.x + 1.5, D - 0.6, Math.PI, ['#5ad04a', '#e0262a', '#efe6d0']);
+    } else if (school === 'blacksmith') {
+      box(1.6, 1.1, 1.4, mat('#4a4642'), R + 0.4, 0, 3.5);
+      box(1.1, 0.1, 0.9, mat('#ff7a2a', { emissive: '#ff5a1a', emissiveIntensity: 1.2 }), R + 0.4, 1.1, 3.5);
+      box(0.9, 0.5, 0.4, iron, R - 0.4, 0.55, 6.2); box(0.4, 0.55, 0.3, darkWood, R - 0.4, 0, 6.2);
+      block(R + 0.4, 3.5, 0.9, 0, 1.2); block(R - 0.4, 6.2, 0.55, 0, 1);
+    } else if (school === 'businessman') {
+      for (const z of [3.4, 6.6]) {
+        table(R - 0.6, z, 0, 0.7, 2);
+        for (let i = 0; i < 3; i++) cyl(0.12, 0.12, 0.05 * (i + 2), mat('#e8c040', { metalness: 0.8, roughness: 0.3 }), R - 0.8 + i * 0.25, 0.78, z, 12);
+      }
+    } else if (school === 'builder') {
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4 - i; j++) box(0.5, 0.25, 0.25, mat('#9a5a3a'), R - 0.3 + j * 0.52 - i * 0.26 + i * 0.52, i * 0.25, 4);
+      for (let i = 0; i < 4; i++) box(0.2, 0.2, 2.6, wood, R + 0.6, i * 0.2, 6.5);
+      block(R + 0.4, 4, 1.1, 0, 1); block(R + 0.6, 6.5, 1.1, 0, 0.8);
+    } else if (school === 'potion_maker') {
+      const pot = cyl(0.55, 0.45, 0.75, mat('#2e2a26', { metalness: 0.6, roughness: 0.4 }), R, 0, 3.4);
+      pot.castShadow = true; block(R, 3.4, 0.65, 0, 1);
+      shelf(R + 0.9, 6.4, -Math.PI / 2, ['#c84ae0', '#3ae0ff', '#5ad04a']);
+    } else if (school === 'farmer') {
+      for (const z of [3.2, 5.4]) {
+        box(2.6, 0.25, 1.4, soil, R, 0, z);
+        for (let i = 0; i < 5; i++) cyl(0.05, 0.12, 0.4, leaf, R - 1 + i * 0.5, 0.25, z, 6);
+        block(R - 0.6, z, 0.7, 0, 0.4); block(R + 0.6, z, 0.7, 0, 0.4);
+      }
+      box(1.2, 0.8, 0.8, straw, R + 0.4, 0, 7.6); block(R + 0.4, 7.6, 0.7, 0, 0.8);
+    }
+    lamp(MAT.x, H - 0.8, MAT.z, 16);
+    lamp(3, H - 0.8, D / 2, 12);
   }
 
   // ---------- the tavern's life: orders, the keeper pressing juice, and the waiter ----------
@@ -601,7 +669,7 @@ export function buildInterior(shop) {
   };
   return {
     standAt,
-    kind, group: g, solid, seats, rooms, nooks, spots, counter, exit, start,
+    kind, group: g, solid, seats, rooms, nooks, spots, counter, exit, start, training,
     sample: sampleAt,
     floorAt: (x, z) => sampleAt(x, z, tmp).h,
     roofAt: (x, z) => (z - OZ > D ? (kind === 'guild' ? UP + 4 : kind === 'tavern' ? UP + 3.6 : 6) : H) - 0.3,

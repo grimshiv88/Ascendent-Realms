@@ -10,7 +10,7 @@ import { joinCrowd, bakeCharacter } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, paved, TOWN_TONES } from './houses.js';
-import { cityHouses, CASTLE_SPOT, LANES, CROSS_STREETS, HOUSE_D, LANE_W, PLAYGROUND, TRAINING_GROUND, TRAINING_STATIONS, SCHOOLS, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
+import { cityHouses, CASTLE_SPOT, LANES, CROSS_STREETS, HOUSE_D, LANE_W, PLAYGROUND, ACADEMIES, ACADEMY_STREET, ACADEMY_W, ACADEMY_D, SCHOOLS, familyOf, PARENT_JOBS, townName, seeded } from '../data/birth.mjs';
 
 export const PLAZA_R = 34;
 
@@ -20,7 +20,6 @@ export const PLAZA_R = 34;
 export const CITY_SHOPS = [
   // the Civic Quarter (north-east), along the avenue
   ['guild', 14, -64, [-1, 0], 18, 12, 9, '#cdbf9e', '#5a2a24'],
-  ['academy', 12, -96, [-1, 0], 12, 9, 7, '#e4dcc8', '#2a4a7a'],
   // the Market Quarter (south-east): along the avenue, and along the east road
   ['city_potions', 11.5, 52, [-1, 0], 8, 7, 5, '#d8cdb0', '#3a6a3a'],
   ['city_tailor', 11.5, 64, [-1, 0], 8, 7, 5, '#e0d4c0', '#7a3a5a'],
@@ -32,9 +31,6 @@ export const CITY_SHOPS = [
 // the colour of each shop's striped awning (and the Guild's banners), so the shops stand out from the
 // houses and from one another
 const SHOP_ACCENT = { guild: '#7a1a1a', city_potions: '#3a7a4a', city_tailor: '#7a3a6a', city_food: '#c8782a', tavern: '#8a4a1e', city_smith: '#4a4a4a', city_armoury: '#2a4a7a' };
-// every city's Academy has a roof of its own colour, so each one is easy to tell apart
-const ACADEMY_ROOFS = ['#2a4a7a', '#7a2a5a', '#2a6a5a', '#8a6a1a', '#5a3a8a', '#1a6a8a', '#8a3a2a', '#3a6a2a'];
-export const academyRoof = (place) => ACADEMY_ROOFS[[...String(place.id)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7) % ACADEMY_ROOFS.length];
 // lots kept for the shops of Businessmen, behind the Market Quarter's shops: [x, z] middles, 14 m square
 export const SHOP_LOTS = [];
 for (const x of [36, 54, 72]) for (const z of [34, 52, 70, 88]) if (Math.hypot(x + 7, z + 7) < 130) SHOP_LOTS.push([x, z]);
@@ -193,21 +189,37 @@ export function buildCity(place, opts = {}) {
   // the city's own buildings, quarter by quarter
   CITY_SHOPS.forEach(([id, x, z, [fx, fz], w, d, h, wall0, roof0], i) => {
     const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
-    const name = id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : id === 'academy' ? ACADEMY_NAME : MARKETS[id].name;
-    const style = id === 'guild' ? 'guild' : id === 'academy' ? 'academy' : 'shop';
-    const b = house(w, d, h, wall, id === 'academy' ? academyRoof(place) : roof, name, { style, accent: SHOP_ACCENT[id] || '#8a2a24' });
+    const name = id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : MARKETS[id].name;
+    const style = id === 'guild' ? 'guild' : 'shop';
+    const b = house(w, d, h, wall, roof, name, { style, accent: SHOP_ACCENT[id] || '#8a2a24' });
     doors.add(b);
     if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
     const at = placeAt(fixed, b, x, z, fx, fz, d);
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid, b.userData.height);
     fixtures(b, cx + at.bx, cz + at.bz, at.rot, b.position.y, solid, pads);
-    shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: id !== 'academy' });
+    shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: true });
     // the Guild Hall gets a bell tower at its back
     if (id === 'guild') {
       const tower = buildTower({ size: 3.6, height: 16, wall: monster ? S.tones[0][0] : '#d8ccb0', roof });
       tower.position.set(x - fx * (d / 2 - 1.5), 0, z - fz * (d / 2 - 1.5));
       fixed.add(tower);
     }
+  });
+  // Academy Street, with an Academy for each class on both sides (each roof in its class's colour);
+  // children go in to register and train
+  const A = ACADEMY_STREET;
+  lay(A.x1 - A.x0, A.w, S.street, (A.x0 + A.x1) / 2, A.z, 0.021, 4);
+  for (const s of [-1, 1]) lay(A.x1 - A.x0 - 2, 1.3, S.paving, (A.x0 + A.x1) / 2 + 1, A.z + s * (A.w / 2 + 0.65), 0.03, 6);
+  ACADEMIES.forEach(({ school, x, z, fx, fz }, i) => {
+    const name = SCHOOLS[school].academy;
+    const wall = monster ? S.tones[(i + 3) % S.tones.length][0] : '#e4dcc8';
+    const b = house(ACADEMY_W, ACADEMY_D, 6.5, wall, SCHOOLS[school].roof, name, { style: 'academy', doorX: 0 });
+    doors.add(b);
+    if (S.decor === 'reeds') b.position.y = 0.6;
+    const at = placeAt(fixed, b, x, z, fx, fz, ACADEMY_D);
+    boxColliders(cx + at.bx, cz + at.bz, ACADEMY_W, ACADEMY_D, at.rot, solid, b.userData.height);
+    fixtures(b, cx + at.bx, cz + at.bz, at.rot, b.position.y, solid, pads);
+    shops.push({ id: `academy_${school}`, name, school, x: cx + at.x, z: cz + at.z, building: true });
   });
   const open = quarters(g, S, solid, cx, cz, monster);
 
@@ -329,19 +341,49 @@ export function buildCity(place, opts = {}) {
   let seed2 = 7;
   const rnd2 = () => { seed2 = (seed2 * 16807) % 2147483647; return seed2 / 2147483647; };
   let lastT = null;
+  // A Ceremony at the shrine: the townsfolk come to the plaza and stand in a ring round the shrine
+  // to watch the child's card be revealed, then go home. Those far off come in from the plaza's edge
+  // (and go back that way), so nobody walks through the houses.
+  let gathering = false;
+  const EDGE = PLAZA_R - 6;
+  const gather = (on) => {
+    if (on === gathering) return;
+    gathering = on;
+    walkers.forEach((w, i) => {
+      if (w.npc.kind === 'teacher') return;
+      const a = (i * 2.399963) % (Math.PI * 2), r = 9.5 + (i % 3) * 1.3;
+      if (on) {
+        w.slot = { x: Math.cos(a) * r, z: Math.sin(a) * r };
+        if (Math.hypot(w.body.position.x, w.body.position.z) > EDGE + 2) { w.body.position.set(Math.cos(a) * EDGE, w.body.position.y, Math.sin(a) * EDGE); w.away = true; }
+        w.tx = w.slot.x; w.tz = w.slot.z; w.wait = (i % 7) * 0.4;
+      } else if (w.slot) {
+        if (w.away) { w.tx = Math.cos(a) * EDGE; w.tz = Math.sin(a) * EDGE; } else { w.tx = w.hx; w.tz = w.hz; }
+        w.slot = null; w.wait = (i % 5) * 0.5;
+      }
+    });
+  };
   function walkFolk(t, you, blocked) {
     const dt = lastT === null ? 0 : Math.min(0.1, t - lastT);
     lastT = t;
     for (const w of walkers) {
       const b = w.body;
       let speed = 0;
-      if (w.npc.talkUntil && w.npc.talkUntil > t) {
+      if (w.slot && Math.hypot(w.tx - b.position.x, w.tz - b.position.z) < 0.15) {
+        // in the ring: watch the shrine
+        const want = Math.atan2(-b.position.x, -b.position.z);
+        b.rotation.y += Math.atan2(Math.sin(want - b.rotation.y), Math.cos(want - b.rotation.y)) * Math.min(1, dt * 4);
+      } else if (!w.slot && w.away && !gathering && Math.hypot(w.tx - b.position.x, w.tz - b.position.z) < 0.15) {
+        // back at the plaza's edge: home again
+        b.position.x = w.hx; b.position.z = w.hz; w.tx = w.hx; w.tz = w.hz; w.away = false;
+        w.npc.x = cx + w.hx; w.npc.z = cz + w.hz;
+      } else if (w.npc.talkUntil && w.npc.talkUntil > t) {
         // talking: stop and face whoever spoke to them
         if (you) b.rotation.y = Math.atan2(you.x - cx - b.position.x, you.z - cz - b.position.z);
       } else if (w.wait > 0) w.wait -= dt;
       else {
         const dx = w.tx - b.position.x, dz = w.tz - b.position.z, d = Math.hypot(dx, dz);
-        if (d < 0.15) {
+        if (d < 0.15 && (w.slot || w.away)) speed = 0;
+        else if (d < 0.15) {
           w.wait = 2 + rnd2() * 6;
           // the next spot: somewhere near home, never further from the middle than home (not into a house)
           for (let k = 0; k < 6; k++) {
@@ -350,12 +392,12 @@ export function buildCity(place, opts = {}) {
             if (nd <= Math.hypot(w.hx, w.hz) + 0.2 && nd > 11) { w.tx = nx; w.tz = nz; break; }
           }
         } else {
-          speed = 1.1;
+          speed = w.slot || w.away ? 1.6 : 1.1;
           const step = Math.min(d, speed * dt);
           const nx = b.position.x + (dx / d) * step, nz = b.position.z + (dz / d) * step;
           // people are solid: wait for you to step aside, and turn back from a wall
           if (you && Math.hypot(cx + nx - you.x, cz + nz - you.z) < 0.75) { speed = 0; w.wait = 0.5; }
-          else if (blocked?.(cx + nx, cz + nz, 0.28)) { speed = 0; w.tx = b.position.x; w.tz = b.position.z; }
+          else if (blocked?.(cx + nx, cz + nz, 0.28)) { speed = 0; if (!w.slot && !w.away) { w.tx = b.position.x; w.tz = b.position.z; } }
           else { b.position.x = nx; b.position.z = nz; }
         }
         if (speed) {
@@ -379,10 +421,6 @@ export function buildCity(place, opts = {}) {
       addNpc(race, h.x + (h.door?.x || 0) + h.fx * out - h.fz * side, h.z + (h.door?.z || 0) + h.fz * out + h.fx * side, h.rot, { kind: 'parent', name: p.name, job: p.job, mine: h.i === homeAt, house: h.i });
     });
   }
-  // a teacher at each station of the Training Grounds, who teaches the children of that school
-  TRAINING_STATIONS.forEach((st, i) => {
-    addNpc(S.guards[(i + 2) % S.guards.length], st.x - 1.6, st.z, Math.PI / 2, { kind: 'teacher', school: st.school, name: townName(monster ? 'monster' : 'player', seeded(`${place.id}:teach${i}`)), still: true });
-  });
   // children playing in the playground
   open.kids.forEach(([x, z], i) => {
     const race = S.guards[(i * 3 + 1) % S.guards.length];
@@ -428,8 +466,7 @@ export function buildCity(place, opts = {}) {
     return { x: cx + Math.sin(ga) * d, z: cz + Math.cos(ga) * d };
   };
 
-  const stations = TRAINING_STATIONS.map((st) => ({ school: st.school, x: cx + st.x, z: cz + st.z }));
-  return { group: g, update, shops, solid, gates, npcs, stations, setRaised, deckAt, inMoat, rescue, centre: { x: cx, z: cz } };
+  return { group: g, update, gather, shops, solid, gates, npcs, setRaised, deckAt, inMoat, rescue, centre: { x: cx, z: cz } };
 }
 
 // The quarters' open ground: the lots kept for Businessmen's shops, the Academy's training grounds
@@ -478,20 +515,6 @@ function quarters(g, S, solid, cx, cz, monster) {
     const lot = paved(13, 13, S.paving, false, 7); lot.position.set(x, 0.022, z); g.add(lot);
     for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new THREE.BoxGeometry(0.5, 0.5, 0.5), dark, x + sx * 6.5, 0.25, z + sz * 6.5);
     sign('Shop lot: for Businessmen', x - 5.5, z - 6.8, 0);
-  }
-  // the Academy's training grounds: a sandy yard behind a fence, with a station for each school:
-  // a straw dummy, a sign, and the school's teacher (added with the townsfolk)
-  const T = TRAINING_GROUND, tx = (T.x0 + T.x1) / 2, tz = (T.z0 + T.z1) / 2;
-  flat(T.x1 - T.x0, T.z1 - T.z0, sand, tx, tz);
-  fence(T.x0, T.z0, T.x1, T.z1, { x: T.x0, z: tz });
-  sign('Training Grounds', T.x0 - 0.6, tz - 3.4, Math.PI / 2);
-  for (const st of TRAINING_STATIONS) {
-    const x = st.x + 2, z = st.z;
-    add(new THREE.CylinderGeometry(0.1, 0.1, 1.9, 6), wood, x, 0.95, z);
-    add(new THREE.CylinderGeometry(0.32, 0.36, 1.1, 8), matOf('#c9a85a', 1), x, 1.35, z);
-    add(new THREE.BoxGeometry(1.3, 0.12, 0.12), wood, x, 1.6, z);
-    solid.push({ x: cx + x, z: cz + z, r: 0.45, kind: 'wall', height: 1.9 });
-    sign(`${SCHOOLS[st.school].icon} ${SCHOOLS[st.school].name}`, st.x, st.z - 3.2, 0);
   }
   // the playground in the Neighbourhood: a sandpit, swings, a see-saw and a slide
   const P = PLAYGROUND, px = (P.x0 + P.x1) / 2, pz = (P.z0 + P.z1) / 2;

@@ -551,7 +551,7 @@ function startGame(character) {
     else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy, castle: !!ui.roomsCastle, emperor: !!ui.groups?.nation });
     else if (name === 'appraise') renderAppraise(overlay, game, ui.appraise || {});
     else if (name === 'parents') renderParents(overlay, game, { visited: ui.parentsVisited });
-    else if (name === 'academy') renderAcademy(overlay, game, { message: ui.academyMsg || '' });
+    else if (name === 'academy') renderAcademy(overlay, game, { school: ui.academySchool, message: ui.academyMsg || '' });
     else if (name === 'ceremony') renderCeremony(overlay, game, { result: ui.grown, busy: ui.ceremonyBusy, message: ui.ceremonyMsg || '' });
     else if (name === 'gate') renderIdCard(overlay, game, { city: ui.gate?.city, leaving: ui.gate?.leaving, monster: ui.gate?.barred, barredText: ui.gate?.barred && !ui.gate?.monster ? 'The guards bare their fangs. "No outsiders in a monster city."' : null, courts: ui.courts || [], nation: ui.groups?.nation?.name });
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg, { workshop: !!ui.workshop });
@@ -988,7 +988,7 @@ function startGame(character) {
         .then(() => { ui.appraise.busy = false; drawPanel(); });
       return;
     }
-    if ((v = t('data-school')) != null) { game.setSchool(v); ui.academyMsg = `You now train at the ${SCHOOLS[v].name}. Go to its station on the Training Grounds beside the Academy and stand with your teacher.`; drawPanel(); return; }
+    if ((v = t('data-school')) != null) { game.setSchool(v); ui.academyMsg = `You are registered at the ${SCHOOLS[v].academy}. Stand on the red training mat beside your teacher to train.`; drawPanel(); return; }
     if (t('data-open-family') != null) { openPanel('family'); return; }
     if ((v = t('data-marry')) != null) {
       const s2 = suitorsFor(character, realmTime().day)[Number(v)];
@@ -1231,6 +1231,9 @@ function startGame(character) {
       if (type === 'indoors') {
         $('minimap').classList.add('hidden');
         if (data.kind === 'castle') { showArea("The Emperors' Castle: meetings at the council table are free. The steward's desk by the door (E) opens the chambers for private business."); loadRooms(); }
+        else if (data.kind === 'academy') showArea(isChild(character)
+          ? (character.child.school === data.shop.school ? `${data.shop.name}: stand on the red mat beside your teacher to train.` : `${data.shop.name}: register at the counter (E), then train on the red mat beside the teacher.`)
+          : `${data.shop.name}: the Academies are for children before their Ceremony.`);
         else showArea(data.kind === 'guild' ? 'Main Guild Hall: the counter (E) has guild requests; sit at a table (E by a chair); the stairs lead up to the meeting rooms.' : `${data.shop.name}: walk up to the counter and press E. Sit on a chair with E.`);
         if (data.kind === 'guild') loadRooms();
       }
@@ -1257,13 +1260,13 @@ function startGame(character) {
       if (type === 'npc') {
         const job = PARENT_JOBS[data.job]?.name;
         const line = data.kind === 'parent'
-          ? (data.mine ? (isChild(character) ? `${data.name}, your parent (${job}): "Off to the Academy with you! Pick a school and work hard."` : `${data.name}, your parent (${job}): "We are proud of you. Come home safe."`) : `${data.name} (${job}): "Good day to you."`)
+          ? (data.mine ? (isChild(character) ? `${data.name}, your parent (${job}): "Off to Academy Street with you! Pick the Academy of the class you want, register, and work hard."` : `${data.name}, your parent (${job}): "We are proud of you. Come home safe."`) : `${data.name} (${job}): "Good day to you."`)
           : data.kind === 'teacher' ? `${data.name}, teacher of the ${SCHOOLS[data.school].name}: "${isChild(character) ? (character.child.school === data.school ? 'Stand here with me and practise. Every minute counts, and soon you will learn our techniques.' : 'Is this your school? Choose it at the Academy, then come and train with me.') : 'You have grown well. Come back and teach the little ones some day.'}"`
           : data.kind === 'child' ? `${data.name}: "Want to play? Catch me if you can!"`
           : data.kind === 'businessman' ? `${data.name}, ${data.title}: "Looking for a shop of your own? Come and see me once you are grown."` : `${data.name}, ${data.title}: "The finest goods in the city, for those with coin."`;
         showArea(line);
       }
-      if (type === 'academy') { ui.academyMsg = ''; openPanel('academy'); }
+      if (type === 'academy') { ui.academyMsg = ''; ui.academySchool = data; openPanel('academy'); }
       // Appraisal: the monster in front, then the land underfoot (looked up)
       if (type === 'appraise') {
         ui.appraise = { ...(ui.appraise || {}), monster: data.monster, land: null, message: '' };
@@ -1344,10 +1347,10 @@ function startGame(character) {
     if (diedOfAge(character)) { world?.oldAge(); return; }
     // childhood: training at the Academy, growing a little, and the Ceremony at 7
     if (!isChild(character)) return;
-    // training: at your own school's station on the Training Grounds, beside its teacher
+    // training: inside your own class's Academy, on its mat beside the teacher
     const at = world?.trainingAt();
     if (character.child.school && at === character.child.school) { game.train(60000); if (overlay.dataset.panel === 'academy' && !overlay.classList.contains('hidden')) drawPanel(); }
-    else if (at && at !== character.child.school) showArea(`This is the ${SCHOOLS[at].name}'s station. Train at your own school's station${character.child.school ? '' : ' (choose a school at the Academy first)'}.`);
+    else if (at) showArea(character.child.school ? `You are registered at the ${SCHOOLS[character.child.school].academy}. Register here at the counter (E) to train here instead.` : 'Register at the counter (E) before you train.');
     world?.rebuildAvatar();
   }, 60000);
   // the Ceremony is held at the shrine in the middle of your city: when you are old enough, go there

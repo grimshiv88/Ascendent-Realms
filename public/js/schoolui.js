@@ -1,4 +1,4 @@
-// The Academy, where children train at the school of their choice, and the Ceremony of Revealing
+// The Academies (one for each class), where children register and train, and the Ceremony of Revealing
 // at 7, which tells them their class.
 import { SCHOOLS, TRAIN_FULL_MS, CEREMONY_AGE, ACADEMY_NAME, PARENT_JOBS, CHILD_MAX_LEVEL, SCHOOL_TECHNIQUES, TECHNIQUE_AT } from './data/birth.mjs';
 import { SKILLS } from './data/skills.mjs';
@@ -9,31 +9,36 @@ import { classGuide } from './status.js';
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const pct = (p) => (p >= 0.995 ? '99' : p < 0.01 ? '<1' : String(Math.round(p * 100)));
 
-export function renderAcademy(el, game, { message = '' } = {}) {
+// `school`: the Academy you are in (its counter). A child registers here, then trains on its mat.
+export function renderAcademy(el, game, { school = null, message = '' } = {}) {
   const c = game.character;
+  const S = SCHOOLS[school];
+  const title = S ? S.academy : ACADEMY_NAME;
   let body;
   if (!c.child) {
-    body = '<p class="bag-hint">The Academy is for children. You have had your Ceremony.</p>';
+    body = '<p class="bag-hint">The Academies are for children. You have had your Ceremony.</p>';
+  } else if (!S) {
+    body = '<p class="bag-hint">Each class has its own Academy on Academy Street. Go in, register at the counter, and train inside.</p>';
   } else {
     const odds = game.classOdds();
     const u = uniqueAbility(c);
     const age = game.age();
     const parents = c.child.family?.parents || [];
+    const done = Math.min(1, (c.child.train?.[school] || 0) / TRAIN_FULL_MS);
+    const mine = c.child.school === school;
+    const other = c.child.school && !mine ? SCHOOLS[c.child.school] : null;
     body = `
-      <p class="bag-hint">Choose a school, then train at its station on the Training Grounds beside the Academy, with its teacher. Training raises your level (up to ${CHILD_MAX_LEVEL} before the Ceremony) and teaches you the school's two techniques, which you keep for life. The more you train, the likelier you are to become that class at your Ceremony (age ${CEREMONY_AGE}; you are ${age.toFixed(1)}). It is never certain: your parents' work counts too, and so does luck.</p>
-      <p class="bag-hint">Your parents: ${parents.map((p) => `${esc(p.name)} (${esc(PARENT_JOBS[p.job]?.name || p.job)})`).join(' and ')}. Your Unique Skill, <b>${esc(u.name)}</b>, suits a <b>${esc(CLASSES[u.fit]?.name || 'anyone')}</b>.</p>
-      <div class="school-list">${Object.entries(SCHOOLS).map(([cls, s]) => {
-        const done = Math.min(1, (c.child.train?.[cls] || 0) / TRAIN_FULL_MS);
-        const on = c.child.school === cls;
-        return `<div class="sk-row school-row${on ? ' on' : ''}"><span class="sk-icon">${s.icon}</span>
-          <span class="sk-name"><b>${esc(s.name)}</b><small>${esc(CLASSES[cls].name)} · ${esc(s.text)} · trained ${Math.round(done * 100)}% · chance ${pct(odds[cls])}% · teaches ${SCHOOL_TECHNIQUES[cls].map((id, i) => `${esc(SKILLS[id].name)}${c.techniques?.includes(id) ? ' ✓' : ` (at ${Math.round(TECHNIQUE_AT[i] * 100)}%)`}`).join(', ')}</small></span>
-          ${on ? '<span class="school-here">Training here</span>' : `<button type="button" class="gold-button small" data-school="${cls}">Train here</button>`}</div>`;
-      }).join('')}</div>`;
+      <p class="bag-hint">${S.icon} ${esc(S.text)} This Academy trains future <b>${esc(CLASSES[school].name)}s</b>. Register here, then train inside on the red mat beside the teacher. Training raises your level (up to ${CHILD_MAX_LEVEL} before the Ceremony) and teaches you the Academy's two techniques, which you keep for life. The more you train, the likelier you are to become a ${esc(CLASSES[school].name)} at your Ceremony (age ${CEREMONY_AGE}; you are ${age.toFixed(1)}). It is never certain: your parents' work counts too, and so does luck.</p>
+      <div class="sk-row school-row${mine ? ' on' : ''}"><span class="sk-icon">${S.icon}</span>
+        <span class="sk-name"><b>${esc(S.academy)}</b><small>trained ${Math.round(done * 100)}% · chance ${pct(odds[school])}% · teaches ${SCHOOL_TECHNIQUES[school].map((id, i) => `${esc(SKILLS[id].name)}${c.techniques?.includes(id) ? ' ✓' : ` (at ${Math.round(TECHNIQUE_AT[i] * 100)}%)`}`).join(', ')}</small></span>
+        ${mine ? '<span class="school-here">Registered</span>' : `<button type="button" class="gold-button small" data-school="${school}">Register here</button>`}</div>
+      ${other ? `<p class="bag-hint">You are registered at the ${esc(other.academy)}. Registering here moves you; the training you did there is kept.</p>` : ''}
+      <p class="bag-hint">Your parents: ${parents.map((p) => `${esc(p.name)} (${esc(PARENT_JOBS[p.job]?.name || p.job)})`).join(' and ')}. Your Unique Skill, <b>${esc(u.name)}</b>, suits a <b>${esc(CLASSES[u.fit]?.name || 'anyone')}</b>.</p>`;
   }
   el.innerHTML = `
-    <div class="status-window skills-window" role="dialog" aria-label="${ACADEMY_NAME}">
+    <div class="status-window skills-window" role="dialog" aria-label="${esc(title)}">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>${ACADEMY_NAME}</h2>
+      <h2>${esc(title)}</h2>
       <p class="shop-msg" role="status">${esc(message)}</p>
       ${body}
     </div>`;
