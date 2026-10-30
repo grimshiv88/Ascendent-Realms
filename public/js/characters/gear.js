@@ -239,7 +239,11 @@ export function wearGear(character, worn) {
     // a spear or staff stands up from the fist; a blade sits so that, with the arm in its ready pose
     // (see world.js), it points straight ahead, and it follows the arm through an overhead slash
     const type = worn.weapon.type || ITEMS[worn.weapon.id || worn.weapon.entry?.id]?.type;
+    w.userData.weapon = type || 'blade';
     w.rotation.x = type === 'spear' || type === 'staff' ? -0.85 : 1.2;
+    // a sword or dagger is held as a fighter holds it: edge up and down (not lying flat), the point
+    // raised a little in front, ready to cut
+    if (type === 'sword' || type === 'dagger') w.rotation.set(0.7, 0, Math.PI / 2);
     rig.arms[0].hand.add(w);
   }
   if (worn.shield) {

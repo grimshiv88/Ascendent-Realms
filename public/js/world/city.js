@@ -12,12 +12,12 @@ import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, paved, TOWN_TONES } from './houses.js';
 import { cityHouses, CASTLE_SPOT, LANES, CROSS_STREETS, HOUSE_D, LANE_W, PLAYGROUND, TRAINING_GROUND, TRAINING_STATIONS, SCHOOLS, familyOf, PARENT_JOBS, ACADEMY_NAME, townName, seeded } from '../data/birth.mjs';
 
-const PLAZA_R = 34;
+export const PLAZA_R = 34;
 
 // The city's own buildings, each by its quarter (see the plan in data/birth.mjs):
 // [id, x, z, facing (the way its door looks: [fx, fz]), width, depth, height, wall colour, roof colour]
 // They stand back from the avenue and the roads, never across them.
-const CITY_SHOPS = [
+export const CITY_SHOPS = [
   // the Civic Quarter (north-east), along the avenue
   ['guild', 14, -64, [-1, 0], 18, 12, 9, '#cdbf9e', '#5a2a24'],
   ['academy', 12, -96, [-1, 0], 12, 9, 7, '#e4dcc8', '#2a4a7a'],
@@ -29,8 +29,14 @@ const CITY_SHOPS = [
   ['city_smith', 52, 11, [0, -1], 9, 8, 5, '#9a8e7e', '#3a3632'],
   ['city_armoury', 66, 11.25, [0, -1], 9, 8, 5.5, '#b0a690', '#4a4a5a'],
 ];
+// the colour of each shop's striped awning (and the Guild's banners), so the shops stand out from the
+// houses and from one another
+const SHOP_ACCENT = { guild: '#7a1a1a', city_potions: '#3a7a4a', city_tailor: '#7a3a6a', city_food: '#c8782a', tavern: '#8a4a1e', city_smith: '#4a4a4a', city_armoury: '#2a4a7a' };
+// every city's Academy has a roof of its own colour, so each one is easy to tell apart
+const ACADEMY_ROOFS = ['#2a4a7a', '#7a2a5a', '#2a6a5a', '#8a6a1a', '#5a3a8a', '#1a6a8a', '#8a3a2a', '#3a6a2a'];
+export const academyRoof = (place) => ACADEMY_ROOFS[[...String(place.id)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7) % ACADEMY_ROOFS.length];
 // lots kept for the shops of Businessmen, behind the Market Quarter's shops: [x, z] middles, 14 m square
-const SHOP_LOTS = [];
+export const SHOP_LOTS = [];
 for (const x of [36, 54, 72]) for (const z of [34, 52, 70, 88]) if (Math.hypot(x + 7, z + 7) < 130) SHOP_LOTS.push([x, z]);
 
 // The walls: the outer fortress wall, the moat inside it, then the inner wall. Only two gates (north
@@ -131,32 +137,32 @@ export function buildCity(place, opts = {}) {
   const doors = doorKeeper();
 
   // the paved plaza
-  const paving = paved(PLAZA_R + 10, 0, S.paving, true);
+  const paving = paved(PLAZA_R + 10, 0, S.paving, true, 5);
   paving.position.y = 0.03;
   g.add(paving);
   // streets out to the four gates
   for (let i = 0; i < 4; i++) {
     const a = (i * Math.PI) / 2, mid = (CITY_R + PLAZA_R) / 2, along = i % 2 === 0;
-    const st = paved(along ? 7 : CITY_R - PLAZA_R, along ? CITY_R - PLAZA_R : 7, S.street);
+    const st = paved(along ? 7 : CITY_R - PLAZA_R, along ? CITY_R - PLAZA_R : 7, S.street, false, 1);
     st.position.set(Math.sin(a) * mid, 0.02, Math.cos(a) * mid);
     g.add(st);
   }
   // the Neighbourhood's streets: north-south ones between the rows of houses, with a pavement in
   // front of each row, and east-west cross streets (see the plan in data/birth.mjs)
   const zOf = (x) => Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - x * x));
-  const lay = (w, d, color, x, z, y = 0.021) => { const m = paved(w, d, color); m.position.set(x, y, z); g.add(m); return m; };
+  const lay = (w, d, color, x, z, y = 0.021, layer = 3) => { const m = paved(w, d, color, false, layer); m.position.set(x, y, z); g.add(m); return m; };
   for (const lx of LANES) {
     const zMax = zOf(lx);
     lay(LANE_W, zMax * 2, S.street, lx, 0);
-    for (const s of [-1, 1]) lay(1.3, zMax * 2, S.paving, lx + s * (LANE_W / 2 + 0.65), 0, 0.03);
+    for (const s of [-1, 1]) lay(1.3, zMax * 2, S.paving, lx + s * (LANE_W / 2 + 0.65), 0, 0.03, 6);
     // the alley behind the next row
     const ax = lx + LANE_W / 2 + 1.2 + HOUSE_D + 1;
-    lay(2, zOf(ax) * 2, S.street, ax, 0, 0.019);
+    lay(2, zOf(ax) * 2, S.street, ax, 0, 0.019, 2);
   }
-  for (const s of [-1, 1]) lay(1.3, INNER_R - PLAZA_R, S.paving, -3.5 - 0.65, s * (INNER_R + PLAZA_R) / 2, 0.03); // the pavement along the avenue
+  for (const s of [-1, 1]) lay(1.3, INNER_R - PLAZA_R, S.paving, -3.5 - 0.65, s * (INNER_R + PLAZA_R) / 2, 0.03, 6); // the pavement along the avenue
   for (const cz of CROSS_STREETS) {
     const x0 = -Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - cz * cz)), x1 = -3.5;
-    lay(x1 - x0, 5, S.street, (x0 + x1) / 2, cz);
+    lay(x1 - x0, 5, S.street, (x0 + x1) / 2, cz, 0.021, 4);
   }
 
   // buildings and walls never move: they are merged into a few meshes at the end
@@ -167,7 +173,8 @@ export function buildCity(place, opts = {}) {
   CITY_SHOPS.forEach(([id, x, z, [fx, fz], w, d, h, wall0, roof0], i) => {
     const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
     const name = id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : id === 'academy' ? ACADEMY_NAME : MARKETS[id].name;
-    const b = house(w, d, h, wall, roof, name);
+    const style = id === 'guild' ? 'guild' : id === 'academy' ? 'academy' : 'shop';
+    const b = house(w, d, h, wall, id === 'academy' ? academyRoof(place) : roof, name, { style, accent: SHOP_ACCENT[id] || '#8a2a24' });
     doors.add(b);
     if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
     const at = placeAt(fixed, b, x, z, fx, fz, d);
@@ -394,7 +401,11 @@ export function buildCity(place, opts = {}) {
 function quarters(g, S, solid, cx, cz, monster) {
   const wood = matOf('#7a5a3a', 0.9), dark = matOf('#4a3424', 0.9), sand = matOf('#cdb88a', 1), rope = matOf('#c8b48a', 0.9);
   const add = (geo, m, x, y, z, ry = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.y = ry; o.castShadow = true; o.receiveShadow = true; g.add(o); return o; };
-  const flat = (w, d, m, x, z, y = 0.025) => { const o = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m); o.rotation.x = -Math.PI / 2; o.position.set(x, y, z); o.receiveShadow = true; g.add(o); return o; };
+  // (layer: drawn over the streets and squares it lies on, so the two never speckle into each other)
+  const flat = (w, d, m, x, z, y = 0.025, layer = 7) => {
+    const lm = matOf('#' + m.color.getHexString(), m.roughness, { polygonOffset: true, polygonOffsetFactor: -layer, polygonOffsetUnits: -4 * layer });
+    const o = new THREE.Mesh(new THREE.PlaneGeometry(w, d), lm); o.rotation.x = -Math.PI / 2; o.position.set(x, y, z); o.receiveShadow = true; g.add(o); return o;
+  };
   const fence = (x0, z0, x1, z1, gapAt = null) => {
     for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) {
       const len = Math.hypot(bx - ax, bz - az), n = Math.round(len / 2.5);
@@ -408,15 +419,26 @@ function quarters(g, S, solid, cx, cz, monster) {
       if (gapAt) rail.visible = !(Math.abs((ax + bx) / 2 - gapAt.x) < len / 2 + 0.1 && Math.abs((az + bz) / 2 - gapAt.z) < 0.5 || Math.abs((az + bz) / 2 - gapAt.z) < len / 2 + 0.1 && Math.abs((ax + bx) / 2 - gapAt.x) < 0.5);
     }
   };
+  // a signpost: a wooden board hung beside its post, the name on both faces (nothing stands in
+  // front of the words from either side)
   const sign = (text, x, z, ry) => {
-    add(new THREE.CylinderGeometry(0.08, 0.1, 2.2, 6), dark, x, 1.1, z);
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshBasicMaterial({ map: textTexture(text), transparent: true, side: THREE.DoubleSide }));
-    board.position.set(x, 2, z); board.rotation.y = ry; g.add(board);
+    const sg = new THREE.Group();
+    sg.position.set(x, 0, z); sg.rotation.y = ry; g.add(sg);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 2.5, 6), dark);
+    post.position.set(-1.38, 1.25, 0); sg.add(post);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.72, 0.06), wood);
+    back.position.set(0, 2, 0); sg.add(back);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.08, 0.08), dark);
+    arm.position.set(0.05, 2.4, 0); sg.add(arm);
+    const tex = textTexture(text, { board: true });
+    for (const side of [1, -1]) {
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 0.62), new THREE.MeshBasicMaterial({ map: tex }));
+      face.position.set(0, 2, side * 0.035); face.rotation.y = side > 0 ? 0 : Math.PI; sg.add(face);
+    }
   };
   // Shop lots: marked out with corner stones and a sign, waiting for a Businessman
-  const lotMat = matOf(S.paving, 0.95);
   for (const [x, z] of SHOP_LOTS) {
-    flat(13, 13, lotMat, x, z, 0.022);
+    const lot = paved(13, 13, S.paving, false, 7); lot.position.set(x, 0.022, z); g.add(lot);
     for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new THREE.BoxGeometry(0.5, 0.5, 0.5), dark, x + sx * 6.5, 0.25, z + sz * 6.5);
     sign('Shop lot: for Businessmen', x - 5.5, z - 6.8, 0);
   }
@@ -437,7 +459,7 @@ function quarters(g, S, solid, cx, cz, monster) {
   // the playground in the Neighbourhood: a sandpit, swings, a see-saw and a slide
   const P = PLAYGROUND, px = (P.x0 + P.x1) / 2, pz = (P.z0 + P.z1) / 2;
   flat(P.x1 - P.x0, P.z1 - P.z0, matOf('#7fa24a', 1), px, pz, 0.02);
-  flat(8, 8, sand, px - 5, pz - 8, 0.03);
+  flat(8, 8, sand, px - 5, pz - 8, 0.03, 8);
   for (const sx of [-1.6, 1.6]) for (const sz of [-1, 1]) {
     const leg = add(new THREE.CylinderGeometry(0.07, 0.07, 3, 6), wood, px + 4 + sx, 1.45, pz + 6 + sz * 0.7);
     leg.rotation.x = -sz * 0.22;

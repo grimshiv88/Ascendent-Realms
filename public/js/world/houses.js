@@ -253,13 +253,17 @@ const DOORS = ['#6a4026', '#4a2e1c', '#3a4a5a', '#5a2a22', '#3f5a3a'];
 
 // Build a house: w wide (x), d deep (z), `floors` storeys. `wall` and `roof` are colours.
 // Returns the group, with userData.door (the hinge the door swings on) and userData.height.
-export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e', seed = 1, label = null, labelTex = null, doorX = null, over = 0.3, pitch = null }) {
+// style: 'house' (a timbered home), 'shop' (wide display windows on the ground floor under a striped
+// awning in the shop's colour, `accent`), 'guild' (built all of stone, with long banners in `accent`
+// down its front) or 'academy' (a pale stone porch of columns under a pediment, in front of the door)
+export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e', seed = 1, label = null, labelTex = null, doorX = null, over = 0.3, pitch = null, style = 'house', accent = '#8a2a24' }) {
   const R = rng(seed);
   const g = new THREE.Group();
   const timberM = mat('plain', '#3b281a');
   const stoneM = mat('stone', '#c9c2b4');
   const footM = mat('stone', '#a49c8e');
-  const plasterM = mat('plaster', wall);
+  const allStone = style === 'guild';
+  const plasterM = allStone ? mat('stone', wall) : mat('plaster', wall);
   const roofM = mat('tiles', roof);
   const glassM = mat('glass', '#2c3644');
   const frameM = R() < 0.5 ? timberM : mat('plain', '#e8e0d0');
@@ -267,7 +271,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   const boxM = mat('wood', '#6a4a30');
   const flowers = FLOWERS[Math.floor(R() * FLOWERS.length)];
   const FH = 3.1, PL = 0.5;
-  const stoneGround = floors > 1 && R() < 0.45;
+  const stoneGround = allStone || style === 'academy' || (style === 'house' && floors > 1 && R() < 0.45);
   const jetty = floors > 1 ? 0.4 : 0;
   const pitchA = pitch ?? 0.82 + R() * 0.22;
 
@@ -301,7 +305,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   for (let f = 0; f < floors; f++) {
     const y0 = PL + FH * f + (f ? 0.3 : 0), h = FH - (f ? 0.3 : 0);
     const dd = f ? dU : d;
-    const timbered = f > 0 || !stoneGround;
+    const timbered = !allStone && (f > 0 || !stoneGround);
     for (const [fx, fz, rot, fw, front] of [[0, dd / 2, 0, w, true], [0, -dd / 2, Math.PI, w, false], [w / 2, 0, Math.PI / 2, dd, false], [-w / 2, 0, -Math.PI / 2, dd, false]]) {
       const F = faceOf(g, fx, fz, rot);
       const side = Math.abs(rot) === Math.PI / 2;
@@ -329,8 +333,13 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
           // the braces under the windows, as in old timber houses
           for (const k of [-1, 1]) detail(() => box(F, 0.11, Math.hypot(bw / 2 - 0.1, 0.85), 0.06, timberM, bx + k * bw / 4, y0 + 0.5, 0.035, [0, 0, k * Math.atan2(bw / 2 - 0.1, 0.85)]));
         }
+        if (style === 'shop' && f === 0 && front) {
+          // a wide display window, to show the wares
+          windowAt(F, bx, y0 + 1.45, Math.max(1, bw - 0.45), 1.7, { frameM: timberM, glassM });
+          continue;
+        }
         const ww = Math.min(1.15, bw - 0.9), wh = f ? 1.35 : 1.25;
-        windowAt(F, bx, y0 + 1.75, ww, wh, { frameM: stoneGround && !f ? stoneM : frameM, glassM, shutterM: front && bw > 1.9 ? shutterM : null, flowers: front && f > 0 && R() < 0.6 ? flowers : null, boxM, arch: stoneGround && !f });
+        windowAt(F, bx, y0 + 1.75, ww, wh, { frameM: stoneGround && !f ? stoneM : frameM, glassM, shutterM: front && bw > 1.9 ? shutterM : null, flowers: front && f > 0 && R() < 0.6 && !(label || labelTex) ? flowers : null, boxM, arch: stoneGround && !f });
       }
     }
   }
@@ -343,11 +352,14 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   box(F, dw, dh, 0.02, mat('plain', '#140e08'), doorAt, PL + dh / 2, 0.005);
   box(F, 1.9, 0.25, 0.5, footM, doorAt, 0.125, 0.25 + 0.12 + 0.5);
   box(F, 1.9, 0.5, 0.5, footM, doorAt, 0.25, 0.25 + 0.12);
-  const canopy = new THREE.Group();
-  canopy.position.set(doorAt, PL + dh + 0.55, 0);
-  F.add(canopy);
-  box(canopy, dw + 1, 0.12, 1.15, roofM, 0, 0, 0.55, [0.42]);
-  for (const s of [-1, 1]) box(canopy, 0.1, 0.9, 0.1, timberM, s * (dw / 2 + 0.3), -0.35, 0.35, [0.75]);
+  // (a one-floor shop has its name board there instead, so nothing hangs in front of the name)
+  if (!(floors === 1 && (label || labelTex)) && style !== 'shop' && style !== 'academy') {
+    const canopy = new THREE.Group();
+    canopy.position.set(doorAt, PL + dh + 0.55, 0);
+    F.add(canopy);
+    box(canopy, dw + 1, 0.12, 1.15, roofM, 0, 0, 0.55, [0.42]);
+    for (const s of [-1, 1]) box(canopy, 0.1, 0.9, 0.1, timberM, s * (dw / 2 + 0.3), -0.35, 0.35, [0.75]);
+  }
   const hinge = new THREE.Group();
   hinge.position.set(doorAt - dw / 2, PL, d / 2 + 0.05);
   const leaf = new THREE.Mesh(project(new THREE.BoxGeometry(dw, dh, 0.1), 1.2), mat('wood', DOORS[Math.floor(R() * DOORS.length)]));
@@ -360,8 +372,57 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   g.add(hinge);
   g.userData.door = hinge;
 
+  // the look of each kind of building, at its front
+  const FF = faceOf(g, 0, d / 2, 0);
+  if (style === 'shop') {
+    // a striped cloth awning right across the ground floor, over the windows and the door
+    const aw = w - 0.4, ay = PL + 2.75;
+    const awn = new THREE.Group();
+    awn.position.set(0, ay, 0.05);
+    FF.add(awn);
+    const n = Math.max(4, Math.round(aw / 0.5));
+    for (let i = 0; i < n; i++) box(awn, aw / n + 0.002, 0.04, 1.3, mat('plain', i % 2 ? '#f0e6d0' : accent), -aw / 2 + (i + 0.5) * aw / n, 0, 0.62, [0.38]);
+    // its scalloped front edge and the iron arms holding it
+    box(awn, aw, 0.2, 0.03, mat('plain', accent), 0, -0.34, 1.22);
+    for (const sx of [-1, 1]) box(awn, 0.05, 0.05, 1.3, mat('plain', '#2a2622'), sx * (aw / 2 - 0.1), -0.1, 0.62, [0.38]);
+  } else if (style === 'guild') {
+    // long banners down the front, either side of the door, each with a gold stripe and point
+    for (const bx of [-1, 1].map((k) => k * Math.min(w / 2 - 1.2, 3.4))) {
+      const bh = Math.max(3, FH * floors - 2.2), by = PL + FH * floors - 0.7 - bh / 2;
+      box(FF, 1.1, bh, 0.05, mat('plain', accent), bx, by, 0.12);
+      box(FF, 0.16, bh, 0.06, mat('plain', '#d8b040'), bx, by, 0.13);
+      box(FF, 0.78, 0.78, 0.05, mat('plain', accent), bx, by - bh / 2, 0.12, [0, 0, Math.PI / 4]);
+      box(FF, 1.4, 0.08, 0.08, mat('plain', '#2a2622'), bx, by + bh / 2 + 0.05, 0.16);
+    }
+  } else if (style === 'academy') {
+    // a porch of pale columns under a triangular pediment, in front of the door
+    const pale = mat('stone', '#ece6da');
+    const pw = Math.min(w - 1, 5.6), ph = 3.2, pz = 1.6;
+    box(FF, pw + 0.4, 0.3, pz + 0.4, pale, doorAt, PL - 0.15, pz / 2);
+    for (let i = 0; i < 4; i++) {
+      const cx = doorAt - pw / 2 + 0.3 + i * (pw - 0.6) / 3;
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, ph, 12), pale);
+      col.position.set(cx, PL + ph / 2, pz);
+      FF.add(col);
+    }
+    // the beam over the columns, deep enough to carry the Academy's name
+    const eh = 0.8;
+    box(FF, pw + 0.5, eh, pz + 0.6, pale, doorAt, PL + ph + eh / 2, pz / 2);
+    if (labelTex) {
+      const t = new THREE.Mesh(new THREE.PlaneGeometry(pw, 0.7), new THREE.MeshBasicMaterial({ map: labelTex, transparent: true }));
+      t.position.set(doorAt, PL + ph + eh / 2, pz + 0.32);
+      FF.add(t);
+    }
+    const tri = new THREE.Shape([new THREE.Vector2(-pw / 2 - 0.25, 0), new THREE.Vector2(pw / 2 + 0.25, 0), new THREE.Vector2(0, 1.2)]);
+    const ped = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 0.3, bevelEnabled: false }), pale);
+    ped.position.set(doorAt, PL + ph + eh, pz + 0.05);
+    FF.add(ped);
+    const pedRoof = mat('tiles', roof);
+    for (const sx of [-1, 1]) box(FF, Math.hypot(pw / 2 + 0.4, 1.25) + 0.1, 0.12, pz + 0.8, pedRoof, doorAt + sx * (pw / 4 + 0.1), PL + ph + eh + 0.65, pz / 2, [0, 0, sx * -Math.atan2(1.2, pw / 2 + 0.25)]);
+  }
+
   // a balcony on some houses, over the street
-  if (floors > 1 && w >= 7 && R() < 0.35) {
+  if (floors > 1 && w >= 7 && R() < 0.35 && !(label || labelTex)) {
     const bwid = Math.min(w - 1.5, 4.6), y = PL + FH + 0.3, z = dU / 2;
     box(g, bwid, 0.14, 1.1, timberM, 0, y - 0.07, z + 0.55);
     const rail = mat('plain', '#4a3020');
@@ -421,12 +482,18 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   }
 
   // a shop's name board over the door
-  if (label || labelTex) {
+  if ((label || labelTex) && style !== 'academy') {
+    // on a building with an upper floor, the board is fixed to the front of the upper floor, above the
+    // brackets and the door's little roof; on a one-floor building, over the door. Either way it stands
+    // clear in front of the beams and window boxes, so every letter shows
     const bwid = Math.min(w - 1, 6);
-    const sign = faceOf(g, 0, d / 2, 0);
-    box(sign, bwid + 0.2, 0.95, 0.12, timberM, 0, PL + FH - 0.2, 0.12);
+    const up = floors > 1;
+    const sign = faceOf(g, 0, (up ? dU : d) / 2, 0);
+    const sy = up ? PL + FH + 0.3 + 0.5 : PL + FH - 0.25;
+    box(sign, bwid + 0.24, 0.98, 0.1, timberM, 0, sy, 0.3);
+    box(sign, bwid + 0.04, 0.82, 0.02, mat('plain', '#4a3220'), 0, sy, 0.36);
     const text = new THREE.Mesh(new THREE.PlaneGeometry(bwid, 0.8), new THREE.MeshBasicMaterial({ map: labelTex, transparent: true }));
-    text.position.set(0, PL + FH - 0.2, 0.19);
+    text.position.set(0, sy, 0.38);
     sign.add(text);
   }
 
@@ -441,12 +508,25 @@ export const TOWN_TONES = [
   ['#efe4cc', '#c2683a'], ['#e9e2d6', '#5a4a40'], ['#f3e3c2', '#9a3e28'], ['#e4dccb', '#3f566e'],
 ];
 
-// a flat paved street or square of w × d (x, z), lying on y = 0, in cobbles of this colour
-export function paved(w, d, color, round = false) {
+// a flat paved street or square of w × d (x, z), lying on y = 0, in cobbles of this colour.
+// layer: where pavings overlap (a street crossing another, a pavement on a square), the one with
+// the higher layer is drawn on top, so the two never flicker and speckle into each other
+const LAYERED = new Map();
+export function paved(w, d, color, round = false, layer = 0) {
   const geo = round ? new THREE.CircleGeometry(w, 64) : new THREE.PlaneGeometry(w, d);
   geo.rotateX(-Math.PI / 2);
   project(geo, TEX_SIZE.cobble);
-  const m = new THREE.Mesh(geo, mat('cobble', color));
+  let material = mat('cobble', color);
+  if (layer) {
+    const k = color + '|' + layer;
+    if (!LAYERED.has(k)) {
+      const lm = material.clone();
+      lm.polygonOffset = true; lm.polygonOffsetFactor = -layer; lm.polygonOffsetUnits = -4 * layer;
+      LAYERED.set(k, lm);
+    }
+    material = LAYERED.get(k);
+  }
+  const m = new THREE.Mesh(geo, material);
   m.receiveShadow = true;
   return m;
 }

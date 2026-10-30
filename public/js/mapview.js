@@ -5,6 +5,8 @@ import { createTerrainPainter } from './world/terrainmap.js';
 import { toMap, toWorld, METRES_PER_PX, placesWithPositions, PLOT } from './data/world-layout.mjs';
 import { allPortals, portalsFrom } from './data/portals.mjs';
 import { allCastles } from './data/kings.mjs';
+import { CITY_R } from './data/world-layout.mjs';
+import { drawCityPlan } from './world/cityplan.js';
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
@@ -139,6 +141,15 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
         return [x0, y0, x1 - x0, y1 - y0];
       });
       ctx.globalAlpha = 1;
+      // zoomed in on a city: its plan, streets, buildings and names
+      const k = view.zoom / METRES_PER_PX;
+      const cityAlpha = Math.min(1, Math.max(0, (k * CITY_R * 2 - 160) / 160));
+      if (cityAlpha > 0) for (const pl of places) {
+        if (!pl.city) continue;
+        const m = toMap(pl.x, pl.z), [x, y] = toCanvas(m.x, m.y), r = CITY_R * k;
+        if (x < -r || y < -r || x > W + r || y > H + r) continue;
+        drawCityPlan(ctx, pl, (wx, wz) => { const q = toMap(wx, wz); return toCanvas(q.x, q.y); }, k, cityAlpha);
+      }
       // place names stay readable over the real ground
       ctx.save();
       ctx.globalAlpha = detail;
@@ -361,6 +372,8 @@ export function createMinimap(el, getPlayer, onOpen) {
       ctx.beginPath(); ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2); ctx.clip();
       ctx.fillStyle = '#2b3a2a'; ctx.fillRect(0, 0, SIZE, SIZE);
       ground.draw(ctx, (g) => [...at(g.x0, g.z0), (g.x1 - g.x0) * k, (g.z1 - g.z0) * k]);
+      // in or near a city: its plan
+      for (const pl of places) if (pl.city && Math.hypot(pl.x - p.x, pl.z - p.z) < CITY_R + SPAN / 2) drawCityPlan(ctx, pl, at, k, 1, false);
       ctx.font = '600 11px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
       for (const pl of places) {
         const [x, y] = at(pl.x, pl.z);

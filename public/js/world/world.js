@@ -1897,7 +1897,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     walkBuild?.update();
     sky.follow(camera);
 
-    if (camOverride) { camera.position.set(...camOverride[0]); camera.lookAt(...camOverride[1]); avatar.visible = false; }
+    if (camOverride) { camera.position.set(...camOverride[0]); camera.lookAt(...camOverride[1]); avatar.visible = !!camOverride[2]; }
     if (t - lastCrowd > 0.25) { lastCrowd = t; updateCrowd(camera.position.x, camera.position.y, camera.position.z, scene); }
     renderer.render(scene, camera);
 
@@ -2039,7 +2039,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       return { calls, tris: Math.round(tris), shadowCalls, top: Object.entries(out).sort((a, b) => b[1].n - a[1].n).slice(0, 25).map(([k, v]) => `${k}: ${v.n} draws ${Math.round(v.tris / 1000)}k tris ${v.shadow} shadow`) };
     },
     debugScene: () => scene,
-    debugCam(at, look) { camOverride = at ? [at, look] : null; if (!at) avatar.visible = true; },
+    debugCam(at, look, showSelf = false) { camOverride = at ? [at, look, showSelf] : null; if (!at) avatar.visible = true; },
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
     debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`), villages: game?.villages().map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.length, dead: v.dead.length, built: mobVillages.has(v.id) })) }),
     teleport,

@@ -205,17 +205,30 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
   };
 }
 
-export function textTexture(text) {
+// a name in big carved letters. The words always fit (the letters shrink for a long name, never
+// running off the edges). board: on a dark wooden board with a frame, for signposts
+export function textTexture(text, { board = false } = {}) {
   const c = document.createElement('canvas');
-  c.width = 640;
-  c.height = 128;
+  c.width = 1024;
+  c.height = 192;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#f0e2c0';
-  ctx.font = `bold ${text.length > 14 ? 48 : 60}px Cinzel, Georgia, serif`;
+  if (board) {
+    ctx.fillStyle = '#4a3220'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.strokeStyle = '#2a1a10'; ctx.lineWidth = 14; ctx.strokeRect(7, 7, c.width - 14, c.height - 14);
+  }
+  let size = text.length > 14 ? 78 : 96;
+  const fit = c.width - 90;
+  ctx.font = `bold ${size}px Cinzel, Georgia, serif`;
+  while (ctx.measureText(text).width > fit && size > 24) { size -= 4; ctx.font = `bold ${size}px Cinzel, Georgia, serif`; }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, 320, 68);
+  // a dark edge round the letters, so they read against any wall
+  ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(4, size * 0.1); ctx.strokeStyle = 'rgba(20,12,6,0.85)';
+  ctx.strokeText(text, c.width / 2, c.height / 2 + 6);
+  ctx.fillStyle = '#f0e2c0';
+  ctx.fillText(text, c.width / 2, c.height / 2 + 6);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
   return tex;
 }
