@@ -11,8 +11,8 @@ import { PLACES, toWorld } from './world-layout.mjs';
 export const BORN_AGE = 4;
 export const CEREMONY_AGE = 7;
 export const CEREMONY_SHOW_MS = 15 * 60 * 1000; // a new card hangs in the sky over the shrine this long
-export const YEAR_MS = 30 * 60 * 1000;          // a childhood year passes in 30 minutes of play
-export const TRAIN_FULL_MS = 40 * 60 * 1000;     // 40 minutes at a school trains you fully in it
+export const YEAR_MS = 10 * 60 * 1000;          // a childhood year passes in 10 minutes of play (4 to 7 in 30)
+export const TRAIN_FULL_MS = 20 * 60 * 1000;     // 20 minutes on an Academy's mat trains you fully in it
 export const CHILD_CLASS = 'child';              // a child's class until the Ceremony
 
 // The city each race is born in: player races in the Central City, monsters in their continent's
@@ -193,6 +193,7 @@ export const ACADEMY_NAME = 'The Academies';
 // Techniques are kept for life.
 export const CHILD_MAX_LEVEL = 10;
 export const TRAIN_EXP = 0.2;                  // of a level's EXP, per minute of training
+export const TRAIN_HIT_EXP = 0.03;             // and per swing at practice on the mat (hitting the dummy, the anvil, ...)
 export const TECHNIQUE_AT = [0.25, 0.6];
 export const SCHOOL_TECHNIQUES = {
   swordsman: ['power_strike', 'charge'], tank: ['shield_bash', 'iron_skin'], assassin: ['backstab', 'shadow_step'],

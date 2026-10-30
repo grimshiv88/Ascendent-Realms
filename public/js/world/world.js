@@ -1377,6 +1377,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   function resolveSwing() {
     const w = game?.weapon();
+    // practice on your Academy's mat: every swing earns a little EXP
+    if (game?.character.child && trainingAt() === game.character.child.school) {
+      const exp = game.trainHit();
+      if (exp) floatText(`+${exp} EXP`, pos.clone().add(new THREE.Vector3(0, bodyH + 0.3, 0)), 'exp');
+      return;
+    }
     if (w?.type === 'staff' || (w?.magic && character.cls === 'mage')) { castSpell(); return; }
     const r = weaponReach(w);
     const reach = bodyR + r.reach * Math.max(0.8, bodyH / 1.8);

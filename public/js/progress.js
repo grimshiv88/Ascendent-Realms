@@ -8,7 +8,7 @@ import { deathOutcome, applyRise, livesLeft } from './data/life.mjs';
 import { BODYGUARDS, HIRE_SPANS, hireCost, guardActive } from './data/hire.mjs';
 import { WEDDING_FEE, ADOPT_FEE, MAX_CHILDREN, newChild, nextChildIn } from './data/family.mjs';
 import { canMarry } from './data/life.mjs';
-import { ageOf, childStatShare, classOdds, SCHOOLS, TRAIN_FULL_MS, visitDue, CHILD_MAX_LEVEL, TRAIN_EXP, TECHNIQUE_AT, SCHOOL_TECHNIQUES } from './data/birth.mjs';
+import { ageOf, childStatShare, classOdds, SCHOOLS, TRAIN_FULL_MS, visitDue, CHILD_MAX_LEVEL, TRAIN_EXP, TRAIN_HIT_EXP, TECHNIQUE_AT, SCHOOL_TECHNIQUES } from './data/birth.mjs';
 import { PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, BOOK_ID, bookStops, spellStrength } from './data/cults.mjs';
 import { GUILD_HALL_LEVEL, CARD_FEE, assess, mayTake } from './data/guildcard.mjs';
 import { fillBoard, progressOf, questsToday, QUESTS_PER_DAY, BOARDS } from './quests.js';
@@ -455,6 +455,14 @@ export function createProgress(c, { save, onChange, onEvent }) {
         if (done >= TECHNIQUE_AT[i] && !c.techniques.includes(id)) { c.techniques.push(id); onEvent?.('technique', { id }); }
       });
       changed('child');
+    },
+    // a swing at practice on your Academy's mat: a little EXP each time (up to CHILD_MAX_LEVEL).
+    // Returns the EXP gained.
+    trainHit() {
+      if (!c.child?.school || c.level >= CHILD_MAX_LEVEL) return 0;
+      const exp = Math.max(1, Math.round(expToNext(c.level, c.race) * TRAIN_HIT_EXP));
+      this.gainExp(exp);
+      return exp;
     },
     classOdds: () => classOdds(c),
     // the Ceremony is over: the grown-up character from the server takes the child's place
