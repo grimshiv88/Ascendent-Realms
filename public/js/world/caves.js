@@ -12,6 +12,7 @@ export function buildCave(place) {
   g.rotation.y = place.facing + Math.PI / 2;
 
   const rockMat = new THREE.MeshStandardMaterial({ color: '#5a5048', roughness: 1, flatShading: true, side: THREE.DoubleSide });
+  rockMat.shadowSide = THREE.BackSide; // (both sides casting made the dome shadow itself in stripes)
   const geo = new THREE.SphereGeometry(R, 40, 14, OPENING / 2, Math.PI * 2 - OPENING, 0, Math.PI / 2);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
@@ -29,6 +30,7 @@ export function buildCave(place) {
 
   // boulders piled around the outside so it reads as a rocky hill, and an arch over the entrance
   const boulder = new THREE.IcosahedronGeometry(1, 1);
+  const lumps = []; // [x, z, r] of everything solid besides the walls (local)
   for (let i = 0; i < 14; i++) {
     const a = OPENING / 2 + 0.25 + (i / 14) * (Math.PI * 2 - OPENING - 0.5);
     const b = new THREE.Mesh(boulder, rockMat);
@@ -38,12 +40,15 @@ export function buildCave(place) {
     b.rotation.set(i, i * 2, i * 3);
     b.castShadow = true;
     g.add(b);
+    lumps.push([-Math.cos(a) * (R + 1 + s * 0.4), Math.sin(a) * (R + 1 + s * 0.4), s * 0.6]); // (kept out of the dome inside)
   }
   const arch = new THREE.Mesh(new THREE.TorusGeometry(R * Math.sin(OPENING / 2) + 1.2, 1.4, 8, 16, Math.PI), rockMat);
   arch.position.set(-R * Math.cos(OPENING / 2) - 0.5, 0, 0);
   arch.rotation.y = Math.PI / 2;
   arch.scale.y = 0.9;
   g.add(arch);
+  // the arch's feet, each side of the way in
+  for (const side of [-1, 1]) lumps.push([arch.position.x, side * (R * Math.sin(OPENING / 2) + 1.2), 1.5]);
 
   // glowing crystals inside
   const crystalMat = new THREE.MeshStandardMaterial({ color: '#8fd8ff', emissive: '#3aa0ff', emissiveIntensity: 1.6, roughness: 0.2 });
@@ -54,6 +59,7 @@ export function buildCave(place) {
     c.position.set(-Math.cos(a) * (R - 2.5), 0.6, Math.sin(a) * (R - 2.5));
     c.rotation.z = (i % 2 ? 1 : -1) * 0.3;
     g.add(c);
+    lumps.push([c.position.x, c.position.z, 0.55]);
   }
   const glow = new THREE.PointLight('#6ac0ff', 30, 26, 1.5);
   glow.position.set(3, 4, 0);
@@ -84,6 +90,11 @@ export function buildCave(place) {
     v.set(-Math.cos(a) * (R + 0.6), 0, Math.sin(a) * (R + 0.6)).applyMatrix4(g.matrixWorld);
     solid.push({ x: v.x, z: v.z, r: 1.4, kind: 'wall', height: 9 });
   }
+  // the boulders outside, the arch's feet and the crystals are solid too
+  for (const [x, z, r] of lumps) {
+    v.set(x, 0, z).applyMatrix4(g.matrixWorld);
+    solid.push({ x: v.x, z: v.z, r, kind: 'wall', height: 9 });
+  }
   const hole = new THREE.Vector3(R * 0.5, 0, 0).applyMatrix4(g.matrixWorld);
   // guards stand just outside the opening, facing out
   const guardSpots = [-3, 0, 3].map((side) => {
@@ -94,6 +105,14 @@ export function buildCave(place) {
   const mouth = new THREE.Vector3(-R * 0.4, 0, 0).applyMatrix4(g.matrixWorld);
   return {
     group: g, solid, inside: (x, z) => Math.hypot(x - place.x, z - place.z) < R,
+    // keep the camera inside the dome while you are in it, so it never looks through the rock
+    clampCam(v) {
+      const dx = v.x - place.x, dz = v.z - place.z, d = Math.hypot(dx, dz), max = R - 2;
+      if (d > max) { v.x = place.x + (dx / d) * max; v.z = place.z + (dz / d) * max; }
+      const r = Math.min(d, max);
+      v.y = Math.min(v.y, g.position.y + 0.62 * Math.sqrt(R * R - r * r) * 0.93 - 0.6);
+      return v;
+    },
     hole: { x: hole.x, z: hole.z }, guardSpots, mouth: { x: mouth.x, z: mouth.z, heading: place.facing },
   };
 }

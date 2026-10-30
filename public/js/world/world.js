@@ -192,6 +192,42 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (best) talkTo(best);
     return !!best;
   }
+  // Phones and tablets: tap a door, a counter, a chair, a bed or a chest to use it (instead of E).
+  // Each thing you can use is a point on screen; a tap close to one uses it if you are near enough.
+  const tapV = new THREE.Vector3();
+  function tapUse(sx, sy) {
+    if (dead || !game) return false;
+    const list = []; // [x, y, z, reach, use]
+    const g = (x, z) => groundAt(x, z, pos.y);
+    if (inside) {
+      const b = inside.built;
+      if (b.counter) list.push([b.counter.x, b.counter.y + 1.1, b.counter.z, 2.6, useIndoors]);
+      for (const q of b.spots || []) list.push([q.x, q.y + 1, q.z, q.r, useIndoors]);
+      for (const r of b.bedrooms || []) list.push([r.bed.x, r.bed.y + 0.3, r.bed.z, 1.9, useIndoors]);
+      for (const r of b.rooms || []) list.push([r.door.x, pos.y + 1.2, r.door.z, 2, useIndoors]);
+      for (const q of b.seats || []) if (Math.abs(q.y - pos.y) < 1) list.push([q.x, q.y + 0.5, q.z, 2.4, () => sitDown(q)]);
+      list.push([b.exit.x, pos.y + 1.2, b.exit.z, 3, () => leaveBuilding()]);
+    } else if (!depth) {
+      for (const s of sites) for (const shop of s.built?.shops || []) {
+        if (Math.abs(shop.x - pos.x) > 14 || Math.abs(shop.z - pos.z) > 14) continue;
+        list.push([shop.x, g(shop.x, shop.z) + 1.4, shop.z, 4.5, () => (shop.building ? enterBuilding(shop) : onEvent?.(shop.id === 'guild' ? 'guild' : 'market', shop.id))]);
+      }
+    }
+    for (const e of colliders.near(pos.x, pos.z, 12)) if (e.kind === 'chest') list.push([e.x, (e.y ?? g(e.x, e.z)) + 0.6, e.z, e.r + 1.6, () => openChest(e)]);
+    const r = canvas.getBoundingClientRect();
+    let best = null, bd = 70;
+    for (const it of list) {
+      tapV.set(it[0], it[1], it[2]).project(camera);
+      if (tapV.z > 1) continue;
+      const d = Math.hypot(r.left + (tapV.x + 1) / 2 * r.width - sx, r.top + (1 - tapV.y) / 2 * r.height - sy);
+      if (d < bd) { bd = d; best = it; }
+    }
+    if (!best) return false;
+    if (Math.hypot(best[0] - pos.x, best[2] - pos.z) > best[3]) { say('Walk a little closer, then tap it', 'note'); return true; }
+    if (sitting && best[4] !== useIndoors) standUp();
+    best[4]();
+    return true;
+  }
   function talkTo(n) { n.talkUntil = clock.elapsedTime + 6; onEvent?.('npc', n); }
   let touched = null; // the townsperson you last walked into (they talk once, until you step away)
   // townsfolk close enough to talk to
@@ -557,6 +593,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (s.forest > open) continue;
       const size = pickSize(), SZ = VILLAGE_SIZES[size], reach = SZ.fence + 3;
       if ([[reach, 0], [-reach, 0], [0, reach], [0, -reach]].some(([dx, dz]) => { const q = sample(x + dx, z + dz, tmpV); return q.h < q.water + 0.5 || q.forest > open; })) continue;
+      // and fairly flat, so the huts stand on the ground instead of hanging off a hillside
+      const hs = [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach], [reach * 0.7, reach * 0.7], [-reach * 0.7, -reach * 0.7]].map(([dx, dz]) => surfaceAt(x + dx, z + dz));
+      if (Math.max(...hs) - Math.min(...hs) > reach * (tries < 45 ? 0.15 : 0.35)) continue;
       const lvl = wildLevelAt(x, z);
       if (lvl < SZ.levels[0] || lvl > SZ.levels[1]) continue;
       if (game.villages().some((v) => Math.hypot(v.x - x, v.z - z) < 1500)) continue;
@@ -1506,6 +1545,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
         const at = plots.pick(ray.ray);
         if (at) onPlot?.(plots.select(at));
+      } else if (tap && e.pointerType !== 'mouse' && tapUse(e.clientX, e.clientY)) { /* tapped a door, counter, chair, bed or chest */
       } else if (tap && talkAt(e.clientX, e.clientY)) { /* clicked a townsperson: they talk */ } else if (tap && look.mouse) attack();
       look = null;
     }
@@ -1904,7 +1944,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (snapCam) camDist = want;
     const cam = focus.clone().addScaledVector(dir, camDist);
     cam.y = Math.max(cam.y, heightAt(cam.x, cam.z) + 0.5, water + 0.3);
-    if (depth) cam.y = Math.min(cam.y, depth.built.roofAt(cam.x, cam.z) - 0.5);
+    // (the roof over the camera, or over you where the camera is in the rock: the rock's nearest
+    // chamber can be a deeper one, whose roof would drag the camera far below you)
+    if (depth) cam.y = Math.min(cam.y, Math.max(depth.built.roofAt(cam.x, cam.z), depth.built.roofAt(pos.x, pos.z)) - 0.5);
+    if (!depth && !inside) { const cave = sites.find((s) => s.built?.clampCam && s.built.inside(pos.x, pos.z)); if (cave) cave.built.clampCam(cam); }
     if (inside) {
       inside.built.clampCam(cam, inside.built.upstairs(pos));
       // in a meeting room (or the Assessment Room and its hallway) the camera stays in the room
@@ -1946,7 +1989,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         s.built.gather(t - (s.ceremonyAt ?? -1e9) < 30 || (!!k && realmNow() - k.at < GATHER_MS));
       }
     }
-    for (const q of mobVillages.values()) q.built.update(t);
+    for (const q of mobVillages.values()) q.built.update(t, pos, creatures.list);
     walkBuild?.update();
     sky.follow(camera);
 
@@ -2094,6 +2137,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugScene: () => scene,
     debugCam(at, look, showSelf = false) { camOverride = at ? [at, look, showSelf] : null; if (!at) avatar.visible = true; },
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
+    debugMonsters: () => creatures.list.filter((m) => !m.dead).map((m) => ({ n: m.title || m.kind.name, x: m.x, y: m.y, z: m.z, g: surfaceAt(m.x, m.z), by: m.body.position.y })),
     debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`), villages: game?.villages().map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.length, dead: v.dead.length, built: mobVillages.has(v.id) })) }),
     teleport,
     get atPortal() { return atPortal; },

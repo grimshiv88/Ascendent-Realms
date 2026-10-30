@@ -10,19 +10,21 @@ export function isMobile() {
   } catch { return false; }
 }
 
-// land: [tile distance, grid detail] rings (the nearest must stay 64, the land you walk on)
+// land: [tile distance, grid detail] rings. The nearest two must stay 64: the land you walk on,
+// and the land around it where villages, huts and monsters stand, which would float over (or sink
+// into) a coarser grid
 export const QUALITY = {
   low: {
     name: 'Battery saver', pixelRatio: 1, shadows: false, shadowSize: 1024, fps: 30,
-    lods: [[1, 64], [2, 16], [4, 8], [6, 8]], veg: 2, grass: 1, grassDensity: 0.4, nearTrees: 60, fog: 0.00042,
+    lods: [[2, 64], [3, 16], [5, 8], [6, 8]], veg: 2, grass: 1, grassDensity: 0.4, nearTrees: 60, fog: 0.00042,
   },
   medium: {
     name: 'Balanced', pixelRatio: 1.25, shadows: true, shadowSize: 1024, fps: 60,
-    lods: [[1, 64], [3, 32], [6, 16], [11, 8]], veg: 3, grass: 1, grassDensity: 0.75, nearTrees: 110, fog: 0.00024,
+    lods: [[2, 64], [4, 32], [7, 16], [11, 8]], veg: 3, grass: 1, grassDensity: 0.75, nearTrees: 110, fog: 0.00024,
   },
   high: {
     name: 'Far view', pixelRatio: 1.5, shadows: true, shadowSize: 2048, fps: 0,
-    lods: [[1, 64], [4, 32], [9, 16], [15, 8]], veg: 5, grass: 2, grassDensity: 1, nearTrees: 170, fog: 0.00015,
+    lods: [[2, 64], [5, 32], [9, 16], [15, 8]], veg: 5, grass: 2, grassDensity: 1, nearTrees: 170, fog: 0.00015,
   },
 };
 

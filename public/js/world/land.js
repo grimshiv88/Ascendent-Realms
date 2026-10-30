@@ -7,7 +7,7 @@ import { scenery, hideInstance, BREAKABLE, setSceneryQuality } from './scenery.j
 
 export const CHUNK = 256;                 // metres per terrain tile
 // (these change with the graphics quality; see quality.js)
-let LODS = [[1, 64], [3, 32], [6, 16], [11, 8]]; // [tile distance up to, grid segments]
+let LODS = [[2, 64], [4, 32], [7, 16], [11, 8]]; // [tile distance up to, grid segments]
 let VEG_RANGE = 3;                      // tiles with trees and rocks
 let GRASS_RANGE = 1;                    // tiles with grass
 const UV_SCALE = 7;                       // metres per repeat of the ground detail texture

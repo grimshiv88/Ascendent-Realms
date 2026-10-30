@@ -2,7 +2,7 @@
 // sharpened stakes, a fire in the middle and the village chest beside it, locked until every
 // monster of the village is beaten.
 import * as THREE from 'three';
-import { heightAt } from '../data/world-layout.mjs';
+import { surfaceAt } from '../data/world-layout.mjs';
 import { textTexture } from './spawn.js';
 import { villageName, sizeOf } from '../data/mobvillages.mjs';
 
@@ -19,14 +19,22 @@ const HUT_R = 2.6;
 export function buildMobVillage(v) {
   const L = LOOKS[v.race] || LOOKS.goblin;
   const g = new THREE.Group();
-  const baseY = heightAt(v.x, v.z);
+  const baseY = surfaceAt(v.x, v.z); // (the land as drawn, so nothing hangs in the air)
   g.position.set(v.x, baseY, v.z);
   const solid = [];
   const wall = new THREE.MeshStandardMaterial({ color: L.wall, roughness: 0.95 });
   const roof = new THREE.MeshStandardMaterial({ color: L.roof, roughness: 0.9 });
   const wood = new THREE.MeshStandardMaterial({ color: '#5a3d22', roughness: 0.9 });
   const dark = new THREE.MeshStandardMaterial({ color: '#1a120a', roughness: 1 });
-  const at = (x, z) => heightAt(v.x + x, v.z + z) - baseY;
+  const earth = new THREE.MeshStandardMaterial({ color: '#5a4a38', roughness: 1 });
+  const at = (x, z) => surfaceAt(v.x + x, v.z + z) - baseY;
+  // the lowest and highest ground under a round footprint
+  const span = (x, z, r) => {
+    let lo = at(x, z), hi = lo;
+    for (let k = 0; k < 8; k++) { const h = at(x + Math.cos(k * Math.PI / 4) * r, z + Math.sin(k * Math.PI / 4) * r); lo = Math.min(lo, h); hi = Math.max(hi, h); }
+    return [lo, hi];
+  };
+  const doors = []; // { hinge, x, z (the doorway, in the world), open }
 
   // the huts, in a ring with their doors to the fire
   const SZ = sizeOf(v);
@@ -35,17 +43,31 @@ export function buildMobVillage(v) {
     const a = (i / huts) * Math.PI * 2 + 0.4;
     const x = Math.cos(a) * SZ.ring, z = Math.sin(a) * SZ.ring;
     const hut = new THREE.Group();
+    // the hut stands on the highest ground under it, on a base of packed earth and stones that
+    // reaches down to the lowest, so no side hangs in the air on a slope
+    const [lo, hi] = span(x, z, HUT_R * 1.1);
+    const base = hi - lo + 0.6;
+    const footing = new THREE.Mesh(new THREE.CylinderGeometry(HUT_R * 1.06, HUT_R * 1.14, base, 10), earth);
+    footing.position.y = -base / 2 + 0.05;
     const body = new THREE.Mesh(new THREE.CylinderGeometry(HUT_R, HUT_R * 1.08, 2.4, 10), wall);
     body.position.y = 1.2;
     const top = new THREE.Mesh(new THREE.ConeGeometry(HUT_R * 1.35, 2.4, 10), roof);
     top.position.y = 3.6;
-    const door = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.7), dark);
-    door.position.set(0, 0.85, HUT_R * 1.04 + 0.02);
-    hut.add(body, top, door);
-    hut.position.set(x, at(x, z), z);
+    // the doorway, and a door of planks that swings open for whoever comes to it (you or the monsters)
+    const way = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.7), dark);
+    way.position.set(0, 0.85, HUT_R * 1.04 + 0.01);
+    const hinge = new THREE.Group();
+    hinge.position.set(-0.55, 0, HUT_R * 1.04 + 0.04);
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.7, 0.08), wood);
+    leaf.position.set(0.55, 0.85, 0);
+    hinge.add(leaf);
+    hut.add(footing, body, top, way, hinge);
+    hut.position.set(x, hi, z);
     hut.rotation.y = Math.atan2(-x, -z);
     g.add(hut);
-    solid.push({ x: v.x + x, z: v.z + z, r: HUT_R, kind: 'hut' });
+    const dr = HUT_R * 1.04 + 0.6, dl = Math.hypot(x, z) || 1;
+    doors.push({ hinge, x: v.x + x - (x / dl) * dr, z: v.z + z - (z / dl) * dr, open: 0 });
+    solid.push({ x: v.x + x, z: v.z + z, r: HUT_R, kind: 'wall', height: 5, hut: true });
   }
   // a fence of stakes, open on two sides
   const stake = new THREE.CylinderGeometry(0.12, 0.16, 2, 5);
@@ -55,7 +77,7 @@ export function buildMobVillage(v) {
     if (Math.abs(Math.sin(a)) < 0.12) continue; // the ways in, east and west
     const x = Math.cos(a) * SZ.fence, z = Math.sin(a) * SZ.fence;
     const s = new THREE.Mesh(stake, wood);
-    s.position.set(x, at(x, z) + 0.9, z);
+    s.position.set(x, at(x, z) + 0.75, z); // (driven into the ground)
     s.rotation.z = Math.cos(a) * 0.15; s.rotation.x = -Math.sin(a) * 0.15;
     g.add(s);
   }
@@ -110,7 +132,16 @@ export function buildMobVillage(v) {
     group: g, solid, chest, homes,
     unlock() { chest.unlocked = true; },
     openChest() { chest.open = true; glow.intensity = 0; lid.rotation.x = -1.9; },
-    update(t) {
+    // `you`: your place; `folk`: the monsters about, who open the doors too
+    update(t, you, folk = []) {
+      for (const d of doors) {
+        let near = !!you && Math.hypot(you.x - d.x, you.z - d.z) < 2.6;
+        if (!near) for (const m of folk) if (!m.dead && m.site === v.id && Math.abs(m.x - d.x) < 2.2 && Math.hypot(m.x - d.x, m.z - d.z) < 2.2) { near = true; break; }
+        const want = near ? 1.4 : 0;
+        if (Math.abs(want - d.open) < 0.005) continue;
+        d.open += (want - d.open) * 0.12;
+        d.hinge.rotation.y = -d.open;
+      }
       flame.scale.y = 1 + Math.sin(t * 9) * 0.12;
       fireLight.intensity = 1.8 + Math.sin(t * 7) * 0.4;
       flag.rotation.y = Math.sin(t * 1.7) * 0.25;

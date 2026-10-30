@@ -1,6 +1,6 @@
 // The depths: every cave on the map leads down into its own underground warren of chambers.
 // Shared by the game and the server, so both agree on what each cave holds and what it costs to buy.
-import { placesWithPositions, sample, heightAt } from './world-layout.mjs';
+import { placesWithPositions, sample, heightAt, DEPTHS_X } from './world-layout.mjs';
 import { ITEMS } from './items.mjs';
 const oreRank = (id) => ITEMS[id]?.rank || 0;
 
@@ -111,7 +111,9 @@ export const caveWord = (cave) => (cave.dungeon ? 'dungeon' : 'cave');
 export function caveLayout(cave) {
   const rnd = seeded(cave.index * 31 + 3);
   const n = SIZES[cave.size].chambers;
-  const ox = 420000 + cave.index * 2500, oz = 0;
+  // far past the edge of the world (beyond DEPTHS_X, where the land answers for the depths), past
+  // the building insides too (see interiors.js), each cave on its own stretch
+  const ox = DEPTHS_X + 200000 + cave.index * 2500, oz = 0;
   const chambers = [];
   let x = ox, z = oz, y = -40, a = rnd() * Math.PI * 2;
   for (let i = 0; i < n; i++) {

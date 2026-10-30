@@ -97,6 +97,18 @@ function doorKeeper() {
   };
 }
 
+// Raise a building 0.6 m on wooden stilts (Mirefall's mud): posts at its corners and along its
+// sides, down into the ground, so it never looks as if it floats
+const STILT = new THREE.CylinderGeometry(0.14, 0.18, 1.1, 6);
+const STILT_MAT = new THREE.MeshStandardMaterial({ color: '#3a2e1e', roughness: 1 });
+function stilts(b, w, d) {
+  b.position.y = 0.6;
+  for (let x = -w / 2 + 0.3; x <= w / 2 - 0.29; x += (w - 0.6) / Math.max(1, Math.round((w - 0.6) / 2.5))) {
+    for (const z of [-d / 2 + 0.3, d / 2 - 0.3]) { const p = new THREE.Mesh(STILT, STILT_MAT); p.position.set(x, -0.5, z); b.add(p); }
+  }
+  for (const x of [-w / 2 + 0.3, w / 2 - 0.3]) for (let z = -d / 2 + 2.8; z < d / 2 - 2.5; z += 2.5) { const p = new THREE.Mesh(STILT, STILT_MAT); p.position.set(x, -0.5, z); b.add(p); }
+}
+
 // Solid circles along a rectangle's edges, so you can't walk through a building
 function boxColliders(x, z, w, d, rot, out, height = 6) {
   const c = Math.cos(rot), s = Math.sin(rot);
@@ -193,7 +205,7 @@ export function buildCity(place, opts = {}) {
     const style = id === 'guild' ? 'guild' : 'shop';
     const b = house(w, d, h, wall, roof, name, { style, accent: SHOP_ACCENT[id] || '#8a2a24' });
     doors.add(b);
-    if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
+    if (S.decor === 'reeds') stilts(b, w, d); // up on stilts above the mud
     const at = placeAt(fixed, b, x, z, fx, fz, d);
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid, b.userData.height);
     fixtures(b, cx + at.bx, cz + at.bz, at.rot, b.position.y, solid, pads);
@@ -203,6 +215,7 @@ export function buildCity(place, opts = {}) {
       const tower = buildTower({ size: 3.6, height: 16, wall: monster ? S.tones[0][0] : '#d8ccb0', roof });
       tower.position.set(x - fx * (d / 2 - 1.5), 0, z - fz * (d / 2 - 1.5));
       fixed.add(tower);
+      solid.push({ x: cx + tower.position.x, z: cz + tower.position.z, r: 2.6, kind: 'wall', height: 16 });
     }
   });
   // Academy Street, with an Academy for each class on both sides (each roof in its class's colour);
@@ -215,7 +228,7 @@ export function buildCity(place, opts = {}) {
     const wall = monster ? S.tones[(i + 3) % S.tones.length][0] : '#e4dcc8';
     const b = house(ACADEMY_W, ACADEMY_D, 6.5, wall, SCHOOLS[school].roof, name, { style: 'academy', doorX: 0 });
     doors.add(b);
-    if (S.decor === 'reeds') b.position.y = 0.6;
+    if (S.decor === 'reeds') stilts(b, ACADEMY_W, ACADEMY_D);
     const at = placeAt(fixed, b, x, z, fx, fz, ACADEMY_D);
     boxColliders(cx + at.bx, cz + at.bz, ACADEMY_W, ACADEMY_D, at.rot, solid, b.userData.height);
     fixtures(b, cx + at.bx, cz + at.bz, at.rot, b.position.y, solid, pads);
@@ -276,7 +289,7 @@ export function buildCity(place, opts = {}) {
     const hb = buildHouse({ w: h.w, d: h.d, floors: h.floors, wall, roof, seed: `${place.id}:${h.i}`, doorX: h.doorX, over: 0.1 });
     doors.add(hb);
     const at = placeAt(fixed, hb, h.x, h.z, h.fx, h.fz, h.d);
-    if (S.decor === 'reeds') hb.position.y = 0.6;
+    if (S.decor === 'reeds') stilts(hb, h.w, h.d);
     boxColliders(cx + at.bx, cz + at.bz, h.w, h.d, at.rot, solid, hb.userData.height);
     fixtures(hb, cx + at.bx, cz + at.bz, at.rot, hb.position.y, solid, pads);
   }
@@ -325,7 +338,7 @@ export function buildCity(place, opts = {}) {
   const npcs = [];
   const addNpc = (race, x, z, faceA, info) => {
     const body = buildCharacter({ race, form: 'humanoid', look: info.look || {} });
-    body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz) + (S.decor === 'reeds' ? 0.6 : 0), z);
+    body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz), z);
     body.rotation.y = faceA;
     if (info.small) body.scale.setScalar(0.58);
     joinCrowd(bakeCharacter(body));
@@ -766,6 +779,7 @@ function decorate(g, S, cx, cz, solid) {
       const spike = new THREE.Mesh(new THREE.ConeGeometry(1.2, 6 + (i % 4) * 2, 5), rock);
       spike.position.set(p.x, heightAt(cx + p.x, cz + p.z) - baseY + 3, p.z);
       g.add(spike);
+      solid.push({ x: cx + p.x, z: cz + p.z, r: 1.1, kind: 'wall', height: 8 });
     }
     return (t) => { lava.emissiveIntensity = 2 + Math.sin(t * 1.7) * 0.6; };
   }
@@ -787,6 +801,7 @@ function decorate(g, S, cx, cz, solid) {
       const p = at(a, PLAZA_R - 6);
       t.position.set(p.x, 0, p.z); t.rotation.y = -a;
       g.add(t);
+      solid.push({ x: cx + p.x + Math.cos(a) * 6, z: cz + p.z + Math.sin(a) * 6, r: 0.8, kind: 'wall', height: 4 }); // its foot
     }
     return null;
   }
