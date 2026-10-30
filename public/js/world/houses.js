@@ -352,6 +352,12 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   box(F, dw, dh, 0.02, mat('plain', '#140e08'), doorAt, PL + dh / 2, 0.005);
   box(F, 1.9, 0.25, 0.5, footM, doorAt, 0.125, 0.25 + 0.12 + 0.5);
   box(F, 1.9, 0.5, 0.5, footM, doorAt, 0.25, 0.25 + 0.12);
+  // what you can stand on (the steps up to the door) and what you can't walk through (a porch's
+  // columns), in the building's own space; the town turns them into the world's (see city.js)
+  const pads = [{ x: doorAt, z: d / 2 + 0.31, w: 1.9, d: 0.62, top: 0.5 }, { x: doorAt, z: d / 2 + 0.87, w: 1.9, d: 0.5, top: 0.25 }];
+  const posts = [];
+  g.userData.pads = pads;
+  g.userData.posts = posts;
   // (a one-floor shop has its name board there instead, so nothing hangs in front of the name)
   if (!(floors === 1 && (label || labelTex)) && style !== 'shop' && style !== 'academy') {
     const canopy = new THREE.Group();
@@ -399,12 +405,15 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
     const pale = mat('stone', '#ece6da');
     const pw = Math.min(w - 1, 5.6), ph = 3.2, pz = 1.6;
     box(FF, pw + 0.4, 0.3, pz + 0.4, pale, doorAt, PL - 0.15, pz / 2);
-    for (let i = 0; i < 4; i++) {
-      const cx = doorAt - pw / 2 + 0.3 + i * (pw - 0.6) / 3;
+    // two columns each side, the way to the door between them left clear
+    for (const cx of [-pw / 2 + 0.3, -pw / 2 + 0.95, pw / 2 - 0.95, pw / 2 - 0.3].map((x) => doorAt + x)) {
       const col = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, ph, 12), pale);
       col.position.set(cx, PL + ph / 2, pz);
       FF.add(col);
+      posts.push({ x: cx, z: d / 2 + pz, r: 0.3, height: PL + ph });
     }
+    // its floor is a step up, the height of the doorstep
+    pads.push({ x: doorAt, z: d / 2 + pz / 2, w: pw + 0.4, d: pz + 0.4, top: PL });
     // the beam over the columns, deep enough to carry the Academy's name
     const eh = 0.8;
     box(FF, pw + 0.5, eh, pz + 0.6, pale, doorAt, PL + ph + eh / 2, pz / 2);

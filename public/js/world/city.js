@@ -111,6 +111,26 @@ function boxColliders(x, z, w, d, rot, out, height = 6) {
 
 // A building at angle `a` on a ring of radius `r` round (0, 0), its door facing the middle.
 // Returns the door's spot (in the group's space) for the shop's E key.
+// A building's steps and porch floors (to stand on) and its columns (solid), turned into the
+// world's: `pads` gets { x, z, rot, w, d, top } (top above the city's ground), `solid` the columns.
+// (bx, bz): the building's middle in the world; y: how high it stands above the city's ground
+function fixtures(b, bx, bz, rot, y, solid, pads) {
+  const c = Math.cos(rot), s = Math.sin(rot);
+  const turn = (lx, lz) => [bx + lx * c + lz * s, bz - lx * s + lz * c];
+  for (const p of b.userData.pads || []) { const [x, z] = turn(p.x, p.z); pads.push({ x, z, rot, w: p.w, d: p.d, top: y + p.top }); }
+  for (const p of b.userData.posts || []) { const [x, z] = turn(p.x, p.z); solid.push({ x, z, r: p.r, kind: 'wall', height: p.height }); }
+}
+// the highest pad under (x, z), above the city's ground; undefined if none
+function padAt(pads, x, z) {
+  let top;
+  for (const p of pads) {
+    const dx = x - p.x, dz = z - p.z, c = Math.cos(p.rot), s = Math.sin(p.rot);
+    const lx = dx * c - dz * s, lz = dx * s + dz * c;
+    if (Math.abs(lx) <= p.w / 2 && Math.abs(lz) <= p.d / 2 && (top === undefined || p.top > top)) top = p.top;
+  }
+  return top;
+}
+
 // put a building with its middle at (x, z) and its door facing (fx, fz); returns the spot in front of the door
 function placeAt(g, b, x, z, fx, fz, d) {
   b.position.set(x, 0, z);
@@ -135,6 +155,7 @@ export function buildCity(place, opts = {}) {
   const solid = [...centre.solid];
   const shops = [];
   const doors = doorKeeper();
+  const pads = [];
 
   // the paved plaza
   const paving = paved(PLAZA_R + 10, 0, S.paving, true, 5);
@@ -179,6 +200,7 @@ export function buildCity(place, opts = {}) {
     if (S.decor === 'reeds') b.position.y = 0.6; // up on stilts above the mud
     const at = placeAt(fixed, b, x, z, fx, fz, d);
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid, b.userData.height);
+    fixtures(b, cx + at.bx, cz + at.bz, at.rot, b.position.y, solid, pads);
     shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: id !== 'academy' });
     // the Guild Hall gets a bell tower at its back
     if (id === 'guild') {
@@ -244,6 +266,7 @@ export function buildCity(place, opts = {}) {
     const at = placeAt(fixed, hb, h.x, h.z, h.fx, h.fz, h.d);
     if (S.decor === 'reeds') hb.position.y = 0.6;
     boxColliders(cx + at.bx, cz + at.bz, h.w, h.d, at.rot, solid, hb.userData.height);
+    fixtures(hb, cx + at.bx, cz + at.bz, at.rot, hb.position.y, solid, pads);
   }
 
   // the walls: outer fortress wall, moat, inner wall (see walls())
@@ -306,7 +329,7 @@ export function buildCity(place, opts = {}) {
   let seed2 = 7;
   const rnd2 = () => { seed2 = (seed2 * 16807) % 2147483647; return seed2 / 2147483647; };
   let lastT = null;
-  function walkFolk(t, you) {
+  function walkFolk(t, you, blocked) {
     const dt = lastT === null ? 0 : Math.min(0.1, t - lastT);
     lastT = t;
     for (const w of walkers) {
@@ -329,7 +352,13 @@ export function buildCity(place, opts = {}) {
         } else {
           speed = 1.1;
           const step = Math.min(d, speed * dt);
-          b.position.x += (dx / d) * step; b.position.z += (dz / d) * step;
+          const nx = b.position.x + (dx / d) * step, nz = b.position.z + (dz / d) * step;
+          // people are solid: wait for you to step aside, and turn back from a wall
+          if (you && Math.hypot(cx + nx - you.x, cz + nz - you.z) < 0.75) { speed = 0; w.wait = 0.5; }
+          else if (blocked?.(cx + nx, cz + nz, 0.28)) { speed = 0; w.tx = b.position.x; w.tz = b.position.z; }
+          else { b.position.x = nx; b.position.z = nz; }
+        }
+        if (speed) {
           const want = Math.atan2(dx, dz);
           b.rotation.y += Math.atan2(Math.sin(want - b.rotation.y), Math.cos(want - b.rotation.y)) * Math.min(1, dt * 6);
           w.npc.x = cx + b.position.x; w.npc.z = cz + b.position.z;
@@ -368,12 +397,12 @@ export function buildCity(place, opts = {}) {
 
   const glow = decorate(g, S, cx, cz, solid);
   let detailAt = -1;
-  const update = (t, you) => {
+  const update = (t, you, blocked) => {
     centre.update?.(t);
     if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z); }
     doors.update(you);
     for (const b of guards) animateCharacter(b, t, 0);
-    walkFolk(t, you);
+    walkFolk(t, you, blocked);
     for (const b of bridges) b.update();
     castleGrounds?.update(t, you);
     glow?.(t);
@@ -381,7 +410,14 @@ export function buildCity(place, opts = {}) {
   // raise or lower the bridges over the moat (raised, they shut the inner gates)
   const setRaised = (up, colliders) => { for (const b of bridges) b.raise(up, colliders); };
   // walking on a lowered bridge: its deck, to stand on
-  const deckAt = (x, z) => { for (const b of bridges) { const y = b.deckAt(x, z); if (y !== undefined) return y; } return castleGrounds?.topAt(x, z); };
+  const cityY = heightAt(cx, cz);
+  const deckAt = (x, z) => {
+    for (const b of bridges) { const y = b.deckAt(x, z); if (y !== undefined) return y; }
+    const top = castleGrounds?.topAt(x, z);
+    if (top !== undefined) return top;
+    const pad = padAt(pads, x, z);
+    return pad === undefined ? undefined : cityY + pad;
+  };
   // in the moat's water (and not on a bridge)
   const inMoat = (x, z) => { const d = Math.hypot(x - cx, z - cz); return d > MOAT[0] && d < MOAT[1] && deckAt(x, z) === undefined; };
 
@@ -426,6 +462,7 @@ function quarters(g, S, solid, cx, cz, monster) {
     sg.position.set(x, 0, z); sg.rotation.y = ry; g.add(sg);
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 2.5, 6), dark);
     post.position.set(-1.38, 1.25, 0); sg.add(post);
+    solid.push({ x: cx + x - 1.38 * Math.cos(ry), z: cz + z + 1.38 * Math.sin(ry), r: 0.25, kind: 'wall', height: 2.5 });
     const back = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.72, 0.06), wood);
     back.position.set(0, 2, 0); sg.add(back);
     const arm = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.08, 0.08), dark);
@@ -769,6 +806,7 @@ export function buildVillage(place) {
   const cx = place.x, cz = place.z, baseY = heightAt(cx, cz);
   const solid = [...centre.solid];
   const doors = doorKeeper();
+  const pads = [];
   const shops = centre.market ? [{ ...centre.market, name: MARKETS[centre.market.id].name }] : [];
   // (kept off the north-south street between the gates: each at least 10 m to the side of it)
   const spots = [[-0.6, 30, 'tavern'], [0.05, 33], [0.7, 30], [2.45, 32], [3.14, 30], [3.83, 33]];
@@ -780,6 +818,7 @@ export function buildVillage(place) {
     const at = placeFacing(g, b, a, r, d);
     b.position.y = heightAt(cx + at.bx, cz + at.bz) - baseY;
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid, b.userData.height);
+    fixtures(b, cx + at.bx, cz + at.bz, at.rot, b.position.y, solid, pads);
     if (tavern) shops.push({ id: 'tavern', name: `${place.name} Tavern`, x: cx + at.x, z: cz + at.z, building: true });
   }
   // a tall wooden wall of sharpened logs all round, with a gate north and south, a watchtower beside
@@ -828,7 +867,8 @@ export function buildVillage(place) {
     fixed.add(beam);
   }
   mergeStill(fixed);
-  return { group: g, update: (t, you) => { centre.update(t); doors.update(you); for (const b of guards) animateCharacter(b, t, 0); }, shops, solid, market: centre.market };
+  const deckAt = (x, z) => { const pad = padAt(pads, x, z); return pad === undefined ? undefined : baseY + pad; };
+  return { group: g, update: (t, you) => { centre.update(t); doors.update(you); for (const b of guards) animateCharacter(b, t, 0); }, shops, solid, market: centre.market, deckAt };
 }
 
 // The sign over your parents' heads: a heart and "Your parent", always facing you

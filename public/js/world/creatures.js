@@ -101,7 +101,7 @@ export function monsterHit(atk, level, def) {
 export const monsterExp = (level, stage = 0) => rollKillExp(level, stage);
 
 // `groundAt(x, z, fromY)` is where feet rest (the drawn ground, and built floors); monsters walk on it as players do
-export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null }) {
+export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null, blockedAt = null }) {
   const list = [];
   const tmp = {};
   const feet = (x, z, fromY, h) => (groundAt ? groundAt(x, z, fromY) : h);
@@ -305,7 +305,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         // monsters stay out of the water, caves they weren't in, the safe zones round the waystones,
         // and land with buildings on it or that belongs to a nation
         const blocked = s.h <= s.water + 0.2 || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z)) || (!m.kind.royal && safeZoneAt(nx, nz) && !safeZoneAt(m.x, m.z))
-          || (!m.kind.royal && wardedAt(nx, nz) && !wardedAt(m.x, m.z));
+          || (!m.kind.royal && wardedAt(nx, nz) && !wardedAt(m.x, m.z))
+          || (blockedAt?.(nx, nz, m.radius * 0.6) && !blockedAt(m.x, m.z, m.radius * 0.6));
         if (!blocked) { m.x = nx; m.z = nz; m.y = feet(nx, nz, m.y, s.h); } else m.heading += Math.PI * 0.7;
       }
       m.hurt = Math.max(0, m.hurt - dt);

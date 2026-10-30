@@ -197,6 +197,42 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const s of builtCities()) for (const n of s.built.npcs) if (Math.hypot(n.x - x, n.z - z) < r) return n;
     return null;
   }
+  // Something solid (a wall, a column, a post) in the way of a body of radius r at (x, z)
+  // (things up on an upper storey and low steps don't count)
+  function blockedAt(x, z, r) {
+    for (const e of colliders.near(x, z, r)) {
+      if (e.r <= 0 || e.step || e.y !== undefined || e.kind === 'chest') continue;
+      if (Math.hypot(e.x - x, e.z - z) < e.r + r) return true;
+    }
+    return false;
+  }
+  // People are solid too: you can't walk through townsfolk, your helper, your bodyguard or a monster
+  function pushOffFolk(p, r) {
+    const off = (x, z, rr) => {
+      const ox = p.x - x, oz = p.z - z, d = Math.hypot(ox, oz), min = r + rr;
+      if (d < min && d > 1e-4) { p.x = x + (ox / d) * min; p.z = z + (oz / d) * min; }
+    };
+    if (!inside && !depth) for (const s of builtCities()) {
+      if (Math.hypot(s.place.x - p.x, s.place.z - p.z) > 400) continue;
+      for (const n of s.built.npcs) if (Math.abs(n.x - p.x) < 2 && Math.abs(n.z - p.z) < 2) off(n.x, n.z, n.small ? 0.22 : 0.32);
+    }
+    if (helper && helper.body.visible !== false) off(helper.x, helper.z, 0.32);
+    if (guard && !inside && !depth) off(guard.x, guard.z, 0.34);
+    for (const m of creatures?.list || []) if (!m.dead && m.hp > 0 && Math.abs(m.x - p.x) < 6 && Math.abs(m.z - p.z) < 6) off(m.x, m.z, m.radius * 0.8);
+  }
+  // a helper or bodyguard: kept out of walls and out of you (tried in steps, so it slides along)
+  function stepFollower(f, nx, nz) {
+    const t = { x: nx, z: nz };
+    colliders.push(t, 0.32);
+    const ox = t.x - pos.x, oz = t.z - pos.z, d = Math.hypot(ox, oz), min = bodyR + 0.34;
+    if (d < min && d > 1e-4) { t.x = pos.x + (ox / d) * min; t.z = pos.z + (oz / d) * min; }
+    if (blockedAt(t.x, t.z, 0.25)) {
+      if (!blockedAt(t.x, f.z, 0.25)) t.z = f.z;
+      else if (!blockedAt(f.x, t.z, 0.25)) t.x = f.x;
+      else return;
+    }
+    f.x = t.x; f.z = t.z;
+  }
   // the school whose station on the Training Grounds you stand at (with its teacher), or null
   function trainingAt() {
     for (const s of builtCities()) for (const st of s.built.stations || []) if (Math.hypot(st.x - pos.x, st.z - pos.z) < 4.5) return st.school;
@@ -484,6 +520,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
     isInsideCave: insideCave,
+    blockedAt: (x, z, r) => !inside && !depth && blockedAt(x, z, r),
     onHitPlayer(m) {
       if (!game || dead) return;
       const s = game.stats();
@@ -963,7 +1000,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (d > 40) { helper.x = tx; helper.z = tz; }
     else if (d > 0.4) {
       speed = Math.min(d * 2.5, RUN * 1.2);
-      helper.x += (dx / d) * speed * dt; helper.z += (dz / d) * speed * dt;
+      stepFollower(helper, helper.x + (dx / d) * speed * dt, helper.z + (dz / d) * speed * dt);
       helper.heading = Math.atan2(dx, dz);
     } else helper.heading = heading;
     helper.body.position.set(helper.x, heightAt(helper.x, helper.z), helper.z);
@@ -1006,7 +1043,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (d > 60) { guard.x = pos.x; guard.z = pos.z; }
     else if (d > reach) {
       speed = Math.min(d * 2.5, RUN * 1.25);
-      guard.x += (dx / d) * speed * dt; guard.z += (dz / d) * speed * dt;
+      stepFollower(guard, guard.x + (dx / d) * speed * dt, guard.z + (dz / d) * speed * dt);
       guard.heading = Math.atan2(dx, dz);
     } else if (m) {
       guard.heading = Math.atan2(dx, dz);
@@ -1644,6 +1681,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const px = pos.x, pz = pos.z;
       pos.x += move.x * speedNow * dt;
       pos.z += move.z * speedNow * dt;
+      pushOffFolk(pos, bodyR);
       colliders.push(pos, bodyR);
       if (depth) {
         // the cave walls: slide along them instead of walking in
@@ -1892,7 +1930,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     lightTorches(t);
     sun.position.copy(pos).addScaledVector(lightDir, 120);
     sun.target.position.copy(pos);
-    for (const s of sites) s.built?.update?.(t, pos);
+    for (const s of sites) s.built?.update?.(t, pos, blockedAt);
     for (const q of mobVillages.values()) q.built.update(t);
     walkBuild?.update();
     sky.follow(camera);
