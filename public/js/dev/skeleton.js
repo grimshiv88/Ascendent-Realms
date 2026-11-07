@@ -34,7 +34,7 @@ const grid = new THREE.GridHelper(2, 20, '#55555c', '#3a3a40'); scene.add(grid);
 let skel = null;
 // withMuscles: lay the muscles on; withVessels: the blood vessels (they need the muscles to lie on,
 // which are then built whether shown or not); pose: joint angles to use instead of the stance
-function build(make = goblinSkeleton, posed = true, withMuscles = false, withVessels = false, pose = null, withJoints = true) {
+function build(make = goblinSkeleton, posed = true, withMuscles = false, withVessels = false, pose = null, withJoints = true, filter = null) {
   if (skel) scene.remove(skel.root);
   const S = make(), t0 = performance.now();
   if (pose) S.pose = { ...S.pose, ...pose };
@@ -51,8 +51,9 @@ function build(make = goblinSkeleton, posed = true, withMuscles = false, withVes
     (j.parent ? nodes[j.parent] : root).add(o); nodes[j.name] = o;
   }
   let tris = 0;
+  const keep = filter ? new RegExp(filter) : null;
   for (const p of S.parts) {
-    if (!p.shapes.length) continue;
+    if (!p.shapes.length || (keep && !keep.test(p.name))) continue;
     const box = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9];
     for (const s of p.shapes) if (!s.sub) { const b = shapeBox(s); for (let i = 0; i < 3; i++) { box[i] = Math.min(box[i], b[i]); box[i + 3] = Math.max(box[i + 3], b[i + 3]); } }
     const m = meshField(p.shapes, box, p.cell);
@@ -68,7 +69,8 @@ function build(make = goblinSkeleton, posed = true, withMuscles = false, withVes
   }
   scene.add(root); root.updateMatrixWorld(true);
   const bb = new THREE.Box3().setFromObject(root);
-  root.position.y -= bb.min.y; root.updateMatrixWorld(true);
+  if (!keep) root.position.y -= bb.min.y; // (stand it on the floor; a part shown alone stays where it is in the body)
+  root.updateMatrixWorld(true);
   bb.setFromObject(root);
   skel = { root, nodes, S, bb };
   return { ms: Math.round(performance.now() - t0), tris, height: +(bb.max.y - bb.min.y).toFixed(3), size: bb.getSize(new THREE.Vector3()).toArray().map((v) => +v.toFixed(3)) };

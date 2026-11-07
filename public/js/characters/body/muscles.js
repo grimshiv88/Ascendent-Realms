@@ -4,6 +4,7 @@
 // Every point is given on the bone that carries it, at rest, then carried into the creature's pose,
 // so a muscle that crosses a joint bends with it. Plain numbers and arrays only (no three.js).
 import { cone } from './sdf.js';
+import { goblinArmMuscles } from './armMuscles.js';
 
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -139,17 +140,6 @@ export function goblinMuscles(S, { posed = true } = {}) {
       const ins = B('UpperArm', [0.123, 0.772, 0.004]);
       fan(M, o, ins, 0.0062, { ta: 0.02, tb: 0.14, peak: 0.4, blend: 0.006 }, (oo, e, t) => add(lerp(oo, e, 0.45), [0, 0, (0.012 + t * 0.006) * k]));
     }
-    { // deltoid: the cap of the shoulder, from the collarbone, the shoulder's point and the
-      // shoulder blade's spine, over the head of the arm bone, to halfway down the arm
-      const M = muscle(side + 'Deltoid');
-      const sh = side + 'Shoulder';
-      const o = [at(sh, X([0.07, 0.832, 0.03])), at(sh, X([0.085, 0.836, 0.018])), at(sh, X([0.1, 0.838, 0.0])), at(sh, X([0.108, 0.838, -0.012])), at(sh, X([0.1, 0.832, -0.03])), at(sh, X([0.085, 0.822, -0.055])), at(sh, X([0.068, 0.814, -0.072]))];
-      const ins = B('UpperArm', [0.127, 0.735, -0.01]);
-      fan(M, o, ins, 0.0075, { ta: 0.03, tb: 0.1, peak: 0.4, blend: 0.006 }, (oo, e, t) => {
-        const a = (t - 0.5) * 2.4;
-        return B('UpperArm', [0.13 + Math.cos(a) * 0.012, 0.79, -0.012 + Math.sin(-a) * 0.02]);
-      });
-    }
     { // latissimus dorsi: the wide back muscle, from the lower spine and hip to under the arm
       const M = muscle(side + 'Latissimus');
       const o = [C('chest', thor(0.5)), C('chest', thor(0.38)), C('chest', thor(0.24)), C('chest', thor(0.1)), C('spine', lumb(0.7)), C('spine', lumb(0.35)), at('hips', X([0.03, 0.56, -0.05])), at('hips', X([0.06, 0.575, -0.04]))];
@@ -219,43 +209,7 @@ export function goblinMuscles(S, { posed = true } = {}) {
       fibre(M, [at('hips', X([0.07, 0.56, 0.0])), at('hips', X([0.06, 0.51, 0.03])), B('UpperLeg', [0.07, 0.448, 0.0])], 0.0068, { ta: 0.03, tb: 0.15 });
     }
 
-    // ---- the arm ----
-    { // biceps: two heads from the shoulder blade, down the front of the arm to the forearm
-      const M = muscle(side + 'Biceps');
-      fibre(M, [at(side + 'Shoulder', X([0.094, 0.824, 0.008])), B('UpperArm', [0.118, 0.78, 0.008]), B('UpperArm', [0.124, 0.7, 0.014]), B('UpperArm', [0.127, 0.64, 0.008]), B('LowerArm', [0.132, 0.596, 0.0])], 0.0075, { ta: 0.22, tb: 0.2, peak: 0.55 });
-      fibre(M, [at(side + 'Shoulder', X([0.1, 0.818, -0.012])), B('UpperArm', [0.13, 0.79, 0.0]), B('UpperArm', [0.129, 0.7, 0.012]), B('UpperArm', [0.129, 0.64, 0.006]), B('LowerArm', [0.132, 0.596, 0.0])], 0.0068, { ta: 0.25, tb: 0.2, peak: 0.55 });
-    }
-    { // brachialis: under the biceps, from the lower arm bone to the ulna
-      const M = muscle(side + 'Brachialis');
-      fibre(M, [B('UpperArm', [0.124, 0.71, -0.006]), B('UpperArm', [0.127, 0.645, 0.002]), B('LowerArm', [0.12, 0.598, -0.012])], 0.0068, { ta: 0.05, tb: 0.2, peak: 0.6 });
-    }
-    { // triceps: three heads down the back of the arm into one tendon on the point of the elbow
-      const M = muscle(side + 'Triceps');
-      fibre(M, [at(side + 'Shoulder', X([0.098, 0.796, -0.026])), B('UpperArm', [0.118, 0.74, -0.034]), B('UpperArm', [0.122, 0.68, -0.034]), B('LowerArm', [0.118, 0.632, -0.036])], 0.0072, { ta: 0.12, tb: 0.22, peak: 0.45 });
-      fibre(M, [B('UpperArm', [0.13, 0.775, -0.022]), B('UpperArm', [0.134, 0.71, -0.03]), B('LowerArm', [0.12, 0.632, -0.036])], 0.0065, { ta: 0.04, tb: 0.25 });
-      fibre(M, [B('UpperArm', [0.115, 0.73, -0.022]), B('UpperArm', [0.114, 0.67, -0.03]), B('LowerArm', [0.117, 0.63, -0.035])], 0.0058, { ta: 0.04, tb: 0.15 });
-    }
-    { // forearm: the brachioradialis on the thumb side, the extensors on the back, the flexors on
-      // the palm side, each narrowing to long tendons that run over the wrist into the hand
-      const M = muscle(side + 'Forearm');
-      fibre(M, [B('UpperArm', [0.137, 0.665, -0.01]), B('LowerArm', [0.142, 0.6, 0.004]), B('LowerArm', [0.134, 0.53, 0.012]), B('LowerArm', [0.124, 0.456, 0.014])], 0.0062, { ta: 0.04, tb: 0.38, peak: 0.3 });
-      // extensors: from the outer knob of the elbow down the back of the forearm to the back of the hand
-      for (let i = 0; i < 4; i++) {
-        const z = 0.004 - i * 0.008;
-        fibre(M, [B('UpperArm', [0.14, 0.627, -0.013]), B('LowerArm', [0.14 + (i === 3 ? -0.004 : 0), 0.57, z]), B('LowerArm', [0.133, 0.5, z]), B('LowerArm', [0.13, 0.45, z * 0.8]), B('Hand', [0.128, 0.41, z * 0.9 + 0.005]), B('Hand', [0.125, 0.37, 0.011 - i * 0.008])], 0.0048, { ta: 0.03, tb: 0.55, peak: 0.3, tr: 0.25, blend: 0.004 });
-      }
-      // flexors: from the inner knob of the elbow down the palm side
-      for (let i = 0; i < 4; i++) {
-        const z = 0.004 - i * 0.008;
-        fibre(M, [B('UpperArm', [0.103, 0.62, -0.016]), B('LowerArm', [0.108, 0.57, z]), B('LowerArm', [0.111, 0.5, z]), B('LowerArm', [0.113, 0.452, z * 0.6]), B('Hand', [0.114, 0.425, z * 0.5])], 0.0052, { ta: 0.03, tb: 0.4, peak: 0.3, tr: 0.25, blend: 0.004 });
-      }
-    }
-    { // the pads of the palm: the thumb's mound and the little finger's edge
-      const M = muscle(side + 'HandMuscles');
-      fibre(M, [B('Hand', [0.114, 0.432, 0.012]), B('Hand', [0.11, 0.418, 0.024]), B('Hand', [0.11, 0.402, 0.032])], 0.0052, { ta: 0.05, tb: 0.15, peak: 0.45 });
-      fibre(M, [B('Hand', [0.115, 0.43, 0.004]), B('Hand', [0.11, 0.41, 0.012]), B('Hand', [0.112, 0.395, 0.024])], 0.0042, { ta: 0.05, tb: 0.2 });
-      fibre(M, [B('Hand', [0.116, 0.43, -0.014]), B('Hand', [0.116, 0.405, -0.017]), B('Hand', [0.118, 0.385, -0.016])], 0.004, { ta: 0.05, tb: 0.15 });
-    }
+    // ---- the arm: see armMuscles.js ----
 
     // ---- the leg ----
     { // gluteus maximus: the big seat muscle, from the back of the hip and sacrum to the thigh bone
@@ -316,5 +270,7 @@ export function goblinMuscles(S, { posed = true } = {}) {
       fibre(M, [B('Foot', [0.068, 0.026, 0.02]), B('Foot', [0.058, 0.026, 0.05]), B('Foot', [0.048, 0.02, 0.085])], 0.0038, { ta: 0.05, tb: 0.35 });
     }
   }
+  // the shoulder, arm, forearm and hand, each muscle shaped on its own (armMuscles.js)
+  parts.push(...goblinArmMuscles(S, { posed }));
   return parts;
 }
