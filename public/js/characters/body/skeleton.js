@@ -347,58 +347,95 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
     ra.push(cone([s * 0.134, 0.609, -0.006], [s * 0.134, 0.6, -0.006], 0.0068, 0.0068, { blend: 0.002 }));
     tube(ra, [[s * 0.134, 0.598, -0.006], [s * 0.132, 0.55, 0.0], [s * 0.126, 0.49, 0.006], [s * 0.123, 0.457, 0.007]], (t) => 0.004 + t * t * 0.004, 0, { blend: 0.003 });
     ra.push(ellAlong([s * 0.122, 0.452, 0.004], [0, 0, 1], [0.0085, 0.013, 0.006], 0, { blend: 0.004 }));
-    // the hand: wrist bones, five metacarpals and long fingers, gently curled, palm toward the thigh
-    const ha = part(side + 'HandBones', side + 'Hand', 'bone', 0.0009);
-    for (const [dz, dy] of [[-0.009, 0], [-0.002, 0.001], [0.006, 0.0], [0.013, -0.002], [-0.009, -0.009], [-0.002, -0.01], [0.006, -0.01], [0.013, -0.009]]) {
-      ha.push(ell([s * 0.121, 0.434 + dy, -0.004 + dz], [0.0055, 0.0045, 0.0042], { blend: 0.001 }));
-    }
-    // fingers: [name, where the metacarpal starts (z across the palm), its length, phalanx lengths, radius]
-    const FING = [
-      ['Index', 0.011, 0.05, [0.03, 0.019, 0.015], 0.0037],
-      ['Middle', 0.003, 0.052, [0.033, 0.021, 0.016], 0.0039],
-      ['Ring', -0.0055, 0.049, [0.031, 0.02, 0.015], 0.0036],
-      ['Little', -0.013, 0.044, [0.025, 0.016, 0.013], 0.0032],
-    ];
-    const curl = (d, a) => { // turn a direction toward the palm (palm faces -s x) by angle a
-      const c = Math.cos(a), sn = Math.sin(a);
-      return norm([d[0] * c - s * Math.abs(d[1]) * sn * 1, d[1] * c, d[2]]);
+    // ---- the hand, bone by bone ----
+    // Built in the hand's own frame: U down the hand (toward the fingertips), V across the palm
+    // toward the thumb, N out of the back of the hand (the palm faces the thigh, so the palm is -N).
+    const W = wrJ, U = [0, -1, 0], V = [0, 0, 1], N = [s, 0, 0];
+    const P = (a, b, c) => add(add(add(W, mul(U, a)), mul(V, b)), mul(N, c));
+    // an ellipsoid in a bone's frame: rows [across, along, back-of-hand], radii in that order
+    const bell = (c, D, Nb, r, blend = 0.0012) => { const X = norm(cross(D, Nb)), Nn = cross(X, D); return ell(c, r, { m: [...X, ...D, ...Nn], blend }); };
+    const turn = (D, Nb, a) => [norm(add(mul(D, Math.cos(a)), mul(Nb, -Math.sin(a)))), norm(add(mul(Nb, Math.cos(a)), mul(D, Math.sin(a))))]; // curl toward the palm
+    const spreadBy = (D, Nb, a) => { const X = norm(cross(D, Nb)); return norm(add(mul(D, Math.cos(a)), mul(X, Math.sin(a)))); };
+    // one long bone of the hand: a flared base, a slim shaft flat on the palm side and bowed to the
+    // back, and a head: rounded (palm bones), two small knuckles with a groove (finger bones), or
+    // the flat spade that carries the nail (fingertips)
+    const longBone = (out, p, D, Nb, l, w, kind) => {
+      const X = norm(cross(D, Nb)), at = (u, x = 0, c = 0) => add(add(add(p, mul(D, u)), mul(X, x)), mul(Nb, c));
+      if (kind === 'meta') out.push(bell(at(l * 0.1, 0, 0.0002), D, Nb, [w * 1.25, l * 0.12, w * 1.2]));
+      else out.push(bell(at(w * 0.6, 0, -w * 0.05), D, Nb, [w * 1.12, w * 0.75, w * 0.92]));
+      out.push(bell(at(l * 0.5, 0, w * 0.08), D, Nb, [w * 0.9, l * 0.47, w * 0.72], 0.0028));
+      if (kind === 'meta') out.push(bell(at(l - w * 1.0, 0, -w * 0.12), D, Nb, [w * 1.0, w * 1.1, w * 1.2], 0.0028));
+      else if (kind === 'tip') {
+        out.push(bell(at(l - w * 0.55, 0, w * 0.05), D, Nb, [w * 0.9, w * 0.55, w * 0.42], 0.0012));
+        out.push(bell(at(l - w * 0.75, 0, -w * 0.25), D, Nb, [w * 0.55, w * 0.45, w * 0.3], 0.0012));
+      } else for (const k of [-1, 1]) out.push(bell(at(l - w * 0.6, k * w * 0.4, -w * 0.06), D, Nb, [w * 0.52, w * 0.62, w * 0.72], 0.0022));
     };
-    for (const [i, [, z0, ml, ph, r]] of FING.entries()) {
-      const b = [s * 0.121, 0.42, z0 * 0.85];
-      const spread = (i - 1.3) * 0.05;
-      let d = norm([-s * 0.05, -1, spread]);
-      const hd = add(b, mul(d, ml));
-      ha.push(ell(b, [r * 1.1, r * 1.2, r * 1.15], { blend: 0.001 }));
-      ha.push(cone(b, hd, r * 0.75, r * 0.7, { blend: 0.001 }));
-      ha.push(ell(hd, [r * 1.05, r * 1.15, r * 1.05], { blend: 0.001 }));
-      let p = add(hd, mul(d, r * 0.9));
+    const ha = part(side + 'Carpals', side + 'Hand', 'bone', 0.0008);
+    // the wrist: two rows of four small bones, set in an arch (the palm side is hollow)
+    const tilt = (a) => [norm(add(mul(U, Math.cos(a)), mul(V, Math.sin(a)))), N];
+    for (const [c, r, a] of [
+      [P(0.008, 0.009, -0.001), [0.0042, 0.0062, 0.0038], 0.6],    // scaphoid (boat-shaped, under the thumb)
+      [P(0.0072, 0.0002, 0.0002), [0.0038, 0.0045, 0.0044], 0],    // lunate (half-moon)
+      [P(0.0092, -0.0083, 0.0), [0.0034, 0.0043, 0.0036], -0.3],   // triquetrum
+      [P(0.0102, -0.0092, -0.0048), [0.0026, 0.003, 0.0026], 0],   // pisiform (the pea on the palm side)
+      [P(0.0182, 0.0128, -0.0028), [0.0042, 0.0042, 0.0038], 0.45], // trapezium (the thumb's saddle)
+      [P(0.0178, 0.0058, 0.0002), [0.0031, 0.0042, 0.0036], 0.1],  // trapezoid
+      [P(0.0162, -0.0004, 0.0001), [0.0037, 0.0066, 0.0043], 0],   // capitate (the biggest, in the middle)
+      [P(0.0175, -0.0079, -0.0006), [0.0037, 0.0055, 0.0038], -0.15], // hamate
+    ]) { const [D, Nb] = tilt(a); ha.push(bell(c, D, Nb, r.map((v) => v * 1.1), 0.0006)); }
+    ha.push(bell(P(0.0195, -0.0086, -0.0054), U, N, [0.0017, 0.0026, 0.0022], 0.0015)); // the hamate's hook
+    // the four fingers: palm bone (metacarpal) from the wrist, then three finger bones (phalanges).
+    // Goblin fingers are long; the middle finger is the longest, the little finger the shortest.
+    const FING = [
+      // name, metacarpal base [a, b], head [a, b, c], width, phalanx lengths, spread, curl at each joint
+      ['Index', [0.023, 0.006], [0.0705, 0.0105, -0.0005], 0.0029, [0.029, 0.017, 0.0135], 0.05, [0.12, 0.25, 0.15]],
+      ['Middle', [0.0225, -0.0003], [0.0715, 0.0032, 0.0], 0.003, [0.032, 0.02, 0.0145], 0, [0.15, 0.28, 0.17]],
+      ['Ring', [0.0225, -0.0062], [0.068, -0.0045, -0.0008], 0.0027, [0.03, 0.019, 0.014], -0.04, [0.2, 0.32, 0.2]],
+      ['Little', [0.0225, -0.0098], [0.0625, -0.0115, -0.0025], 0.0025, [0.024, 0.014, 0.0125], -0.1, [0.26, 0.38, 0.24]],
+    ];
+    const gap = 0.0013;
+    for (const [i, [name, b0, h0, w, ph, spread, curls]] of FING.entries()) {
+      const base = P(b0[0], b0[1], 0), head = P(...h0);
+      // the back of the hand curves: the outer fingers lean toward the palm
+      const roll = (i - 1) * 0.12 * (i > 1 ? 1.4 : 1);
+      let D = norm(sub(head, base)), Nb = norm(add(mul(N, Math.cos(roll)), mul(V, -Math.sin(roll))));
+      Nb = norm(sub(Nb, mul(D, D[0] * Nb[0] + D[1] * Nb[1] + D[2] * Nb[2])));
+      const mc = part(side + name + 'Metacarpal', side + 'Hand', 'bone', 0.0008);
+      longBone(mc, base, D, Nb, len(sub(head, base)) + w * 0.4, w * 1.05, 'meta');
+      let p = add(head, mul(D, w * 0.4 + gap));
+      D = spreadBy(D, Nb, spread);
+      let parent = side + 'Hand';
       for (const [j, l] of ph.entries()) {
-        d = curl(d, 0.16 + j * 0.06);
-        const q = add(p, mul(d, l));
-        const rr = r * (0.88 - j * 0.12);
-        ha.push(cone(add(p, mul(d, 0.0012)), add(q, mul(d, -0.0009)), rr, rr * (j === 2 ? 0.6 : 0.8), { blend: 0.001 }));
-        if (j < 2) ha.push(ell(q, [rr * 1.0, rr * 0.9, rr * 1.0], { blend: 0.0008 }));
-        else ha.push(ell(add(q, mul(d, -0.001)), [rr * 0.7, rr * 0.8, rr * 0.75], { blend: 0.001 })); // the flat tuft under the nail
-        p = add(q, mul(d, 0.0012));
+        [D, Nb] = turn(D, Nb, curls[j]);
+        const jn = side + name + ['Proximal', 'Intermediate', 'Distal'][j];
+        joint(jn, parent, p); parent = jn;
+        const fb = part(jn, jn, 'bone', 0.0007);
+        const ww = w * [0.95, 0.8, 0.7][j];
+        longBone(fb, p, D, Nb, l, ww, j === 2 ? 'tip' : 'mid');
+        p = add(p, mul(D, l + gap));
       }
     }
-    // the thumb: its metacarpal from the wrist's thumb side, angled forward and in, two bones
+    // the thumb: a short, thick metacarpal off the saddle of the trapezium, set in front of the palm
+    // and turned so its nail faces sideways, then two bones; two pea-sized sesamoids under its knuckle
     {
-      const b = [s * 0.12, 0.426, 0.018];
-      let d = norm([-s * 0.28, -0.88, 0.36]);
-      const r = 0.0045;
-      const hd = add(b, mul(d, 0.032));
-      ha.push(ell(b, [r * 1.2, r * 1.2, r * 1.2], { blend: 0.001 }));
-      ha.push(cone(b, hd, r * 0.8, r * 0.75, { blend: 0.001 }));
-      ha.push(ell(hd, [r * 1.05, r * 1.1, r * 1.05], { blend: 0.001 }));
-      let p = add(hd, mul(d, r * 0.9));
-      for (const [j, l] of [0.022, 0.017].entries()) {
-        d = norm(add(d, [-s * 0.12, -0.05, -0.08]));
-        const q = add(p, mul(d, l));
-        const rr = r * (0.9 - j * 0.15);
-        ha.push(cone(add(p, mul(d, 0.0012)), add(q, mul(d, -0.0009)), rr, rr * (j ? 0.6 : 0.8), { blend: 0.001 }));
-        if (!j) ha.push(ell(q, [rr, rr * 0.9, rr], { blend: 0.0008 }));
-        p = add(q, mul(d, 0.0012));
+      let D = norm(add(add(mul(U, 0.9), mul(V, 0.22)), mul(N, -0.36)));
+      let Nb = norm(add(mul(V, 0.55), mul(N, 0.6)));
+      Nb = norm(sub(Nb, mul(D, D[0] * Nb[0] + D[1] * Nb[1] + D[2] * Nb[2])));
+      const base = P(0.0215, 0.0145, -0.0052), w = 0.0037, l = 0.03;
+      const mc = part(side + 'ThumbMetacarpal', side + 'Hand', 'bone', 0.0008);
+      joint(side + 'ThumbMetacarpal', side + 'Hand', base);
+      longBone(mc, base, D, Nb, l, w, 'meta');
+      const X = norm(cross(D, Nb));
+      for (const k of [-1, 1]) mc.push(ell(add(add(add(base, mul(D, l - w * 0.9)), mul(Nb, -w * 1.25)), mul(X, k * w * 0.55)), [0.0014, 0.0016, 0.0014], { blend: 0.0005 }));
+      let p = add(base, mul(D, l + gap));
+      let parent = side + 'ThumbMetacarpal';
+      for (const [j, [l2, c]] of [[0.022, 0.12], [0.0175, 0.22]].entries()) {
+        [D, Nb] = turn(D, Nb, c);
+        const jn = side + 'Thumb' + ['Proximal', 'Distal'][j];
+        joint(jn, parent, p); parent = jn;
+        const fb = part(jn, jn, 'bone', 0.0007);
+        longBone(fb, p, D, Nb, l2, w * [0.9, 0.82][j], j ? 'tip' : 'mid');
+        p = add(p, mul(D, l2 + gap));
       }
     }
   }

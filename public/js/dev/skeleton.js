@@ -71,4 +71,6 @@ function view(side = 'front', frame = null) {
   key.position.copy(cam.position).add(new THREE.Vector3(1.2, 2, 0).applyQuaternion(cam.quaternion));
   renderer.render(scene, cam);
 }
-window.__skel = { build, view, get skel() { return skel; } };
+// only: show just the meshes whose names match (a RegExp source), or everything when empty
+function only(re) { const r = re ? new RegExp(re) : null; skel.root.traverse((o) => { if (o.isMesh) o.visible = !r || r.test(o.name); }); grid.visible = !r; }
+window.__skel = { build, view, only, get skel() { return skel; } };
