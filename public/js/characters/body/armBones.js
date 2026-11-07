@@ -189,7 +189,30 @@ export function armBones(s, { shJ, elJ, wrJ }) {
   ra.push(ell(X(0.1198, 0.4472, -0.015), [0.0062, 0.0058, 0.0062], { sub: true, blend: 0.0012 }));
   ra.push(ellA(X(0.1222, 0.4374, 0.0042), [0, 0.25, 1], [0.0056, 0.0105, 0.0042], 0, { sub: true, blend: 0.0015 }));
 
-  return { humerus: hu, ulna: ul, radius: ra, radialHead: rh };
+  // ---- the cartilage on the joint surfaces (smooth, glassy, about a millimetre thick) ----
+  const huC = [], ulC = [], raC = [];
+  const grow = (q, g) => (q.kind === 'sweep' ? { ...q, stations: q.stations.map((t) => ({ ...t, r: t.r.map((v) => v + g) })), sub: false }
+    : q.kind === 'cone' ? { ...q, ra: q.ra + g, rb: q.rb + g, sub: false } : { ...q, r: q.r.map((v) => v + g), sub: false });
+  // the ball of the shoulder: a cap over the head only (cut away where the tubercles start)
+  huC.push(grow(hu[0], 0.0008));
+  const ax = [s, -0.75, 0.35], al = Math.hypot(...ax);
+  huC.push(ell([shJ[0] + ax[0] / al * 0.0185, shJ[1] + ax[1] / al * 0.0185, shJ[2] + ax[2] / al * 0.0185], [0.0175, 0.0175, 0.0175], { sub: true, blend: 0.002 }));
+  // the spool and the half ball at the elbow
+  const spool = hu.find((q) => q.kind === 'sweep' && q.lat[1] === 1);
+  huC.push(grow(spool, 0.0007), grow(hu.find((q) => q.kind === 'ell' && q.c[0] === s * 0.1295 && !q.sub), 0.0007));
+  huC.push(ell(X(0.118, ex + 0.0125, ez - 0.0005), [0.016, 0.0085, 0.012], { sub: true, blend: 0.002 })); // (only below the fossae)
+  // the lining of the ulna's half-moon notch: the spool's shape, a hair bigger, its front cut away
+  const notch = ul.find((q) => q.sub && q.kind === 'sweep');
+  ulC.push(grow(notch, 0.0006), { ...notch, stations: notch.stations.map((t) => ({ ...t, r: t.r.map((v) => v - 0.0002) })) });
+  ulC.push(ell([s * 0.114, ex + 0.0115 * 0.77, ez + 0.0115 * 0.64], [0.012, 0.0118, 0.0118], { sub: true, blend: 0.001 }));
+  ulC.push(ell(X(0.114, ex - 0.0005, ez - 0.0175), [0.012, 0.0125, 0.0085], { sub: true, blend: 0.001 })); // (not past the notch's back)
+  // the radius's head: its cup and rim
+  raC.push({ ...ra[0], ra: ra[0].ra + 0.0006, rb: ra[0].rb + 0.0006, blend: 0.001 });
+  raC.push(ell(X(0.1295, ex, ez + 0.0004), [0.0068, 0.007, 0.007], { sub: true, blend: 0.0008 }));
+  // the ulna's head at the wrist
+  ulC.push(ell(X(0.1198, 0.4472, -0.015), [0.006, 0.0058, 0.006], { blend: 0.001 }));
+  ulC.push(ell(X(0.1198, 0.4502, -0.017), [0.007, 0.004, 0.0062], { sub: true, blend: 0.001 }));
+  return { humerus: hu, ulna: ul, radius: ra, radialHead: rh, cart: { humerus: huC, ulna: ulC, radius: raC } };
 }
 
 // The shoulder girdle: the collarbone (clavicle) and the shoulder blade (scapula), for the body's
@@ -269,5 +292,21 @@ export function shoulderGirdle(s, { shJ }) {
   // the coracoid: a bent finger from the top of the neck, up, then forward and out
   tubeS(sc, [X(0.081, 0.8165, -0.045), X(0.0835, 0.8262, -0.034), X(0.0872, 0.8285, -0.018), X(0.0925, 0.8245, -0.002), X(0.0952, 0.8215, 0.004)], 0.0042, 0.0026);
   sc.push(ell(X(0.0952, 0.8212, 0.0045), [0.003, 0.0027, 0.0032], { blend: 0.0025 }));
-  return { clavicle: cl, scapula: sc };
+  // the cartilage of the socket, and the ring of gristle round its rim (the labrum) that deepens it
+  const scC = [];
+  const g = [s * 0.0955, 0.803, -0.0222], n = [s * 0.94, 0, 0.34];
+  scC.push(ellA(g, [0, 1, 0], [0.0022, 0.0098, 0.0072], 0, { m: (() => { const e1 = [0, 1, 0], e2 = [n[1] * e1[2] - n[2] * e1[1], n[2] * e1[0] - n[0] * e1[2], n[0] * e1[1] - n[1] * e1[0]]; return [...n, ...e1, ...e2]; })(), blend: 0.001 }));
+  scC[0].r = [0.003, 0.0098, 0.0072];
+  scC.push(ell(shJ, [0.0151, 0.0151, 0.0151], { sub: true, blend: 0.0006 }));
+  const e1 = [0, 1, 0], e2 = [n[1] * e1[2] - n[2] * e1[1], n[2] * e1[0] - n[0] * e1[2], n[0] * e1[1] - n[1] * e1[0]];
+  const rim = [];
+  for (let i = 0; i <= 24; i++) {
+    const a = (i / 24) * 2 * Math.PI, ry = Math.sin(a) > 0 ? 0.0098 : 0.0105, rz = Math.cos(a) * Math.sin(a) < 0 ? 0.0068 : 0.0078;
+    let p = [g[0] + e1[0] * Math.sin(a) * ry + e2[0] * Math.cos(a) * rz, g[1] + e1[1] * Math.sin(a) * ry + e2[1] * Math.cos(a) * rz, g[2] + e1[2] * Math.sin(a) * ry + e2[2] * Math.cos(a) * rz];
+    const d = [p[0] - shJ[0], p[1] - shJ[1], p[2] - shJ[2]], l = Math.hypot(...d);
+    p = [shJ[0] + d[0] / l * 0.0166, shJ[1] + d[1] / l * 0.0166, shJ[2] + d[2] / l * 0.0166];
+    rim.push({ p, r: [0.0016, 0.0012, 0.0016, 0.0012], lat: d.map((v) => v / l) });
+  }
+  scC.push(sweep(rim, { front: n, steps: 3, blend: 0.0012, labrum: true }));
+  return { clavicle: cl, scapula: sc, cart: { scapula: scC } };
 }

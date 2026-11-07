@@ -6,6 +6,7 @@ import { shapeBox } from '../characters/body/sdf.js';
 import { goblinSkeleton } from '../characters/body/skeleton.js';
 import { goblinMuscles } from '../characters/body/muscles.js';
 import { goblinVessels } from '../characters/body/veins.js';
+import { goblinArmJoints } from '../characters/body/joints.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -26,19 +27,21 @@ const MATS = {
   tendon: new THREE.MeshStandardMaterial({ color: '#e9e4da', roughness: 0.3 }),
   artery: new THREE.MeshStandardMaterial({ color: '#d02a2e', roughness: 0.32, emissive: '#3a0606' }),
   vein: new THREE.MeshStandardMaterial({ color: '#3d62c4', roughness: 0.32, emissive: '#060c26' }),
+  capsule: new THREE.MeshStandardMaterial({ color: '#efe9dc', roughness: 0.35, transparent: true, opacity: 0.32, depthWrite: false }),
 };
 const grid = new THREE.GridHelper(2, 20, '#55555c', '#3a3a40'); scene.add(grid);
 
 let skel = null;
 // withMuscles: lay the muscles on; withVessels: the blood vessels (they need the muscles to lie on,
 // which are then built whether shown or not); pose: joint angles to use instead of the stance
-function build(make = goblinSkeleton, posed = true, withMuscles = false, withVessels = false, pose = null) {
+function build(make = goblinSkeleton, posed = true, withMuscles = false, withVessels = false, pose = null, withJoints = true) {
   if (skel) scene.remove(skel.root);
   const S = make(), t0 = performance.now();
   if (pose) S.pose = { ...S.pose, ...pose };
   const mus = withMuscles || withVessels ? goblinMuscles(S, { posed }) : [];
   if (withVessels) S.parts.push(...goblinVessels(S, mus, { posed }));
   if (withMuscles) S.parts.push(...mus);
+  if (withJoints) S.parts.push(...goblinArmJoints(S, { posed }));
   const nodes = {}, root = new THREE.Group();
   for (const j of S.joints) {
     const o = new THREE.Object3D(); o.name = j.name;

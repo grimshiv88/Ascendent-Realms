@@ -210,6 +210,7 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
     const SG = shoulderGirdle(s, { shJ: [s * 0.111, 0.806, -0.018] });
     part(side + 'Shoulder', side + 'Shoulder', 'bone', 0.0007).push(...SG.clavicle);
     part(side + 'Scapula', side + 'Shoulder', 'bone', 0.0005).push(...SG.scapula);
+    part(side + 'ShoulderSocketCartilage', side + 'Shoulder', 'cartilage', 0.0005).push(...SG.cart.scapula);
   }
 
   // ---- the pelvis: hip bones joined at the back to the sacrum ----
@@ -334,6 +335,9 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
     part(side + 'Humerus', side + 'UpperArm', 'bone', 0.0007).push(...AB.humerus);
     part(side + 'Ulna', side + 'LowerArm', 'bone', 0.0007).push(...AB.ulna);
     part(side + 'Radius', side + 'LowerArm', 'bone', 0.0007).push(...AB.radius);
+    part(side + 'HumerusCartilage', side + 'UpperArm', 'cartilage', 0.0005).push(...AB.cart.humerus);
+    part(side + 'UlnaCartilage', side + 'LowerArm', 'cartilage', 0.0005).push(...AB.cart.ulna);
+    part(side + 'RadiusCartilage', side + 'LowerArm', 'cartilage', 0.0005).push(...AB.cart.radius);
     // ---- the hand, bone by bone ----
     // Built in the hand's own frame: U down the hand (toward the fingertips), V across the palm
     // toward the thumb, N out of the back of the hand (the palm faces the thigh, so the palm is -N).
