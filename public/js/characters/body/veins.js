@@ -5,7 +5,7 @@
 // Every point of a vessel is fixed to a bone, so in any pose the vessels bend at the joints, and
 // the surface veins are then laid back down onto the muscles as they are in that pose, so they
 // slide over them as the body moves. Plain numbers and arrays only (no three.js).
-import { cone, ell, alongDir, shapeDist, shapeBox } from './sdf.js';
+import { cone, ell, alongDir, shapeDist, shapeBox, mapShape } from './sdf.js';
 import { poseRig } from './muscles.js';
 
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -38,15 +38,7 @@ function surfaceOf(S, J, muscleParts) {
     if (p.mat !== 'bone' || !p.joint) continue;
     const q = J[p.joint], R = q.R, RT = [R[0], R[3], R[6], R[1], R[4], R[7], R[2], R[5], R[8]];
     const P = (x) => add(q.p, [R[0] * (x[0] - q.rest[0]) + R[1] * (x[1] - q.rest[1]) + R[2] * (x[2] - q.rest[2]), R[3] * (x[0] - q.rest[0]) + R[4] * (x[1] - q.rest[1]) + R[5] * (x[2] - q.rest[2]), R[6] * (x[0] - q.rest[0]) + R[7] * (x[1] - q.rest[1]) + R[8] * (x[2] - q.rest[2])]);
-    for (const s of p.shapes) {
-      if (s.sub) continue;
-      if (s.kind === 'cone') shapes.push({ kind: 'cone', a: P(s.a), b: P(s.b), ra: s.ra, rb: s.rb, blend: 0 });
-      else if (s.kind === 'ell') {
-        const m = s.m || [1, 0, 0, 0, 1, 0, 0, 0, 1], M = new Array(9);
-        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) M[i * 3 + j] = m[i * 3] * RT[j] + m[i * 3 + 1] * RT[3 + j] + m[i * 3 + 2] * RT[6 + j];
-        shapes.push({ kind: 'ell', c: P(s.c), r: s.r, m: M, blend: 0 });
-      }
-    }
+    for (const s of p.shapes) if (!s.sub) shapes.push({ ...mapShape(s, P, R), blend: 0 });
   }
   for (const p of muscleParts) for (const s of p.shapes) if (!s.sub) shapes.push({ ...s, blend: 0 });
   const G = 0.02, grid = new Map(), key = (i, j, k) => i + ',' + j + ',' + k;

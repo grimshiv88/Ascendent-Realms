@@ -5,7 +5,8 @@
 // body's left at +x; a pose then bends it into the creature's own stance.
 // Plain numbers and arrays only (no three.js). The first creature is the newborn goblin; the
 // later goblin stages and the other races will grow from it.
-import { cone, ell, alongDir, norm } from './sdf.js';
+import { cone, ell, sweep, alongDir, norm, mapShape } from './sdf.js';
+import { armBones, shoulderGirdle } from './armBones.js';
 
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -205,23 +206,10 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
   for (const s of [-1, 1]) {
     const side = s > 0 ? 'left' : 'right';
     joint(side + 'Shoulder', 'upperChest', [s * 0.013, 0.818, 0.04]);
-    const sh = part(side + 'Shoulder', side + 'Shoulder');
-    // the collarbone: an S, bowed forward near the breastbone and backward near the shoulder
-    tube(sh, [[s * 0.016, 0.818, 0.042], [s * 0.045, 0.825, 0.047], [s * 0.078, 0.831, 0.026], [s * 0.1, 0.835, -0.004]], 0.0052, 0.0042, {}, 5);
-    sh.push(ell([s * 0.016, 0.818, 0.042], [0.0055, 0.006, 0.0055], { blend: 0.002 }));
-    // the shoulder blade: a thin triangle lying on the back of the ribs
-    const sup = [s * 0.04, 0.828, -0.062], inf = [s * 0.06, 0.716, -0.07], glen = [s * 0.098, 0.806, -0.022];
-    const med = (t) => bez(sup, [s * 0.034, 0.78, -0.084], inf, t);
-    tube(sh, [sup, med(0.5), inf], 0.0028, 0.0035);                   // the inner edge
-    tube(sh, [inf, [s * 0.082, 0.758, -0.052], [s * 0.093, 0.79, -0.032], glen], 0.0035, 0.0045); // the outer edge
-    tube(sh, [sup, [s * 0.07, 0.818, -0.048], [s * 0.09, 0.812, -0.032]], 0.0026, 0.0035); // the top edge
-    for (let i = 1; i < 20; i++) sh.push(cone(med(i / 20), lerp(glen, [s * 0.088, 0.79, -0.034], 0.6), 0.0022, 0.003, { blend: 0.006 })); // the blade
-    // the spine of the shoulder blade, rising to the point of the shoulder (acromion)
-    tube(sh, [[s * 0.036, 0.8, -0.083], [s * 0.065, 0.81, -0.08], [s * 0.092, 0.825, -0.05], [s * 0.104, 0.835, -0.018]], 0.0028, 0.0042);
-    sh.push(ell([s * 0.106, 0.837, -0.012], [0.009, 0.0035, 0.011], { blend: 0.003 }));
-    // the shallow socket the arm turns in, and the hooked beak in front of it (coracoid)
-    sh.push(ellAlong([s * 0.097, 0.806, -0.02], [0, 1, 0.2], [0.0045, 0.011, 0.0075], 0, { blend: 0.003 }));
-    tube(sh, [[s * 0.088, 0.814, -0.026], [s * 0.088, 0.826, -0.006], [s * 0.094, 0.822, 0.01]], 0.0038, 0.0025);
+    // the collarbone and the shoulder blade (armBones.js)
+    const SG = shoulderGirdle(s, { shJ: [s * 0.111, 0.806, -0.018] });
+    part(side + 'Shoulder', side + 'Shoulder', 'bone', 0.0007).push(...SG.clavicle);
+    part(side + 'Scapula', side + 'Shoulder', 'bone', 0.0005).push(...SG.scapula);
   }
 
   // ---- the pelvis: hip bones joined at the back to the sacrum ----
@@ -341,27 +329,11 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
     joint(side + 'UpperArm', side + 'Shoulder', shJ);
     joint(side + 'LowerArm', side + 'UpperArm', elJ);
     joint(side + 'Hand', side + 'LowerArm', wrJ);
-    // upper arm bone (humerus): a round head facing in to the socket, a long thin shaft, and a
-    // broad lower end with a knob each side (the "funny bone" inside)
-    const hu = part(side + 'Humerus', side + 'UpperArm');
-    hu.push(ell(add(shJ, [-s * 0.002, 0.002, -0.002]), [0.0138, 0.0145, 0.0138], { blend: 0.002 }));
-    hu.push(ell([s * 0.122, 0.806, -0.006], [0.008, 0.011, 0.0085], { blend: 0.005 }));
-    tube(hu, [[s * 0.117, 0.796, -0.014], [s * 0.123, 0.74, -0.014], [s * 0.124, 0.66, -0.016], [s * 0.122, 0.628, -0.016]], (t) => 0.0082 - 0.0014 * Math.sin(t * Math.PI) + (t > 0.8 ? (t - 0.8) * 0.03 : 0), 0, { blend: 0.004 });
-    hu.push(ellAlong([s * 0.122, 0.62, -0.012], [1, 0, 0], [0.0075, 0.016, 0.0085], 0, { blend: 0.004 }));
-    hu.push(ell([s * 0.103, 0.623, -0.016], [0.0065, 0.006, 0.0055], { blend: 0.004 }));
-    hu.push(ell([s * 0.139, 0.625, -0.015], [0.005, 0.006, 0.005], { blend: 0.004 }));
-    // forearm: the ulna (little-finger side, its hook the point of the elbow) and the radius
-    // (thumb side, thin at the elbow, broad at the wrist); with palms facing the thighs the thumb
-    // side is in front
-    const ul = part(side + 'Ulna', side + 'LowerArm');
-    ul.push(ell([s * 0.118, 0.618, -0.03], [0.0072, 0.012, 0.0072], { blend: 0.003 }));
-    ul.push(ell([s * 0.118, 0.607, -0.022], [0.007, 0.007, 0.006], { blend: 0.004 }));
-    tube(ul, [[s * 0.118, 0.605, -0.025], [s * 0.118, 0.54, -0.022], [s * 0.119, 0.47, -0.017], [s * 0.12, 0.452, -0.015]], 0.0068, 0.004, { blend: 0.003 });
-    ul.push(ell([s * 0.12, 0.4465, -0.015], [0.0055, 0.006, 0.0055], { blend: 0.003 }));
-    const ra = part(side + 'Radius', side + 'LowerArm');
-    ra.push(cone([s * 0.134, 0.609, -0.006], [s * 0.134, 0.6, -0.006], 0.0068, 0.0068, { blend: 0.002 }));
-    tube(ra, [[s * 0.134, 0.598, -0.006], [s * 0.132, 0.55, 0.0], [s * 0.126, 0.49, 0.006], [s * 0.123, 0.457, 0.007]], (t) => 0.004 + t * t * 0.004, 0, { blend: 0.003 });
-    ra.push(ellAlong([s * 0.122, 0.4495, 0.004], [0, 0, 1], [0.0085, 0.013, 0.006], 0, { blend: 0.004 }));
+    // the upper arm bone and the two forearm bones, shaped bone by bone (armBones.js)
+    const AB = armBones(s, { shJ, elJ, wrJ });
+    part(side + 'Humerus', side + 'UpperArm', 'bone', 0.0007).push(...AB.humerus);
+    part(side + 'Ulna', side + 'LowerArm', 'bone', 0.0007).push(...AB.ulna);
+    part(side + 'Radius', side + 'LowerArm', 'bone', 0.0007).push(...AB.radius);
     // ---- the hand, bone by bone ----
     // Built in the hand's own frame: U down the hand (toward the fingertips), V across the palm
     // toward the thumb, N out of the back of the hand (the palm faces the thigh, so the palm is -N).
@@ -651,10 +623,7 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
   for (const j of joints) j.pos = P3(j.pos);
   for (const p of parts) {
     p.cell *= k;
-    for (const q of p.shapes) {
-      q.blend *= k;
-      if (q.kind === 'cone') { q.a = P3(q.a); q.b = P3(q.b); q.ra *= k; q.rb *= k; } else { q.c = P3(q.c); q.r = q.r.map((v) => v * k); }
-    }
+    p.shapes = p.shapes.map((q) => mapShape(q, P3, null, k));
   }
   return { name: 'Goblin (newborn)', height, scale: k, joints, parts, pose };
 }
