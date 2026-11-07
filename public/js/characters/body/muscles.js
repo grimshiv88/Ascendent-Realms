@@ -34,20 +34,27 @@ function spline(pts, steps) {
   return out;
 }
 
-const FULL = 1.38;
-
-export function goblinMuscles(S, { posed = true } = {}) {
-  const k = S.scale;
-  // forward kinematics: each joint's world rotation and position in the pose
-  const J = {};
+// Forward kinematics for a skeleton (skeleton.js) in its pose (or at rest): each joint's world
+// rotation R (row-major 3x3) and position p, and `at(joint, point)` that carries a point given at
+// rest on that joint (in the skeleton's drawing units, before scaling) into the pose.
+export function poseRig(S, posed = true) {
+  const k = S.scale, J = {};
   for (const j of S.joints) {
     const R0 = posed && S.pose[j.name] ? eulerM(S.pose[j.name]) : [1, 0, 0, 0, 1, 0, 0, 0, 1];
     if (!j.parent) { J[j.name] = { R: R0, p: j.pos, rest: j.pos }; continue; }
     const P = J[j.parent];
     J[j.name] = { R: mm(P.R, R0), p: add(P.p, mv(P.R, sub(j.pos, P.rest))), rest: j.pos };
   }
-  // a point given at rest (in the skeleton's drawing units, before scaling) on joint jn, posed
   const at = (jn, p) => { const q = J[jn]; return add(q.p, mv(q.R, sub(mul(p, k), q.rest))); };
+  const atScaled = (jn, p) => { const q = J[jn]; return add(q.p, mv(q.R, sub(p, q.rest))); }; // p already scaled
+  return { J, at, atScaled, k };
+}
+
+const FULL = 1.38;
+
+export function goblinMuscles(S, { posed = true } = {}) {
+  const k = S.scale;
+  const { at } = poseRig(S, posed);
   const H0 = [0, 0.922, -0.036];
   const hd = (x, y, z) => [H0[0] + x, H0[1] + y, H0[2] + z];
 
