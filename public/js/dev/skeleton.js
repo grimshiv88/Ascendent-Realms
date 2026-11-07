@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { meshField } from '../characters/body/mesher.js';
 import { shapeBox } from '../characters/body/sdf.js';
 import { goblinSkeleton } from '../characters/body/skeleton.js';
+import { goblinMuscles } from '../characters/body/muscles.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -20,13 +21,16 @@ const MATS = {
   bone: new THREE.MeshStandardMaterial({ color: '#e8dcc2', roughness: 0.62 }),
   cartilage: new THREE.MeshStandardMaterial({ color: '#a9c3d4', roughness: 0.4, transparent: true, opacity: 0.85 }),
   tooth: new THREE.MeshStandardMaterial({ color: '#fbf7ec', roughness: 0.3 }),
+  muscle: new THREE.MeshStandardMaterial({ color: '#b5453a', roughness: 0.48 }),
+  tendon: new THREE.MeshStandardMaterial({ color: '#e9e4da', roughness: 0.3 }),
 };
 const grid = new THREE.GridHelper(2, 20, '#55555c', '#3a3a40'); scene.add(grid);
 
 let skel = null;
-function build(make = goblinSkeleton, posed = true) {
+function build(make = goblinSkeleton, posed = true, withMuscles = false) {
   if (skel) scene.remove(skel.root);
   const S = make(), t0 = performance.now();
+  if (withMuscles) S.parts.push(...goblinMuscles(S, { posed }));
   const nodes = {}, root = new THREE.Group();
   for (const j of S.joints) {
     const o = new THREE.Object3D(); o.name = j.name;
@@ -37,6 +41,7 @@ function build(make = goblinSkeleton, posed = true) {
   }
   let tris = 0;
   for (const p of S.parts) {
+    if (!p.shapes.length) continue;
     const box = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9];
     for (const s of p.shapes) if (!s.sub) { const b = shapeBox(s); for (let i = 0; i < 3; i++) { box[i] = Math.min(box[i], b[i]); box[i + 3] = Math.max(box[i + 3], b[i + 3]); } }
     const m = meshField(p.shapes, box, p.cell);
@@ -44,11 +49,11 @@ function build(make = goblinSkeleton, posed = true) {
     g.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(m.normals, 3));
     g.setIndex(new THREE.BufferAttribute(m.indices, 1));
-    const jp = S.joints.find((q) => q.name === p.joint).pos;
-    g.translate(-jp[0], -jp[1], -jp[2]);
+    const jp = p.joint ? S.joints.find((q) => q.name === p.joint).pos : null;
+    if (jp) g.translate(-jp[0], -jp[1], -jp[2]);
     tris += m.indices.length / 3;
     const mesh = new THREE.Mesh(g, MATS[p.mat]); mesh.name = p.name;
-    nodes[p.joint].add(mesh);
+    (p.joint ? nodes[p.joint] : root).add(mesh);
   }
   scene.add(root); root.updateMatrixWorld(true);
   const bb = new THREE.Box3().setFromObject(root);

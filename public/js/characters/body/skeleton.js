@@ -141,6 +141,7 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
   const DROP = [0.01, 0.026, 0.037, 0.044, 0.05, 0.054, 0.057, 0.058, 0.057, 0.053, 0.034, 0.024];
   const STERN = [0.812, 0.797, 0.781, 0.764, 0.747, 0.73, 0.714]; // where ribs 1-7 meet the breastbone
   const rib7end = [];
+  const ribPath = { [-1]: [], [1]: [] }; // each rib's bony curve, to lay the muscles between the ribs
   for (let k = 1; k <= 12; k++) {
     const v = tv(k), a = RW[k - 1], y = v[1], zk = v[2], d = DROP[k - 1];
     const ye = y - d, fz = front(Math.max(sternumBot, ye));
@@ -154,7 +155,9 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
       if (k <= 10) {
         const fl = [s * a * 0.8, y - d * 0.8, zc + (fz - zc) * 0.62];
         const end = [s * a * (k <= 7 ? 0.48 : 0.62), ye, fz - 0.006 - (k > 7 ? 0.012 : 0)];
-        tube(ribs, k === 1 ? [head, tub, [s * a * 0.8, y - 0.003, zk - 0.008], [s * a, y - d * 0.5, zc], end] : [head, tub, ang, side, fl, end], r, r * 1.1);
+        const rp = k === 1 ? [head, tub, [s * a * 0.8, y - 0.003, zk - 0.008], [s * a, y - d * 0.5, zc], end] : [head, tub, ang, side, fl, end];
+        tube(ribs, rp, r, r * 1.1);
+        ribPath[s][k] = spline(rp, 6);
         // the cartilage that joins the rib to the breastbone (ribs 1-7) or to the cartilage above (8-10)
         if (k <= 7) {
           const sy = STERN[k - 1];
@@ -170,8 +173,20 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
         // floating ribs: short, ending in the side of the belly
         const end = [s * a * 0.88, y - d, zc + 0.022];
         tube(ribs, [head, tub, ang, side, end], r, r * 0.9);
+        ribPath[s][k] = spline([head, tub, ang, side, end], 6);
         tube(cart, [end, add(end, [0, -0.004, 0.008])], r * 0.9, r * 0.5);
       }
+    }
+  }
+  // the muscles between the ribs (intercostals): a thin sheet filling each gap
+  {
+    const ic = part('intercostals', 'chest', 'muscle', 0.0014);
+    for (const s of [-1, 1]) for (let k = 1; k < 12; k++) {
+      const A = ribPath[s][k], Bp = ribPath[s][k + 1], n = Math.min(A.length, Bp.length);
+      const pts = [];
+      for (let i = 1; i < n; i++) pts.push(lerp(A[Math.round(i * (A.length - 1) / (n - 1))], Bp[Math.round(i * (Bp.length - 1) / (n - 1))], 0.5));
+      const gap = len(sub(A[Math.floor(A.length / 2)], Bp[Math.floor(Bp.length / 2)]));
+      for (let i = 0; i < pts.length - 1; i++) ic.push(cone(pts[i], pts[i + 1], Math.min(0.0065, gap * 0.42), Math.min(0.0065, gap * 0.42), { blend: i ? 0.0006 : 0.002 }));
     }
   }
   // the breastbone: a broad top (manubrium) where the collarbones meet it, a long blade, a small tip
@@ -576,5 +591,5 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
       if (q.kind === 'cone') { q.a = P3(q.a); q.b = P3(q.b); q.ra *= k; q.rb *= k; } else { q.c = P3(q.c); q.r = q.r.map((v) => v * k); }
     }
   }
-  return { name: 'Goblin (newborn)', height, joints, parts, pose };
+  return { name: 'Goblin (newborn)', height, scale: k, joints, parts, pose };
 }
