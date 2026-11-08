@@ -7,6 +7,7 @@
 // later goblin stages and the other races will grow from it.
 import { cone, ell, sweep, alongDir, norm, mapShape } from './sdf.js';
 import { armBones, shoulderGirdle } from './armBones.js';
+import { legBones, footBones, hipBone } from './legBones.js';
 
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -215,39 +216,28 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
 
   // ---- the pelvis: hip bones joined at the back to the sacrum ----
   {
-    const pv = part('pelvis', 'hips');
+    const pv = part('pelvis', 'hips', 'bone', 0.0007);
     // the sacrum and tail bone, curving down and back, then forward
     const sac = (t) => bez([0, 0.548, -0.022], [0, 0.505, -0.05], [0, 0.468, -0.045], t);
-    for (let i = 0; i < 5; i++) {
-      const t = i / 5, c = sac(t + 0.1), w = 0.024 - i * 0.004;
-      pv.push(ellAlong(c, sub(sac(t + 0.2), sac(t)), [w, 0.008, 0.007], 0, { blend: 0.004 }));
+    // (five vertebrae grown into one curved triangle: broad wings (alae) at the top that meet the
+    // hip bones, narrowing to the tip; a row of bumps down the back (median crest) and four pairs of
+    // holes front and back where the nerves come out)
+    const sw = [0.026, 0.0235, 0.0185, 0.0128, 0.0085, 0.0058], sf = [0.0068, 0.0052, 0.0044, 0.0037, 0.0031, 0.0026];
+    pv.push(sweep(sw.map((w, i) => ({ p: sac(i / 5), r: [sf[i], w, sf[i] * 1.15, w], h: [i < 4 ? 0.0018 : 0.0006] })), { front: [0, 0, 1], lat: [1, 0, 0], ridges: [{ a: Math.PI, w: 0.18 }], blend: 0.003, steps: 6, round: 0.003 }));
+    pv.push(ell(add(sac(0), [0, 0.001, 0.0045]), [0.0118, 0.0042, 0.0082], { blend: 0.003 })); // (the top of the first: the promontory)
+    for (let i = 1; i <= 4; i++) {
+      const t = i / 5 - 0.08, c = sac(t), d = norm(sub(sac(t + 0.02), sac(t - 0.02))), nf = norm(cross(d, [1, 0, 0]));
+      for (const x of [-1, 1]) {
+        const q = add(c, [x * (0.0118 - i * 0.0018), 0, 0]);
+        pv.push(cone(add(q, mul(nf, 0.012)), add(q, mul(nf, -0.012)), 0.0019 - i * 0.0002, 0.0019 - i * 0.0002, { sub: true, blend: 0.001 }));
+      }
     }
     tube(pv, [sac(1), [0, 0.456, -0.04], [0, 0.448, -0.032]], 0.0035, 0.0018);
+    // the two hip bones (legBones.js)
     for (const s of [-1, 1]) {
-      const acet = [s * 0.064, 0.48, 0.012];
-      // the wing of the hip (ilium): a thin, flared blade from the sacrum round to the front point
-      const crest = [[s * 0.022, 0.552, -0.044], [s * 0.05, 0.573, -0.04], [s * 0.078, 0.578, -0.016], [s * 0.09, 0.565, 0.016], [s * 0.084, 0.538, 0.036]];
-      tube(pv, crest, 0.0045, 0.0042, {}, 5);
-      const pts = spline(crest, 8);
-      for (let i = 0; i < pts.length; i += 1) {
-        const q = pts[i], low = [s * (0.042 + Math.abs(q[0]) * 0.3), 0.512, q[2] * 0.35 - 0.004];
-        pv.push(cone(q, low, 0.0028, 0.0045, { blend: i ? 0.007 : 0.004 }));
-      }
-      // where the hip meets the sacrum
-      pv.push(ell([s * 0.026, 0.535, -0.038], [0.008, 0.016, 0.01], { blend: 0.006 }));
-      // the thick bone above the hip socket, and the socket itself
-      pv.push(cone([s * 0.05, 0.52, -0.012], [s * 0.062, 0.49, 0.008], 0.009, 0.012, { blend: 0.006 }));
-      pv.push(ell([s * 0.062, 0.481, 0.01], [0.016, 0.017, 0.017], { blend: 0.004 }));
-      // the pubic bone, to the joint at the front in the middle, and the lower ring to the sitting bone
-      const sym = [s * 0.006, 0.47, 0.046];
-      tube(pv, [[s * 0.056, 0.49, 0.024], [s * 0.032, 0.485, 0.044], sym], 0.0055, 0.0055);
-      pv.push(ell(add(sym, [0, -0.006, -0.001]), [0.005, 0.011, 0.006], { blend: 0.003 }));
-      tube(pv, [add(sym, [0, -0.012, -0.002]), [s * 0.026, 0.444, 0.025], [s * 0.044, 0.437, -0.004]], 0.0042, 0.005);
-      // the sitting bone (ischium) behind and below the socket
-      tube(pv, [[s * 0.064, 0.47, -0.004], [s * 0.056, 0.45, -0.014], [s * 0.046, 0.437, -0.01]], 0.008, 0.0075);
-      pv.push(ell([s * 0.048, 0.438, -0.012], [0.008, 0.007, 0.009], { blend: 0.004 }));
-      // the cup the thigh bone turns in (open to the side)
-      pv.push(ell(add(acet, [s * 0.011, 0, 0.002]), [0.0165, 0.0165, 0.0165], { sub: true, blend: 0.003 }));
+      const HB = hipBone(s, { acet: [s * 0.064, 0.48, 0.012] });
+      pv.push(...HB.bone);
+      part((s > 0 ? 'left' : 'right') + 'HipSocketCartilage', 'hips', 'cartilage', 0.0005).push(...HB.cart);
     }
   }
 
@@ -258,69 +248,19 @@ export function goblinSkeleton({ height = 0.95 } = {}) {
     joint(side + 'UpperLeg', 'hips', hipJ);
     joint(side + 'LowerLeg', side + 'UpperLeg', kneeJ);
     joint(side + 'Foot', side + 'LowerLeg', ankleJ);
-    // thigh bone (femur): a ball on an angled neck, the big knob outside (greater trochanter), a
-    // long shaft slanting in to the knee and bowed a little forward, two rounded knuckles at the knee
-    const fe = part(side + 'Femur', side + 'UpperLeg');
-    fe.push(ell(hipJ, [0.0145, 0.0145, 0.0145], { blend: 0.002 }));
-    fe.push(cone(hipJ, [s * 0.086, 0.466, 0.006], 0.0085, 0.0095, { blend: 0.004 }));
-    fe.push(ell([s * 0.093, 0.474, 0.0], [0.009, 0.016, 0.012], { blend: 0.005 }));
-    fe.push(ell([s * 0.074, 0.447, -0.006], [0.005, 0.006, 0.005], { blend: 0.004 }));
-    tube(fe, [[s * 0.088, 0.462, 0.003], [s * 0.081, 0.41, 0.006], [s * 0.069, 0.34, 0.007], [s * 0.058, 0.285, 0.002]], (t) => 0.0098 - 0.0012 * Math.sin(t * Math.PI) + (t > 0.85 ? (t - 0.85) * 0.06 : 0), 0, { blend: 0.004 });
-    fe.push(ell([s * 0.042, 0.264, -0.004], [0.011, 0.015, 0.017], { blend: 0.006 }));
-    fe.push(ell([s * 0.067, 0.265, -0.004], [0.011, 0.014, 0.017], { blend: 0.006 }));
-    fe.push(ell([s * 0.054, 0.256, -0.006], [0.004, 0.012, 0.02], { sub: true, blend: 0.004 })); // the notch between them
-    // knee cap
-    const pa = part(side + 'Patella', side + 'UpperLeg');
-    pa.push(ell([s * 0.055, 0.268, 0.021], [0.0115, 0.0135, 0.0055], { blend: 0.002 }));
-    // shin bone (tibia): a flat top under the knuckles, a sharp front edge, the inner ankle knob;
-    // and the thin outer bone (fibula) down to the outer ankle knob
-    const ti = part(side + 'Tibia', side + 'LowerLeg');
-    ti.push(ell([s * 0.054, 0.242, -0.002], [0.026, 0.0085, 0.019], { blend: 0.004 }));
-    ti.push(ell([s * 0.055, 0.226, 0.013], [0.006, 0.008, 0.005], { blend: 0.005 }));
-    tube(ti, [[s * 0.054, 0.236, 0.0], [s * 0.053, 0.16, 0.002], [s * 0.05, 0.075, 0.0]], (t) => 0.0115 - 0.003 * Math.sin(t * 2.2), 0, { blend: 0.005 });
-    tube(ti, [[s * 0.054, 0.222, 0.008], [s * 0.053, 0.15, 0.009], [s * 0.05, 0.085, 0.006]], 0.004, 0.003, { blend: 0.006 });
-    ti.push(ell([s * 0.049, 0.062, -0.001], [0.0125, 0.012, 0.0125], { blend: 0.006 }));
-    ti.push(ell([s * 0.038, 0.049, 0.0], [0.0055, 0.011, 0.0075], { blend: 0.004 }));
-    const fi = part(side + 'Fibula', side + 'LowerLeg');
-    fi.push(ell([s * 0.077, 0.232, -0.012], [0.0065, 0.0075, 0.0065], { blend: 0.003 }));
-    tube(fi, [[s * 0.077, 0.226, -0.012], [s * 0.076, 0.14, -0.01], [s * 0.071, 0.058, -0.008]], 0.0042, 0.0038);
-    fi.push(ell([s * 0.069, 0.046, -0.008], [0.0055, 0.0135, 0.0075], { blend: 0.004 }));
-    // the foot: ankle bone (talus) on the heel bone (calcaneus), the midfoot bones, five long
-    // splayed metatarsals and the toes; long and broad (a goblin's feet are big)
-    const fo = part(side + 'FootBones', side + 'Foot', 'bone', 0.001);
-    fo.push(ell([s * 0.05, 0.039, 0.004], [0.0135, 0.0105, 0.017], { blend: 0.003 }));
-    fo.push(cone([s * 0.051, 0.03, 0.012], [s * 0.047, 0.03, 0.026], 0.0085, 0.008, { blend: 0.003 }));
-    fo.push(ellAlong([s * 0.053, 0.02, -0.016], [0, 0.28, 1], [0.0125, 0.027, 0.0135], 0, { blend: 0.004 }));
-    fo.push(ell([s * 0.054, 0.012, -0.039], [0.0105, 0.0115, 0.01], { blend: 0.006 }));
-    fo.push(ell([s * 0.043, 0.026, 0.034], [0.0115, 0.0085, 0.0065], { blend: 0.002 }));  // navicular
-    fo.push(ell([s * 0.068, 0.017, 0.03], [0.0095, 0.0085, 0.011], { blend: 0.002 }));   // cuboid
-    for (let i = 0; i < 3; i++) fo.push(ell([s * (0.03 + i * 0.012), 0.023 - i * 0.002, 0.047], [0.0055, 0.0075, 0.0075], { blend: 0.0015 })); // cuneiforms
-    // metatarsals (big toe first, on the inside) and toe bones
-    const toes = [
-      { base: [0.03, 0.024, 0.055], head: [0.024, 0.01, 0.106], r: 0.0068, ph: [0.024, 0.017] },
-      { base: [0.043, 0.023, 0.056], head: [0.042, 0.009, 0.108], r: 0.0045, ph: [0.017, 0.011, 0.008] },
-      { base: [0.055, 0.021, 0.054], head: [0.058, 0.008, 0.103], r: 0.0042, ph: [0.016, 0.01, 0.0075] },
-      { base: [0.066, 0.018, 0.049], head: [0.073, 0.007, 0.096], r: 0.004, ph: [0.014, 0.009, 0.007] },
-      { base: [0.076, 0.015, 0.042], head: [0.087, 0.006, 0.086], r: 0.0042, ph: [0.012, 0.008, 0.006] },
-    ];
-    for (const [i, t] of toes.entries()) {
-      const b = [s * t.base[0], t.base[1], t.base[2]], hd = [s * t.head[0], t.head[1], t.head[2]];
-      fo.push(ell(b, [t.r * 1.15, t.r * 1.1, t.r * 1.3], { blend: 0.0015 }));
-      fo.push(cone(b, hd, t.r * 0.85, t.r * 0.72, { blend: 0.0015 }));
-      fo.push(ell(hd, [t.r * 1.05, t.r * 1.1, t.r * 1.05], { blend: 0.0015 }));
-      // toes: each bone a little shorter, gently curled down at the tip, spread out
-      let p = add(hd, [0, 0.0005, t.r * 0.9]);
-      const spread = s * (i - 1.2) * 0.06;
-      for (const [j, l] of t.ph.entries()) {
-        const pitch = -0.12 - j * 0.12 + (j === 0 ? 0.18 : 0);
-        const d = norm([Math.sin(spread), Math.sin(pitch), Math.cos(spread)]);
-        const q = add(p, mul(d, l));
-        const rr = t.r * (0.95 - j * 0.12) * (i ? 1.1 : 1.05);
-        fo.push(cone(add(p, mul(d, 0.0018)), add(q, mul(d, -0.0012)), rr, rr * (j === t.ph.length - 1 ? 0.55 : 0.82), { blend: 0.0012 }));
-        if (j < t.ph.length - 1) fo.push(ell(q, [rr * 0.95, rr * 0.9, rr * 0.8], { blend: 0.001 }));
-        p = add(q, mul(d, 0.0016));
-      }
-    }
+    // the femur, knee cap, tibia and fibula (legBones.js)
+    const LB = legBones(s, { hipJ, kneeJ, ankleJ });
+    part(side + 'Femur', side + 'UpperLeg', 'bone', 0.0007).push(...LB.femur);
+    part(side + 'Patella', side + 'UpperLeg', 'bone', 0.0005).push(...LB.patella);
+    part(side + 'Tibia', side + 'LowerLeg', 'bone', 0.0007).push(...LB.tibia);
+    part(side + 'Fibula', side + 'LowerLeg', 'bone', 0.0005).push(...LB.fibula);
+    part(side + 'FemurCartilage', side + 'UpperLeg', 'cartilage', 0.0006).push(...LB.cart.femur);
+    part(side + 'PatellaCartilage', side + 'UpperLeg', 'cartilage', 0.0005).push(...LB.cart.patella);
+    part(side + 'TibiaCartilage', side + 'LowerLeg', 'cartilage', 0.0006).push(...LB.cart.tibia);
+    // the foot (legBones.js)
+    const FB = footBones(s, { ankleJ });
+    part(side + 'FootBones', side + 'Foot', 'bone', 0.0006).push(...FB.foot);
+    part(side + 'FootCartilage', side + 'Foot', 'cartilage', 0.0005).push(...FB.cart);
   }
 
   // ---- the arms ----
