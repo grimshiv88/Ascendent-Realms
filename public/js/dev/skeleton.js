@@ -6,7 +6,7 @@ import { shapeBox } from '../characters/body/sdf.js';
 import { goblinSkeleton } from '../characters/body/skeleton.js';
 import { goblinMuscles } from '../characters/body/muscles.js';
 import { goblinVessels } from '../characters/body/veins.js';
-import { goblinArmJoints } from '../characters/body/joints.js';
+import { goblinArmJoints, goblinLegJoints } from '../characters/body/joints.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -41,7 +41,7 @@ function build(make = goblinSkeleton, posed = true, withMuscles = false, withVes
   const mus = withMuscles || withVessels ? goblinMuscles(S, { posed }) : [];
   if (withVessels) S.parts.push(...goblinVessels(S, mus, { posed }));
   if (withMuscles) S.parts.push(...mus);
-  if (withJoints) S.parts.push(...goblinArmJoints(S, { posed }));
+  if (withJoints) S.parts.push(...goblinArmJoints(S, { posed }), ...goblinLegJoints(S, { posed }));
   const nodes = {}, root = new THREE.Group();
   for (const j of S.joints) {
     const o = new THREE.Object3D(); o.name = j.name;
