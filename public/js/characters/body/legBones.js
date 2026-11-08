@@ -193,6 +193,31 @@ export function legBones(s, { hipJ, kneeJ, ankleJ }) {
   return { femur: fe, patella: pa, tibia: ti, fibula: fi, cart: { femur: feC, patella: paC, tibia: tiC } };
 }
 
+// the metatarsals (base, head, radii of base, shaft, head) and the lengths of the toe bones, left side
+export const MTS = [
+    { b: [0.0315, 0.0222, 0.0615], h: [0.0255, 0.0105, 0.1], rb: 0.0074, rs: 0.0052, rh: 0.0074 },
+    { b: [0.0418, 0.0245, 0.0578], h: [0.0408, 0.0092, 0.1078], rb: 0.0052, rs: 0.0033, rh: 0.0046 },
+    { b: [0.0515, 0.0228, 0.0592], h: [0.0565, 0.0085, 0.1032], rb: 0.0049, rs: 0.0031, rh: 0.0044 },
+    { b: [0.0605, 0.0195, 0.0435], h: [0.0712, 0.0076, 0.0962], rb: 0.0049, rs: 0.003, rh: 0.0042 },
+    { b: [0.0702, 0.0162, 0.0402], h: [0.0855, 0.0066, 0.0862], rb: 0.0052, rs: 0.0031, rh: 0.0043 },
+  ];
+export const TOE_LEN = [[0.0235, 0.0165], [0.0172, 0.0108, 0.0078], [0.0158, 0.0098, 0.0075], [0.0142, 0.0088, 0.0072], [0.012, 0.0078, 0.0062]];
+// The joints of toe i (0 = big toe) from the ball of the foot to the tip, left side, standing:
+// each { p: start, q: end, u: direction, rr: the bone's radius }
+export function toeChain(i) {
+  const m = MTS[i], out = [];
+  let p = [m.h[0], m.h[1] + 0.0005, m.h[2] + m.rh * 0.95];
+  const spread = (i - 1.2) * 0.06;
+  for (const [j, l] of TOE_LEN[i].entries()) {
+    const pitch = -0.12 - j * 0.12 + (j === 0 ? 0.18 : 0) - (i && j === 1 ? 0.1 : 0);
+    const d = [Math.sin(spread), Math.sin(pitch), Math.cos(spread)], dl = Math.hypot(...d), u = d.map((v) => v / dl);
+    const q = [p[0] + u[0] * l, p[1] + u[1] * l, p[2] + u[2] * l];
+    out.push({ p, q, u, rr: m.rh * (0.95 - j * 0.12) * (i ? 1.05 : 1.08) });
+    p = [q[0] + u[0] * 0.0006, q[1] + u[1] * 0.0006, q[2] + u[2] * 0.0006];
+  }
+  return out;
+}
+
 // The bones of the foot (left side, s = -1 mirrors), standing flat: the ankle bone (talus) with its
 // domed top held in the mortise of the shin bones, its neck and round head; the heel bone
 // (calcaneus) under it, long, with the big tuber behind, the shelf on the inside (sustentaculum
@@ -249,13 +274,7 @@ export function footBones(s, { ankleJ }) {
   const cun = [[ax - 0.0182, 0.0218, 0.0512, [0.0058, 0.0098, 0.0082]], [ax - 0.0082, 0.0258, 0.0492, [0.0052, 0.0072, 0.0068]], [ax + 0.0015, 0.0242, 0.0502, [0.0054, 0.0078, 0.0076]]];
   for (const [x, y, z, r] of cun) fo.push(ellA(X(x, y, z), [0, 1, 0.05], r, 0, { blend: 0.0015 }));
   // ---- metatarsals: base (tall, wedge), shaft (slim, arched), head (round) ----
-  const mts = [
-    { b: [0.0315, 0.0222, 0.0615], h: [0.0255, 0.0105, 0.1], rb: 0.0074, rs: 0.0052, rh: 0.0074 },
-    { b: [0.0418, 0.0245, 0.0578], h: [0.0408, 0.0092, 0.1078], rb: 0.0052, rs: 0.0033, rh: 0.0046 },
-    { b: [0.0515, 0.0228, 0.0592], h: [0.0565, 0.0085, 0.1032], rb: 0.0049, rs: 0.0031, rh: 0.0044 },
-    { b: [0.0605, 0.0195, 0.0435], h: [0.0712, 0.0076, 0.0962], rb: 0.0049, rs: 0.003, rh: 0.0042 },
-    { b: [0.0702, 0.0162, 0.0402], h: [0.0855, 0.0066, 0.0862], rb: 0.0052, rs: 0.0031, rh: 0.0043 },
-  ];
+  const mts = MTS;
   for (const m of mts) {
     const b = m.b, h = m.h, L = (t) => [b[0] + (h[0] - b[0]) * t, b[1] + (h[1] - b[1]) * t + 0.0022 * Math.sin(Math.PI * t), b[2] + (h[2] - b[2]) * t];
     fo.push(sweep([
@@ -274,7 +293,7 @@ export function footBones(s, { ankleJ }) {
   fo.push(ell(X(0.0292, 0.0042, 0.0975), [0.0026, 0.0024, 0.0034], { blend: 0.001 }));
   // ---- toes: each bone with a broad base, a waisted shaft and a pulley-shaped head; the end bone
   // with its flat rough tuft under the nail ----
-  const toeLen = [[0.0235, 0.0165], [0.0172, 0.0108, 0.0078], [0.0158, 0.0098, 0.0075], [0.0142, 0.0088, 0.0072], [0.012, 0.0078, 0.0062]];
+  const toeLen = TOE_LEN;
   for (const [i, m] of mts.entries()) {
     let p = [m.h[0], m.h[1] + 0.0005, m.h[2] + m.rh * 0.95];
     const spread = (i - 1.2) * 0.06;

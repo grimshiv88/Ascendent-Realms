@@ -5,6 +5,7 @@
 // so a muscle that crosses a joint bends with it. Plain numbers and arrays only (no three.js).
 import { cone } from './sdf.js';
 import { goblinArmMuscles } from './armMuscles.js';
+import { goblinLegMuscles } from './legMuscles.js';
 import { boneField } from './boneField.js';
 
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -202,79 +203,13 @@ export function goblinMuscles(S, { posed = true } = {}) {
       fibre(M, [C('neck', [0.022, 0.905, -0.04]), C('neck', [0.034, 0.875, -0.05]), at(side + 'Shoulder', X([0.042, 0.826, -0.064]))], 0.0055, { ta: 0.1, tb: 0.1 });
       fibre(M, [C('neck', [0.022, 0.9, -0.02]), C('neck', [0.034, 0.865, -0.016]), C('chest', [0.036, 0.832, -0.01])], 0.0055, { ta: 0.08, tb: 0.1 });
     }
-    { // tensor fasciae latae: from the front point of the hip down the outer thigh into its long
-      // tendon band (the iliotibial band) that reaches below the knee
-      const M = muscle(side + 'TensorFasciae');
-      fibre(M, [at('hips', X([0.088, 0.548, 0.026])), B('UpperLeg', [0.098, 0.49, 0.016]), B('UpperLeg', [0.104, 0.44, 0.008]), B('UpperLeg', [0.098, 0.36, 0.0]), B('UpperLeg', [0.082, 0.28, 0.0]), B('LowerLeg', [0.072, 0.236, 0.006])], 0.0065, { ta: 0.03, tb: 0.62, peak: 0.45, tr: 0.45 });
-    }
-    { // iliopsoas: from inside the hip's wing and the lower spine, over the front of the hip joint
-      const M = muscle(side + 'Iliopsoas');
-      fibre(M, [at('spine', X([0.022, 0.62, -0.006])), at('hips', X([0.045, 0.53, 0.012])), at('hips', X([0.05, 0.49, 0.036])), B('UpperLeg', [0.07, 0.448, 0.0])], 0.0075, { ta: 0.03, tb: 0.15, peak: 0.45 });
-      fibre(M, [at('hips', X([0.07, 0.56, 0.0])), at('hips', X([0.06, 0.51, 0.03])), B('UpperLeg', [0.07, 0.448, 0.0])], 0.0068, { ta: 0.03, tb: 0.15 });
-    }
-
     // ---- the arm: see armMuscles.js ----
 
-    // ---- the leg ----
-    { // gluteus maximus: the big seat muscle, from the back of the hip and sacrum to the thigh bone
-      const M = muscle(side + 'GluteusMaximus');
-      const o = []; for (let i = 0; i < 7; i++) { const t = i / 6; o.push(at('hips', X([0.012 + t * 0.06, 0.465 + t * 0.1 - t * t * 0.02, -0.05 - (1 - t) * 0.008]))); }
-      fan(M, o, [B('UpperLeg', [0.088, 0.47, -0.012]), B('UpperLeg', [0.09, 0.42, -0.01])], 0.0095, { ta: 0.03, tb: 0.12, peak: 0.4, blend: 0.007 }, (oo, e, t) => add(lerp(oo, e, 0.5), [s * 0.004 * k, 0, -0.016 * k]));
-    }
-    { // gluteus medius: from the outside of the hip's wing to the knob at the top of the thigh bone
-      const M = muscle(side + 'GluteusMedius');
-      for (let i = 0; i < 5; i++) { const t = i / 4; fibre(M, [at('hips', X([0.05 + t * 0.04, 0.572 - Math.abs(t - 0.6) * 0.01, -0.035 + t * 0.05])), at('hips', X([0.088 + t * 0.006, 0.535, -0.025 + t * 0.03])), B('UpperLeg', [0.098, 0.48, -0.002])], 0.0065, { ta: 0.04, tb: 0.15, peak: 0.4, blend: 0.006 }); }
-    }
-    { // quadriceps: four heads down the front of the thigh into the knee cap, then the tendon to the shin
-      const M = muscle(side + 'Quadriceps');
-      // rectus femoris (the middle), vastus lateralis (outside), vastus medialis (the teardrop inside)
-      fibre(M, [at('hips', X([0.077, 0.52, 0.032])), B('UpperLeg', [0.082, 0.45, 0.022]), B('UpperLeg', [0.072, 0.37, 0.028]), B('UpperLeg', [0.062, 0.31, 0.026]), B('UpperLeg', [0.056, 0.284, 0.024])], 0.0088, { ta: 0.08, tb: 0.14, peak: 0.45 });
-      fibre(M, [B('UpperLeg', [0.096, 0.46, 0.004]), B('UpperLeg', [0.1, 0.4, 0.004]), B('UpperLeg', [0.088, 0.33, 0.014]), B('UpperLeg', [0.068, 0.287, 0.022])], 0.0095, { ta: 0.03, tb: 0.15, peak: 0.45 });
-      fibre(M, [B('UpperLeg', [0.072, 0.43, 0.006]), B('UpperLeg', [0.058, 0.36, 0.012]), B('UpperLeg', [0.045, 0.3, 0.014]), B('UpperLeg', [0.048, 0.28, 0.02])], 0.0088, { ta: 0.04, tb: 0.1, peak: 0.72 });
-      fibre(M, [B('UpperLeg', [0.084, 0.44, 0.014]), B('UpperLeg', [0.074, 0.37, 0.016]), B('UpperLeg', [0.06, 0.3, 0.018])], 0.0072, { ta: 0.03, tb: 0.15 });
-      fibre(M, [B('UpperLeg', [0.055, 0.262, 0.024]), B('LowerLeg', [0.055, 0.226, 0.019])], 0.0045, { ta: 0.5, tb: 0.5 }); // the knee cap's tendon
-    }
-    { // sartorius: the long thin strap from the front point of the hip, across the thigh, to inside the knee
-      const M = muscle(side + 'Sartorius');
-      fibre(M, [at('hips', X([0.086, 0.54, 0.036])), B('UpperLeg', [0.082, 0.47, 0.03]), B('UpperLeg', [0.06, 0.39, 0.03]), B('UpperLeg', [0.042, 0.32, 0.012]), B('UpperLeg', [0.035, 0.27, -0.006]), B('LowerLeg', [0.042, 0.225, 0.004])], 0.0042, { ta: 0.03, tb: 0.1, peak: 0.5, tr: 0.5 });
-    }
-    { // adductors: from the pubic bone fanning down the inside of the thigh
-      const M = muscle(side + 'Adductors');
-      for (let i = 0; i < 4; i++) {
-        const o = at('hips', X([0.012 + i * 0.008, 0.465 - i * 0.008, 0.04 - i * 0.012]));
-        fibre(M, [o, B('UpperLeg', [0.05 + i * 0.002, 0.42 - i * 0.03, 0.006 - i * 0.004]), B('UpperLeg', [0.068, 0.4 - i * 0.04, -0.008])], 0.0078 - i * 0.0004, { ta: 0.05, tb: 0.1, peak: 0.4, blend: 0.006 });
-      }
-      fibre(M, [at('hips', X([0.012, 0.462, 0.038])), B('UpperLeg', [0.042, 0.38, 0.002]), B('UpperLeg', [0.036, 0.29, -0.01]), B('LowerLeg', [0.042, 0.222, 0.0])], 0.0045, { ta: 0.04, tb: 0.15 }); // gracilis
-    }
-    { // hamstrings: from the sitting bone down the back of the thigh to either side of the knee
-      const M = muscle(side + 'Hamstrings');
-      fibre(M, [at('hips', X([0.05, 0.438, -0.016])), B('UpperLeg', [0.075, 0.38, -0.026]), B('UpperLeg', [0.08, 0.3, -0.022]), B('LowerLeg', [0.077, 0.234, -0.016])], 0.0085, { ta: 0.06, tb: 0.18 });
-      fibre(M, [at('hips', X([0.044, 0.438, -0.015])), B('UpperLeg', [0.056, 0.38, -0.028]), B('UpperLeg', [0.045, 0.3, -0.024]), B('LowerLeg', [0.042, 0.226, -0.012])], 0.0082, { ta: 0.08, tb: 0.2 });
-      fibre(M, [at('hips', X([0.047, 0.436, -0.01])), B('UpperLeg', [0.06, 0.37, -0.018]), B('UpperLeg', [0.052, 0.3, -0.016]), B('LowerLeg', [0.045, 0.232, -0.012])], 0.008, { ta: 0.15, tb: 0.1 });
-    }
-    { // calf: the two heads of the gastrocnemius over the soleus, joined into the heel cord
-      const M = muscle(side + 'Calf');
-      fibre(M, [B('UpperLeg', [0.044, 0.275, -0.018]), B('LowerLeg', [0.045, 0.21, -0.03]), B('LowerLeg', [0.05, 0.15, -0.026]), B('LowerLeg', [0.053, 0.08, -0.03]), B('Foot', [0.054, 0.02, -0.05])], 0.0095, { ta: 0.03, tb: 0.42, peak: 0.3 });
-      fibre(M, [B('UpperLeg', [0.066, 0.275, -0.018]), B('LowerLeg', [0.066, 0.21, -0.028]), B('LowerLeg', [0.06, 0.15, -0.025]), B('LowerLeg', [0.055, 0.08, -0.03]), B('Foot', [0.054, 0.02, -0.05])], 0.0085, { ta: 0.03, tb: 0.45, peak: 0.28 });
-      fibre(M, [B('LowerLeg', [0.068, 0.215, -0.018]), B('LowerLeg', [0.06, 0.15, -0.02]), B('LowerLeg', [0.055, 0.09, -0.024]), B('Foot', [0.054, 0.02, -0.048])], 0.008, { ta: 0.03, tb: 0.35, peak: 0.45 });
-    }
-    { // the front and outside of the shin: tibialis anterior to the inner foot, the toe extensors,
-      // and the peroneus behind the outer ankle to the outer foot
-      const M = muscle(side + 'Shin');
-      fibre(M, [B('LowerLeg', [0.064, 0.225, 0.008]), B('LowerLeg', [0.064, 0.16, 0.014]), B('LowerLeg', [0.056, 0.08, 0.016]), B('Foot', [0.045, 0.048, 0.02]), B('Foot', [0.033, 0.028, 0.046])], 0.0062, { ta: 0.03, tb: 0.42, peak: 0.35 });
-      fibre(M, [B('LowerLeg', [0.072, 0.21, 0.004]), B('LowerLeg', [0.072, 0.15, 0.008]), B('LowerLeg', [0.066, 0.08, 0.012]), B('Foot', [0.058, 0.044, 0.024]), B('Foot', [0.06, 0.022, 0.06]), B('Foot', [0.065, 0.012, 0.095])], 0.0048, { ta: 0.03, tb: 0.55, peak: 0.4 });
-      fibre(M, [B('LowerLeg', [0.08, 0.22, -0.008]), B('LowerLeg', [0.082, 0.15, -0.008]), B('LowerLeg', [0.076, 0.08, -0.012]), B('Foot', [0.074, 0.035, -0.014]), B('Foot', [0.079, 0.016, 0.02]), B('Foot', [0.077, 0.014, 0.042])], 0.0052, { ta: 0.03, tb: 0.5, peak: 0.4 });
-    }
-    { // the foot: the big toe's muscle along the inner arch, the little toe's along the outer edge,
-      // and the short toe extensor on top
-      const M = muscle(side + 'FootMuscles');
-      fibre(M, [B('Foot', [0.046, 0.008, -0.035]), B('Foot', [0.036, 0.008, 0.03]), B('Foot', [0.026, 0.006, 0.1])], 0.0052, { ta: 0.05, tb: 0.25 });
-      fibre(M, [B('Foot', [0.064, 0.006, -0.035]), B('Foot', [0.08, 0.007, 0.03]), B('Foot', [0.086, 0.005, 0.08])], 0.0042, { ta: 0.05, tb: 0.25 });
-      fibre(M, [B('Foot', [0.056, 0.006, -0.03]), B('Foot', [0.056, 0.005, 0.04]), B('Foot', [0.05, 0.004, 0.09])], 0.005, { ta: 0.05, tb: 0.3 });
-      fibre(M, [B('Foot', [0.068, 0.026, 0.02]), B('Foot', [0.058, 0.026, 0.05]), B('Foot', [0.048, 0.02, 0.085])], 0.0038, { ta: 0.05, tb: 0.35 });
-    }
+    // ---- the leg: see legMuscles.js ----
   }
   // the shoulder, arm, forearm and hand, each muscle shaped on its own (armMuscles.js)
   parts.push(...goblinArmMuscles(S, { posed }));
+  // the hip, thigh, leg and foot (legMuscles.js)
+  parts.push(...goblinLegMuscles(S, { posed }));
   return parts;
 }

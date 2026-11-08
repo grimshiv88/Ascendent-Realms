@@ -129,6 +129,12 @@ export function goblinVessels(S, muscleParts, { posed = true } = {}) {
       p = p.map((q, i) => (i === 0 || i === p.length - 1 ? q : q.map((v, j) => 0.25 * p[i - 1][j] + 0.5 * v + 0.25 * p[i + 1][j])));
       p = clear(gap(p));
     }
+    // (then smooth out any zigzag left where a deep vessel runs in a tight gap between several
+    // muscles, keeping it clear of the bones only: a vessel lies softly between muscles)
+    for (let it = 0; it < 4; it++) {
+      p = p.map((q, i) => (i === 0 || i === p.length - 1 ? q : q.map((v, j) => 0.25 * p[i - 1][j] + 0.5 * v + 0.25 * p[i + 1][j])));
+      p = clear(p);
+    }
     const wob = p.map(() => 0.96 + rnd() * 0.08);
     for (let i = 0; i < n - 1; i++) out.push(cone(p[i], p[i + 1], R(i) * wob[i], R(i + 1) * wob[i + 1], { blend: (i ? 0.0003 : 0.0018) * k / 0.864 }));
     if (valves) {
@@ -274,20 +280,29 @@ export function goblinVessels(S, muscleParts, { posed = true } = {}) {
 
     // ---- the leg ----
     const la = group(side + 'LegArteries', 'artery', 0.0006), lv = group(side + 'LegVeins', 'vein', 0.0006);
-    // common iliac from the aorta's fork, the external iliac along the pelvis's rim, under the groin's
-    // ligament into the femoral artery down the front-inner thigh
-    vessel(la, [at('spine', [0.0, 0.578, 0.02]), at('hips', X([0.02, 0.555, 0.022])), at('hips', X([0.036, 0.53, 0.024])), at('hips', X([0.05, 0.506, 0.032])), at('hips', X([0.058, 0.49, 0.042])), LG([0.06, 0.45, 0.032]), LG([0.056, 0.39, 0.016]), LG([0.05, 0.33, -0.004]), LG([0.052, 0.29, -0.02]), LG([0.055, 0.262, -0.024]), LG([0.055, 0.235, -0.022])], 0.0036, 0.0024);
+    // common iliac from the aorta's fork, the external iliac along the pelvis's rim, under the
+    // groin's ligament half way between the hip's front point and the pubic tubercle (where the
+    // pulse is felt), down the femoral triangle on the iliopsoas and pectineus, through the canal
+    // under the sartorius, through the gap in adductor magnus to behind the knee (popliteal artery,
+    // deep in the hollow between the condyles)
+    vessel(la, [at('spine', [0.0, 0.578, 0.02]), at('hips', X([0.02, 0.555, 0.022])), at('hips', X([0.036, 0.528, 0.02])), at('hips', X([0.047, 0.506, 0.032])), at('hips', X([0.0525, 0.495, 0.044])), LG([0.0555, 0.468, 0.039]), LG([0.0525, 0.43, 0.031]), LG([0.0465, 0.39, 0.021]), LG([0.0405, 0.35, 0.008]), LG([0.0415, 0.31, -0.009]), LG([0.0505, 0.285, -0.021]), LG([0.054, 0.265, -0.0275]), LG([0.0545, 0.238, -0.0255]), LG([0.0555, 0.213, -0.0215])], 0.0036, 0.0024);
     // the internal iliac artery into the pelvis
     vessel(la, [at('hips', X([0.02, 0.553, 0.022])), at('hips', X([0.028, 0.53, 0.0])), at('hips', X([0.032, 0.505, -0.012]))], 0.0018, 0.0012);
-    // deep artery of the thigh, behind and outside
-    vessel(la, [LG([0.06, 0.455, 0.034]), LG([0.07, 0.42, 0.01]), LG([0.076, 0.37, -0.008]), LG([0.078, 0.31, -0.012])], 0.0018, 0.0012);
-    // below the knee: anterior tibial through to the front of the shin and on to the top of the foot
-    // (the pulse on the foot); posterior tibial behind the inner ankle into the sole; the fibular
-    vessel(la, [LG([0.055, 0.235, -0.022]), LG([0.062, 0.21, -0.008]), LG([0.066, 0.2, 0.006]), LG([0.063, 0.14, 0.012]), LG([0.058, 0.08, 0.014]), LG([0.052, 0.05, 0.02]), LG([0.047, 0.036, 0.038]), LG([0.042, 0.028, 0.06]), LG([0.036, 0.02, 0.085])], 0.0014, 0.0009);
-    vessel(la, [LG([0.055, 0.235, -0.022]), LG([0.05, 0.2, -0.024]), LG([0.046, 0.13, -0.02]), LG([0.04, 0.07, -0.016]), LG([0.036, 0.046, -0.012]), LG([0.04, 0.012, 0.0]), LG([0.05, 0.006, 0.03]), LG([0.064, 0.006, 0.06]), LG([0.05, 0.007, 0.085]), LG([0.034, 0.008, 0.09])], 0.0015, 0.0009);
-    vessel(la, [LG([0.052, 0.21, -0.024]), LG([0.064, 0.17, -0.02]), LG([0.07, 0.1, -0.016]), LG([0.07, 0.055, -0.014])], 0.001, 0.0008);
-    // the deep veins: femoral and popliteal beside the artery, larger
-    vessel(lv, [LG([0.05, 0.235, -0.026]), LG([0.05, 0.262, -0.028]), LG([0.046, 0.29, -0.024]), LG([0.044, 0.33, -0.008]), LG([0.048, 0.39, 0.014]), LG([0.052, 0.45, 0.03]), at('hips', X([0.05, 0.49, 0.04])), at('hips', X([0.042, 0.506, 0.03])), at('hips', X([0.028, 0.53, 0.02])), at('hips', X([0.012, 0.556, 0.018])), at('spine', [-0.004, 0.574, 0.016])], 0.0028, 0.0042);
+    // deep artery of the thigh, back and out, deep to the adductors, sending branches through to the back
+    vessel(la, [LG([0.0555, 0.462, 0.0375]), LG([0.0645, 0.432, 0.014]), LG([0.0715, 0.39, -0.008]), LG([0.071, 0.34, -0.011])], 0.0018, 0.0012);
+    // below the knee: the anterior tibial forward through the gap above the interosseous membrane,
+    // down on its front between tibialis anterior and the toe extensors, over the ankle between the
+    // two knobs, on as the artery on top of the foot (dorsalis pedis, the foot's pulse) to the first
+    // gap between the metatarsals
+    vessel(la, [LG([0.0555, 0.213, -0.0215]), LG([0.0618, 0.205, -0.008]), LG([0.0638, 0.19, 0.0025]), LG([0.0642, 0.15, 0.0062]), LG([0.0595, 0.1, 0.0092]), LG([0.054, 0.07, 0.0118]), LG([0.0498, 0.0555, 0.0152]), LG([0.0455, 0.04, 0.0282]), LG([0.0412, 0.0318, 0.0452]), LG([0.0388, 0.026, 0.06]), LG([0.0345, 0.0205, 0.0752])], 0.0014, 0.0009);
+    // the posterior tibial, deep in the back of the calf, behind the inner ankle (its pulse) into
+    // the sole, where it makes the plantar arch across the bases of the metatarsals
+    vessel(la, [LG([0.0555, 0.213, -0.0215]), LG([0.0515, 0.18, -0.0182]), LG([0.0478, 0.13, -0.0172]), LG([0.0438, 0.08, -0.0162]), LG([0.037, 0.05, -0.0132]), LG([0.0372, 0.0322, -0.0085]), LG([0.0392, 0.0122, 0.008]), LG([0.0528, 0.0088, 0.0225]), LG([0.0648, 0.0092, 0.0448]), LG([0.0505, 0.0102, 0.0648]), LG([0.0355, 0.0118, 0.0708])], 0.0015, 0.0009);
+    // the fibular artery, down beside the back of the fibula
+    vessel(la, [LG([0.0525, 0.19, -0.0182]), LG([0.0668, 0.15, -0.0168]), LG([0.0695, 0.1, -0.0152]), LG([0.0682, 0.06, -0.0135])], 0.001, 0.0008);
+    // the deep veins: popliteal and femoral beside the artery (behind it at the knee, inside it in
+    // the thigh), larger, into the external and common iliac veins
+    vessel(lv, [LG([0.0515, 0.238, -0.0285]), LG([0.0505, 0.262, -0.031]), LG([0.0465, 0.285, -0.0245]), LG([0.0375, 0.31, -0.0105]), LG([0.0348, 0.35, 0.0055]), LG([0.0395, 0.39, 0.0172]), LG([0.0455, 0.43, 0.0282]), LG([0.0478, 0.468, 0.0392]), at('hips', X([0.0448, 0.495, 0.0442])), at('hips', X([0.0382, 0.512, 0.03])), at('hips', X([0.028, 0.53, 0.02])), at('hips', X([0.012, 0.556, 0.018])), at('spine', [-0.004, 0.574, 0.016])], 0.0028, 0.0042);
     // the top of the foot: the arch of surface veins across the bases of the toes
     const fArch = vessel(lv, [LG([0.03, 0.02, 0.068]), LG([0.042, 0.03, 0.074]), LG([0.058, 0.03, 0.074]), LG([0.072, 0.024, 0.062]), LG([0.082, 0.016, 0.046])], 0.0009, 0.001, { surface: true, wave: 1.0, lift: 0.45 });
     for (const [x, z] of [[0.026, 0.1], [0.042, 0.1], [0.058, 0.097], [0.072, 0.09], [0.085, 0.08]]) {
@@ -296,10 +311,10 @@ export function goblinVessels(S, muscleParts, { posed = true } = {}) {
     }
     // great saphenous vein: from the inner end of the arch, in front of the inner ankle, up the inner
     // shin, behind the inner knee, up the inner thigh to the groin; the longest vein of the body
-    vessel(lv, [fArch[0], LG([0.032, 0.04, 0.03]), LG([0.033, 0.06, 0.012]), LG([0.036, 0.1, 0.004]), LG([0.038, 0.16, -0.004]), LG([0.036, 0.22, -0.012]), LG([0.034, 0.25, -0.016]), LG([0.034, 0.29, -0.012]), LG([0.036, 0.35, 0.0]), LG([0.042, 0.41, 0.016]), LG([0.048, 0.455, 0.034]), at('hips', X([0.052, 0.478, 0.044]))], 0.0013, 0.0018, { surface: true, wave: 1.5, valves: true });
+    vessel(lv, [fArch[0], LG([0.0335, 0.04, 0.026]), LG([0.0338, 0.052, 0.0125]), LG([0.0372, 0.1, 0.0062]), LG([0.0362, 0.16, 0.0005]), LG([0.0318, 0.22, -0.0075]), LG([0.0295, 0.25, -0.0125]), LG([0.0285, 0.29, -0.0095]), LG([0.0305, 0.35, 0.0015]), LG([0.0372, 0.41, 0.0182]), LG([0.0448, 0.452, 0.0372]), at('hips', X([0.0472, 0.476, 0.0422]))], 0.0013, 0.0018, { surface: true, wave: 1.5, valves: true });
     // small saphenous vein: from the outer end of the arch, behind the outer ankle, up the middle of
     // the back of the calf into the deep vein behind the knee
-    vessel(lv, [fArch[fArch.length - 1], LG([0.08, 0.02, 0.02]), LG([0.078, 0.03, -0.018]), LG([0.07, 0.06, -0.032]), LG([0.062, 0.12, -0.042]), LG([0.056, 0.18, -0.046]), LG([0.054, 0.225, -0.036]), LG([0.05, 0.245, -0.028])], 0.0011, 0.0015, { surface: true, wave: 1.5, valves: true });
+    vessel(lv, [fArch[fArch.length - 1], LG([0.0812, 0.02, 0.02]), LG([0.0765, 0.03, -0.0172]), LG([0.0668, 0.07, -0.0312]), LG([0.0565, 0.13, -0.0412]), LG([0.0525, 0.19, -0.0418]), LG([0.0525, 0.228, -0.0352]), LG([0.0515, 0.242, -0.0298])], 0.0011, 0.0015, { surface: true, wave: 1.5, valves: true });
     // the vein over the belly from the groin (superficial epigastric)
     vessel(lv, [at('hips', X([0.05, 0.48, 0.046])), at('hips', X([0.044, 0.52, 0.06])), at('spine', X([0.042, 0.57, 0.068])), at('spine', X([0.046, 0.62, 0.068])), C('chest', [0.054, 0.66, 0.06])], 0.0006, 0.0009, { surface: true, wave: 2, valves: false, lift: 0.4 });
   }
