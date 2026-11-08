@@ -121,6 +121,11 @@ export function goblinVessels(S, muscleParts, { posed = true } = {}) {
     }
     // last, lift every point clear of the bones (a vessel runs beside a bone, never through it)
     p = p.map((q, i) => B.push(q, R(i) * 1.15 + 0.0002 * k));
+    // smooth the pushed path (so it curves round a bone, not kinks) and clear the bone again
+    for (let it = 0; it < 3; it++) {
+      p = p.map((q, i) => (i === 0 || i === p.length - 1 ? q : q.map((v, j) => 0.25 * p[i - 1][j] + 0.5 * v + 0.25 * p[i + 1][j])));
+      p = p.map((q, i) => B.push(q, R(i) * 1.15 + 0.0002 * k));
+    }
     const wob = p.map(() => 0.96 + rnd() * 0.08);
     for (let i = 0; i < n - 1; i++) out.push(cone(p[i], p[i + 1], R(i) * wob[i], R(i + 1) * wob[i + 1], { blend: (i ? 0.0003 : 0.0018) * k / 0.864 }));
     if (valves) {
