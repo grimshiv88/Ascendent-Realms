@@ -119,12 +119,15 @@ export function goblinVessels(S, muscleParts, { posed = true } = {}) {
       });
       if (surface) p = rise(smooth(rise(p), 2));
     }
-    // last, lift every point clear of the bones (a vessel runs beside a bone, never through it)
-    p = p.map((q, i) => B.push(q, R(i) * 1.15 + 0.0002 * k));
-    // smooth the pushed path (so it curves round a bone, not kinks) and clear the bone again
+    // last, lift every point clear of the bones (a vessel runs beside a bone, never through it), and
+    // a deep vessel out of the muscle bellies too, into the gaps between them where it really runs
+    const clear = (q) => q.map((x, i) => B.push(x, R(i) * 1.15 + 0.0002 * k));
+    const gap = (q) => (surface ? q : q.map((x, i) => surf.rise(x, R(i) * 1.05)));
+    p = clear(gap(clear(p)));
+    // smooth the pushed path (so it curves round a bone or a muscle, not kinks) and clear again
     for (let it = 0; it < 3; it++) {
       p = p.map((q, i) => (i === 0 || i === p.length - 1 ? q : q.map((v, j) => 0.25 * p[i - 1][j] + 0.5 * v + 0.25 * p[i + 1][j])));
-      p = p.map((q, i) => B.push(q, R(i) * 1.15 + 0.0002 * k));
+      p = clear(gap(p));
     }
     const wob = p.map(() => 0.96 + rnd() * 0.08);
     for (let i = 0; i < n - 1; i++) out.push(cone(p[i], p[i + 1], R(i) * wob[i], R(i + 1) * wob[i + 1], { blend: (i ? 0.0003 : 0.0018) * k / 0.864 }));
