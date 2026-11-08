@@ -7,6 +7,7 @@
 // slide over them as the body moves. Plain numbers and arrays only (no three.js).
 import { cone, ell, alongDir, shapeDist, shapeBox, mapShape } from './sdf.js';
 import { poseRig } from './muscles.js';
+import { boneField } from './boneField.js';
 
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -86,6 +87,7 @@ function surfaceOf(S, J, muscleParts) {
 export function goblinVessels(S, muscleParts, { posed = true } = {}) {
   const { J, at, atScaled, k } = poseRig(S, posed);
   const surf = surfaceOf(S, J, muscleParts);
+  const B = boneField(S, J); // (no vessel may pass through a bone)
   const parts = [];
   const group = (name, mat, cell) => { const p = { name, joint: null, mat, cell: cell * k / 0.864, shapes: [] }; parts.push(p); return p.shapes; };
   let seed = 1;
@@ -117,6 +119,8 @@ export function goblinVessels(S, muscleParts, { posed = true } = {}) {
       });
       if (surface) p = rise(smooth(rise(p), 2));
     }
+    // last, lift every point clear of the bones (a vessel runs beside a bone, never through it)
+    p = p.map((q, i) => B.push(q, R(i) * 1.15 + 0.0002 * k));
     const wob = p.map(() => 0.96 + rnd() * 0.08);
     for (let i = 0; i < n - 1; i++) out.push(cone(p[i], p[i + 1], R(i) * wob[i], R(i + 1) * wob[i + 1], { blend: (i ? 0.0003 : 0.0018) * k / 0.864 }));
     if (valves) {

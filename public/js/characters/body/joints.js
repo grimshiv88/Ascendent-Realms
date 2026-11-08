@@ -5,12 +5,14 @@
 // band crossing a joint stretches and turns with it. Plain numbers and arrays only (no three.js).
 import { sweep } from './sdf.js';
 import { poseRig } from './muscles.js';
+import { boneField } from './boneField.js';
 
 const mv = (A, v) => [A[0] * v[0] + A[1] * v[1] + A[2] * v[2], A[3] * v[0] + A[4] * v[1] + A[5] * v[2], A[6] * v[0] + A[7] * v[1] + A[8] * v[2]];
 const lerp = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 
 export function goblinArmJoints(S, { posed = true } = {}) {
   const { J, at, k } = poseRig(S, posed);
+  const B = boneField(S, J); // (a ligament lies on the bones it ties, never inside them)
   const parts = [];
   for (const s of [-1, 1]) {
     const side = s > 0 ? 'left' : 'right';
@@ -25,7 +27,7 @@ export function goblinArmJoints(S, { posed = true } = {}) {
     // a flat band through posed points pts, w wide (from w0 to w1), t thick, its flat side facing nrm
     const band = (out, pts, w0, w1, t, nrm, o = {}) => {
       const n = pts.length - 1;
-      out.push(sweep(pts.map((p, i) => { const w = (w0 + (w1 - w0) * i / n) * k / 2; return { p, r: [t * k, w, t * k, w] }; }), { front: nrm, lat: [0, 1, 0], steps: 6, round: Math.min(w0, w1) * k * 0.35, blend: 0.001 * k, ...o }));
+      out.push(sweep(pts.map((p, i) => { const w = (w0 + (w1 - w0) * i / n) * k / 2; return { p: B.push(p, t * k * 1.1), r: [t * k, w, t * k, w] }; }), { front: nrm, lat: [0, 1, 0], steps: 6, round: Math.min(w0, w1) * k * 0.35, blend: 0.001 * k, ...o }));
     };
     // ---------------- shoulder ----------------
     // coracoacromial ligament: the roof over the joint, from the coracoid's side to the acromion's tip
@@ -69,7 +71,7 @@ export function goblinArmJoints(S, { posed = true } = {}) {
         const a = (-140 + (280 * i) / 14) * Math.PI / 180;
         pts.push(P(la, rc[0] + Math.cos(a) * 0.0084, rc[1] + 0.0004 * Math.cos(a), rc[2] + Math.sin(a) * 0.0084));
       }
-      lig.shapes.push(sweep(pts.map((p) => ({ p, r: [0.0032 * k, 0.0008 * k, 0.0032 * k, 0.0006 * k] })), { front: D(la, [0, 1, 0]), lat: D(la, [1, 0, 0]), steps: 3, round: 0.0006 * k, blend: 0.001 * k }));
+      lig.shapes.push(sweep(pts.map((p) => ({ p: B.push(p, 0.0008 * k), r: [0.0032 * k, 0.0008 * k, 0.0032 * k, 0.0006 * k] })), { front: D(la, [0, 1, 0]), lat: D(la, [1, 0, 0]), steps: 3, round: 0.0006 * k, blend: 0.001 * k }));
     }
     // the elbow's capsule: from just above the hollows of the humerus to the radius's neck and
     // the ulna below its notch
@@ -92,7 +94,7 @@ export function goblinArmJoints(S, { posed = true } = {}) {
       // the sheet (slice by slice from the radius's edge to the ulna's)
       mem.shapes.push(sweep(R.map((r, i) => {
         const u = U[i], m = lerp(r, u, 0.5), d = [s * (u[0] - r[0]), u[1] - r[1], u[2] - r[2]], h = Math.hypot(...d) / 2;
-        return { p: at(la, X(...m)), r: [0.00028 * k, h * k, 0.00028 * k, h * k], lat: mv(J[la].R, d.map((v) => v / (2 * h))) };
+        return { p: B.push(at(la, X(...m)), 0.0004 * k), r: [0.00028 * k, h * k, 0.00028 * k, h * k], lat: mv(J[la].R, d.map((v) => v / (2 * h))) };
       }), { front: D(la, [0, 0, 1]), lat: D(la, [1, 0, 0]), steps: 5, blend: 0.0006 * k }));
       // its fibre bundles, slanting down from the radius to the ulna
       for (let i = 0; i < 5; i++) band(mem.shapes, [P(la, ...R[i]), P(la, ...lerp(R[i], U[i + 1], 0.5)), P(la, ...U[i + 1])], 0.0016, 0.0016, 0.00045, D(la, [0.6, 0, 0.8]), { blend: 0.0008 * k });

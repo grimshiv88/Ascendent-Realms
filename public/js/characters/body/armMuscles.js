@@ -7,6 +7,7 @@
 // Plain numbers and arrays only (no three.js).
 import { sweep } from './sdf.js';
 import { poseRig } from './muscles.js';
+import { boneField } from './boneField.js';
 
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -44,6 +45,7 @@ const FILL_W = 1.5, FILL_D = 1.25;
 export function goblinArmMuscles(S, { posed = true } = {}) {
   const k = S.scale;
   const rig = poseRig(S, posed), rest = poseRig(S, false);
+  const B = boneField(S, rig.J); // (a muscle or tendon rests on a bone, never passes through it)
   const parts = [];
   const jl = (n) => mul(S.joints.find((j) => j.name === n).pos, 1 / k); // a joint's rest place, drawing units
 
@@ -89,7 +91,7 @@ export function goblinArmMuscles(S, { posed = true } = {}) {
         const rw = (tw + (w * fl - tw) * gw) * (f > 0 ? Math.pow(bulge, 0.35) : 1);
         const rd = (tt + (d - tt) * g) * (f > 0 ? bulge : 1), rdi = (tt + (di - tt) * g) * (f > 0 ? Math.pow(bulge, 0.6) : 1);
         const hh = 0.00022 * Math.min(1, f * 2.5);
-        st.push({ p: cp.pts[i], r: [rd * k, rw * k, rdi * k, rw * k], h: ridges.map((_, j) => (j % 2 ? -hh : hh * 0.6)) });
+        st.push({ p: B.push(cp.pts[i], rdi * k * 0.9), r: [rd * k, rw * k, rdi * k, rw * k], h: ridges.map((_, j) => (j % 2 ? -hh : hh * 0.6)) });
       }
       if (st.length > 1) M.m.push(sweep(st, { front, lat: [0, 1, 0], ridges, steps: 5, round: Math.min(tt, tw) * k, blend: blend * k }));
       // the tendons: from each end into the belly
@@ -97,7 +99,7 @@ export function goblinArmMuscles(S, { posed = true } = {}) {
         const tst = [];
         for (let i = i0; i <= i1; i++) {
           const u = i / N, f = prof(u), sh = 1 - 0.55 * f;
-          tst.push({ p: cp.pts[i], r: [tt * sh * k, tw * sh * k, tt * sh * k, tw * sh * k] });
+          tst.push({ p: B.push(cp.pts[i], tt * sh * k * 1.05), r: [tt * sh * k, tw * sh * k, tt * sh * k, tw * sh * k] });
         }
         M.t.push(sweep(tst, { front, lat: [0, 1, 0], steps: 4, round: Math.min(tt, tw) * 0.9 * k, blend: 0.0008 * k }));
       };
@@ -109,7 +111,7 @@ export function goblinArmMuscles(S, { posed = true } = {}) {
       const P = pts.map(([b, p]) => rig.at(jn(b), X(p)));
       const cp = evenCurve(P, Math.max(6, pts.length * 4));
       const front = mv(rig.J[jn(out[0])].R, X(out[1]));
-      M.t.push(sweep(cp.pts.map((p) => ({ p, r: [tt * k, tw * k, tt * k, tw * k] })), { front, lat: [0, 1, 0], steps: 3, round: Math.min(tw, tt) * 0.9 * k, blend: 0.0006 * k }));
+      M.t.push(sweep(cp.pts.map((p) => ({ p: B.push(p, tt * k * 1.05), r: [tt * k, tw * k, tt * k, tw * k] })), { front, lat: [0, 1, 0], steps: 3, round: Math.min(tw, tt) * 0.9 * k, blend: 0.0006 * k }));
     };
     const H = (a, b, c) => [0.121 + c, 0.44 - a, -0.004 + b]; // a point in the hand's frame (left side)
     const off = (p, v) => add(p, v);

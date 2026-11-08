@@ -5,6 +5,7 @@
 // so a muscle that crosses a joint bends with it. Plain numbers and arrays only (no three.js).
 import { cone } from './sdf.js';
 import { goblinArmMuscles } from './armMuscles.js';
+import { boneField } from './boneField.js';
 
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -55,7 +56,8 @@ const FULL = 1.38;
 
 export function goblinMuscles(S, { posed = true } = {}) {
   const k = S.scale;
-  const { at } = poseRig(S, posed);
+  const { at, J } = poseRig(S, posed);
+  const B = boneField(S, J); // (no muscle may pass through a bone)
   const H0 = [0, 0.922, -0.036];
   const hd = (x, y, z) => [H0[0] + x, H0[1] + y, H0[2] + z];
 
@@ -71,7 +73,7 @@ export function goblinMuscles(S, { posed = true } = {}) {
   // Bundles of the same muscle melt together (blend) into one sheet, with a soft groove between.
   const fibre = (M, pts, r, { ta = 0.08, tb = 0.12, peak = 0.5, tr = 0.22, blend = 0.0055, steps = 6, flat = 1 } = {}) => {
     r *= FULL; // (the goblin's muscles, filled out so neighbouring bundles meet)
-    const p = spline(pts, steps), n = p.length - 1;
+    let p = spline(pts, steps); const n = p.length - 1;
     const L = [0]; for (let i = 1; i <= n; i++) L.push(L[i - 1] + len(sub(p[i], p[i - 1])));
     const total = L[n];
     const R = (u) => {
@@ -79,6 +81,8 @@ export function goblinMuscles(S, { posed = true } = {}) {
       const v = (u - ta) / (1 - ta - tb), w = v < peak ? v / peak : (1 - v) / (1 - peak);
       return r * tr + (r - r * tr) * Math.pow(Math.sin(w * Math.PI / 2), 0.75);
     };
+    // lift the bundle off any bone it would pass through (its belly rests on the bone, not in it)
+    for (let i = 0; i <= n; i++) p[i] = B.push(p[i], R(L[i] / total) * k * flat * 0.85);
     for (let i = 0; i < n; i++) {
       const u0 = L[i] / total, u1 = L[i + 1] / total, um = (u0 + u1) / 2;
       const tendon = um < ta || um > 1 - tb;
