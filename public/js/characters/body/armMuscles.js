@@ -5,7 +5,7 @@
 // into the pose. A muscle keeps its volume: when its ends come together (it shortens) its belly
 // grows thicker, and when it is stretched it grows thinner, as a real one does.
 // Plain numbers and arrays only (no three.js).
-import { sweep } from './sdf.js';
+import { sweep, shapeDist } from './sdf.js';
 import { poseRig } from './muscles.js';
 import { boneField } from './boneField.js';
 
@@ -348,6 +348,51 @@ export function goblinArmMuscles(S, { posed = true } = {}) {
         const p = L(f + 'Proximal'), b = [0.002, -0.0072, -0.0108][i];
         belly(M, [['Hand', H(0.028, b, -0.0028)], ['Hand', H(0.05, b, -0.0025)], [f + 'Proximal', [p[0] - 0.0008, p[1] - 0.004, p[2] + side2 * 0.003]]], { w: 0.0018, d: 0.002, di: 0.0018, ta: 0.02, tb: 0.2, peak: 0.42, out: ['Hand', [-1, 0, 0]], tw: 0.0009, tt: 0.0005, blend: 0.0012 });
       });
+    }
+    // ---- soft contact at the elbow ----
+    // When the elbow bends far, the forearm's front muscles press into the biceps and brachialis.
+    // Real muscle does not pass through muscle: both sides flatten where they meet and bulge a
+    // little to the sides (keeping their volume). Each side gives way by half the overlap.
+    {
+      const ang = (A, Bm) => { const t = A[0] * Bm[0] + A[3] * Bm[3] + A[6] * Bm[6] + A[1] * Bm[1] + A[4] * Bm[4] + A[7] * Bm[7] + A[2] * Bm[2] + A[5] * Bm[5] + A[8] * Bm[8]; return Math.acos(Math.max(-1, Math.min(1, (t - 1) / 2))); };
+      const bend = ang(rig.J[side + 'UpperArm'].R, rig.J[side + 'LowerArm'].R);
+      const wgt = Math.min(1, Math.max(0, (bend - 0.7) / 0.6)); // (no change until the elbow is well bent)
+      if (wgt > 0) {
+        const grp = (names) => parts.filter((p) => p.mat === 'muscle' && names.some((n) => p.name === side + n)).flatMap((p) => p.shapes.filter((q) => q.kind === 'sweep'));
+        const upper = grp(['Biceps', 'Brachialis']);
+        const fore = grp(['Brachioradialis', 'PronatorTeres', 'FlexorCarpiRadialis', 'PalmarisLongus', 'FlexorCarpiUlnaris', 'FlexorDigitorumSuperficialis', 'ExtensorCarpiRadialis']);
+        const fieldOf = (list) => (p) => { let d = 1; for (const q of list) d = Math.min(d, shapeDist(q, p[0], p[1], p[2])); return d; };
+        const nrm = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
+        const crs = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        const dt = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        // plan the moves for one group's stations against the other group (as they are now)
+        const plan = (list, other) => {
+          const D = fieldOf(other), e = 0.0003, moves = [];
+          for (const sh of list) sh.stations.forEach((st, i, all) => {
+            const near = D(st.p); const rmax = Math.max(...st.r);
+            if (near > rmax) return;
+            const g = nrm([D(add(st.p, [e, 0, 0])) - D(add(st.p, [-e, 0, 0])), D(add(st.p, [0, e, 0])) - D(add(st.p, [0, -e, 0])), D(add(st.p, [0, 0, e])) - D(add(st.p, [0, 0, -e]))]);
+            const t = nrm(sub(all[Math.min(all.length - 1, i + 1)].p, all[Math.max(0, i - 1)].p));
+            const fu = sh.front; const u = nrm(sub(fu, t.map((v) => v * dt(fu, t)))), w = crs(t, u);
+            const cu = -dt(g, u), cw = -dt(g, w); // (which side of the section faces the other muscle)
+            const j = Math.abs(cu) > Math.abs(cw) ? (cu > 0 ? 0 : 2) : (cw > 0 ? 1 : 3);
+            const o = (st.r[j] - near) * wgt; // (how far this section's facing side reaches into the other)
+            if (o > 0) moves.push([sh, st, j, o / 2, g]);
+          });
+          return moves;
+        };
+        for (let pass = 0; pass < 4; pass++) { // (a few passes, as each move changes the contact)
+        const mv1 = plan(fore, upper), mv2 = plan(upper, fore);
+        for (const [sh, st, j, o, g] of [...mv1, ...mv2]) {
+          // flatten the facing side by half the share and move the centre back by the other half
+          const r0 = st.r[j], r1 = Math.max(r0 * 0.35, r0 - o / 2);
+          const side2 = j % 2 ? [0, 2] : [1, 3], f = Math.sqrt((r0 + st.r[(j + 2) % 4]) / (r1 + st.r[(j + 2) % 4]));
+          st.r = st.r.slice(); st.r[j] = r1; for (const q of side2) st.r[q] *= f;
+          st.p = add(st.p, g.map((v) => v * o / 2));
+          delete sh._S; delete sh._ba;
+        }
+        }
+      }
     }
   }
   return parts;
