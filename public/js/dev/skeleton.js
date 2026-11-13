@@ -7,6 +7,7 @@ import { goblinSkeleton } from '../characters/body/skeleton.js';
 import { goblinMuscles } from '../characters/body/muscles.js';
 import { goblinVessels } from '../characters/body/veins.js';
 import { goblinArmJoints, goblinLegJoints } from '../characters/body/joints.js';
+import { goblinOrgans } from '../characters/body/organs.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -28,13 +29,25 @@ const MATS = {
   artery: new THREE.MeshStandardMaterial({ color: '#d02a2e', roughness: 0.32, emissive: '#3a0606' }),
   vein: new THREE.MeshStandardMaterial({ color: '#3d62c4', roughness: 0.32, emissive: '#060c26' }),
   capsule: new THREE.MeshStandardMaterial({ color: '#efe9dc', roughness: 0.35, transparent: true, opacity: 0.32, depthWrite: false }),
+  heart: new THREE.MeshStandardMaterial({ color: '#9a2c2a', roughness: 0.42 }),
+  lung: new THREE.MeshStandardMaterial({ color: '#e5a0a2', roughness: 0.7 }),
+  airway: new THREE.MeshStandardMaterial({ color: '#d9b3aa', roughness: 0.5 }),
+  liver: new THREE.MeshStandardMaterial({ color: '#7a2c22', roughness: 0.38 }),
+  gall: new THREE.MeshStandardMaterial({ color: '#5d8a3e', roughness: 0.3 }),
+  gut: new THREE.MeshStandardMaterial({ color: '#e2a28c', roughness: 0.45 }),
+  colon: new THREE.MeshStandardMaterial({ color: '#c99079', roughness: 0.5 }),
+  spleen: new THREE.MeshStandardMaterial({ color: '#6c2c48', roughness: 0.4 }),
+  pancreas: new THREE.MeshStandardMaterial({ color: '#e6c98e', roughness: 0.6 }),
+  kidney: new THREE.MeshStandardMaterial({ color: '#8c3628', roughness: 0.4 }),
+  adrenal: new THREE.MeshStandardMaterial({ color: '#d9a447', roughness: 0.55 }),
+  bladder: new THREE.MeshStandardMaterial({ color: '#e8cfae', roughness: 0.45 }),
 };
 const grid = new THREE.GridHelper(2, 20, '#55555c', '#3a3a40'); scene.add(grid);
 
 let skel = null;
 // withMuscles: lay the muscles on; withVessels: the blood vessels (they need the muscles to lie on,
 // which are then built whether shown or not); pose: joint angles to use instead of the stance
-function build(make = goblinSkeleton, posed = true, withMuscles = false, withVessels = false, pose = null, withJoints = true, filter = null) {
+function build(make = goblinSkeleton, posed = true, withMuscles = false, withVessels = false, pose = null, withJoints = true, filter = null, withOrgans = false) {
   if (skel) scene.remove(skel.root);
   const S = make(), t0 = performance.now();
   if (pose) S.pose = { ...S.pose, ...pose };
@@ -42,6 +55,7 @@ function build(make = goblinSkeleton, posed = true, withMuscles = false, withVes
   if (withVessels) S.parts.push(...goblinVessels(S, mus, { posed }));
   if (withMuscles) S.parts.push(...mus);
   if (withJoints) S.parts.push(...goblinArmJoints(S, { posed }), ...goblinLegJoints(S, { posed }));
+  if (withOrgans) S.parts.push(...goblinOrgans(S));
   const nodes = {}, root = new THREE.Group();
   for (const j of S.joints) {
     const o = new THREE.Object3D(); o.name = j.name;
