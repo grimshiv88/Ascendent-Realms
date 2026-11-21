@@ -14,6 +14,7 @@ import { buildMobVillage } from './mobvillage.js';
 import { startWalkBuild } from './buildwalk.js';
 import { VILLAGES_AT_ONCE, VILLAGE_RETURNS_MS, VILLAGE_NEAR, VILLAGE_KIND, VILLAGE_SIZES, pickSize, newVillage, villageName, villageCleared, villageLoot } from '../data/mobvillages.mjs';
 import { createSkillFx } from './skillfx.js';
+import { moveFor } from './skillmoves.js';
 import { codeFor, actionFor, keyName } from '../data/controls.mjs';
 import { buildDepths } from './depths.js';
 import { buildPortal } from './portal.js';
@@ -1246,9 +1247,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     c.sp = Math.max(0, c.sp - sk.sp);
     game.touch('sp');
-    // the body acts it out: a swing for strikes, a spin for sweeps, hands forward to cast, arms up to heal or rally
-    if (sk.type === 'strike') { attackT = 0; swingDone = true; } else skillPose = { kind: sk.type === 'bolt' ? 'cast' : sk.type, t: 0, dur: sk.type === 'sweep' ? 0.6 : sk.type === 'dash' ? 0.4 : 0.7 };
-    skillFx.play(sk, look);
+    // the body acts it out with the skill's own move (skillmoves.js), and its effect shows the
+    // moment the blow lands: the dust flies as the stamping foot comes down
+    const mv = moveFor(sk);
+    attackT = -1;
+    skillPose = { move: mv, t: 0, dur: mv.dur };
+    if (mv.hit > 0) setTimeout(() => skillFx.play(sk, look), mv.dur * mv.hit * 1000);
+    else skillFx.play(sk, look);
     say(sk.name, 'exp');
     return 'ok';
   }
@@ -1292,7 +1297,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       c.sp = Math.max(0, c.sp - cost);
       game.touch('sp');
       spellReady[sp.id] = clock.elapsedTime + sp.cd;
-      skillPose = { kind: 'cast', t: 0, dur: 0.6 };
+      skillPose = { move: moveFor({ type: 'bolt' }), t: 0, dur: 0.6 };
       say(sp.name, 'exp');
       return;
     }
@@ -1608,22 +1613,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // The arm swing: punch straight ahead, or a downward slash with a weapon
   let skillPose = null; // { kind, t, dur } while a skill is being acted out
   function poseSkill(rig, p) {
-    const k = Math.min(1, p.t / p.dur), up = Math.sin(k * Math.PI);
-    const arms = rig.arms || [];
-    if (p.kind === 'sweep') {
-      // spin round once with the weapon arm held out
-      avatar.rotation.y = heading + k * Math.PI * 2;
-      for (const a of arms) { a.shoulder.rotation.z = a.side * 1.3 * up; a.shoulder.rotation.x = -0.4 * up; }
-    } else if (p.kind === 'cast') {
-      for (const a of arms) { a.shoulder.rotation.x = -1.45 * up; a.elbow.rotation.x = -0.2 * (1 - up); }
-    } else if (p.kind === 'heal' || p.kind === 'buff') {
-      for (const a of arms) { a.shoulder.rotation.x = -2.7 * up; a.shoulder.rotation.z = a.side * 0.35 * up; }
-      if (rig.spine) rig.spine.rotation.x = -0.15 * up;
-    } else if (p.kind === 'dash') {
-      if (rig.spine) rig.spine.rotation.x = 0.45 * up;
-      for (const a of arms) a.shoulder.rotation.x = 0.8 * up;
-    }
-    if (!arms.length) rig.root.position.z = up * bodyH * 0.2;
+    const k = Math.min(1, p.t / p.dur);
+    if (rig.arms || rig.legs) {
+      rig.restPose ??= { head: rig.head?.rotation.x || 0, y: rig.root.position.y };
+      p.move.pose({ arms: rig.arms, legs: rig.legs, spine: rig.spine, head: rig.head, headBase: rig.restPose.head, root: rig.root, baseY: rig.restPose.y, bodyH, avatar, heading }, k);
+      if (k >= 1) { // (back to standing, nothing left bent)
+        rig.root.position.y = rig.restPose.y;
+        if (rig.head) rig.head.rotation.x = rig.restPose.head;
+        if (rig.spine) rig.spine.rotation.x = 0;
+        for (const l of rig.legs || []) l.hip.rotation.z = 0;
+        for (const a of rig.arms || []) a.elbow.rotation.x = 0;
+      }
+    } else rig.root.position.z = Math.sin(k * Math.PI) * bodyH * 0.2; // (bodies without arms lunge instead)
   }
   // the weapon arm's ready pose [shoulder, elbow] with a blade (see gear.js: the blade then points ahead)
   const READY = [-0.35, -0.85];
