@@ -146,7 +146,71 @@ export function caveLayout(cave) {
   }
   const tunnels = chambers.slice(1).map((c, i) => ({ a: chambers[i], b: c, w: 3.6 }));
   const branches = falseRoutes(cave, chambers, tunnels);
-  return { chambers, branches, all: [...chambers, ...branches], tunnels, entry: chambers[0], rnd };
+  const secrets = secretRooms(cave, chambers, branches, tunnels);
+  const hazards = dangers(cave, tunnels, branches);
+  return { chambers, branches, secrets, all: [...chambers, ...branches, ...secrets], tunnels, entry: chambers[0], rnd, ...hazards };
+}
+
+// Dungeons (the caves high on the mountains) are built to be hard to finish: chasms to jump across
+// in the tunnels, traps hidden in the floor, and two secret rooms behind cracked walls
+export const hardCave = (cave) => !!cave && cave.dungeon;
+export const CHASM_DEPTH = 10; // how far down a chasm's floor is
+// how much of your HP each trap takes, and what it says
+export const TRAPS = {
+  spikes: { name: 'a spike trap', hurt: 0.14, say: 'Spikes shoot up from the floor!' },
+  darts: { name: 'a dart trap', hurt: 0.1, say: 'Darts fly out of the wall!' },
+  rocks: { name: 'falling rocks', hurt: 0.2, say: 'Rocks fall from the roof!' },
+};
+// A secret room: a small chamber with a treasure chest, through a short tunnel walled off by
+// cracked rock (break it to get in). Some sit at the dead end of a false route, so the long way to
+// nowhere now and then pays. Every cave but the small ones can have one; hard caves have two.
+function secretRooms(cave, chambers, branches, tunnels) {
+  if (cave.size === 'small') return [];
+  const rnd = seeded(cave.index * 97 + 5);
+  const want = hardCave(cave) ? 2 : rnd() < 0.5 ? 1 : 0;
+  const out = [];
+  const others = () => [...chambers, ...branches, ...out];
+  const ends = branches.filter((b) => !tunnels.some((t) => t.a === b));
+  const from = [...ends, ...chambers.slice(1, -1)];
+  for (let tries = 0; out.length < want && tries < 40; tries++) {
+    const at = from[Math.floor(rnd() * from.length)];
+    if (!at || out.some((o) => o.from === at)) continue;
+    const r = 4.5, d = rnd() * Math.PI * 2, len = at.r + r + 6 + rnd() * 4;
+    const c = { x: at.x + Math.cos(d) * len, z: at.z + Math.sin(d) * len, y: at.y - 1, r, secret: true, from: at };
+    let ok = true;
+    for (const o of others()) if (o !== at && Math.hypot(c.x - o.x, c.z - o.z) < c.r + o.r + 8) ok = false;
+    for (let k = 0.15; k <= 1 && ok; k += 0.1) {
+      const px = at.x + (c.x - at.x) * k, pz = at.z + (c.z - at.z) * k;
+      for (const t of tunnels) if (t.a !== at && t.b !== at && segDist(px, pz, t.a, t.b) < 6) ok = false;
+      for (const o of others()) if (o !== at && Math.hypot(px - o.x, pz - o.z) < o.r + 4) ok = false;
+    }
+    if (!ok) continue;
+    out.push(c);
+    tunnels.push({ a: at, b: c, w: 3.2, secret: true });
+  }
+  return out;
+}
+// The chasms and traps of a hard cave. A chasm sits across a tunnel (`at`: how far along its
+// walkable part, `w`: how wide); a trap is a plate in the floor, `s` of the way along its tunnel.
+function dangers(cave, tunnels, branches) {
+  if (!hardCave(cave)) return { traps: [] };
+  const rnd = seeded(cave.index * 131 + 17);
+  const traps = [];
+  const kinds = Object.keys(TRAPS);
+  for (const t of tunnels) {
+    if (t.secret) continue;
+    const walk = Math.hypot(t.b.x - t.a.x, t.b.z - t.a.z) - t.a.r - t.b.r;
+    if (walk >= 9 && rnd() < (t.b.false ? 0.3 : 0.4)) t.chasm = { at: 0.4 + rnd() * 0.2, w: 2.2 + rnd() * 0.6 };
+    const n = (rnd() < 0.55 ? 1 : 0) + (rnd() < 0.2 ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      const s = 0.15 + rnd() * 0.7;
+      if (t.chasm && Math.abs(s - t.chasm.at) < 0.2) continue;
+      traps.push({ tunnel: t, s, kind: kinds[Math.floor(rnd() * kinds.length)] });
+    }
+  }
+  // the false routes' chambers hide a trap now and then too
+  for (const b of branches) if (rnd() < 0.3) { const a = rnd() * Math.PI * 2, r = b.r * rnd() * 0.6; traps.push({ x: b.x + Math.cos(a) * r, z: b.z + Math.sin(a) * r, kind: kinds[Math.floor(rnd() * kinds.length)] }); }
+  return { traps };
 }
 
 // distance from a point to a line segment, flat (x, z)

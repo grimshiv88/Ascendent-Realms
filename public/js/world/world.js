@@ -23,7 +23,7 @@ import { buildPieces, pieceColliders, storeyY } from './buildings.js';
 import { allPortals, nearestPortal } from '../data/portals.mjs';
 import { allCastles, KING_RETURNS_MS } from '../data/kings.mjs';
 import { placeBuilding, CELL } from '../data/building.mjs';
-import { caveById, THEMES, chestLoot, bossLevel } from '../data/depths.mjs';
+import { caveById, THEMES, chestLoot, bossLevel, caveOres, pickOre, SIZES } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { updateCrowd } from '../characters/crowd.js';
@@ -756,6 +756,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     colliders.add(built.solid);
     creatures.clear();
     depth = { cave, built, back: site.built.mouth, leftExit: false };
+    safeAt = null; pitTime = 0;
     pos.set(built.start.x, built.floorAt(built.start.x, built.start.z), built.start.z);
     heading = built.start.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; snapCam = true;
     const lvl = game.character.level;
@@ -980,8 +981,59 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     colliders.remove([e]);
     depth.built.removeSolid(e);
   }
+  // A hard cave's dangers: traps go off under your feet (jump a plate and it can't catch you), a
+  // fall into a chasm hurts and you climb back out where you jumped from, and a cracked wall nearby
+  // lets a cold draught through
+  let safeAt = null, pitTime = 0;
+  function tickDangers(dt, t) {
+    const b = depth.built;
+    if (dead) return;
+    if (!airborne) {
+      const tr = b.trapAt(pos.x, pos.z, t);
+      if (tr) {
+        const dmg = Math.max(1, Math.round(game.stats().hp * tr.hurt));
+        floatText(`-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
+        say(tr.say, 'hurt');
+        lastHurt = clock.elapsedTime;
+        if (game.damage(dmg)) { defeated({ kind: { name: tr.name } }, 'trap'); return; }
+      }
+      if (b.inPit(pos.x, pos.z)) {
+        pitTime += dt;
+        if (pitTime > 1.5 && safeAt) {
+          pos.set(safeAt.x, b.floorAt(safeAt.x, safeAt.z), safeAt.z);
+          velY = 0; speedNow = 0; autoWalk = false; snapCam = true; pitTime = 0;
+          say('You climb back out of the chasm', 'note');
+        }
+      } else { pitTime = 0; safeAt = { x: pos.x, z: pos.z }; }
+    }
+    const c = b.crackNear(pos.x, pos.z);
+    if (c) { c.hinted = true; say('A cold draught seeps through a crack in the wall…', 'note'); }
+  }
+  // a cracked wall in a cave: heavy weapons break it faster; behind it is a secret room
+  function hitCrack(c) {
+    const w = game?.weapon();
+    floatText('⛏', new THREE.Vector3(c.x, c.mesh.position.y + 1, c.z), 'dmg');
+    if (!depth.built.hitCrack(c, w?.type === 'axe' || w?.type === 'mace' ? 2 : 1)) return;
+    colliders.remove(c.parts);
+    say('The wall gives way. A secret passage!', 'exp');
+  }
+  // a secret room's chest: coins, some of the cave's ore and a potion, for whoever finds it
+  function openSecretChest(e) {
+    if (e.open) { say('The chest is empty', 'note'); return; }
+    const c = game.character, cave = depth.cave;
+    const coins = Math.round((25 + c.level * 6) * SIZES[cave.size].chambers / 2);
+    const items = [];
+    for (let i = 0; i < 2 + Math.floor(Math.random() * 2); i++) items.push([pickOre(caveOres(cave, 1), Math.random, 0.5), 1 + Math.floor(Math.random() * 2)]);
+    items.push([c.level >= 20 ? 'big_potion' : 'potion', 1]);
+    for (const [id, n] of items) game.addItem(id, n);
+    game.gainCoins(coins);
+    depth.built.openSecret(e);
+    say(`A hidden treasure! +${money(coins)}`, 'exp');
+    onEvent?.('chest', { coins, items: items.map(([id, n]) => `${n > 1 ? `${n} ` : ''}${ITEMS[id].name}`) });
+  }
   function openChest(e) {
     if (e.village) { openVillageChest(e); return; }
+    if (e.secret) { openSecretChest(e); return; }
     if (e.open) { say('The chest is empty', 'note'); return; }
     if (!e.unlocked) { say('Locked tight. Beat the boss to open it', 'hurt'); return; }
     const c = game.character;
@@ -1405,6 +1457,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!best) return;
     if (best.kind === 'vein') { mineVein(best); return; }
     if (best.kind === 'nest') { hitNest(best); return; }
+    if (best.kind === 'crack') { hitCrack(best.crack); return; }
     // with a keyboard a chest opens with the use key; on a touch screen a tap of the attack button does it
     if (best.kind === 'chest') { if (matchMedia('(pointer: coarse)').matches) openChest(best); else say(`Press ${keyName(codeFor('interact'))} to open the chest`, 'note'); return; }
     const info = BREAKABLE[best.kind];
@@ -1889,6 +1942,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (depth) {
       tickNests(dt);
       depth.built.update(t);
+      tickDangers(dt, t);
       // the shaft of daylight in the first chamber takes you back up
       const d = Math.hypot(pos.x - depth.built.exit.x, pos.z - depth.built.exit.z);
       if (d > 4) depth.leftExit = true;
@@ -2146,6 +2200,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugScene: () => scene,
     debugDepths() { const q = sites.find((c) => c.place.cave && c.built); if (q) enterDepths(q); return !!q; },
     debugTorch(v) { holding = !v; setHolding(v); },
+    debugDangers() {
+      if (!depth) return null;
+      const b = depth.built, L = b.layout;
+      const pits = L.tunnels.filter((t) => t.chasm).map((t) => { const dx = t.b.x - t.a.x, dz = t.b.z - t.a.z, l = Math.hypot(dx, dz), u = t.a.r + (l - t.a.r - t.b.r) * t.chasm.at; return { x: t.a.x + dx / l * u, z: t.a.z + dz / l * u, dir: Math.atan2(dx, dz) }; });
+      return { pits, traps: b.traps.map((t) => ({ x: t.x, z: t.z, kind: t.kind })), cracks: b.cracks.map((c) => ({ x: c.x, z: c.z, ux: c.ux, uz: c.uz })), hp: game.character.hp };
+    },
     debugCam(at, look, showSelf = false) { camOverride = at ? [at, look, showSelf] : null; if (!at) avatar.visible = true; },
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
     debugMonsters: () => creatures.list.filter((m) => !m.dead).map((m) => ({ n: m.title || m.kind.name, x: m.x, y: m.y, z: m.z, g: surfaceAt(m.x, m.z), by: m.body.position.y })),
