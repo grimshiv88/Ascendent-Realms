@@ -15,6 +15,7 @@ import { startWalkBuild } from './buildwalk.js';
 import { VILLAGES_AT_ONCE, VILLAGE_RETURNS_MS, VILLAGE_NEAR, VILLAGE_KIND, VILLAGE_SIZES, pickSize, newVillage, villageName, villageCleared, villageLoot } from '../data/mobvillages.mjs';
 import { createSkillFx } from './skillfx.js';
 import { moveFor } from './skillmoves.js';
+import { tickWind } from './trees.js';
 import { codeFor, actionFor, keyName } from '../data/controls.mjs';
 import { buildDepths } from './depths.js';
 import { buildPortal } from './portal.js';
@@ -1662,6 +1663,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     lastFrame = now;
     const dt = Math.min(clock.getDelta(), 0.1); // a slow frame still moves you the full distance
     const t = clock.elapsedTime;
+    tickWind(t); // (the trees and grass sway)
     // a window or the chat is open: the mouse is always free to use it, even while you keep walking
     if (locked() && windowOpen?.()) { letGo = true; document.exitPointerLock(); }
 

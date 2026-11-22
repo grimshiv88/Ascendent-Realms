@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { sample, placesWithPositions, isPrepared, surfaceAt } from '../data/world-layout.mjs';
 import { allPortals } from '../data/portals.mjs';
+import { oakTree, pineTree, youngTree, greatTree, swampTree, glowTree, deadTree, berryBush, treeMaterials, windy, setLeafDetail, getLeafDetail, grownLite } from './trees.js';
 
 // ---------- building the models ----------
 
@@ -48,59 +49,6 @@ function roughen(geo, amount, seed = 1) {
 }
 
 const BARK = '#4a3524';
-function pineGeo(snowy) {
-  const needles = (v, c) => {
-    c.set('#2c4628').lerp(new THREE.Color('#3c5a2e'), Math.min(1, Math.max(0, (v.y - 4) / 12)));
-    if (snowy && v.y > 0) {
-      const top = (v.y % 3.6) / 3.6;
-      if (top > 0.45) c.lerp(new THREE.Color('#eef2f6'), 0.85);
-    }
-  };
-  const parts = [{ geo: new THREE.CylinderGeometry(0.2, 0.42, 7, 7), color: BARK, at: [0, 3.5, 0] }];
-  for (let k = 0; k < 5; k++) {
-    parts.push({ geo: roughen(new THREE.ConeGeometry(3.6 - k * 0.65, 5.2 - k * 0.5, 10, 2), 0.08, k), color: needles, at: [0, 4.2 + k * 2.7, 0] });
-  }
-  return merge(parts);
-}
-function oakGeo() {
-  const leaf = (v, c) => c.set('#3f5e26').lerp(new THREE.Color('#5d7d34'), Math.min(1, Math.max(0, (v.y - 5) / 5)));
-  const parts = [{ geo: new THREE.CylinderGeometry(0.35, 0.65, 6, 8), color: BARK, at: [0, 3, 0] }];
-  for (const [x, z, a] of [[1.4, 0.4, 0.7], [-1.2, -0.3, -0.8], [0.2, -1.3, 0.5]]) {
-    parts.push({ geo: new THREE.CylinderGeometry(0.12, 0.22, 3, 6), color: BARK, at: [x * 0.6, 5.6, z * 0.6], rot: [z * 0.4, 0, -a] });
-  }
-  for (const [x, y, z, s] of [[0, 8, 0, 1.3], [2, 7, 0.7, 1], [-1.9, 7.2, -0.6, 1], [0.4, 6.8, -2, 0.95], [-0.6, 9.4, 0.8, 0.85], [1, 8.6, 1.6, 0.8]]) {
-    parts.push({ geo: roughen(new THREE.IcosahedronGeometry(2.4, 1), 0.12, x + z), color: leaf, at: [x, y, z], scale: [s, s * 0.85, s] });
-  }
-  return merge(parts);
-}
-function deadTreeGeo() {
-  const wood = '#6e665c';
-  const parts = [{ geo: new THREE.CylinderGeometry(0.12, 0.35, 5, 6), color: wood, at: [0, 2.5, 0], rot: [0.05, 0, 0.08] }];
-  for (const [y, a, r] of [[3, 0.9, 0], [3.8, -0.8, 1.5], [4.4, 0.7, 3]]) {
-    parts.push({ geo: new THREE.CylinderGeometry(0.05, 0.12, 2.2, 5), color: wood, at: [Math.cos(r) * 0.6, y + 0.6, Math.sin(r) * 0.6], rot: [Math.sin(r) * a, 0, Math.cos(r) * -a] });
-  }
-  return merge(parts);
-}
-function swampTreeGeo() {
-  const parts = [{ geo: new THREE.CylinderGeometry(0.45, 1.0, 6, 8), color: '#3e3a2a', at: [0, 3, 0] }];
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2;
-    parts.push({ geo: new THREE.CylinderGeometry(0.1, 0.25, 2.2, 5), color: '#3e3a2a', at: [Math.cos(a) * 0.9, 0.5, Math.sin(a) * 0.9], rot: [Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9] });
-  }
-  parts.push({ geo: roughen(new THREE.IcosahedronGeometry(4, 1), 0.15, 3), color: '#4a5a2a', at: [0, 7.4, 0], scale: [1.2, 0.5, 1.2] });
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2;
-    parts.push({ geo: new THREE.ConeGeometry(0.25, 2.6, 4), color: '#6a7040', at: [Math.cos(a) * 3.6, 5.6, Math.sin(a) * 3.6], rot: [Math.PI, 0, 0] });
-  }
-  return merge(parts);
-}
-function glowTreeGeo() {
-  const parts = [{ geo: new THREE.CylinderGeometry(0.2, 0.4, 7, 7), color: '#d8d2c0', at: [0, 3.5, 0], rot: [0, 0, 0.06] }];
-  for (const [x, y, z, s] of [[0, 8.5, 0, 1.2], [1.5, 7.4, 0.6, 0.9], [-1.4, 7.6, -0.5, 0.9], [0.2, 9.8, 0.4, 0.7]]) {
-    parts.push({ geo: roughen(new THREE.IcosahedronGeometry(2.2, 1), 0.1, x), color: (v, c) => c.set('#5fbfa0').lerp(new THREE.Color('#bff0d8'), Math.min(1, Math.max(0, (v.y - 7) / 4))), at: [x, y, z], scale: [s, s, s] });
-  }
-  return merge(parts);
-}
 function cactusGeo() {
   const g = '#5a7a3a';
   return merge([
@@ -119,39 +67,6 @@ function reedsGeo() {
     parts.push({ geo: new THREE.ConeGeometry(0.035, 1.6 + (i % 4) * 0.35, 3), color: i % 2 ? '#7a8a4a' : '#6a7a3a', at: [Math.cos(a) * r, 0.9, Math.sin(a) * r], rot: [Math.sin(a) * 0.15, 0, Math.cos(a) * 0.15] });
   }
   parts.push({ geo: new THREE.CylinderGeometry(0.06, 0.06, 0.3, 6), color: '#5a3a22', at: [0.3, 2.05, 0] });
-  return merge(parts);
-}
-function youngTreeGeo() {
-  const parts = [{ geo: new THREE.CylinderGeometry(0.07, 0.12, 2, 6), color: BARK, at: [0, 1, 0] }];
-  for (let k = 0; k < 3; k++) {
-    parts.push({ geo: roughen(new THREE.ConeGeometry(1.1 - k * 0.28, 1.6 - k * 0.2, 8), 0.06, k), color: k % 2 ? '#3f6030' : '#4a6e34', at: [0, 1.4 + k * 0.8, 0] });
-  }
-  return merge(parts);
-}
-function bushGeo() {
-  const parts = [];
-  for (const [x, y, z, s] of [[0, 0.55, 0, 0.7], [0.45, 0.45, 0.2, 0.5], [-0.4, 0.45, -0.15, 0.55], [0.1, 0.45, -0.45, 0.45]]) {
-    parts.push({ geo: roughen(new THREE.IcosahedronGeometry(1, 1), 0.12, x), color: '#3e5e2a', at: [x, y, z], scale: [s, s * 0.8, s] });
-  }
-  for (let i = 0; i < 10; i++) {
-    const a = i * 2.39, r = 0.35 + (i % 3) * 0.15;
-    parts.push({ geo: new THREE.SphereGeometry(0.06, 6, 4), color: '#3a2a8a', at: [Math.cos(a) * r, 0.5 + (i % 4) * 0.12, Math.sin(a) * r] });
-  }
-  return merge(parts);
-}
-// A great tree: an ancient giant of the forest, 35–45 metres tall
-function greatTreeGeo() {
-  const bark = (v, c) => c.set('#4a3a2a').lerp(new THREE.Color('#5e4a36'), (Math.sin(v.y * 1.3 + v.x * 2) + 1) / 2);
-  const parts = [{ geo: roughen(new THREE.CylinderGeometry(1.6, 3.2, 24, 14, 6), 0.12, 2), color: bark, at: [0, 12, 0] }];
-  for (let i = 0; i < 7; i++) {
-    const a = (i / 7) * Math.PI * 2;
-    parts.push({ geo: new THREE.CylinderGeometry(0.3, 1.1, 6, 7), color: bark, at: [Math.cos(a) * 3, 1.2, Math.sin(a) * 3], rot: [Math.sin(a) * 1.0, 0, -Math.cos(a) * 1.0] });
-    parts.push({ geo: new THREE.CylinderGeometry(0.35, 0.9, 11, 7), color: bark, at: [Math.cos(a) * 4.5, 24, Math.sin(a) * 4.5], rot: [Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9] });
-  }
-  const leaf = (v, c) => c.set('#2f4a22').lerp(new THREE.Color('#58782f'), Math.min(1, Math.max(0, (v.y - 24) / 16)));
-  for (const [x, y, z, s] of [[0, 34, 0, 9], [8, 29, 3, 6.5], [-7.5, 30, -2, 7], [2, 29, -8, 6.5], [-2, 30, 8, 6.5], [5, 37, -4, 5], [-4, 38, 3, 5]]) {
-    parts.push({ geo: roughen(new THREE.IcosahedronGeometry(1, 2), 0.12, x + y), color: leaf, at: [x, y, z], scale: [s, s * 0.7, s] });
-  }
   return merge(parts);
 }
 // Plain stand-ins for trees further away: the same shape and colours with far fewer faces
@@ -175,6 +90,15 @@ function lowGeos() {
   };
 }
 
+// Let a simple shape bend in the wind: the higher a vertex, the further it moves (amount: metres
+// per metre of height in a full gust)
+function withSway(g, amount) {
+  const p = g.attributes.position, sway = new Float32Array(p.count);
+  for (let i = 0; i < p.count; i++) sway[i] = Math.max(0, p.getY(i)) * amount;
+  g.setAttribute('aSway', new THREE.BufferAttribute(sway, 1));
+  g.setAttribute('aFlutter', new THREE.BufferAttribute(new Float32Array(p.count), 1));
+  return g;
+}
 function rockGeo() {
   return merge([{ geo: roughen(new THREE.IcosahedronGeometry(1, 1), 0.22, 5), color: '#ffffff' }]);
 }
@@ -230,7 +154,10 @@ const ROCK_TINT = { heart: '#86817a', peaks: '#4a4440', warrens: '#a87a52', fae:
 let NEAR_TREES = 110; // metres: trees closer than this are drawn in full and cast shadows
 let grassDensity = 1;
 // how far full trees reach and how thick the grass is (from the graphics quality)
-export function setSceneryQuality(q) { NEAR_TREES = q.nearTrees; grassDensity = q.grassDensity; }
+export function setSceneryQuality(q) {
+  NEAR_TREES = q.nearTrees; grassDensity = q.grassDensity;
+  setLeafDetail(q.nearTrees <= 60 ? 0.45 : q.nearTrees <= 110 ? 0.75 : 1); // (fewer, bigger leaves on low graphics)
+}
 const SOLID = { pine: 0.45, snowpine: 0.45, oak: 0.7, dead: 0.3, swamp: 0.9, glow: 0.4, cactus: 0.4, young: 0.15, great: 3.2, bush: 0.4 };
 
 function rng(seed) {
@@ -264,18 +191,30 @@ function nearPlace(x, z) {
 
 export function scenery() {
   const geos = {
-    pine: pineGeo(false), snowpine: pineGeo(true), oak: oakGeo(), dead: deadTreeGeo(), swamp: swampTreeGeo(),
-    glow: glowTreeGeo(), cactus: cactusGeo(), reeds: reedsGeo(), rock: rockGeo(),
-    young: youngTreeGeo(), bush: bushGeo(), great: greatTreeGeo(),
+    cactus: cactusGeo(), reeds: withSway(reedsGeo(), 0.12), rock: rockGeo(),
   };
+  // the trees are grown branch by branch with real leaves (trees.js), once for each leaf detail the
+  // graphics ask for (tiles drawn after a change of quality use the new ones)
+  const grown = {};
+  const growAll = () => ({
+    pine: pineTree(false), snowpine: pineTree(true), oak: oakTree(), dead: deadTree(), swamp: swampTree(),
+    glow: glowTree(), young: youngTree(), bush: berryBush(), great: greatTree(),
+  });
+  const treeGeos = () => (grown[getLeafDetail()] ||= growAll());
+  // the same trees built lighter, for the middle distance (the full ones are only drawn close by)
+  const midGeos = () => (grown['mid' + getLeafDetail()] ||= grownLite(growAll));
+  const TREES = new Set(['pine', 'snowpine', 'oak', 'dead', 'swamp', 'glow', 'young', 'bush', 'great']);
+  const tree = treeMaterials(), glowTreeMat = treeMaterials({ emissive: '#2fa080', emissiveIntensity: 0.45, emissiveMap: null });
   const low = lowGeos();
   const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
   const mats = {
-    glow: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, emissive: '#2fa080', emissiveIntensity: 0.35 }),
+    pine: tree.mat, snowpine: tree.mat, oak: tree.mat, dead: tree.mat, swamp: tree.mat, young: tree.mat, bush: tree.mat, great: tree.mat,
+    glow: glowTreeMat.mat,
+    reeds: windy(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 })),
     rock: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }),
   };
-  const grass = grassGeo();
-  const grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
+  const grass = withSway(grassGeo(), 0.18);
+  const grassMat = windy(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
   const dummy = new THREE.Object3D();
   const tint = new THREE.Color();
   const s = {};
@@ -313,12 +252,12 @@ export function scenery() {
     }
     const group = new THREE.Group();
     const meshes = [];
-    const pairs = []; // [full detail, plain stand-in] for each kind
+    const pairs = []; // the meshes of each kind in each quarter
     // each kind is drawn per quarter of the tile, so the full-detail trees reach only so far
     for (const [spot, list] of Object.entries(spots)) {
       const [kind, q] = spot.split('|');
       const box = { x0: cx * size + (q & 1) * size / 2, z0: cz * size + (q >> 1) * size / 2, s: size / 2 };
-      const mesh = new THREE.InstancedMesh(geos[kind], mats[kind] || plain, list.length);
+      const mesh = new THREE.InstancedMesh(geos[kind] || treeGeos()[kind], mats[kind] || plain, list.length);
       list.forEach((p, i) => {
         const sc = kind === 'rock' ? 0.3 + rand() * rand() * 3 : 0.7 + rand() * 0.6;
         dummy.position.set(p.x, p.y - (kind === 'rock' ? sc * 0.3 : 0.1), p.z);
@@ -358,10 +297,31 @@ export function scenery() {
       });
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      if (TREES.has(kind)) mesh.customDepthMaterial = (kind === 'glow' ? glowTreeMat : tree).depth; // (shadows of the leaves, not of squares, swaying with them)
       mesh.computeBoundingSphere();
       group.add(mesh);
       meshes.push(mesh);
       // the stand-in shares the trees' places and colours, so a broken tree is gone from both
+      // a tree kind is drawn by two more meshes that share out its trees by distance: the ones close
+      // by in full, the rest in the lighter build (`mesh` keeps every tree's place, so felling one works)
+      let hi = null, mid = null;
+      if (TREES.has(kind)) {
+        mesh.visible = false;
+        const copy = (geo) => {
+          const m = new THREE.InstancedMesh(geo, mats[kind], list.length);
+          m.count = 0;
+          m.boundingSphere = mesh.boundingSphere;
+          m.receiveShadow = true;
+          m.customDepthMaterial = mesh.customDepthMaterial;
+          m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(list.length * 3), 3);
+          m.visible = false;
+          group.add(m);
+          meshes.push(m);
+          return m;
+        };
+        hi = copy(treeGeos()[kind]);
+        mid = copy(midGeos()[kind]);
+      }
       const lo = low[kind] && new THREE.InstancedMesh(low[kind], mats[kind] || plain, list.length);
       if (lo) {
         lo.instanceMatrix = mesh.instanceMatrix;
@@ -371,18 +331,45 @@ export function scenery() {
         group.add(lo);
         meshes.push(lo);
       }
-      pairs.push([mesh, lo, box]);
+      pairs.push({ mesh, hi, mid, lo, box, list, at: null });
+    }
+    // put each tree within `full` metres of (x, z) into the full mesh and the rest into the lighter one
+    function shareOut(P, x, z, full) {
+      const src = P.mesh.instanceMatrix.array, col = P.mesh.instanceColor.array;
+      let nh = 0, nm = 0;
+      P.list.forEach((p, i) => {
+        const near = (p.x - x) ** 2 + (p.z - z) ** 2 < full * full, m = near ? P.hi : P.mid, j = near ? nh++ : nm++;
+        m.instanceMatrix.array.set(src.subarray(i * 16, i * 16 + 16), j * 16);
+        m.instanceColor.array.set(col.subarray(i * 3, i * 3 + 3), j * 3);
+      });
+      for (const [m, n] of [[P.hi, nh], [P.mid, nm]]) { m.count = n; m.visible = n > 0; m.castShadow = true; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; }
+      P.at = { x, z, full, v: P.mesh.instanceMatrix.version };
     }
     return {
       group, solid,
-      // trees near (x, z) show every leaf and cast shadows; further ones show the stand-ins
+      // trees near (x, z) show every leaf, a little further the lighter build, and far off the plain
+      // stand-ins; all but the stand-ins cast shadows
       view(x, z) {
-        for (const [hi, lo, b] of pairs) {
+        const full = NEAR_TREES * 0.4;
+        for (const P of pairs) {
+          const b = P.box;
           const dx = Math.max(b.x0 - x, 0, x - b.x0 - b.s), dz = Math.max(b.z0 - z, 0, z - b.z0 - b.s);
           const near = dx * dx + dz * dz < NEAR_TREES * NEAR_TREES;
-          if (hi.castShadow === near && (!lo || lo.visible !== near)) continue;
-          hi.castShadow = near;
-          if (lo) { hi.visible = near; lo.visible = !near; }
+          if (!P.hi) {
+            if (P.mesh.castShadow === near && (!P.lo || P.lo.visible !== near)) continue;
+            P.mesh.castShadow = near;
+            if (P.lo) { P.mesh.visible = near; P.lo.visible = !near; }
+            continue;
+          }
+          if (near || !P.lo) {
+            const f = near ? full : 0, a = P.at;
+            if (!a || a.full !== f || a.v !== P.mesh.instanceMatrix.version || (f && (a.x - x) ** 2 + (a.z - z) ** 2 > 16)) shareOut(P, x, z, f);
+            if (P.lo) P.lo.visible = false;
+          } else if (P.at) {
+            P.at = null;
+            P.hi.visible = P.mid.visible = false;
+            P.lo.visible = true;
+          } else P.lo.visible = true;
         }
       },
       dispose() { for (const m of meshes) m.dispose(); },
