@@ -726,7 +726,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
   attachTorch();
-  heldTorch.light.position.set(0, bodyH * 1.15, bodyR * 0.8);
+  heldTorch.light.position.set(0, bodyH * 1.5 + 0.4, bodyR * 2 + 0.6); // (far enough off that it lights you evenly, not in hard patches)
   avatar.add(heldTorch.light);
   function setHolding(v) {
     if (v && !game?.count('torch')) { say('You have no torch. The shop sells them.', 'hurt'); return; }
@@ -2144,6 +2144,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       return { calls, tris: Math.round(tris), shadowCalls, top: Object.entries(out).sort((a, b) => b[1].n - a[1].n).slice(0, 25).map(([k, v]) => `${k}: ${v.n} draws ${Math.round(v.tris / 1000)}k tris ${v.shadow} shadow`) };
     },
     debugScene: () => scene,
+    debugDepths() { const q = sites.find((c) => c.place.cave && c.built); if (q) enterDepths(q); return !!q; },
+    debugTorch(v) { holding = !v; setHolding(v); },
     debugCam(at, look, showSelf = false) { camOverride = at ? [at, look, showSelf] : null; if (!at) avatar.visible = true; },
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
     debugMonsters: () => creatures.list.filter((m) => !m.dead).map((m) => ({ n: m.title || m.kind.name, x: m.x, y: m.y, z: m.z, g: surfaceAt(m.x, m.z), by: m.body.position.y })),

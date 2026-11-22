@@ -4,6 +4,7 @@ import * as THREE from 'three';
 
 const R = 14;        // inner radius in metres
 const OPENING = 1.0; // width of the entrance, radians
+const DOOR_W = R * Math.sin(OPENING / 2), DOOR_H = 5; // the doorway's half width and height (metres)
 
 export function buildCave(place) {
   const g = new THREE.Group();
@@ -13,15 +14,24 @@ export function buildCave(place) {
 
   const rockMat = new THREE.MeshStandardMaterial({ color: '#5a5048', roughness: 1, flatShading: true, side: THREE.DoubleSide });
   rockMat.shadowSide = THREE.BackSide; // (both sides casting made the dome shadow itself in stripes)
-  const geo = new THREE.SphereGeometry(R, 40, 14, OPENING / 2, Math.PI * 2 - OPENING, 0, Math.PI / 2);
-  const p = geo.attributes.position;
+  // a whole dome, with only an arched doorway cut low in its front (a gap from floor to top let the
+  // sky show through the roof)
+  const full = new THREE.SphereGeometry(R, 72, 24, 0, Math.PI * 2, 0, Math.PI / 2);
+  let p = full.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const n = Math.sin(x * 0.9) * Math.cos(z * 0.8) + Math.sin(y * 1.3 + x * 0.4) * 0.6;
     const k = 1 + n * 0.07;
     p.setXYZ(i, x * k, y * k, z * k);
   }
-  geo.computeVertexNormals();
+  const flat = full.toNonIndexed(), fp = flat.attributes.position.array, keep = [];
+  for (let t = 0; t < fp.length; t += 9) {
+    const cx = (fp[t] + fp[t + 3] + fp[t + 6]) / 3, cy = (fp[t + 1] + fp[t + 4] + fp[t + 7]) / 3 * 0.62, cz = (fp[t + 2] + fp[t + 5] + fp[t + 8]) / 3;
+    if (cx < 0 && (cz / DOOR_W) ** 2 + (cy / DOOR_H) ** 2 < 1) continue; // (in the doorway)
+    for (let j = 0; j < 9; j++) keep.push(fp[t + j]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3));
   const shell = new THREE.Mesh(geo, rockMat);
   shell.scale.y = 0.62;
   shell.castShadow = true;
@@ -42,13 +52,22 @@ export function buildCave(place) {
     g.add(b);
     lumps.push([-Math.cos(a) * (R + 1 + s * 0.4), Math.sin(a) * (R + 1 + s * 0.4), s * 0.6]); // (kept out of the dome inside)
   }
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(R * Math.sin(OPENING / 2) + 1.2, 1.4, 8, 16, Math.PI), rockMat);
-  arch.position.set(-R * Math.cos(OPENING / 2) - 0.5, 0, 0);
+  // a short rock tunnel through the doorway, with an arch round its outer end
+  const DOOR_IN = -Math.sqrt(R * R - (DOOR_H / 0.62) ** 2) + 0.8, DOOR_OUT = -R - 1.5;
+  const tunnel = new THREE.Mesh(new THREE.CylinderGeometry(DOOR_W + 0.4, DOOR_W + 0.4, DOOR_IN - DOOR_OUT, 24, 1, true, 0, Math.PI), rockMat);
+  tunnel.rotation.z = Math.PI / 2; // (its round side up, running along x)
+  tunnel.scale.x = (DOOR_H + 0.4) / (DOOR_W + 0.4); // (a little wider than the cut, so its ragged edge is hidden)
+  tunnel.position.set((DOOR_IN + DOOR_OUT) / 2, 0, 0);
+  tunnel.receiveShadow = true;
+  g.add(tunnel);
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(DOOR_W + 0.6, 1.3, 8, 20, Math.PI), rockMat);
+  arch.position.set(DOOR_OUT, 0, 0);
   arch.rotation.y = Math.PI / 2;
-  arch.scale.y = 0.9;
+  arch.scale.y = DOOR_H / DOOR_W;
+  arch.castShadow = true;
   g.add(arch);
   // the arch's feet, each side of the way in
-  for (const side of [-1, 1]) lumps.push([arch.position.x, side * (R * Math.sin(OPENING / 2) + 1.2), 1.5]);
+  for (const side of [-1, 1]) lumps.push([arch.position.x, side * (DOOR_W + 0.6), 1.5]);
 
   // glowing crystals inside
   const crystalMat = new THREE.MeshStandardMaterial({ color: '#8fd8ff', emissive: '#3aa0ff', emissiveIntensity: 1.6, roughness: 0.2 });
