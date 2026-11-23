@@ -39,6 +39,7 @@ import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, random
 import { ageOf, isChild, parentAlive, ceremonyDue, CEREMONY_SHOW_MS } from '../data/birth.mjs';
 const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine after a new card goes up
 import { money } from '../data/money.mjs';
+import { howOf, canHarvest, harvest } from './deaths.js';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -249,6 +250,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
       for (const it of doorsNear(pos.x, pos.z, 14)) list.push([it.d.x, it.d.y, it.d.z, 6, () => useDoor(it)]);
     }
+    if (!inside) for (const m of creatures?.list || []) if (canHarvest(m) && Math.hypot(m.x - pos.x, m.z - pos.z) < 12) list.push([m.x, m.y + 0.3, m.z, 2.6, () => harvestBody(m)]);
     for (const e of colliders.near(pos.x, pos.z, 12)) if (e.kind === 'chest') list.push([e.x, (e.y ?? g(e.x, e.z)) + 0.6, e.z, e.r + 1.6, () => openChest(e)]);
     const r = canvas.getBoundingClientRect();
     let best = null, bd = 70;
@@ -1090,6 +1092,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     return null;
   }
+  // a fallen monster's body you can cut up for bone and hide (E beside it), before it rots away
+  const corpseNear = (x, z, r) => creatures?.list.filter((m) => canHarvest(m) && Math.hypot(m.x - x, m.z - z) < r).sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z))[0] || null;
+  function harvestBody(m) {
+    const got = harvest(m);
+    if (!got) return;
+    for (const [id, n] of got) game.addItem(id, n);
+    say(`You cut up the body: ${got.map(([id, n]) => `${n} ${ITEMS[id].name}`).join(', ')}`, 'exp');
+  }
   function interact() {
     if (!game || dead) return;
     const chest = colliders.near(pos.x, pos.z, 3).find((e) => e.kind === 'chest' && Math.hypot(e.x - pos.x, e.z - pos.z) - e.r < 1.6);
@@ -1102,6 +1112,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const stand = standNear(pos.x, pos.z);
       if (stand) { onEvent?.('stand', stand); return; }
       if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
+      const body = corpseNear(pos.x, pos.z, 2.4);
+      if (body) { harvestBody(body); return; }
       const npc = npcNear(pos.x, pos.z);
       if (npc) { talkTo(npc); return; }
       const shop = shopNear(pos.x, pos.z);
@@ -1184,7 +1196,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         guard.swing = 1.1;
         const dmg = Math.round(guardHit(guard.tier) * (0.85 + Math.random() * 0.3));
         floatText(`-${dmg}`, new THREE.Vector3(m.x, (m.y ?? heightAt(m.x, m.z)) + m.height, m.z), 'hit');
-        finishHit(m, creatures.hit(m, dmg));
+        finishHit(m, creatures.hit(m, dmg, 'slash'));
       }
     } else guard.heading = heading;
     guard.body.position.set(guard.x, groundAt(guard.x, guard.z, -Infinity), guard.z);
@@ -1213,7 +1225,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const buffed = (stat) => 1 + ((buffs[stat] && clock.elapsedTime < buffs[stat].until ? buffs[stat].pct : 0) + (game?.boostPct(stat) || 0)) / 100;
 
   // Hit a monster with your weapon (or fists); `mult` and `magic` come from skills
-  function damageMonster(m, mult = 1, magic = null) {
+  function damageMonster(m, mult = 1, magic = null, how = null) {
     const w = game?.weapon();
     const s = game.stats();
     const useMagic = magic ?? !!w?.magic;
@@ -1229,7 +1241,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (own && Math.random() < own.chance) applyEffect(m, own.id, dmg, own.power);
       if (w.coat) { applyEffect(m, w.coat.id, dmg, 1); game.useCoat(); }
     }
-    finishHit(m, creatures.hit(m, dmg));
+    finishHit(m, creatures.hit(m, dmg, how || howOf({ weapon: w }), crit));
     return dmg;
   }
   // Poison, burn and bleed hurt each second; frost slows; drain heals you
@@ -1248,7 +1260,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (d.tick <= 0) {
           d.tick += 1;
           floatText(`${d.dps}`, new THREE.Vector3(m.x, m.y + m.height + 0.2, m.z), id === 'poison' ? 'exp' : 'hurt');
-          finishHit(m, creatures.hit(m, d.dps));
+          finishHit(m, creatures.hit(m, d.dps, howOf({ dot: id })));
           if (m.dead || m.hp <= 0) break;
         }
         if (d.left <= 0) delete m.dots[id];
@@ -1256,6 +1268,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
   function finishHit(m, reward) {
+    if (reward?.maimed) { floatText('Hand cut off!', new THREE.Vector3(m.x, m.y + m.height + 0.6, m.z), 'crit'); return; }
     if (reward) {
       m.onDeath?.();
       if (m.village) villageFallen(m);
@@ -1292,12 +1305,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const look = { p: pos.clone(), h: bodyH, heading };
     // a Unique Skill hits with whichever is stronger, ATK or MATK, and carries its element's effect
     // (a freeze slows every foe it hits; a devouring blow heals you)
-    let hitFoe = (m, mult, magic) => damageMonster(m, mult, magic);
+    const skHow = howOf({ skill: sk, weapon: game.weapon() });
+    let hitFoe = (m, mult, magic) => damageMonster(m, mult, magic, skHow);
     if (sk.unique) {
       const st = game.stats();
       hitFoe = (m, mult) => {
         const hp = m.hp;
-        const dmg = damageMonster(m, mult, st.matk > st.atk);
+        const dmg = damageMonster(m, mult, st.matk > st.atk, skHow);
         if (sk.drain) game.heal(Math.max(1, Math.round(dmg * sk.drain)));
         if (m.dead || m.hp <= 0) return;
         if (sk.hold) m.slow = Math.max(m.slow || 0, sk.hold);
@@ -1379,7 +1393,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
       for (const m of foes) {
         const hp = m.hp;
-        damageMonster(m, sp.power, true);
+        damageMonster(m, sp.power, true, howOf({ spell: sp }));
         if (sp.effect && !m.dead && m.hp > 0 && Math.random() < sp.effect.chance) applyEffect(m, sp.effect.id, Math.max(1, hp - m.hp), 1);
       }
       if (to) skillFx.spell(sp.element, from, to);
@@ -1395,7 +1409,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const element = els[spellTurn++ % els.length];
     const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
     let to;
-    if (m) { to = at(m); damageMonster(m, 1, true); }
+    if (m) { to = at(m); damageMonster(m, 1, true, howOf({ element })); }
     else to = ahead(SPELL_REACH);
     skillFx.spell(element, from, to);
   }
@@ -2280,6 +2294,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // where you are inside a building (in its own metres from the door), for the castle's map
     indoors: () => (inside ? { kind: inside.built.kind, x: pos.x - inside.built.exit.x, z: pos.z - inside.built.exit.z + 0.4, up: pos.y > 2 } : null),
     // for testing: go into a city building by its id
+    // for testing: a goblin a few steps ahead, killed (or maimed) by a blow of this kind
+    debugKill(how, { maim = false, strong = false, kind = 'goblin', d = 3, side = 0 } = {}) {
+      const x = pos.x + Math.sin(heading) * d + Math.cos(heading) * side, z = pos.z + Math.cos(heading) * d - Math.sin(heading) * side;
+      const m = creatures.spawnAt(kind, 5, x, z, { keep: true });
+      m.heading = heading + Math.PI; m.body.rotation.y = m.heading; m.angry = false; m.state = 'lurk';
+      if (maim) { for (let i = 0; i < 30 && !m.bits; i++) { m.hp = m.maxHp; creatures.hit(m, Math.ceil(m.maxHp / 5), "slash"); } m.hp = m.maxHp; return !!m.bits; }
+      finishHit(m, creatures.hit(m, m.hp * (strong ? 3 : 1), how, strong));
+      return { x: m.x, y: m.y, z: m.z };
+    },
+    debugDeaths: () => creatures.list.filter((m) => m.death).map((m) => m.death.t),
     debugLeave() { if (inside) leaveBuilding(); },
     debugCounter() { const c = inside?.built?.counter; if (!c) return false; pos.set(c.x, c.y, c.z); useIndoors(); return true; },
     debugEnter(id) { for (const c of builtCities()) { const sh = c.built.shops.find((q) => q.id === id); if (sh) { pos.set(sh.x, pos.y, sh.z); enterBuilding(sh); return true; } } return false; },

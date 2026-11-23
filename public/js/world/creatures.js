@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { joinCrowd, bakeCharacter } from '../characters/crowd.js';
+import { addOrgans, maim, startDeath, tickDeath, clearDeath } from './deaths.js';
 import { sample, toWorld, PLACES, safeZoneAt } from '../data/world-layout.mjs';
 import { EVOLUTIONS, rollKillExp } from '../data/game-data.mjs';
 import { wildLevelAt, stageForLevel, wardedAt } from '../data/wilds.mjs';
@@ -139,6 +140,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const kind = KINDS[kindId];
     const stage = extra.stage ?? kind.body.stage ?? 0;
     const body = buildCharacter({ race: kind.body.race, form: kind.body.form, stage, look: { ...(kind.body.look || {}), size: kind.body.size || 1 } });
+    addOrgans(body.userData.rig); // (inside, for a deep cut to spill)
     joinCrowd(bakeCharacter(body));
     body.position.set(x, y, z);
     const h = body.userData.height;
@@ -225,6 +227,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   }
 
   function remove(m) {
+    clearDeath(m);
     scene.remove(m.body, m.tag.sprite);
     m.tag.sprite.material.map.dispose();
     m.tag.sprite.material.dispose();
@@ -246,19 +249,22 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       ambushTimer -= dt;
       if (ambushTimer <= 0) { ambushTimer = rand(...AMBUSH_EVERY); ambush(p); }
     }
+    // no more than 20 bodies lying about: the oldest rots away first
+    const bodies = list.filter((m) => m.death && m.death.left > 0 && !m.death.harvested);
+    if (bodies.length > 20) bodies.sort((a, b) => a.death.left - b.death.left)[0].death.left = 0;
     for (const m of [...list]) {
       const dx = p.x - m.x, dz = p.z - m.z;
       const dist = Math.hypot(dx, dz);
       if (dist > DESPAWN && !m.keep) { remove(m); continue; }
       if (m.dead) {
-        // sink into the ground and fade away
+        // it dies the way the blow says (deaths.js): a body left lying, ash, a crack in the ground…
         m.dead += dt;
-        m.body.position.y -= dt * 0.6;
-        m.body.scale.multiplyScalar(1 - dt * 0.5);
-        m.tag.sprite.visible = false;
-        if (m.dead > 2) remove(m);
+        if (!m.death) startDeath(m, 'blunt', scene);
+        if (tickDeath(m, dt)) remove(m);
         continue;
       }
+      // a cut-off hand falling to the ground
+      if (m.bits) for (const p of m.bits) { if (p.done) continue; p.vy -= 9.8 * dt; p.obj.position.y += p.vy * dt; p.obj.rotation.x += dt * 4; if (p.obj.position.y < m.y + 0.08) { p.obj.position.y = m.y + 0.08; p.done = true; } }
       let speed = 0;
       const hidden = p.safe && !m.hurtBy; // a torch or a campfire keeps you hidden
       // lurkers wait without moving until you walk into them (or hit one)
@@ -338,15 +344,20 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   const target = (x, z, heading, reach, arc) => targets(x, z, heading, reach, arc)[0] || null;
 
   // Hit a monster. Returns its drops and rewards if it was defeated.
-  function hit(m, dmg) {
+  // `how`: the kind of blow (deaths.js howOf), and whether it was a hard one (a crit, or a big share
+  // of its health), for what it does to the body
+  function hit(m, dmg, how = 'blunt', strong = false) {
+    if (m.dead) return null;
+    const before = m.hp;
     m.hp = Math.max(0, m.hp - dmg);
     m.hurt = 0.25;
     m.angry = true;
     m.hurtBy = true; // it fights back even near a fire
     if (m.state === 'lurk') spring(m.pack);
     m.tag.draw(m.hp / m.maxHp);
-    if (m.hp > 0) return null;
+    if (m.hp > 0) { const lost = maim(m, how, dmg, scene); return lost ? { maimed: lost } : null; }
     m.dead = 0.001;
+    startDeath(m, how, scene, { strong: strong || dmg >= before * 1.5 || dmg >= m.maxHp * 0.5 });
     const drops = [];
     for (const [id, chance, min, max] of m.kind.drops) {
       if (Math.random() < chance) drops.push([id, min + Math.floor(Math.random() * (max - min + 1))]);

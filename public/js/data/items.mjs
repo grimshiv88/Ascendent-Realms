@@ -38,6 +38,8 @@ export const ITEMS = {
   cactus_flesh: { name: 'Cactus Flesh', icon: '🌵', kind: 'food', heal: 20, price: 4, text: 'Watery and bitter. Restores 20 HP.' },
   // monster drops
   slime_gel: { name: 'Slime Gel', icon: '💧', kind: 'material', price: 4, text: 'Sticky gel left by a slime.' },
+  monster_bone: { name: 'Monster Bone', icon: '🦴', kind: 'material', price: 5, text: 'Cut from a fallen monster\'s body. Smiths and builders buy it.' },
+  monster_hide: { name: 'Monster Hide', icon: '🟫', kind: 'material', price: 7, text: 'Skin taken from a fallen monster\'s body. Tailors and armourers buy it.' },
   goblin_ear: { name: 'Goblin Ear', icon: '👂', kind: 'material', price: 6, text: 'Proof of a goblin defeated.' },
   lizard_scale: { name: 'Lizard Scale', icon: '🟢', kind: 'material', price: 8, text: 'A hard green scale.' },
   serpent_fang: { name: 'Serpent Fang', icon: '🦷', kind: 'material', price: 14, text: 'Still slightly venomous.' },
