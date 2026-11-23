@@ -56,6 +56,8 @@ import { renderAcademy, renderCeremony } from './schoolui.js';
 import { renderAppraise } from './appraiseui.js';
 import { piecesCost } from './data/building.mjs';
 import { money, moneyWords } from './data/money.mjs';
+import { PASS_NAME } from './data/citypass.mjs';
+import { flagHtml, fillFlags, countryOptions, wireCountryPicker } from './flag.js';
 
 paintCloudBanks();
 
@@ -170,6 +172,13 @@ function startGame(character) {
   $('game').classList.remove('hidden');
   const overlay = $('overlay');
   const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '', plot: null, landChoice: 'house', landMsg: '', landBusy: false, basket: [] };
+  // what lifts your City Pass besides birth and level (see data/citypass.mjs): houses you own, a crown
+  const passPerks = () => {
+    const homes = (ui.homes || []).filter((h) => h.mine).map((h) => ({ city: h.city, tier: String(h.house).replace(/\d+$/, '') }));
+    const king = (ui.courts || []).some((q) => q.king && !q.king.npc && q.king.name === character.name);
+    return { homes, crowned: king ? 'King' : ui.groups?.nation ? 'Emperor' : false };
+  };
+  setInterval(() => world?.setPassPerks(passPerks()), 3000);
   let hudQueued = false;
 
   // The Unique Skill climbs a rank when a proof of growth is earned (the server checks the proof
@@ -544,7 +553,7 @@ function startGame(character) {
   }
   function drawPanelNow() {
     const name = overlay.dataset.panel;
-    if (name === 'status') renderStatus(overlay, character, ui.pending, game.stats());
+    if (name === 'status') renderStatus(overlay, character, ui.pending, game.stats(), passPerks());
     else if (name === 'bag') { renderBag(overlay, game, ui.selected); preview.mount(overlay.querySelector('[data-preview]')); }
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
     else if (name === 'market' && ui.market) renderShop(overlay, game, ui.shopMsg, ui.market);
@@ -554,7 +563,8 @@ function startGame(character) {
     else if (name === 'parents') renderParents(overlay, game, { visited: ui.parentsVisited });
     else if (name === 'academy') renderAcademy(overlay, game, { school: ui.academySchool, message: ui.academyMsg || '' });
     else if (name === 'ceremony') renderCeremony(overlay, game, { result: ui.grown, busy: ui.ceremonyBusy, message: ui.ceremonyMsg || '' });
-    else if (name === 'gate') renderIdCard(overlay, game, { city: ui.gate?.city, leaving: ui.gate?.leaving, monster: ui.gate?.barred, barredText: ui.gate?.barred && !ui.gate?.monster ? 'The guards bare their fangs. "No outsiders in a monster city."' : null, courts: ui.courts || [], nation: ui.groups?.nation?.name });
+    else if (name === 'gate') renderIdCard(overlay, game, { city: ui.gate?.city, leaving: ui.gate?.leaving, monster: ui.gate?.barred, barredText: ui.gate?.barred && !ui.gate?.monster ? 'The guards bare their fangs. "No outsiders in a monster city."' : null, courts: ui.courts || [], nation: ui.groups?.nation?.name, perks: passPerks() });
+    else if (name === 'citygate' && ui.cityGate) renderIdCard(overlay, game, { city: ui.cityGate.city, inner: ui.cityGate, courts: ui.courts || [], nation: ui.groups?.nation?.name, perks: passPerks(), message: ui.cityGateMsg || '' });
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg, { workshop: !!ui.workshop });
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
@@ -573,7 +583,7 @@ function startGame(character) {
         else if (info.owned && !info.owned.mine) ui.landMsg = `Owned by ${info.owned.owner}.`;
         updateMapBasket();
       } : null);
-    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '' });
+    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '', country: game ? character.country || '' : undefined });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
     else if (name === 'options') renderOptions(overlay);
@@ -730,6 +740,12 @@ function startGame(character) {
     drawPanel();
   });
   overlay.addEventListener('change', (e) => {
+    if (e.target.matches?.('[data-country]')) {
+      game.setCountry(e.target.value);
+      const f = overlay.querySelector('[data-country-flag]');
+      if (f) { f.innerHTML = flagHtml(character.country); fillFlags(f); }
+      return;
+    }
     const i = e.target.dataset?.kidSchool;
     if (i != null) { game.setChildSchool(Number(i), e.target.value); ui.familyMsg = 'School chosen.'; }
   });
@@ -1032,6 +1048,13 @@ function startGame(character) {
       return;
     }
     if (t('data-show-id') != null) { if (world?.passGate()) closePanel(); return; }
+    // a day pass at a gate between a city's rings
+    if ((v = t('data-day-pass')) != null) {
+      const r = game.buyDayPass(v, ui.cityGate?.cityId);
+      if (r === 'bought') { ui.cityGateMsg = ''; drawHud(); closePanel(); showArea(`Day pass bought: the ${PASS_NAME[v]} is open to you for one day of the realm.`); }
+      else { ui.cityGateMsg = r === 'coins' ? 'Insufficient funds.' : 'The guard shakes their head.'; drawPanel(); }
+      return;
+    }
     if ((v = t('data-spell')) != null) { const r = game.attachSpell(v); ui.skillMsg = { ok: `${SPELLS[v].name} attached to your staff.`, full: 'Your staff is full: detach a spell first.', staff: 'Hold a staff first.' }[r] || ''; drawPanel(); return; }
     if ((v = t('data-unspell')) != null) { game.detachSpell(v); ui.skillMsg = `${SPELLS[v].name} detached.`; drawPanel(); return; }
     if ((v = t('data-ready')) != null) { game.readySkill(v); ui.skillMsg = ''; drawPanel(); return; }
@@ -1307,6 +1330,7 @@ function startGame(character) {
           if (overlay.dataset.panel === 'appraise') drawPanel();
         }).catch(() => {});
       }
+      if (type === 'citygate') { ui.cityGate = data; ui.cityGateMsg = ''; if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'citygate') openPanel('citygate'); }
       if (type === 'gate') { ui.gate = data; if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'gate') openPanel('gate'); }
       if (type === 'guild') { game.fillQuests(here(), 'guild'); openPanel('guild'); loadBounties(); }
       if (type === 'guild-denied') showArea(`The guards at the Main Guild Hall turn you away: only hunters of level ${data.level} or more may enter.`);
@@ -1469,6 +1493,9 @@ document.querySelectorAll('.reveal').forEach((btn) => {
   });
 });
 
+// the country picker on the sign-up form, with its flag beside it
+$('signup-country').innerHTML = countryOptions('');
+wireCountryPicker($('signup-country'), $('signup-flag'));
 wireForm('signup-form', ({ confirm, ...fields }) => {
   if (fields.password !== confirm) throw new Error('The two passwords don\'t match.');
   return api.signUp(fields);

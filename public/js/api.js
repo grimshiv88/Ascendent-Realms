@@ -3,6 +3,7 @@
 import { fallenKeep, rebornWith, rebirthAsChild, growUp } from './data/game-data.mjs';
 import { moneyWords } from './data/money.mjs';
 import * as birthData from './data/birth.mjs';
+import * as P from './data/citypass.mjs';
 import { setServerNow } from './data/clock.mjs';
 import * as uniqueData from './data/unique.mjs';
 import { moveToNewWorld } from './data/world-layout.mjs';
@@ -131,7 +132,7 @@ const preview = {
     storage.set('ar.preview.accounts', JSON.stringify(list));
     if (changed) cloudPush(`accounts/${cloudKey(changed.email)}`, changed);
   },
-  async signUp({ email, password, username, remember }) {
+  async signUp({ email, password, username, remember, country }) {
     email = (email || '').trim(); username = username.trim();
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please enter a valid email address, or leave it blank.');
     if (password.length < 8) throw new Error('Your password needs at least 8 characters.');
@@ -141,7 +142,7 @@ const preview = {
     if (list.some((a) => a.username.toLowerCase() === username.toLowerCase())) throw new Error('That username is taken. Please choose another.');
     if (!email) email = `${username.toLowerCase()}${NO_EMAIL}`; // the same stand-in the server stores
     const digest = await sha256(password);
-    const acc = { email, username, digest, character: null };
+    const acc = { email, username, digest, character: null, country: country || null };
     list.push(acc);
     this.save(list, acc);
     token.set(`preview:${email}`, remember);
@@ -265,9 +266,12 @@ export async function createCharacter(choice) {
       const asKid = Number.isInteger(choice?.asChild) ? rebirthAsChild(acc.fallen, choice.asChild, B.rollBirth) : null;
       const birth = asKid?.birth || B.rollBirth(choice?.side || null);
       const city = B.BIRTH_CITY[birth.race];
+      // birth luck: a noble house, the Common Quarter or the Dump (data/citypass.mjs)
+      const onTier = P.housesOnTier(city, P.rollBirthTier());
       const held = acc.fallen?.uniqueSkill ? new Set([acc.fallen.uniqueSkill.name]) : new Set();
-      const result = B.bornCharacter(acc.username, birth, asKid?.home || { city, house: Math.floor(Math.random() * B.houseCount(city)) }, { takenUniques: held, appraisal: !held.has('Appraisal') });
+      const result = B.bornCharacter(acc.username, birth, asKid?.home || { city, house: onTier.length ? onTier[Math.floor(Math.random() * onTier.length)] : Math.floor(Math.random() * B.houseCount(city)) }, { takenUniques: held, appraisal: !held.has('Appraisal') });
       if (result.error) throw new Error(result.error);
+      result.character.country = acc.country || null; // the flag chosen at sign-up
       if (asKid) { result.character.child.school = asKid.kid.school || null; result.character.child.plan = asKid.kid.plan; result.character.rebornFrom = acc.fallen.name || null; }
       if (acc.fallen) { rebornWith(result.character, acc.fallen); delete acc.fallen; }
       acc.character = result.character;
@@ -375,6 +379,7 @@ export async function saveProgress(progress) {
   if (await isPreviewMode()) {
     return updatePreviewAccount((acc) => {
       if (acc.character) Object.assign(acc.character, progress);
+      if (progress.country !== undefined) acc.country = progress.country || null; // (kept for the next life too)
       return { ok: true };
     });
   }

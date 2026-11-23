@@ -5,7 +5,8 @@ import {
   RACES, CLASSES, CLASS_GUIDE, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor, mayChangeForm, FORM_SWITCH_LEVEL,
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
-import { lifeRows } from './idcard.js';
+import { lifeRows, passRows } from './idcard.js';
+import { fillFlags, flagHtml, countryOptions } from './flag.js';
 import { uniqueAbility, uniqueTier, TIER_NAMES, rankProofs, isAppraisal, RANK_UP_MAX, TRIALS_PER_PROOF, WORK_PER_PROOF } from './data/unique.mjs';
 import { ageOf, CEREMONY_AGE, PARENT_JOBS, parentAlive, visitDue } from './data/birth.mjs';
 import { ageYears, livesLeft, LIVES, MARRY_AGE, UNDYING_LEVEL } from './data/life.mjs';
@@ -89,7 +90,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
 const nextUpgrade = (level) => { let l = (Math.floor(level / UPGRADE_EVERY) + 1) * UPGRADE_EVERY; while (KEY_LEVELS.includes(l)) l += UPGRADE_EVERY; return l; };
 
 // `pending` holds Stat Points placed with the + buttons but not yet confirmed
-export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.level)) {
+export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.level), perks = {}) {
   const placed = Object.values(pending).reduce((a, b) => a + b, 0);
   const left = c.unspentPoints - placed;
   // HP, SP, ATK, MATK, DEF and MDEF grow from the main stats; points can't go into them directly
@@ -118,7 +119,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${c.neglect ? row('Soul', 'Sinner <small>(left parents unvisited)</small>') : ''}
           ${row('EXP', `${c.exp} / ${need}`)}
           ${row('Coins', money(c.coins))}
-          ${lifeRows(c).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
+          ${(passRows(c, perks) + lifeRows(c)).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
         </dl>
         <dl>
           ${row('LVL', c.level)}
@@ -171,6 +172,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
         <button type="button" class="gold-button small" data-confirm-points>Confirm</button>
         <button type="button" class="link-button" data-reset-points>Undo</button></p>` : ''}
     </div>`;
+  fillFlags(el);
 }
 
 // Player settings, kept in this browser
@@ -213,6 +215,7 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
       ${controls}
       <button type="button" class="link-button" data-controls-reset>Put every key back to how it started</button>
       <h3 class="bag-sub">Account</h3>
+      ${keys.country !== undefined ? `<label class="country-setting">Where you are from <small>(its flag is on your ID)</small><span class="country-field"><select data-country>${countryOptions(keys.country || '')}</select><span data-country-flag>${flagHtml(keys.country)}</span></span></label>` : ''}
       <form class="pw-change" data-password>
         <label>New password <input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
         <label>Type it again <input name="confirm" type="password" minlength="8" autocomplete="new-password" required></label>
@@ -226,6 +229,7 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
       <p class="bag-hint">${cloud ? 'Saved privately online, so they follow you to any device you open the game on.' : 'Kept in this browser only.'} Passwords are stored scrambled, so they can't be shown.</p>
       <ul class="device-accounts">${accounts.map((a) => `<li><b>${esc(a.username)}</b> <small>${esc(a.email)}</small><br>${a.character ? `${esc(a.character.name)} · ${esc(RACES[a.character.race]?.name || a.character.race)} ${esc(CLASSES[a.character.cls]?.name || a.character.cls)} · Lv ${a.character.level} · ${money(a.character.coins)}` : 'No character yet'}</li>`).join('') || '<li>None</li>'}</ul>` : ''}
     </div>`;
+  fillFlags(el);
 }
 
 // The highest-level players. `me` is your character's name, to mark your own row.

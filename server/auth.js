@@ -1,6 +1,7 @@
 // Sign up, sign in and session lookup.
 const crypto = require('node:crypto');
 const db = require('./db');
+const { cleanCountry } = require('../public/js/data/countries.mjs');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
@@ -36,7 +37,7 @@ async function publicAccount(row) {
   };
 }
 
-async function signUp({ email, password, username }) {
+async function signUp({ email, password, username, country }) {
   email = String(email || '').trim();
   username = String(username || '').trim();
   password = String(password || '');
@@ -56,7 +57,7 @@ async function signUp({ email, password, username }) {
 
   let row;
   try {
-    ({ rows: [row] } = await db.run('INSERT INTO accounts (email, username, password_hash) VALUES (?, ?, ?) RETURNING *', email, username, hashPassword(password)));
+    ({ rows: [row] } = await db.run('INSERT INTO accounts (email, username, password_hash, country) VALUES (?, ?, ?, ?) RETURNING *', email, username, hashPassword(password), cleanCountry(country)));
   } catch (e) {
     // someone else took the name in the same moment
     if (e.code === '23505') return { error: 'That username or email was just taken. Please choose another.' };

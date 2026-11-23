@@ -37,6 +37,8 @@ import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
 import { ageOf, isChild, parentAlive, ceremonyDue, CEREMONY_SHOW_MS } from '../data/birth.mjs';
+import { mayEnter, cityPass, PASS_NAME } from '../data/citypass.mjs';
+import { rampAt, RAMP_WALL, INNER_R } from '../data/citylevels.mjs';
 const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine after a new card goes up
 import { money } from '../data/money.mjs';
 import { howOf, canHarvest, harvest } from './deaths.js';
@@ -1464,6 +1466,44 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       onEvent?.('gate', { barred, monster, city: city.place.name });
     }
   }
+  // ---------- the gates between a city's rings: the guards read your City Pass going in ----------
+  // (see data/citypass.mjs) Going down and out is free. Going up past a gate's line without the
+  // pass (or a day pass) stops you there and the guard asks to see your ID.
+  const inner = { prev: null, asked: 0, nodded: null };
+  let passPerks = { homes: [], crowned: false };
+  function checkInnerGates(t) {
+    const city = builtCities().find((s) => s.built.innerGates && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < INNER_R);
+    if (!city) { inner.prev = null; return; }
+    const { x: cx, z: cz } = city.built.centre;
+    const on = rampAt(pos.x - cx, pos.z - cz, RAMP_WALL);
+    const G = on && city.built.innerGates.find((q) => q.k === on.ramp.k && q.a === on.ramp.a);
+    if (!G) { inner.prev = null; return; }
+    const prev = inner.prev?.G === G ? inner.prev.along : null;
+    inner.prev = { G, along: on.along };
+    if (prev === null || prev < G.line || on.along >= G.line || prev - on.along > 3) return;
+    // going in past the gate: is the pass good for the ring above?
+    const homes = passPerks.homes.filter((h) => h.city === city.place.id).map((h) => h.tier);
+    const may = mayEnter(character, G.tier, { perks: { homes, crowned: passPerks.crowned }, city: city.place.id, ceremony: ceremonyDue(character) });
+    if (may.ok) {
+      if (inner.nodded !== G || t - inner.asked > 20) {
+        inner.nodded = G; inner.asked = t;
+        say({ pass: `Guard: "${PASS_NAME[cityPass(character, { homes, crowned: passPerks.crowned }).tier]} pass. Go ahead."`, day: 'Guard: "Your day pass is good. Go ahead."', school: 'Guard: "Off to school? Up you go."', ceremony: 'Guard: "Your Ceremony is today? Go up to the shrine, young one."' }[may.how], 'exp');
+      }
+      return;
+    }
+    // stopped: back a step, and the guard asks for your ID
+    const back = G.line + 0.6;
+    pos.x = cx + Math.sin(G.a) * back + Math.cos(G.a) * on.lat;
+    pos.z = cz + Math.cos(G.a) * back - Math.sin(G.a) * on.lat;
+    inner.prev = { G, along: back };
+    autoWalk = false;
+    speedNow = 0;
+    if (t - inner.asked > 4 || inner.nodded !== G) {
+      inner.asked = t; inner.nodded = null;
+      say(`Guard: "Halt! The ${G.name} is not for everyone. Your ID."`, 'hurt');
+      onEvent?.('citygate', { tier: G.tier, name: G.name, city: city.place.name, cityId: city.place.id });
+    }
+  }
   function passGate() {
     if (gate.leaving) {
       gate.leaving = false;
@@ -2008,6 +2048,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (!depth && !inside) {
       checkGates(t);
+      checkInnerGates(t);
       // walk into a townsperson and they talk to you
       const n = npcNear(pos.x, pos.z, bodyR + 0.55);
       if (n && n !== touched) { touched = n; talkTo(n); }
@@ -2274,6 +2315,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     useSkill,
     nextSpell,
     passGate,
+    // what lifts your City Pass besides birth and level: houses you own ({ city, tier }) and a crown
+    setPassPerks(p) { passPerks = { homes: p?.homes || [], crowned: p?.crowned || false }; },
+    passPerks: () => passPerks,
     setCityGates,
     setHomes,
     setCeremonies,

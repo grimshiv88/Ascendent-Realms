@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   last_seen     BIGINT NOT NULL DEFAULT 0,
   last_sent     BIGINT NOT NULL DEFAULT 0
 );
+-- the real-world country the player said they are from (its flag shows on the in-game ID)
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS country TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_email ON accounts (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_username ON accounts (lower(username));
 

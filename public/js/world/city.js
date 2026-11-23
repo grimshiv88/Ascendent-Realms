@@ -12,7 +12,7 @@ import { wearGear } from '../characters/gear.js';
 import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, buildShack, paved, pavedGeometry, TOWN_TONES } from './houses.js';
 import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS, familyOf, PARENT_JOBS, townName, seeded } from '../data/birth.mjs';
-import { TIERS, TOP_Y, TERRACE, INNER_R, ROAD_ANGLES, ROAD_HALF, RAMPS, RAMP_IN, RAMP_OUT, RAMP_WALL, ringY, rampAt, alongRoad } from '../data/citylevels.mjs';
+import { TIERS, TOP_Y, TERRACE, INNER_R, ROAD_ANGLES, ROAD_HALF, RAMPS, RAMP_IN, RAMP_OUT, RAMP_WALL, ringY, rampAt, alongRoad, cityLift } from '../data/citylevels.mjs';
 import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, tierY, RACE_HOME, homeFootprint } from '../data/citylayout.mjs';
 
 export { PLAZA_R, INNER_R };
@@ -156,6 +156,40 @@ function placeFacing(g, b, a, r, d) {
   return { x: x - Math.cos(a) * (d / 2 + 1.6), z: z - Math.sin(a) * (d / 2 + 1.6), rot: b.rotation.y, bx: x, bz: z };
 }
 
+// The gates between the rings: where a ramp climbs through a terrace wall, two stone towers stand
+// on the ramp's walls with an arch between them, the name of the ring above on it (both sides) and
+// an iron portcullis drawn up into the arch. Returns { k, tier, name, a, line } (line: how far out
+// along the road the gate stands; going in past it means going up into `tier`).
+export const GATE_AT = TERRACE + 1; // the gate's line, this far out from the higher ring's edge
+const GATE_LOOK = { iron: new THREE.MeshStandardMaterial({ color: '#2e2c2a', roughness: 0.5, metalness: 0.6 }) };
+function cityGate(fixed, R, T, line, stoneMat, capMat, cx, cz) {
+  const gg = new THREE.Group();
+  const y = (rampAt(Math.sin(R.a) * line, Math.cos(R.a) * line)?.y ?? ringY(line)) - TOP_Y;
+  gg.position.set(Math.sin(R.a) * line, y, Math.cos(R.a) * line);
+  gg.rotation.y = R.a;
+  const add = (geo, m, x, yy, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, yy, z); o.castShadow = true; o.receiveShadow = true; gg.add(o); return o; };
+  const span = ROAD_HALF + RAMP_WALL / 2, H = 7.5;
+  // the towers on the walls, with battlements
+  for (const sx of [-1, 1]) {
+    add(new THREE.BoxGeometry(RAMP_WALL + 0.4, H, 3), stoneMat, sx * span, H / 2 - 1, 0);
+    for (const dz of [-1, 1]) for (const dx of [-1, 1]) add(new THREE.BoxGeometry(0.9, 0.8, 0.9), stoneMat, sx * span + dx * 1.4, H - 0.6, dz * 1.05);
+  }
+  // the arch over the road, and the portcullis drawn up into it
+  add(new THREE.BoxGeometry(ROAD_HALF * 2, 1.6, 2.6), capMat, 0, H - 2.2, 0);
+  for (let x = -ROAD_HALF + 0.4; x <= ROAD_HALF - 0.39; x += 0.8) add(new THREE.BoxGeometry(0.12, 1.0, 0.12), GATE_LOOK.iron, x, H - 3.4, 0);
+  add(new THREE.BoxGeometry(ROAD_HALF * 2 - 0.4, 0.12, 0.14), GATE_LOOK.iron, 0, H - 3.85, 0);
+  // the ring's name, over the arch on both faces
+  const tex = GATE_LOOK[T.id] ??= textTexture(T.name);
+  for (const side of [1, -1]) {
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 1.2), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    sign.position.set(0, H - 2.2, side * 1.32);
+    sign.rotation.y = side > 0 ? 0 : Math.PI;
+    gg.add(sign);
+  }
+  fixed.add(gg);
+  return { k: R.k, tier: T.id, name: T.name, a: R.a, road: R.road, line };
+}
+
 export function buildCity(place, opts = {}) {
   const S = STYLES[place.style] || STYLES.heart;
   const monster = !!place.monster;
@@ -169,7 +203,8 @@ export function buildCity(place, opts = {}) {
 
   // how high (x, z) stands above the plaza (the rings drop away from Castle Hill)
   const top = heightAt(cx, cz);
-  const yAt = (x, z) => heightAt(cx + x, cz + z) - top;
+  // (inside the inner wall exactly, ramps included: the land is drawn lower under a ramp's high end)
+  const yAt = (x, z) => (Math.hypot(x, z) < INNER_R ? cityLift(x, z) - TOP_Y : heightAt(cx + x, cz + z) - top);
   const ringRel = (id) => tierY(id) - TOP_Y;
   const plan = cityPlan();
 
@@ -216,6 +251,7 @@ export function buildCity(place, opts = {}) {
 
   // ---------- the terrace walls holding up each ring, and the ramps through them ----------
   const rampBands = []; // for deckAt: the walkway on top of each terrace wall
+  const innerGates = []; // the gates between the rings (see cityGate)
   for (let k = 0; k < TIERS.length - 1; k++) {
     const b = TIERS[k].r1, up = TIERS[k].y - TOP_Y, low = TIERS[k + 1].y - TOP_Y;
     const face = b + TERRACE;
@@ -239,13 +275,16 @@ export function buildCity(place, opts = {}) {
         fixed.add(walk);
       }
       if (i % 2 === 0) { const m = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.6, 1.2), stoneMat); m.position.set(Math.sin(a) * (face - 0.4), up + 1.4, Math.cos(a) * (face - 0.4)); m.rotation.y = a; fixed.add(m); }
-      if (!gap(a, face, ROAD_HALF + RAMP_WALL + 0.5)) solid.push({ x: cx + Math.sin(a) * (face + 0.2), z: cz + Math.cos(a) * (face + 0.2), r: 1.0, kind: 'wall', height: up - low + 2 });
+      // solid all along (two to a stretch, so nobody small slips between them and up the bank)
+      for (const da of [0, seg / 2 / face]) if (!gap(a + da, face, ROAD_HALF + RAMP_WALL + 0.5)) solid.push({ x: cx + Math.sin(a + da) * (face + 0.2), z: cz + Math.cos(a + da) * (face + 0.2), r: 1.0, kind: 'wall', height: up - low + 2 });
     }
     rampBands.push({ r0: b - 3.5, r1: face, y: up });
     // the ramps: a road climbing between two stone walls, cut into the higher ring and built out
     // over the lower one
     for (const R of ramps) {
       const lo = b - RAMP_IN, hi = b + TERRACE + RAMP_OUT;
+      // the gate into the higher ring, where the ramp climbs through the terrace wall
+      innerGates.push(cityGate(fixed, R, TIERS[k], b + GATE_AT, stoneMat, capMat, cx, cz));
       for (const side of [-1, 1]) {
         const lat = side * (ROAD_HALF + RAMP_WALL / 2);
         for (let along = lo; along < hi; along += 2) {
@@ -256,10 +295,13 @@ export function buildCity(place, opts = {}) {
           w.position.set(x, (top2 + bot) / 2, z);
           w.rotation.y = R.a;
           fixed.add(w);
-          // solid along the road's edge (you stay on the ramp) and along the outer edge (nobody
-          // walks into the wall or off its top)
-          for (const L of [side * (ROAD_HALF + 0.5), side * (ROAD_HALF + RAMP_WALL + 0.4)]) {
-            solid.push({ x: cx + Math.sin(R.a) * mid + Math.cos(R.a) * L, z: cz + Math.cos(R.a) * mid - Math.sin(R.a) * L, r: 0.9, kind: 'wall', height: 3 });
+        }
+        // the wall is solid right through, ends and all: a row of posts every metre along the
+        // road's edge, through the middle and along the outer edge (nobody walks into it, or
+        // sinks into it from its open end)
+        for (let along = lo + 0.5; along < hi; along += 1) {
+          for (const L of [ROAD_HALF + 0.5, ROAD_HALF + 1.6, ROAD_HALF + 2.7, ROAD_HALF + RAMP_WALL - 0.2]) {
+            solid.push({ x: cx + Math.sin(R.a) * along + Math.cos(R.a) * L * side, z: cz + Math.cos(R.a) * along - Math.sin(R.a) * L * side, r: 0.75, kind: 'wall', height: 3 });
           }
         }
       }
@@ -427,6 +469,24 @@ export function buildCity(place, opts = {}) {
       solid.push({ x: cx + x, z: cz + z, r: 0.6, kind: 'wall', height: 2 });
     }
   }
+  // two guards at each gate between the rings, on the higher side, who read your City Pass on the
+  // way in (see data/citypass.mjs); they stand at the road's edges and leave the middle open
+  innerGates.forEach((G, n) => {
+    for (const side of [-1, 1]) {
+      const race = guardRaces[(n * 2 + (side > 0 ? 1 : 0) + 1) % guardRaces.length];
+      const body = buildCharacter({ race, form: 'humanoid', look: {} });
+      wearGear(body, guardGear);
+      joinCrowd(bakeCharacter(body));
+      const along = G.line - 1.6, lat = side * (ROAD_HALF - 0.7);
+      const x = Math.sin(G.a) * along + Math.cos(G.a) * lat, z = Math.cos(G.a) * along - Math.sin(G.a) * lat;
+      body.position.set(x, yAt(x, z), z);
+      body.rotation.y = G.a; // facing out, down the ramp, towards those coming up
+      g.add(body);
+      guards.push(body);
+      solid.push({ x: cx + x, z: cz + z, r: 0.5, kind: 'wall', height: 2 });
+    }
+  });
+
   // townsfolk: families at their doors, and merchants and businessmen round the plaza
   const npcs = [];
   const addNpc = (race, x, z, faceA, info) => {
@@ -582,7 +642,7 @@ export function buildCity(place, opts = {}) {
   // the houses for sale: show who owns each (`owners`: house id -> owner's name)
   const setOwners = (owners) => { for (const [id, sign] of saleSigns) sign.set(owners?.[id] || null, plan.sale.find((h) => h.id === id)); };
   setOwners({});
-  return { group: g, update, gather, shops, solid, gates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, doors, centre: { x: cx, z: cz } };
+  return { group: g, update, gather, shops, solid, gates, innerGates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, doors, centre: { x: cx, z: cz } };
 }
 
 // The open ground of the Common Quarter: the lots kept for Businessmen's shops on the market

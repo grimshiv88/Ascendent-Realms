@@ -1,4 +1,4 @@
-import { CITY_R, INNER_R, cityLift } from './citylevels.mjs';
+import { CITY_R, INNER_R, cityGround } from './citylevels.mjs';
 const CITY_FLATS = []; // each walled city's middle and the level of its foot (filled in below)
 // The world's layout, shared by the 3D terrain, the in-game map and the map draft page.
 // Map coordinates are pixels on the 1600 × 1000 map, where 1 pixel = 400 metres (the world is
@@ -472,7 +472,7 @@ export function sample(x, z, out = {}, withLakes = true) {
   // the walled cities rise in rings to the castle on top (see citylevels.mjs)
   for (const c of CITY_FLATS) {
     const dx = x - c.x, dz = z - c.z;
-    if (dx * dx + dz * dz < INNER_R * INNER_R) { h = c.flat + cityLift(dx, dz); forest = 0; break; }
+    if (dx * dx + dz * dz < INNER_R * INNER_R) { h = c.flat + cityGround(dx, dz); forest = 0; break; }
   }
 
   out.h = h;
