@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ascendant Realms</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@500;700&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="flash"></div>
+
+  <main id="ui">
+    <h1 id="title" class="hidden">
+      <span class="title-line">Ascendant</span>
+      <span class="title-line">Realms</span>
+    </h1>
+
+    <!-- Choose: Sign Up or Sign In -->
+    <section id="choose" class="panel hidden" aria-labelledby="choose-heading">
+      <h2 id="choose-heading">Choose</h2>
+      <div id="welcome-back" class="welcome hidden">
+        <p>Welcome back, <b id="welcome-name"></b></p>
+        <button class="gold-button" id="continue-btn">Enter the realm</button>
+        <button type="button" class="link-button" id="signout-btn">Not you? Sign out</button>
+      </div>
+      <div class="choices">
+        <button class="gold-button" data-go="signup">Sign Up</button>
+        <button class="gold-button" data-go="signin">Sign In</button>
+      </div>
+      <button type="button" class="link-button story-link" data-go="story">Game Story (solo)</button>
+    </section>
+
+    <section id="signup" class="panel hidden" aria-labelledby="signup-heading">
+      <h2 id="signup-heading">Sign Up</h2>
+      <form id="signup-form" novalidate>
+        <label>Character username<input name="username" autocomplete="username" maxlength="16" required></label>
+        <p class="hint">3 to 16 letters, numbers or underscores. This is the name others will see.</p>
+        <label>Email <small>(optional)</small><input name="email" type="email" autocomplete="email"></label>
+        <p class="hint">Leave it blank if you don't have one. You can sign in with your username.</p>
+        <label>Password<span class="password-field"><input name="password" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="reveal" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line class="slash" x1="3" y1="21" x2="21" y2="3"/></svg></button></span></label>
+        <label>Confirm password<span class="password-field"><input name="confirm" type="password" autocomplete="new-password" required><button type="button" class="reveal" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line class="slash" x1="3" y1="21" x2="21" y2="3"/></svg></button></span></label>
+        <label class="remember"><input name="remember" type="checkbox"> Keep me signed in on this device</label>
+        <p class="error" role="alert"></p>
+        <button class="gold-button" type="submit">Sign Up</button>
+        <button class="link-button" type="button" data-go="choose">Back</button>
+      </form>
+    </section>
+
+    <!-- The solo Game Story: its own adventure, apart from the shared world. Written later. -->
+    <section id="story" class="panel hidden" aria-labelledby="story-heading">
+      <h2 id="story-heading">Game Story</h2>
+      <p class="hint">A story to play alone, apart from the shared realm. Nothing in it changes your character, coins or items in the multiplayer world.</p>
+      <p class="hint"><b>Coming soon.</b> The story is still being written.</p>
+      <button class="link-button" type="button" data-go="choose">Back</button>
+    </section>
+
+    <section id="signin" class="panel hidden" aria-labelledby="signin-heading">
+      <h2 id="signin-heading">Sign In</h2>
+      <form id="signin-form" novalidate>
+        <label>Username or email<input name="login" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+        <label>Password<span class="password-field"><input name="password" type="password" autocomplete="current-password" required><button type="button" class="reveal" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line class="slash" x1="3" y1="21" x2="21" y2="3"/></svg></button></span></label>
+        <label class="remember"><input name="remember" type="checkbox"> Keep me signed in on this device</label>
+        <p class="error" role="alert"></p>
+        <button class="gold-button" type="submit">Sign In</button>
+        <button class="link-button" type="button" data-go="choose">Back</button>
+      </form>
+    </section>
+
+  </main>
+
+  <!-- Character creation, shown after the clouds for an account with no character yet -->
+  <section id="creator-root" class="screen hidden"></section>
+
+  <!-- The world -->
+  <section id="game" class="screen hidden">
+    <canvas id="world"></canvas>
+    <button type="button" id="minimap" aria-label="Open the world map"></button>
+    <div id="hud"></div>
+    <button type="button" id="attack-btn" class="hidden" aria-label="Punch"></button>
+    <button type="button" id="jump-btn" class="hidden" aria-label="Jump"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div id="skill-bar" class="hidden" aria-label="Skills"></div>
+    <p id="area" aria-live="polite"></p>
+    <div id="overlay" class="hidden"></div>
+    <div id="builder-host"></div>
+  </section>
+
+  <div id="clouds" aria-hidden="true">
+    <div class="cloud-bank left"></div>
+    <div class="cloud-bank right"></div>
+    <p id="loading">Loading the realm…</p>
+  </div>
+
+  <p id="preview-note" class="hidden">Preview mode: accounts are saved only in this browser.</p>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

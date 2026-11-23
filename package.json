@@ -1,0 +1,19 @@
+{
+  "name": "ascendant-realms",
+  "version": "1.0.0",
+  "description": "Ascendant Realms: an online 3D adventure game",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^4.22.3",
+    "three": "^0.160.0"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "private": true
+}

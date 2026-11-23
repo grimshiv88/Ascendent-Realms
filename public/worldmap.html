@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>World Map Draft</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink: #3b2a17; --gold: #c8921a; --page: #0d0a06; --text: #f4ead2; --quiet: #b9ab8a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--page); color: var(--text); font-family: 'Cinzel', Georgia, serif; }
+    main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 40px; }
+    h1 { margin: 0 0 4px; font: 700 1.6rem 'Cinzel Decorative', serif; color: #f5c84c; }
+    .lead { margin: 0 0 16px; font: 1rem/1.5 Georgia, serif; color: var(--quiet); }
+    .frame { border: 2px solid var(--gold); padding: 6px; background: #1a130a; }
+    canvas { display: block; width: 100%; height: auto; }
+    .regions { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 18px; }
+    .region { padding: 12px 14px; border: 1px solid #5c4413; border-radius: 6px; background: #15100a; }
+    .region h2 { margin: 0 0 4px; font-size: 1rem; color: #f5c84c; }
+    .region p { margin: 0; font: 0.9rem/1.45 Georgia, serif; color: var(--text); }
+    .region small { display: block; margin-top: 6px; font: 0.8rem Georgia, serif; color: var(--quiet); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Ascendant Realms: World Map Draft</h1>
+  <p class="lead">A first draft for review. The gold star is the spawn point in the central forest. Each monster race has its own homeland. Tell me what to move, rename, add or remove before the full map is built.</p>
+  <div class="frame"><canvas id="map" width="1600" height="1000" role="img" aria-label="World map draft of Ascendant Realms"></canvas></div>
+  <div class="regions" id="regions"></div>
+</main>
+<script type="module">
+import { drawWorldMap } from './js/world/mapdraw.js';
+import { REGIONS } from './js/data/world-layout.mjs';
+// Draw once the map fonts have loaded, so labels use Cinzel
+document.fonts.ready.then(() => {
+  drawWorldMap(document.getElementById('map'));
+  document.getElementById('regions').innerHTML = REGIONS.map((r) => `
+    <section class="region"><h2>${r.name}</h2><p>${r.text}</p><small>${r.who} · ${r.size}</small></section>`).join('');
+});
+</script>
+</body>
+</html>
