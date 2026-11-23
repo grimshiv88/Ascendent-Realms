@@ -1070,6 +1070,7 @@ function startGame(character) {
       return;
     }
     if (t('data-tent') != null) { closePanel(); world?.pitchTent(); return; }
+    if (t('data-campfire') != null) { closePanel(); world?.lightCampfire(); return; }
     if ((v = t('data-cult')) != null) {
       const btn = e.target.closest('[data-cult]');
       const body = { action: v };
@@ -1215,6 +1216,7 @@ function startGame(character) {
     onMouseFreed: () => { if (overlay.classList.contains('hidden')) openPanel('settings'); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
+      if (type === 'carcass') { showCarcass(data); return; }
       if (type === 'kill') for (const title of game.questKill(data.kind, data.level)) questReady(title);
       if (type === 'kill') {
         const t = realmTime();
@@ -1406,6 +1408,35 @@ function startGame(character) {
 // The region name fades in at the top of the screen when you enter a new area
 let areaTimer = null;
 // The pop-up an item opens (see bag.js itemInfoHtml). `onClick(e, close)` handles its buttons.
+// A hunted animal's body: drag it to a Butcher, or cut it up here (keys: E or 1 drags, 2 cuts)
+function showCarcass(d) {
+  world?.releaseMouse?.();
+  const pop = showItemPop(`<div class="item-pop-box" role="dialog" aria-label="Hunted animal">
+      <button type="button" class="sw-close" data-pop-close aria-label="Close">×</button>
+      <h3>${escHtml(d.name)}</h3>
+      <p class="bag-hint">${d.meat ? 'Halal game. Take it whole to a Halal Butcher on a farm (he prepares and cooks it for a small fee), or cut it up here and cook the meat over a fire.' : 'Its meat is not halal and is not eaten, but its hide and fangs can be sold.'}</p>
+      <div class="pop-actions">
+        <button type="button" class="gold-button small" data-carcass="drag">Drag it (E)</button>
+        <button type="button" class="gold-button small" data-carcass="cut"${d.blade ? '' : ' title="You need a Hunting Knife, or a sword, dagger or axe in your hand"'}>Cut it up (2)${d.blade ? '' : ': needs a blade'}</button>
+      </div>
+    </div>`, (e, close) => {
+    const act = e.target.closest('[data-carcass]')?.dataset.carcass;
+    if (!act) return;
+    close(); window.removeEventListener('keydown', keys, true);
+    if (act === 'drag') world?.dragCarcass(); else world?.cutCarcass();
+  });
+  function keys(e) {
+    if (!document.body.contains(pop)) { window.removeEventListener('keydown', keys, true); return; }
+    const act = e.code === 'KeyE' || e.code === 'Digit1' ? 'drag' : e.code === 'Digit2' ? 'cut' : null;
+    if (!act) return;
+    e.preventDefault(); e.stopPropagation();
+    pop.remove(); window.removeEventListener('keydown', keys, true);
+    if (act === 'drag') world?.dragCarcass(); else world?.cutCarcass();
+  }
+  setTimeout(() => window.addEventListener('keydown', keys, true), 50);
+}
+const escHtml = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
 function showItemPop(html, onClick = null) {
   let pop = document.getElementById('item-pop');
   if (!pop) {

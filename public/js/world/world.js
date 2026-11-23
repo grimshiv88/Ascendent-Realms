@@ -40,6 +40,9 @@ import { ageOf, isChild, parentAlive, ceremonyDue, CEREMONY_SHOW_MS } from '../d
 const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine after a new card goes up
 import { money } from '../data/money.mjs';
 import { howOf, canHarvest, harvest } from './deaths.js';
+import { createHusbandry } from './husbandry.js';
+import { allFarms } from '../data/farms.mjs';
+import { HUNGER_DRAIN, HUNGRY, STARVE_HIT, STARVE_FLOOR } from '../data/hunger.mjs';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -52,6 +55,7 @@ const STEER_RUN = 0.9;
 // defeat and level-ups to the page.
 export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onMouseFreed, onView, windowOpen, view } = {}) {
   allCastles(); // levels the ground under the Monster Kings' castles before any land is built
+  allFarms(); // ...and under the farms outside the towns
   let quality = pickQuality(view?.graphics);
   // (smoothing the edges is chosen once, as the page starts: it can't change later)
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.key !== 'low', logarithmicDepthBuffer: true });
@@ -250,7 +254,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
       for (const it of doorsNear(pos.x, pos.z, 14)) list.push([it.d.x, it.d.y, it.d.z, 6, () => useDoor(it)]);
     }
-    if (!inside) for (const m of creatures?.list || []) if (canHarvest(m) && Math.hypot(m.x - pos.x, m.z - pos.z) < 12) list.push([m.x, m.y + 0.3, m.z, 2.6, () => harvestBody(m)]);
+    if (!inside) for (const m of creatures?.list || []) if (canHarvest(m) && !m.kind.animal && Math.hypot(m.x - pos.x, m.z - pos.z) < 12) list.push([m.x, m.y + 0.3, m.z, 2.6, () => harvestBody(m)]);
+    if (!inside && !depth) husbandry?.tapTargets(list);
     for (const e of colliders.near(pos.x, pos.z, 12)) if (e.kind === 'chest') list.push([e.x, (e.y ?? g(e.x, e.z)) + 0.6, e.z, e.r + 1.6, () => openChest(e)]);
     const r = canvas.getBoundingClientRect();
     let best = null, bd = 70;
@@ -368,6 +373,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let inside = null; // { built, back, shop, leftExit } while you're inside a building
   const FALL_SAFE = 4; // metres you can drop without getting hurt
   let creatures = null; // made below; caves built before then get their guards later
+  let husbandry = null; // hunting, cooking and the farms (made below, with the creatures)
+  let runningNow = false; // (the run key held, for the animals to notice)
   applyQuality(quality);
   updateSites(pos.x, pos.z);
   land.update(pos.x, pos.z, Infinity); // build the land around you before the clouds part
@@ -558,11 +565,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (inside) return true;
     if (nearTent(x, z, TENT_SAFE)) return true;
     if (torchLights.some((tl) => Math.hypot(tl.x - x, tl.z - z) < TORCH_SAFE)) return true;
+    if (husbandry?.nearCampfire(x, z)) return true;
     return !!safeZoneAt(x, z);
   }
 
   // Sleeping (Z, only somewhere safe) and collapsing from exhaustion
   let inTent = false; // asleep inside your tent: hidden, and resting faster
+  let starveAcc = 0;
   let sleeping = false, collapsed = 0, fatigueAcc = 0, warnedTired = false, lastTime = -1, lastCrowd = -1;
   const resting = () => sleeping || collapsed > 0;
   function toggleSleep() {
@@ -593,7 +602,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let lastHurt = -99;
   const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
-    getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1 }),
+    getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside }),
     isNight: () => night,
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
@@ -610,6 +619,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   });
 
   for (const s of sites) if (s.built && s.place.cave) postGuards(s); // caves built before the monsters existed
+
+  // ---------- hunting, cooking and the farms (see husbandry.js) ----------
+  husbandry = createHusbandry({
+    scene, colliders, game, say, floatText, onEvent,
+    creatures: () => creatures,
+    getPos: () => pos, getHeading: () => heading,
+    groundAt: (x, z) => groundAt(x, z, pos.y),
+    // the campfire beside each waystone (see spawn.js)
+    siteFires: () => sites.filter((s) => s.built && !s.place.cave && Math.hypot(s.place.x - pos.x, s.place.z - pos.z) < 60).map((s) => ({ x: s.place.x + 9.5, z: s.place.z - 11 })),
+  });
+  husbandry.updateFarms(pos.x, pos.z);
 
   // ---------- monster villages out in the wilds (see data/mobvillages.mjs) ----------
   const mobVillages = new Map(); // village id -> { v, built, out: whether its folk are about }
@@ -1093,7 +1113,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     return null;
   }
   // a fallen monster's body you can cut up for bone and hide (E beside it), before it rots away
-  const corpseNear = (x, z, r) => creatures?.list.filter((m) => canHarvest(m) && Math.hypot(m.x - x, m.z - z) < r).sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z))[0] || null;
+  const corpseNear = (x, z, r) => creatures?.list.filter((m) => canHarvest(m) && !m.kind.animal && Math.hypot(m.x - x, m.z - z) < r).sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z))[0] || null;
   function harvestBody(m) {
     const got = harvest(m);
     if (!got) return;
@@ -1112,6 +1132,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const stand = standNear(pos.x, pos.z);
       if (stand) { onEvent?.('stand', stand); return; }
       if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
+      if (husbandry.interact()) return;
       const body = corpseNear(pos.x, pos.z, 2.4);
       if (body) { harvestBody(body); return; }
       const npc = npcNear(pos.x, pos.z);
@@ -1179,7 +1200,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     guard.swing = Math.max(0, guard.swing - dt);
     // the nearest monster that is close to you (or already its target)
     if (guard.target && (guard.target.dead || guard.target.hp <= 0 || Math.hypot(guard.target.x - pos.x, guard.target.z - pos.z) > 25)) guard.target = null;
-    if (!guard.target) guard.target = creatures.list.filter((m) => !m.dead && m.hp > 0 && Math.hypot(m.x - pos.x, m.z - pos.z) < 12).sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0] || null;
+    if (!guard.target) guard.target = creatures.list.filter((m) => !m.dead && m.hp > 0 && (!m.kind.animal || m.kind.aggressive) && Math.hypot(m.x - pos.x, m.z - pos.z) < 12).sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0] || null;
     const m = guard.target;
     let tx, tz, reach = 0.4;
     if (m) { tx = m.x; tz = m.z; reach = m.radius + 1.1; } else { tx = pos.x - Math.sin(heading) * 2.2 - Math.cos(heading) * 1.2; tz = pos.z - Math.cos(heading) * 2.2 + Math.sin(heading) * 1.2; }
@@ -1268,6 +1289,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
   function finishHit(m, reward) {
+    // a hunter says Allah's name over the animal as they strike (halal hunting)
+    if (m.kind.animal?.meat && !m.named) { m.named = true; floatText('Bismillah, Allahu Akbar', new THREE.Vector3(m.x, m.y + m.height + 0.9, m.z), 'note'); }
+    if (reward?.animal) {
+      reward.exp = Math.max(1, Math.round(reward.exp * killExpScale(game.character.level - m.level)));
+      floatText(`+${reward.exp} EXP`, new THREE.Vector3(m.x, m.y + m.height + 0.5, m.z), 'exp');
+      game.gainExp(reward.exp);
+      say(`${reward.name} down. E beside it: drag it to a Butcher, or cut it up`, 'note');
+      onEvent?.('hunt', reward);
+      return;
+    }
     if (reward?.maimed) { floatText('Hand cut off!', new THREE.Vector3(m.x, m.y + m.height + 0.6, m.z), 'crit'); return; }
     if (reward) {
       m.onDeath?.();
@@ -1330,7 +1361,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         look.to = { x, y: sk.type === 'bolt' ? heightAt(x, z) : pos.y, z, h: bodyH };
       }
     } else if (sk.type === 'sweep') {
-      const near = creatures.list.filter((m) => !m.dead && Math.hypot(m.x - pos.x, m.z - pos.z) - m.radius < sk.radius);
+      const near = creatures.list.filter((m) => !m.dead && !m.farm && Math.hypot(m.x - pos.x, m.z - pos.z) - m.radius < sk.radius);
       for (const m of near) hitFoe(m, sk.mult, sk.magic || null);
     } else if (sk.type === 'dash') {
       // rush forward, stopping at the first foe in the way
@@ -1381,7 +1412,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
         if (m) {
           foes = [m];
-          if (sp.kind === 'burst') foes.push(...creatures.list.filter((o) => o !== m && !o.dead && Math.hypot(o.x - m.x, o.z - m.z) - o.radius < 3.5));
+          if (sp.kind === 'burst') foes.push(...creatures.list.filter((o) => o !== m && !o.dead && !o.farm && Math.hypot(o.x - m.x, o.z - m.z) - o.radius < 3.5));
           to = at(m);
         } else to = ahead(SPELL_REACH);
       } else if (sp.kind === 'nova') {
@@ -1691,9 +1722,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let lastSave = 0;
   let regenAcc = 0;
   // healing by rest stops at a cap: eat, drink or use a potion or skill for the rest
-  let toldCap = false;
+  let toldCap = false, toldHungry = false;
   function restHeal(n, asleep) {
     const max = game.stats().hp, c = game.character;
+    if ((c.hunger ?? 100) < HUNGRY) {
+      if (!toldHungry && c.hp < max) { toldHungry = true; say('Too hungry to heal by resting. Eat something', 'note'); }
+      return;
+    }
+    toldHungry = false;
     const cap = Math.floor(max * restCap(c.level, asleep));
     if (c.hp >= cap) {
       if (!toldCap && c.hp < max) { toldCap = true; say(`Rest only heals you to ${Math.round(restCap(c.level, asleep) * 100)}%. Eat or drink to heal more.`, 'note'); }
@@ -1803,6 +1839,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     else { backYaw = yaw; backHeading = heading; } // once round, carry on from wherever you face
     if (aboutFace) fz = -fz;
     const running = held('run') || (codeFor('run') === 'ShiftLeft' && keys.has('ShiftRight')) || Math.hypot(stick.x, stick.y) > 0.9;
+    runningNow = running;
     const amount = Math.min(1, Math.hypot(fx, fz));
     let target = 0;
     if (cameraMode === 'follow' && !fp) {
@@ -1812,7 +1849,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (Math.abs(fz) > 0.05) {
         const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
         move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
-        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1);
+        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1);
       }
       if (!look) {
         const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
@@ -1832,7 +1869,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       if (!fp) heading += diff * Math.min(1, dt * TURN);
       // move the way you want to go, even while still turning to face it
-      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1);
+      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
@@ -1962,6 +1999,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
           else if (c.fatigue >= 85 && !warnedTired) { warnedTired = true; onEvent?.('tired'); }
           if (c.fatigue < 80) warnedTired = false;
         }
+        // Hunger: you grow hungry as you play (faster running, slower asleep). Hungry, rest stops
+        // healing; starving, you slowly lose health (never below a tenth)
+        const was = c.hunger ?? 100;
+        game.hungerBy(-step * HUNGER_DRAIN * (sleeping ? 0.5 : running && speedNow > WALK ? 1.8 : 1));
+        if (was >= HUNGRY && c.hunger < HUNGRY) { say('You are hungry. Eat something soon', 'hurt'); onEvent?.('hungry'); }
+        if (was > 0 && c.hunger <= 0) say('You are starving! Eat, or you will grow weak', 'hurt');
+        if (c.hunger <= 0) {
+          starveAcc += step;
+          const max = game.stats().hp;
+          if (starveAcc >= 5 && c.hp > max * STARVE_FLOOR) { starveAcc = 0; const n = Math.min(Math.ceil(max * STARVE_HIT), Math.floor(c.hp - max * STARVE_FLOOR)); if (n > 0) { c.hp -= n; floatText(`-${n}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt'); game.touch('hp'); } }
+        } else starveAcc = 0;
         game.touch('fatigue');
       }
       if (sleeping && (held('forward') || held('back') || held('left') || held('right') || Math.hypot(stick.x, stick.y) > 0.3)) { sleeping = false; say('You wake up', 'note'); }
@@ -2030,6 +2078,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else if (inside) here = inside.shop.name;
       else {
         updateSites(pos.x, pos.z);
+        husbandry.updateFarms(pos.x, pos.z);
         tendVillages();
         const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
         const caveHere = sites.find((s) => s.built?.inside?.(pos.x, pos.z));
@@ -2106,6 +2155,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
     for (const q of mobVillages.values()) q.built.update(t, pos, creatures.list);
+    if (!depth && !inside) husbandry.tick(dt, t);
     walkBuild?.update();
     sky.follow(camera);
 
@@ -2236,6 +2286,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     get walkBuilding() { return !!walkBuild; },
     debugSlayVillage(id) { for (const m of creatures.list.filter((q) => q.village === id && !q.dead)) finishHit(m, creatures.hit(m, m.hp)); },
     debugUse: () => interact(),
+    // hunting (the choice shown for a body, a campfire from Firewood)
+    dragCarcass: () => husbandry.drag(),
+    cutCarcass: () => husbandry.cut(),
+    lightCampfire: () => (!inside && !depth ? husbandry.lightCampfire() : 'inside'),
+    debugFarms: () => husbandry.farms(),
+    debugAnimals: () => creatures.list.filter((m) => m.kind.animal).map((m) => ({ id: m.kind.animalId, x: m.x, z: m.z, dead: !!m.dead, farm: m.farm || null, hp: m.hp, death: m.death ? { t: m.death.t, left: m.death.left } : null, vis: m.body.visible })),
+    debugHitAnimal(id, dmg = 15) { const m = creatures.list.filter((q) => q.kind.animalId === id && !q.dead).sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0]; if (!m) return null; finishHit(m, creatures.hit(m, dmg, 'slash')); return { hp: m.hp, dead: !!m.dead }; },
+    debugAgeBodies() { for (const m of creatures.list) if (m.death?.animal) m.death.t = Math.max(m.death.t, 2); },
+    debugAt: () => ({ x: pos.x, z: pos.z, dragging: husbandry.dragging?.kind.animalId || null }),
+    debugSpawnAnimal(id, dx = 0, dz = 6) { return creatures.spawnAt(`a_${id}`, 1, pos.x + dx, pos.z + dz, { keep: true }); },
+    debugTeleport(x, z) { pos.set(x, groundAt(x, z, 1e4), z); snapCam = true; updateSites(x, z); husbandry.updateFarms(x, z); land.update(x, z, Infinity); },
     debugTalkParent() { for (const c of builtCities()) { const n = c.built.npcs.find((q) => q.kind === 'parent' && q.mine); if (n) { pos.set(n.x + 1, pos.y, n.z); talkTo(n); return true; } } return false; },
     // for testing: what a frame draws, grouped by what it is
     debugCensus() {

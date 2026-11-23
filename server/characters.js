@@ -193,7 +193,7 @@ async function saveProgress(accountId, p) {
   const fields = {
     level: int(p.level, 1, 10000), exp: int(p.exp, 0, 1e12), coins: int(p.coins, 0, 1e12), hp: int(p.hp, 0, 1e9), sp: int(p.sp, 0, 1e9),
     unspentPoints: int(p.unspentPoints, 0, 1e6), uniquePoints: int(p.uniquePoints, 0, 1e6),
-    fatigue: int(p.fatigue ?? 0, 0, 100), savedAt: int(p.savedAt ?? 0, 0, 1e15),
+    fatigue: int(p.fatigue ?? 0, 0, 100), hunger: int(p.hunger ?? 100, 0, 100), savedAt: int(p.savedAt ?? 0, 0, 1e15),
   };
   for (const [k, v] of Object.entries(fields)) if (v === null) return { error: `Bad value for ${k}.` };
   const stats = {};

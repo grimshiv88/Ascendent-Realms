@@ -117,6 +117,37 @@ export const ITEMS = {
   mint_tea: { name: 'Mint Tea', icon: '🫖', kind: 'food', sp: 25, rest: 15, price: 10, text: 'Fresh mint tea. Restores 25 SP and eases Fatigue.' },
   fruit_juice: { name: 'Fresh Fruit Juice', icon: '🧃', kind: 'food', sp: 30, heal: 30, price: 14, text: 'Pressed this morning. Restores 30 SP and 30 HP.' },
   ayran: { name: 'Ayran', icon: '🥛', kind: 'food', heal: 35, rest: 20, price: 9, text: 'A cool salted yogurt drink. Restores 35 HP and eases Fatigue.' },
+  // hunting and farming (see data/animals.mjs). Only halal animals give meat, and raw meat must be
+  // cooked over a fire (or prepared by a Butcher) before it can be eaten.
+  raw_rabbit: { name: 'Raw Rabbit', icon: '🥩', kind: 'material', raw: 'cooked_rabbit', price: 4, text: 'Fresh halal rabbit. Cook it over a campfire (E by the fire).' },
+  raw_venison: { name: 'Raw Venison', icon: '🥩', kind: 'material', raw: 'cooked_venison', price: 8, text: 'Fresh halal deer meat. Cook it over a campfire (E by the fire).' },
+  raw_mutton: { name: 'Raw Mutton', icon: '🥩', kind: 'material', raw: 'cooked_mutton', price: 8, text: 'Fresh halal mutton. Cook it over a campfire (E by the fire).' },
+  raw_goat: { name: 'Raw Goat Meat', icon: '🥩', kind: 'material', raw: 'cooked_goat', price: 7, text: 'Fresh halal goat. Cook it over a campfire (E by the fire).' },
+  raw_beef: { name: 'Raw Beef', icon: '🥩', kind: 'material', raw: 'cooked_beef', price: 10, text: 'Fresh halal beef. Cook it over a campfire (E by the fire).' },
+  raw_camel: { name: 'Raw Camel Meat', icon: '🥩', kind: 'material', raw: 'cooked_camel', price: 9, text: 'Fresh halal camel. Cook it over a campfire (E by the fire).' },
+  raw_poultry: { name: 'Raw Fowl', icon: '🍗', kind: 'material', raw: 'cooked_poultry', price: 5, text: 'Fresh halal bird meat. Cook it over a campfire (E by the fire).' },
+  cooked_rabbit: { name: 'Roast Rabbit', icon: '🍖', kind: 'food', heal: 45, fill: 25, price: 12, text: 'Rabbit roasted over a fire. Restores 45 HP and fills you up a little.' },
+  cooked_venison: { name: 'Roast Venison', icon: '🍖', kind: 'food', heal: 90, fill: 40, price: 24, text: 'Deer meat roasted over a fire. Restores 90 HP.' },
+  cooked_mutton: { name: 'Roast Mutton', icon: '🍖', kind: 'food', heal: 85, fill: 40, price: 22, text: 'Mutton roasted over a fire. Restores 85 HP.' },
+  cooked_goat: { name: 'Roast Goat', icon: '🍖', kind: 'food', heal: 80, fill: 38, price: 20, text: 'Goat roasted over a fire. Restores 80 HP.' },
+  cooked_beef: { name: 'Grilled Beef', icon: '🥩', kind: 'food', heal: 110, fill: 45, price: 28, text: 'Beef grilled over a fire. Restores 110 HP.' },
+  cooked_camel: { name: 'Camel Roast', icon: '🍖', kind: 'food', heal: 100, fill: 45, price: 26, text: 'Camel meat roasted slowly. Restores 100 HP.' },
+  cooked_poultry: { name: 'Roast Fowl', icon: '🍗', kind: 'food', heal: 55, fill: 30, price: 15, text: 'A bird roasted golden. Restores 55 HP.' },
+  animal_hide: { name: 'Animal Hide', icon: '🟫', kind: 'material', price: 6, text: 'A hide from a hunted animal. Tailors and armourers buy it.' },
+  animal_fang: { name: 'Beast Fang', icon: '🦷', kind: 'material', price: 5, text: 'A fang from a wolf, fox or bear. Their meat is not eaten.' },
+  feather: { name: 'Feathers', icon: '🪶', kind: 'material', price: 1, text: 'Soft feathers from a bird.' },
+  hunting_knife: { name: 'Hunting Knife', icon: '🔪', kind: 'material', price: 15, text: 'For cutting up a hunted animal. (A sword, dagger or axe in your hand works too.)' },
+  firewood: { name: 'Firewood', icon: '🔥', kind: 'material', price: 4, text: 'A bundle of dry wood. Light a campfire with it to cook and keep warm (from your bag).' },
+  // from the farms: vegetables you can eat raw, or feed to the animals (E beside one)
+  carrot: { name: 'Carrot', icon: '🥕', kind: 'food', heal: 8, fill: 8, feed: true, price: 2, text: 'Crunchy and sweet. Horses and rabbits love them.' },
+  cabbage: { name: 'Cabbage', icon: '🥬', kind: 'food', heal: 10, fill: 10, feed: true, price: 3, text: 'A firm green head. Goats and sheep love it.' },
+  lettuce: { name: 'Lettuce', icon: '🥬', kind: 'food', heal: 6, fill: 6, feed: true, price: 2, text: 'Crisp leaves.' },
+  turnip: { name: 'Turnip', icon: '🧅', kind: 'food', heal: 9, fill: 9, feed: true, price: 2, text: 'A purple-topped root. Cows eat them too.' },
+  potato: { name: 'Potato', icon: '🥔', kind: 'food', heal: 6, fill: 10, feed: true, price: 2, text: 'Filling, if plain.' },
+  onion: { name: 'Onion', icon: '🧅', kind: 'food', heal: 4, fill: 4, price: 1, text: 'Better in a stew than on its own.' },
+  pumpkin: { name: 'Pumpkin', icon: '🎃', kind: 'food', heal: 20, fill: 22, feed: true, price: 6, text: 'Big and orange. Feeds a family, or a whole farmyard.' },
+  hay: { name: 'Hay', icon: '🌾', kind: 'material', feed: true, price: 1, text: 'Dried grass. Feed it to horses, cows, sheep and goats.' },
+  grain: { name: 'Grain', icon: '🌾', kind: 'material', feed: true, price: 1, text: 'A handful of wheat. Chickens, ducks and turkeys peck it up.' },
   // clothes: worn for looks, not protection (a little DEF at most)
   linen_shirt: { name: 'Linen Shirt', icon: '👕', kind: 'armour', slot: 'body', rank: 0, def: 1, fashion: true, price: 35, look: { color: '#e8e0cc' }, text: 'Light, clean linen.' },
   embroidered_tunic: { name: 'Embroidered Tunic', icon: '👘', kind: 'armour', slot: 'body', rank: 1, def: 1, fashion: true, price: 120, look: { color: '#7a2a3a' }, text: 'Gold thread at the collar and cuffs.' },
@@ -321,7 +352,7 @@ export function mergeCost(it, plus = 0) {
 // What the shop sells, and the level at which each item unlocks
 export const SHOP = [
   // potions and food
-  ['water_flask', 1], ['apple', 1], ['bread', 1], ['herbal_tea', 1], ['herb', 1], ['honey_cake', 3], ['roast_meat', 4], ['stew', 12], ['torch', 1], ['tent', 1], ['sp_potion', 2], ['calm_draught', 2], ['poison_potion', 3], ['potion', 5], ['sp_booster', 5],
+  ['water_flask', 1], ['apple', 1], ['bread', 1], ['herbal_tea', 1], ['herb', 1], ['honey_cake', 3], ['roast_meat', 4], ['stew', 12], ['torch', 1], ['tent', 1], ['hunting_knife', 1], ['firewood', 1], ['sp_potion', 2], ['calm_draught', 2], ['poison_potion', 3], ['potion', 5], ['sp_booster', 5],
   ['swift_potion', 5], ['strength_potion', 6], ['stone_potion', 6], ['fire_oil', 8], ['frost_oil', 8], ['big_potion', 20],
   // weapons
   ['wooden_club', 1], ['rusty_sword', 1], ['hand_axe', 3], ['iron_dagger', 3], ['oak_staff', 3], ['iron_sword', 5],
@@ -439,13 +470,15 @@ export const BOT_MARKUP = 1.4, BOT_BUY_SHARE = 0.7;
 const basicGear = (kind) => SHOP.filter(([id]) => ITEMS[id].kind === kind && (ITEMS[id].rank || 0) <= 1 && !ITEMS[id].fashion).map(([id]) => id);
 Object.assign(MARKETS, {
   city_potions: { bot: true, name: 'The Green Vial', text: 'Small potions and remedies, run by the city.', items: ['potion', 'sp_potion', 'calm_draught', 'herb', 'big_potion', 'strength_potion', 'stone_potion', 'swift_potion'] },
-  city_smith: { bot: true, name: 'City Forge', text: 'Basic weapons and tools, run by the city.', items: [...basicGear('weapon'), 'poison_potion', 'fire_oil', 'frost_oil', 'torch', 'tent'] },
+  city_smith: { bot: true, name: 'City Forge', text: 'Basic weapons and tools, run by the city.', items: [...basicGear('weapon'), 'poison_potion', 'fire_oil', 'frost_oil', 'torch', 'tent', 'hunting_knife', 'firewood'] },
   city_armoury: { bot: true, name: 'City Armoury', text: 'Plain armour and shields, run by the city.', items: basicGear('armour') },
   city_tailor: { bot: true, name: 'The Silk Thread', text: 'Clothes to wear for looks, not for battle.', items: ['linen_shirt', 'wide_trousers', 'felt_hat', 'sandals', 'embroidered_tunic', 'turban', 'riding_boots', 'silk_robe'] },
   city_food: { bot: true, name: 'The Olive Tree', text: 'Halal meals that heal and give a short boost.', items: ['bread', 'apple', 'lentil_soup', 'falafel_wrap', 'lamb_kebab', 'chicken_rice', 'date_bowl', 'stew'] },
   furniture_dump: { bot: true, name: 'Junk Dealer', text: 'Second-hand furniture, cheap and a little broken.', items: ['straw_bed', 'crate_table', 'stool', 'rag_rug', 'candle_stub'] },
   furniture_common: { bot: true, name: 'Oak & Hearth Furniture', text: 'Good plain furniture for a family home.', items: ['wooden_bed', 'oak_table', 'chair', 'wardrobe', 'wool_rug', 'oil_lamp', 'bookshelf', 'potted_plant'] },
   furniture_noble: { bot: true, name: 'The Gilded Room', text: 'The finest furniture in the realm, for noble houses.', items: ['canopy_bed', 'marble_table', 'velvet_chair', 'chandelier', 'tapestry', 'gilded_mirror', 'grand_wardrobe'] },
+  farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain'] },
+  butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'firewood'] },
   tavern: { bot: true, name: 'Tavern', text: 'Halal food, fresh drinks and rooms to rent. No alcohol is served here.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask', 'herbal_tea', 'lentil_soup', 'bread'] },
 });
 // what a market charges for an item, and pays for one
@@ -464,6 +497,7 @@ export function marketStock(marketId, level) {
 export const RECIPES = [
   { makes: 'wooden_club', needs: [['log', 3]] },
   { makes: 'tent', needs: [['log', 8]] },
+  { makes: 'firewood', needs: [['log', 2]] },
 ];
 
 // The weapon each class starts with in the bag
