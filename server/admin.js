@@ -3,10 +3,12 @@
 // Admins are the accounts whose emails are listed in the ADMIN_EMAILS setting (comma-separated).
 // Passwords are stored hashed, so nobody (admins included) can read them; they can only be replaced.
 const db = require('./db');
+const mail = require('./mail');
 const { hashPassword, shownEmail } = require('./auth');
 
 const adminEmails = () => (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
-const isAdmin = (account) => !!account && adminEmails().includes(String(account.email).toLowerCase());
+// (once emails can be sent, only after the admin has confirmed the email, so nobody else can sign up with it)
+const isAdmin = (account) => !!account && adminEmails().includes(String(account.email).toLowerCase()) && (!!account.email_verified || !mail.ready());
 
 async function accounts() {
   const rows = await db.all(`

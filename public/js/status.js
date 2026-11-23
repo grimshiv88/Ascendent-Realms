@@ -175,6 +175,41 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
   fillFlags(el);
 }
 
+// The account part of Settings: the email (confirmed or not) and 2-step sign-in.
+// `st` is what is going on: { msg, app: { secret, uri } while an authenticator app is being set up, code }
+function accountSettings(a, st) {
+  const pw = '<input name="password" type="password" autocomplete="current-password" placeholder="Your password" required>';
+  const email = a.email
+    ? `<p class="bag-hint">Email: <b>${esc(a.email)}</b> · ${a.emailVerified ? 'confirmed' : '<b>not confirmed yet</b>'}</p>
+       ${a.emailVerified ? '' : `<form class="pw-change" data-acct="verify"><label>Code from the email <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></label>
+         <div class="pw-buttons"><button type="submit" class="gold-button small">Confirm</button><button type="button" class="link-button" data-acct-send>Send the email again</button></div></form>`}`
+    : '<p class="bag-hint"><b>No email yet.</b> Add one below.</p>';
+  const change = `<details class="acct-more"><summary>${a.email ? 'Change email' : 'Add an email'}</summary>
+      <form class="pw-change" data-acct="email"><label>New email <input name="email" type="email" autocomplete="email" required></label>
+      ${a.email ? `<label>Password ${pw}</label>` : ''}<div class="pw-buttons"><button type="submit" class="gold-button small">Save email</button></div></form></details>`;
+  let twofa;
+  if (st.app) {
+    twofa = `<p class="bag-hint">1. Install an authenticator app (Google Authenticator, Microsoft Authenticator or Authy).<br>
+      2. On this phone, <a href="${esc(st.app.uri)}">open it in your authenticator app</a>. On another device, choose "Enter a setup key" in the app and type this key:</p>
+      <p class="totp-key">${esc(st.app.secret.replace(/(.{4})/g, '$1 ').trim())}</p>
+      <form class="pw-change" data-acct="app-confirm"><label>3. Type the 6-digit code the app shows <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></label>
+      <div class="pw-buttons"><button type="submit" class="gold-button small">Turn it on</button><button type="button" class="link-button" data-acct-cancel>Cancel</button></div></form>`;
+  } else if (a.twofa) {
+    twofa = `<p class="bag-hint"><b>On</b>: signing in needs a code ${a.twofa === 'app' ? 'from your authenticator app' : 'sent to your email'} as well as the password.</p>
+      <form class="pw-change" data-acct="off"><label>Password ${pw}</label><div class="pw-buttons"><button type="submit" class="gold-button small">Turn off 2-step sign-in</button></div></form>`;
+  } else {
+    const emailOk = a.email && a.emailVerified && a.mail;
+    twofa = `<p class="bag-hint"><b>Off.</b> Turn it on so nobody can get in with only your password.</p>
+      <form class="pw-change" data-acct="twofa"><label>Password ${pw}</label>
+      <div class="pw-buttons">${emailOk ? '<button type="submit" class="gold-button small" name="way" value="email">Codes by email</button>' : ''}<button type="submit" class="gold-button small" name="way" value="app">Authenticator app</button></div>
+      ${emailOk ? '' : `<p class="bag-hint">${a.mail ? 'Codes by email need a confirmed email.' : 'Codes by email can be used once the game can send emails.'}</p>`}</form>`;
+  }
+  return `<h4 class="ctl-group">Email</h4>${email}${change}
+    <h4 class="ctl-group">2-step sign-in</h4>${twofa}
+    ${st.code ? `<p class="preview-code">Preview only, no real email is sent here. Your code is <b>${esc(st.code)}</b></p>` : ''}
+    <p class="shop-msg" role="status">${esc(st.msg || '')}</p>`;
+}
+
 // Player settings, kept in this browser
 export function renderSettings(el, settings, accounts = null, cloud = false, passwordMsg = '', keys = {}) {
   const groups = [...new Set(CONTROLS.map((x) => x[3]))];
@@ -216,7 +251,10 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
       <button type="button" class="link-button" data-controls-reset>Put every key back to how it started</button>
       <h3 class="bag-sub">Account</h3>
       ${keys.country !== undefined ? `<label class="country-setting">Where you are from <small>(its flag is on your ID)</small><span class="country-field"><select data-country>${countryOptions(keys.country || '')}</select><span data-country-flag>${flagHtml(keys.country)}</span></span></label>` : ''}
+      ${keys.account ? accountSettings(keys.account, keys.acct || {}) : ''}
       <form class="pw-change" data-password>
+        <h4 class="ctl-group">Password</h4>
+        <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
         <label>New password <input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
         <label>Type it again <input name="confirm" type="password" minlength="8" autocomplete="new-password" required></label>
         <div class="pw-buttons"><button type="submit" class="gold-button small">Change password</button>

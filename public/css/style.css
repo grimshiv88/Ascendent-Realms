@@ -1024,3 +1024,11 @@ img.flag[data-flag] { background: #8a8070; }
 .pass-common { background: #3e6a8a; }
 .pass-noble { background: #7a4a9a; }
 .pass-castle { background: #b08a1e; }
+
+/* account steps: codes, the preview's shown code, the authenticator key */
+.preview-code { margin: 0; padding: 8px 10px; border: 1px dashed var(--gold-2); border-radius: 6px; font: 0.85rem Georgia, serif; color: var(--ink-quiet); }
+.preview-code b { font: 700 1.05rem monospace; letter-spacing: 3px; color: var(--gold-2); }
+#auth-step input[name="code"] { font: 700 1.3rem monospace; letter-spacing: 6px; text-align: center; }
+.totp-key { margin: 6px 0; padding: 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.35); font: 700 1rem monospace; letter-spacing: 2px; text-align: center; word-break: break-all; user-select: all; }
+.acct-more { margin: 4px 0 8px; }
+.acct-more summary { cursor: pointer; color: var(--gold-2); font: 0.9rem Georgia, serif; }

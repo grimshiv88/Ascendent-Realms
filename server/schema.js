@@ -1,7 +1,7 @@
 // Every table the game keeps (Postgres). Run on start; safe to run again and again.
 // Row Level Security is switched on for every table with no rules, so the public Supabase web API
 // can't read or change anything: only the game's own server (which connects as the owner) can.
-const TABLES = ['accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties'];
+const TABLES = ['accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes'];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS accounts (
@@ -15,8 +15,26 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 -- the real-world country the player said they are from (its flag shows on the in-game ID)
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS country TEXT;
+-- emails: confirmed or not, the welcome email sent, and 2-step sign-in ('email' or 'app')
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS welcomed BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS twofa TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS totp_secret TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_email ON accounts (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_username ON accounts (lower(username));
+
+-- codes sent by email (or waiting for an authenticator app): only a scrambled copy of each code is kept
+CREATE TABLE IF NOT EXISTS auth_codes (
+  ticket     TEXT PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  code_hash  TEXT NOT NULL,
+  data       TEXT,
+  expires    BIGINT NOT NULL,
+  tries      INTEGER NOT NULL DEFAULT 0,
+  created    BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS auth_codes_account ON auth_codes (account_id, kind);
 
 CREATE TABLE IF NOT EXISTS sessions (
   token      TEXT PRIMARY KEY,

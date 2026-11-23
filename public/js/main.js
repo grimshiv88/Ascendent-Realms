@@ -58,16 +58,20 @@ import { piecesCost } from './data/building.mjs';
 import { money, moneyWords } from './data/money.mjs';
 import { PASS_NAME } from './data/citypass.mjs';
 import { flagHtml, fillFlags, countryOptions, wireCountryPicker } from './flag.js';
+import { accountSteps } from './accountsteps.js';
 
 paintCloudBanks();
 
 const $ = (id) => document.getElementById(id);
-const panels = ['choose', 'signup', 'signin', 'story'];
+const panels = ['choose', 'signup', 'signin', 'story', 'forgot', 'auth-step'];
 
 function show(panelId) {
   for (const id of panels) $(id).classList.toggle('hidden', id !== panelId);
   $(panelId).querySelector('input')?.focus();
 }
+
+// sign-in codes, adding and confirming the email, new passwords (enterRealm is hoisted)
+const steps = accountSteps({ el: $('auth-step'), show, enter: (r) => enterRealm(r) });
 
 const intro = startIntro($('scene'), {
   onFlash() {
@@ -86,7 +90,8 @@ const intro = startIntro($('scene'), {
     // after "Switch account" the sign-in form opens straight away
     let switching = false;
     try { switching = sessionStorage.getItem('ar.switch') === '1'; sessionStorage.removeItem('ar.switch'); } catch { /* blocked */ }
-    setTimeout(() => show(switching ? 'signin' : 'choose'), 900);
+    // the link in an email (confirm the email, reset the password) opens its own step
+    setTimeout(async () => { if (!(await steps.fromLink())) show(switching ? 'signin' : 'choose'); }, 900);
     removeSkip();
   },
 });
@@ -111,7 +116,7 @@ api.resume().then((r) => {
   if (!r?.account) return;
   $('welcome-name').textContent = r.account.character?.name || r.account.username;
   $('welcome-back').classList.remove('hidden');
-  $('continue-btn').addEventListener('click', () => enterRealm(r));
+  $('continue-btn').addEventListener('click', () => steps.next(r));
   $('signout-btn').addEventListener('click', async () => { await api.signOut(); $('welcome-back').classList.add('hidden'); });
 });
 
@@ -126,7 +131,9 @@ async function cloudTransition(loadNext) {
 }
 
 // After signing in: character creation for a new account, otherwise straight into the world.
+let myAccount = null; // the signed-in account (its email and 2-step sign-in, for Settings)
 function enterRealm({ account }) {
+  myAccount = account;
   return cloudTransition(async () => {
     await sculptsReady; // the sculpted bodies, so characters are built from them
     intro.stop();
@@ -583,7 +590,7 @@ function startGame(character) {
         else if (info.owned && !info.owned.mine) ui.landMsg = `Owned by ${info.owned.owner}.`;
         updateMapBasket();
       } : null);
-    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '', country: game ? character.country || '' : undefined });
+    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '', country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
     else if (name === 'options') renderOptions(overlay);
@@ -614,7 +621,7 @@ function startGame(character) {
     overlay.dataset.panel = name;
     if (name !== 'power') ui.powers = [];
     ui.workshop = false;
-    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.skillMsg = ''; ui.binding = null;
+    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.acct = {}; ui.skillMsg = ''; ui.binding = null;
     if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
     if (name === 'cult') { ui.cultMsg = ''; loadCult(); }
     if (name === 'family') { ui.familyMsg = ''; loadFamily(); }
@@ -762,13 +769,42 @@ function startGame(character) {
     } catch (err) { ui.bounty = { ...(ui.bounty || {}), message: err.message }; }
     drawPanel();
   });
+  // Settings: the email and 2-step sign-in
+  const acctDo = async (fn) => {
+    try {
+      const r = await fn();
+      if (r?.account) myAccount = { ...myAccount, ...r.account };
+      return r;
+    } catch (err) { ui.acct = { ...(ui.acct || {}), msg: err.message, code: null }; drawPanel(); return null; }
+  };
+  overlay.addEventListener('submit', async (e) => {
+    const kind = e.target.dataset?.acct;
+    if (!kind) return;
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const way = e.submitter?.value;
+    let r;
+    if (kind === 'verify') { if ((r = await acctDo(() => api.verifyEmail({ code: f.code })))) ui.acct = { msg: 'Email confirmed. Thank you!' }; }
+    else if (kind === 'email') { if ((r = await acctDo(() => api.setEmail(f.email, f.password)))) ui.acct = { msg: myAccount.mail ? `Saved. We sent a code to ${f.email}: type it above to confirm it.` : 'Saved.', code: r.previewCode }; }
+    else if (kind === 'twofa' && way === 'email') { if ((r = await acctDo(() => api.twofaEmail(f.password)))) ui.acct = { msg: '2-step sign-in is on: codes will come by email.' }; }
+    else if (kind === 'twofa') { if ((r = await acctDo(() => api.twofaAppStart(f.password)))) ui.acct = { app: { secret: r.secret, uri: r.uri } }; }
+    else if (kind === 'app-confirm') { if ((r = await acctDo(() => api.twofaAppConfirm(f.code)))) ui.acct = { msg: '2-step sign-in is on: you will need a code from the app each time you sign in.' }; }
+    else if (kind === 'off') { if ((r = await acctDo(() => api.twofaOff(f.password)))) ui.acct = { msg: '2-step sign-in is off.' }; }
+    if (r) drawPanel();
+  });
+  overlay.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-acct-cancel]')) { ui.acct = {}; drawPanel(); return; }
+    if (!e.target.closest('[data-acct-send]')) return;
+    const r = await acctDo(() => api.sendVerify());
+    if (r) { ui.acct = { msg: r.already ? 'Your email is already confirmed.' : 'Sent. Look for the newest email.', code: r.previewCode }; drawPanel(); }
+  });
   overlay.addEventListener('submit', async (e) => {
     if (!e.target.matches('[data-password]')) return;
     e.preventDefault();
-    const { password, confirm } = Object.fromEntries(new FormData(e.target));
+    const { current, password, confirm } = Object.fromEntries(new FormData(e.target));
     try {
       if (password !== confirm) throw new Error('The two passwords don\'t match.');
-      await api.changePassword(password);
+      await api.changePassword(current, password);
       ui.passwordMsg = 'Password changed. Use the new one next time you sign in.';
     } catch (err) { ui.passwordMsg = err.message; }
     drawPanel();
@@ -1460,7 +1496,7 @@ function showArea(name) {
   areaTimer = setTimeout(() => el.classList.remove('show'), 4000);
 }
 
-function wireForm(formId, action) {
+function wireForm(formId, action, after = (result) => steps.next(result)) {
   const form = $(formId);
   const error = form.querySelector('.error');
   const button = form.querySelector('button[type=submit]');
@@ -1472,7 +1508,7 @@ function wireForm(formId, action) {
       const result = await action(Object.fromEntries(new FormData(form)));
       form.reset();
       form.querySelectorAll('.reveal[aria-pressed="true"]').forEach((b) => b.click());
-      await enterRealm(result);
+      await after(result);
     } catch (err) {
       error.textContent = err.message;
     } finally {
@@ -1501,4 +1537,5 @@ wireForm('signup-form', ({ confirm, ...fields }) => {
   return api.signUp(fields);
 });
 wireForm('signin-form', api.signIn);
+wireForm('forgot-form', ({ login }) => api.forgotPassword(login), (f) => steps.askReset(f));
 
