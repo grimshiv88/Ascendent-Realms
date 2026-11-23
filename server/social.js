@@ -9,116 +9,98 @@ const groups = require('./groups');
 const cults = require('./cults');
 const { isAppraisal, appraisalOf } = require('../public/js/data/unique.mjs');
 // the private chats you're in besides friends: meeting rooms, your party and your guild
-const extraChannels = (me) => [...rooms.channels(me), ...groups.channels(me)];
+const extraChannels = async (me) => [...(await rooms.channels(me)), ...(await groups.channels(me))];
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS friends (
-    a            INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    b            INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    requested_by INTEGER NOT NULL,
-    accepted     INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (a, b)
-  );
-  CREATE TABLE IF NOT EXISTS chat (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    channel   TEXT NOT NULL,
-    from_id   INTEGER NOT NULL,
-    from_name TEXT NOT NULL,
-    text      TEXT NOT NULL,
-    at        INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS chat_channel ON chat (channel, id);
-`);
+// when each player last asked for news (online) and last sent a message are kept with the account,
+// because the game may run on several servers at once
+const isOnline = (lastSeen) => Date.now() - (Number(lastSeen) || 0) < S.ONLINE_MS;
 
-const lastSeen = new Map(); // account id -> when they last asked for news
-const lastSent = new Map(); // account id -> when they last sent a message
-const online = (id) => Date.now() - (lastSeen.get(id) || 0) < S.ONLINE_MS;
-
-const byName = (name) => db.prepare('SELECT id, username FROM accounts WHERE username = ? COLLATE NOCASE').get(String(name || '').trim());
-const nameOf = (id) => db.prepare('SELECT username FROM accounts WHERE id = ?').get(id)?.username;
+const byName = (name) => db.get('SELECT id, username, last_seen FROM accounts WHERE lower(username) = lower(?)', String(name || '').trim());
+const nameOf = async (id) => (await db.get('SELECT username FROM accounts WHERE id = ?', id))?.username;
 const pair = (x, y) => [Math.min(x, y), Math.max(x, y)];
-const link = (x, y) => db.prepare('SELECT * FROM friends WHERE a = ? AND b = ?').get(...pair(x, y));
+const link = (x, y) => db.get('SELECT * FROM friends WHERE a = ? AND b = ?', ...pair(x, y));
 // how `other` stands with `me`: 'self', 'friend', 'sent' (you asked them), 'received' (they asked you) or 'none'
-function relation(me, other) {
+async function relation(me, other) {
   if (me === other) return 'self';
-  const l = link(me, other);
+  const l = await link(me, other);
   if (!l) return 'none';
   if (l.accepted) return 'friend';
   return l.requested_by === me ? 'sent' : 'received';
 }
 
 // Players whose username starts with `q`
-function search(me, q) {
+async function search(me, q) {
   q = String(q || '').trim();
   if (q.length < 2) return { players: [] };
-  const rows = db.prepare("SELECT id, username FROM accounts WHERE username LIKE ? ESCAPE '\\' COLLATE NOCASE AND id != ? ORDER BY length(username), username LIMIT 8")
-    .all(`${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`, me);
-  return { players: rows.map((r) => ({ name: r.username, relation: relation(me, r.id), online: online(r.id) })) };
+  const rows = await db.all("SELECT id, username, last_seen FROM accounts WHERE username ILIKE ? ESCAPE '\\' AND id != ? ORDER BY length(username), username LIMIT 8",
+    `${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`, me);
+  const players = [];
+  for (const r of rows) players.push({ name: r.username, relation: await relation(me, r.id), online: isOnline(r.last_seen) });
+  return { players };
 }
 
 // A player's card: their Status only if their privacy lets you see it
-function profile(me, name) {
-  const row = byName(name);
+async function profile(me, name) {
+  const row = await byName(name);
   if (!row) return { error: 'There is no player with that username.' };
-  const rel = relation(me, row.id);
-  const c = characters.load(row.id);
+  const rel = await relation(me, row.id);
+  const c = await characters.load(row.id);
   const visible = !!c && S.canSeeStatus(c, { self: rel === 'self', friend: rel === 'friend' });
   return {
     player: {
-      name: row.username, relation: rel, online: online(row.id), privacy: S.privacyOf(c),
+      name: row.username, relation: rel, online: isOnline(row.last_seen), privacy: S.privacyOf(c),
       status: visible ? S.statusSummary(c) : null,
       // only a member of the same cult, of the same rank or higher, ever sees this
-      cult: c ? cults.seenBy(nameOf(me), row.username) : null,
+      cult: c ? await cults.seenBy(await nameOf(me), row.username) : null,
     },
   };
 }
 
 // Appraisal sees everything about a person, even the side they secretly serve
-function appraise(me, name) {
-  const mine = characters.load(me);
+async function appraise(me, name) {
+  const mine = await characters.load(me);
   if (!isAppraisal(mine)) return { error: 'Only the holder of Appraisal can do that.' };
-  const row = byName(name);
-  const c = row && characters.load(row.id);
+  const row = await byName(name);
+  const c = row && await characters.load(row.id);
   if (!c) return { error: 'There is no living player with that username.' };
-  return { player: appraisalOf(c, cults.allegiance(row.username)) };
+  return { player: appraisalOf(c, await cults.allegiance(row.username)) };
 }
 
-function request(me, body) {
-  const row = byName(body.name);
+async function request(me, body) {
+  const row = await byName(body.name);
   if (!row) return { error: 'There is no player with that username.' };
   if (row.id === me) return { error: "You can't add yourself." };
-  const rel = relation(me, row.id);
+  const rel = await relation(me, row.id);
   if (rel === 'friend') return { error: 'You are already friends.' };
   if (rel === 'sent') return { error: 'You already asked. Waiting for them to accept.' };
-  if (rel === 'received') db.prepare('UPDATE friends SET accepted = 1 WHERE a = ? AND b = ?').run(...pair(me, row.id));
-  else db.prepare('INSERT INTO friends (a, b, requested_by) VALUES (?, ?, ?)').run(...pair(me, row.id), me);
-  return { ok: true, ...friends(me) };
+  if (rel === 'received') await db.run('UPDATE friends SET accepted = 1 WHERE a = ? AND b = ?', ...pair(me, row.id));
+  else await db.run('INSERT INTO friends (a, b, requested_by) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', ...pair(me, row.id), me);
+  return { ok: true, ...(await friends(me)) };
 }
 
-function respond(me, body) {
-  const row = byName(body.name);
-  if (!row || relation(me, row.id) !== 'received') return { error: 'There is no friend request from that player.' };
-  if (body.accept) db.prepare('UPDATE friends SET accepted = 1 WHERE a = ? AND b = ?').run(...pair(me, row.id));
-  else db.prepare('DELETE FROM friends WHERE a = ? AND b = ?').run(...pair(me, row.id));
-  return { ok: true, ...friends(me) };
+async function respond(me, body) {
+  const row = await byName(body.name);
+  if (!row || (await relation(me, row.id)) !== 'received') return { error: 'There is no friend request from that player.' };
+  if (body.accept) await db.run('UPDATE friends SET accepted = 1 WHERE a = ? AND b = ?', ...pair(me, row.id));
+  else await db.run('DELETE FROM friends WHERE a = ? AND b = ?', ...pair(me, row.id));
+  return { ok: true, ...(await friends(me)) };
 }
 
 // Unfriend, or take back a request you sent
-function remove(me, body) {
-  const row = byName(body.name);
+async function remove(me, body) {
+  const row = await byName(body.name);
   if (!row) return { error: 'There is no player with that username.' };
-  db.prepare('DELETE FROM friends WHERE a = ? AND b = ?').run(...pair(me, row.id));
-  return { ok: true, ...friends(me) };
+  await db.run('DELETE FROM friends WHERE a = ? AND b = ?', ...pair(me, row.id));
+  return { ok: true, ...(await friends(me)) };
 }
 
 // Your friends and requests
-function friends(me) {
-  const rows = db.prepare('SELECT * FROM friends WHERE a = ? OR b = ?').all(me, me);
+async function friends(me) {
+  const rows = await db.all(`SELECT f.*, o.username AS other_name, o.last_seen AS other_seen FROM friends f
+    JOIN accounts o ON o.id = CASE WHEN f.a = ? THEN f.b ELSE f.a END WHERE f.a = ? OR f.b = ?`, me, me, me);
   const out = { friends: [], received: [], sent: [] };
   for (const r of rows) {
-    const other = r.a === me ? r.b : r.a;
-    const entry = { name: nameOf(other), online: online(other) };
+    const entry = { name: r.other_name, online: isOnline(r.other_seen) };
     if (r.accepted) out.friends.push(entry);
     else (r.requested_by === me ? out.sent : out.received).push(entry);
   }
@@ -127,60 +109,65 @@ function friends(me) {
 }
 
 // News since message `after`: the general chat, your private chats, and your friends
-function poll(me, after) {
-  lastSeen.set(me, Date.now());
+async function poll(me, after) {
+  await db.run('UPDATE accounts SET last_seen = ? WHERE id = ?', Date.now(), me);
   after = Math.max(0, Number(after) || 0);
   // the rooms you're in have their own private chats
-  const rc = extraChannels(me);
+  const rc = await extraChannels(me);
   const roomLabel = new Map(rc.map((r) => [r.channel, r.label]));
   const inRooms = rc.length ? ` OR channel IN (${rc.map(() => '?').join(',')})` : '';
   const args = [`dm:${me}:%`, `dm:%:${me}`, ...rc.map((r) => r.channel)];
   // the first look shows the last few messages; after that, everything new
   const rows = after
-    ? db.prepare(`SELECT * FROM chat WHERE id > ? AND (channel = 'general' OR channel LIKE ? OR channel LIKE ?${inRooms}) ORDER BY id LIMIT 100`).all(after, ...args)
-    : db.prepare(`SELECT * FROM (SELECT * FROM chat WHERE channel = 'general' OR channel LIKE ? OR channel LIKE ?${inRooms} ORDER BY id DESC LIMIT 40) ORDER BY id`).all(...args);
-  const messages = rows.map((r) => {
+    ? await db.all(`SELECT * FROM chat WHERE id > ? AND (channel = 'general' OR channel LIKE ? OR channel LIKE ?${inRooms}) ORDER BY id LIMIT 100`, after, ...args)
+    : await db.all(`SELECT * FROM (SELECT * FROM chat WHERE channel = 'general' OR channel LIKE ? OR channel LIKE ?${inRooms} ORDER BY id DESC LIMIT 40) AS recent ORDER BY id`, ...args);
+  const names = new Map();
+  const messages = [];
+  for (const r of rows) {
     let channel = 'general';
     if (r.channel.startsWith('dm:')) {
       const [, x, y] = r.channel.split(':').map(Number);
-      channel = nameOf(x === me ? y : x) || '?';
+      const other = x === me ? y : x;
+      if (!names.has(other)) names.set(other, await nameOf(other));
+      channel = names.get(other) || '?';
     } else if (roomLabel.has(r.channel)) channel = roomLabel.get(r.channel);
-    return { id: r.id, channel, from: r.from_name, mine: r.from_id === me, text: r.text, at: r.at };
-  });
-  return { messages, rooms: rc.map((r) => r.label), ...friends(me) };
+    messages.push({ id: r.id, channel, from: r.from_name, mine: r.from_id === me, text: r.text, at: r.at });
+  }
+  return { messages, rooms: rc.map((r) => r.label), ...(await friends(me)) };
 }
 
 // Send to the general chat, or to a friend by username
-function send(me, body) {
+async function send(me, body) {
   const said = S.cleanText(body.text);
   if (!said) return { error: 'Write something first.' };
   // those who have had the cults' call can't speak of it
-  const text = cults.censor(me, said);
+  const text = await cults.censor(me, said);
   const now = Date.now();
-  if (now - (lastSent.get(me) || 0) < S.SEND_GAP_MS) return { error: 'Slow down a little.' };
   let channel = 'general';
-  const room = body.to && extraChannels(me).find((r) => r.label === body.to);
+  const room = body.to && (await extraChannels(me)).find((r) => r.label === body.to);
   if (room) channel = room.channel;
   else if (body.to) {
-    const row = byName(body.to);
-    if (!row || relation(me, row.id) !== 'friend') return { error: 'You can only send private messages to friends.' };
+    const row = await byName(body.to);
+    if (!row || (await relation(me, row.id)) !== 'friend') return { error: 'You can only send private messages to friends.' };
     channel = S.dmChannel(me, row.id);
   }
-  lastSent.set(me, now);
+  // not too fast: the time of the last message is taken in the same step, so two at once can't both pass
+  const gate = await db.run('UPDATE accounts SET last_sent = ? WHERE id = ? AND last_sent <= ?', now, me, now - S.SEND_GAP_MS);
+  if (!gate.changes) return { error: 'Slow down a little.' };
   // a cult member who gives the cult away in chat is stripped of its powers and money
-  cults.checkChat(me, said);
-  db.prepare('INSERT INTO chat (channel, from_id, from_name, text, at) VALUES (?, ?, ?, ?, ?)').run(channel, me, nameOf(me), text, now);
+  await cults.checkChat(me, said);
+  await db.run('INSERT INTO chat (channel, from_id, from_name, text, at) VALUES (?, ?, ?, ?, ?)', channel, me, await nameOf(me), text, now);
   // the general chat only keeps its most recent messages
-  if (channel === 'general') db.prepare("DELETE FROM chat WHERE channel = 'general' AND id <= (SELECT id FROM chat WHERE channel = 'general' ORDER BY id DESC LIMIT 1 OFFSET ?)").run(S.KEEP_MESSAGES);
-  return { ok: true, ...poll(me, Number(body.after) || 0) };
+  if (channel === 'general') await db.run("DELETE FROM chat WHERE channel = 'general' AND id <= (SELECT id FROM chat WHERE channel = 'general' ORDER BY id DESC LIMIT 1 OFFSET ?)", S.KEEP_MESSAGES);
+  return { ok: true, ...(await poll(me, Number(body.after) || 0)) };
 }
 
-function setPrivacy(me, body) {
+async function setPrivacy(me, body) {
   if (!S.PRIVACY[body.privacy]) return { error: 'Choose Public, Friends only or Private.' };
-  const c = characters.load(me);
+  const c = await characters.load(me);
   if (!c) return { error: 'No character yet.' };
   c.privacy = body.privacy;
-  characters.store(me, c);
+  await characters.store(me, c);
   return { ok: true, privacy: c.privacy };
 }
 

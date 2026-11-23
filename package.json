@@ -10,10 +10,11 @@
   "license": "UNLICENSED",
   "dependencies": {
     "express": "^4.22.3",
+    "pg": "^8.23.1",
     "three": "^0.160.0"
   },
   "engines": {
-    "node": ">=22.5"
+    "node": "22.x"
   },
   "private": true
 }
