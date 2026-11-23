@@ -57,7 +57,112 @@ function parse(buf) {
   const index = nv < 65536 ? new Uint16Array(buf, o, nf * 3) : new Uint32Array(buf, o, nf * 3);
   const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3);
   for (let i = 0; i < nv * 3; i++) { pos[i] = q[i] / 30000; nor[i] = qn[i] / 127; }
-  return { nv, pos, nor, region, group, index };
+  return refine({ nv, pos, nor, region, group, index });
+}
+
+// Clean up a sculpt once when it loads, so it looks finished rather than rough:
+//  - stray specks of the wrong region (bits of tunic inside the beard, skin in the hair) take the
+//    region around them;
+//  - the surface is smoothed (Taubin, so it doesn't shrink) and given fresh smooth normals;
+//  - where one region meets another the colours blend over a vertex or two instead of stair-stepping;
+//  - creases (under the beard, between fingers, at the belt) are shaded a little darker.
+function refine(S) {
+  const { nv, pos, index } = S;
+  const R = 16;
+  // neighbours of every vertex
+  const deg = new Uint32Array(nv + 1);
+  for (let f = 0; f < index.length; f++) deg[index[f] + 1] += 2;
+  for (let i = 0; i < nv; i++) deg[i + 1] += deg[i];
+  const nb = new Uint32Array(deg[nv]), fill = deg.slice(0, nv);
+  for (let f = 0; f < index.length; f += 3) {
+    const a = index[f], b = index[f + 1], c = index[f + 2];
+    nb[fill[a]++] = b; nb[fill[a]++] = c; nb[fill[b]++] = a; nb[fill[b]++] = c; nb[fill[c]++] = a; nb[fill[c]++] = b;
+  }
+  // 1. specks: a vertex whose neighbours are mostly another region joins them (never the eyes)
+  const region = S.region.slice(), count = new Uint16Array(R);
+  const eyes = 9;
+  for (let pass = 0; pass < 6; pass++) {
+    const next = region.slice();
+    for (let i = 0; i < nv; i++) {
+      if (region[i] === eyes) continue;
+      count.fill(0);
+      for (let k = deg[i]; k < deg[i + 1]; k++) count[region[nb[k]]]++;
+      let best = region[i], n = deg[i + 1] - deg[i];
+      for (let r = 0; r < R; r++) if (count[r] > count[best]) best = r;
+      if (best !== region[i] && best !== eyes && count[best] >= n * 0.6) next[i] = best;
+    }
+    region.set(next);
+  }
+  // 2. smoothing that keeps the volume (shrink, then grow back), sliding only within a body part
+  const tmp = new Float32Array(nv * 3);
+  const step = (lam) => {
+    for (let i = 0; i < nv; i++) {
+      let x = 0, y = 0, z = 0, n = 0;
+      for (let k = deg[i]; k < deg[i + 1]; k++) { const j = nb[k]; if (S.group[j] !== S.group[i]) continue; x += pos[j * 3]; y += pos[j * 3 + 1]; z += pos[j * 3 + 2]; n++; }
+      if (!n || region[i] === eyes) { tmp[i * 3] = pos[i * 3]; tmp[i * 3 + 1] = pos[i * 3 + 1]; tmp[i * 3 + 2] = pos[i * 3 + 2]; continue; }
+      tmp[i * 3] = pos[i * 3] + lam * (x / n - pos[i * 3]);
+      tmp[i * 3 + 1] = pos[i * 3 + 1] + lam * (y / n - pos[i * 3 + 1]);
+      tmp[i * 3 + 2] = pos[i * 3 + 2] + lam * (z / n - pos[i * 3 + 2]);
+    }
+    pos.set(tmp);
+  };
+  for (let it = 0; it < 4; it++) { step(0.5); step(-0.53); }
+  // fresh normals from the smoothed surface
+  const nor = new Float32Array(nv * 3);
+  for (let f = 0; f < index.length; f += 3) {
+    const a = index[f] * 3, b = index[f + 1] * 3, c = index[f + 2] * 3;
+    const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+    const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    for (const o of [a, b, c]) { nor[o] += nx; nor[o + 1] += ny; nor[o + 2] += nz; }
+  }
+  // keep the file's facing (the faces may wind either way)
+  let agree = 0;
+  for (let i = 0; i < nv; i++) agree += nor[i * 3] * S.nor[i * 3] + nor[i * 3 + 1] * S.nor[i * 3 + 1] + nor[i * 3 + 2] * S.nor[i * 3 + 2] > 0 ? 1 : -1;
+  if (agree < 0) for (let i = 0; i < nv * 3; i++) nor[i] = -nor[i];
+  for (let i = 0; i < nv; i++) {
+    const l = Math.hypot(nor[i * 3], nor[i * 3 + 1], nor[i * 3 + 2]);
+    if (l > 1e-12) { nor[i * 3] /= l; nor[i * 3 + 1] /= l; nor[i * 3 + 2] /= l; }
+    else { nor[i * 3] = S.nor[i * 3]; nor[i * 3 + 1] = S.nor[i * 3 + 1]; nor[i * 3 + 2] = S.nor[i * 3 + 2]; }
+  }
+  // 3. soft region edges: each vertex keeps a little of its neighbours' regions
+  let soft = new Float32Array(nv * R);
+  for (let i = 0; i < nv; i++) soft[i * R + region[i]] = 1;
+  for (let pass = 0; pass < 1; pass++) {
+    const out = new Float32Array(nv * R);
+    for (let i = 0; i < nv; i++) {
+      const n = deg[i + 1] - deg[i];
+      for (let r = 0; r < R; r++) out[i * R + r] = soft[i * R + r] * 0.5;
+      if (!n) { for (let r = 0; r < R; r++) out[i * R + r] *= 2; continue; }
+      for (let k = deg[i]; k < deg[i + 1]; k++) { const j = nb[k]; for (let r = 0; r < R; r++) out[i * R + r] += soft[j * R + r] * 0.5 / n; }
+    }
+    soft = out;
+  }
+  // eyes stay crisp
+  for (let i = 0; i < nv; i++) if (region[i] === eyes) { for (let r = 0; r < R; r++) soft[i * R + r] = 0; soft[i * R + eyes] = 1; }
+  // 4. creases: how far the neighbours sit out along the normal, smoothed, as a darkening
+  const shade = new Float32Array(nv);
+  for (let i = 0; i < nv; i++) {
+    let d = 0, e = 0, n = 0;
+    for (let k = deg[i]; k < deg[i + 1]; k++) {
+      const j = nb[k];
+      const dx = pos[j * 3] - pos[i * 3], dy = pos[j * 3 + 1] - pos[i * 3 + 1], dz = pos[j * 3 + 2] - pos[i * 3 + 2];
+      d += dx * nor[i * 3] + dy * nor[i * 3 + 1] + dz * nor[i * 3 + 2]; e += Math.hypot(dx, dy, dz); n++;
+    }
+    shade[i] = n && e > 0 ? d / e : 0;
+  }
+  for (let pass = 0; pass < 3; pass++) {
+    const out = new Float32Array(nv);
+    for (let i = 0; i < nv; i++) {
+      let s = shade[i], n = 1;
+      for (let k = deg[i]; k < deg[i + 1]; k++) { s += shade[nb[k]]; n++; }
+      out[i] = s / n;
+    }
+    shade.set(out);
+  }
+  const ao = new Float32Array(nv);
+  for (let i = 0; i < nv; i++) ao[i] = Math.min(1.04, Math.max(0.55, 1 - shade[i] * 2.2));
+  return { ...S, pos, nor, region, soft, ao, R };
 }
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -117,8 +222,13 @@ export function sculptedRig(race, H, colors, mats, stage = 0) {
     const x = S.pos[i * 3], y = S.pos[i * 3 + 1], z = S.pos[i * 3 + 2];
     const k = broad(y);
     pos[i * 3] = x * H * k; pos[i * 3 + 1] = y * H; pos[i * 3 + 2] = z * H * k;
-    const c = palette[S.region[i]];
-    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    let cr = 0, cg = 0, cb = 0;
+    for (let r = 0; r < palette.length; r++) {
+      const wt = S.soft[i * S.R + r];
+      if (wt > 0) { cr += palette[r].r * wt; cg += palette[r].g * wt; cb += palette[r].b * wt; }
+    }
+    const o = S.ao[i];
+    col[i * 3] = cr * o; col[i * 3 + 1] = cg * o; col[i * 3 + 2] = cb * o;
     const side = x < 0 ? 0 : 1, ax = Math.abs(x);
     const w = [];
     const g = S.group[i];
@@ -199,10 +309,24 @@ export function sculptedRig(race, H, colors, mats, stage = 0) {
   root.updateMatrixWorld(true);
   mesh.bind(new THREE.Skeleton(bones));
 
-  // eyes that catch the light, set in the sockets
+  // eyes: a white with a coloured iris and a dark pupil looking ahead, glossy so they catch the light
+  // (only evolved forms glow, through the shared eye material's glow)
+  const irisCol = mats.eye.color.clone();
+  const white = new THREE.MeshStandardMaterial({ color: '#ece6da', roughness: 0.15 });
+  const iris = new THREE.MeshStandardMaterial({ color: irisCol, emissive: irisCol, emissiveIntensity: Math.max(0, mats.eye.emissiveIntensity - 0.6) * 0.6, roughness: 0.1 });
+  const pupil = new THREE.MeshStandardMaterial({ color: '#080808', roughness: 0.05 });
   for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(H * J.eyeR, 10, 8), mats.eye);
+    const r = H * J.eyeR;
+    const eye = new THREE.Group();
     eye.position.copy(v3(J.eyes, side)).sub(v3(J.head));
+    eye.add(new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), white));
+    const ir = new THREE.Mesh(new THREE.SphereGeometry(r * 0.62, 14, 10), iris);
+    ir.scale.z = 0.45; ir.position.z = r * 0.72;
+    eye.add(ir);
+    const pu = new THREE.Mesh(new THREE.SphereGeometry(r * 0.3, 10, 8), pupil);
+    pu.scale.z = 0.4; pu.position.z = r * 0.92;
+    eye.add(pu);
+    eye.rotation.y = side * 0.12;
     head.add(eye);
   }
 
