@@ -201,6 +201,32 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (best) talkTo(best);
     return !!best;
   }
+  // the house doors near (x, z) that open with a click, a tap or E (a shop's door takes you inside instead)
+  function doorsNear(x, z, r) {
+    const out = [];
+    for (const s of sites) for (const d of s.built?.doors?.near(x, z, r) || []) {
+      if ((s.built.shops || []).some((q) => Math.hypot(q.x - d.x, q.z - d.z) < 3.5)) continue;
+      out.push({ d, keeper: s.built.doors });
+    }
+    return out;
+  }
+  const useDoor = ({ d, keeper }) => keeper.toggle(d, clock.elapsedTime);
+  // a click on a house door (with the mouse): open it or shut it
+  function clickDoor(sx, sy) {
+    if (inside || depth) return false;
+    const r = canvas.getBoundingClientRect();
+    let best = null, bd = 60;
+    for (const it of doorsNear(pos.x, pos.z, 14)) {
+      tapV.set(it.d.x, it.d.y, it.d.z).project(camera);
+      if (tapV.z > 1) continue;
+      const dd = Math.hypot(r.left + (tapV.x + 1) / 2 * r.width - sx, r.top + (1 - tapV.y) / 2 * r.height - sy);
+      if (dd < bd) { bd = dd; best = it; }
+    }
+    if (!best) return false;
+    if (Math.hypot(best.d.x - pos.x, best.d.z - pos.z) > 6) { say('Walk a little closer to the door', 'note'); return true; }
+    useDoor(best);
+    return true;
+  }
   // Phones and tablets: tap a door, a counter, a chair, a bed or a chest to use it (instead of E).
   // Each thing you can use is a point on screen; a tap close to one uses it if you are near enough.
   const tapV = new THREE.Vector3();
@@ -221,6 +247,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (Math.abs(shop.x - pos.x) > 14 || Math.abs(shop.z - pos.z) > 14) continue;
         list.push([shop.x, g(shop.x, shop.z) + 1.4, shop.z, 4.5, () => (shop.building ? enterBuilding(shop) : onEvent?.(shop.id === 'guild' ? 'guild' : 'market', shop.id))]);
       }
+      for (const it of doorsNear(pos.x, pos.z, 14)) list.push([it.d.x, it.d.y, it.d.z, 6, () => useDoor(it)]);
     }
     for (const e of colliders.near(pos.x, pos.z, 12)) if (e.kind === 'chest') list.push([e.x, (e.y ?? g(e.x, e.z)) + 0.6, e.z, e.r + 1.6, () => openChest(e)]);
     const r = canvas.getBoundingClientRect();
@@ -1080,6 +1107,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const shop = shopNear(pos.x, pos.z);
       if (shop?.building) { enterBuilding(shop); return; }
       if (shop) { onEvent?.(shop.id === 'guild' ? 'guild' : 'market', shop.id); return; }
+      const door = doorsNear(pos.x, pos.z, 4).sort((a, b) => Math.hypot(a.d.x - pos.x, a.d.z - pos.z) - Math.hypot(b.d.x - pos.x, b.d.z - pos.z))[0];
+      if (door && Math.hypot(door.d.x - pos.x, door.d.z - pos.z) < 3.5) { useDoor(door); return; }
     }
     say('Nothing here to open or pick up', 'note');
   }
@@ -1619,7 +1648,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const at = plots.pick(ray.ray);
         if (at) onPlot?.(plots.select(at));
       } else if (tap && e.pointerType !== 'mouse' && tapUse(e.clientX, e.clientY)) { /* tapped a door, counter, chair, bed or chest */
-      } else if (tap && talkAt(e.clientX, e.clientY)) { /* clicked a townsperson: they talk */ } else if (tap && look.mouse) attack();
+      } else if (tap && talkAt(e.clientX, e.clientY)) { /* clicked a townsperson: they talk */
+      } else if (tap && look.mouse && clickDoor(e.clientX, e.clientY)) { /* clicked a house door: it swings open or shut */
+      } else if (tap && look.mouse) attack();
       look = null;
     }
   };

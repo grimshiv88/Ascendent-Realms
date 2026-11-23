@@ -432,10 +432,21 @@ function serpent(P, mats) {
     pos.setXYZ(i, center.x + v.x, center.y + v.y, center.z + v.z);
   }
   geo.computeVertexNormals();
+  // for the slither (see animateCharacter): each ring of the body keeps its middle and the way it
+  // points, and each point its place round that middle, so the S-curve can travel down the body
+  const rings = 121, Lc = curve.getLength(), T = new THREE.Vector3();
+  const ringK = new Float32Array(rings), ringYaw = new Float32Array(rings), ringTx = new Float32Array(rings), ringTz = new Float32Array(rings);
+  for (let j = 0; j < rings; j++) {
+    const k = j / 120; curve.getTangentAt(k, T);
+    ringK[j] = k; ringTx[j] = T.x * Lc; ringTz[j] = T.z * Lc; ringYaw[j] = Math.atan2(T.x, T.z);
+  }
+  const base = Float32Array.from(pos.array), mid = new Float32Array(rings * 3);
+  for (let j = 0; j < rings; j++) { curve.getPointAt(ringK[j], center); mid.set([center.x, center.y, center.z], j * 3); }
   const body = new THREE.Mesh(geo, mats.skin);
   body.castShadow = true;
+  body.frustumCulled = false; // it changes shape
   root.add(body);
-  rig.body = body;
+  rig.slither = { pos, base, mid, ringK, ringYaw, ringTx, ringTz, amp: L * 0.04, phase: 0, last: 0 };
 
   const head = new THREE.Group();
   const p0 = curve.getPointAt(0);
@@ -1024,7 +1035,6 @@ export function animateCharacter(character, t, speed = 0) {
       arm.shoulder.rotation.x = Math.sin(cycle + ph) * swing * 0.8;
       arm.shoulder.rotation.z = arm.side * (0.12 - (rig.armRest || 0) + Math.sin(t * 1.5) * 0.02);
     }
-    rig.hips.position.y += 0; // keep height
     if (rig.spine) rig.spine.rotation.y = Math.sin(cycle) * swing * 0.1;
     if (rig.chest) rig.chest.scale.y = rig.chest.scale.y; // breathing is subtle; skip
   }
@@ -1049,8 +1059,46 @@ export function animateCharacter(character, t, speed = 0) {
   }
   if (rig.hovers) rig.root.position.y = (rig.root.userData.height < 1 ? 0.25 : 0.15) + Math.sin(t * 2.2) * 0.04;
   if (rig.body && rig.core) {
-    // slime wobble
-    rig.body.scale.set(0.41 + Math.sin(t * 3) * 0.015, 0.315 - Math.sin(t * 3) * 0.015, 0.41 + Math.sin(t * 3) * 0.015);
+    // a slime wobbles standing still, and moves in little squashing hops
+    const hop = speed > 0.05 ? Math.abs(Math.sin(t * (5 + speed * 2))) : 0;
+    const w = Math.sin(t * 3) * 0.015 + (speed > 0.05 ? (0.5 - hop) * 0.06 : 0);
+    rig.body.scale.set(0.41 + w, 0.315 - w, 0.41 + w);
+    rig.root.position.y = hop * 0.12 * Math.min(speed, 2);
   }
+  if (rig.slither) {
+    // a snake slides along: the S-curve of its body travels from head to tail, faster when it moves
+    const S = rig.slither;
+    S.phase += Math.max(0, Math.min(0.1, t - S.last)) * (0.8 + Math.min(speed, 2) * 4);
+    S.last = t;
+    const { pos, base, mid, ringK, ringYaw, ringTx, ringTz, amp } = S;
+    const env = (k) => (k > 0.2 ? 1 : k * 5) * (1 - k * 0.3); // the head stays steady, the tail swings most
+    const arr = pos.array;
+    for (let j = 0; j < ringK.length; j++) {
+      const k = ringK[j], e = env(k);
+      const dx = amp * e * (Math.sin(k * 9 + S.phase) - Math.sin(k * 9));
+      const slope = amp * e * 9 * (Math.cos(k * 9 + S.phase) - Math.cos(k * 9));
+      const turn = Math.atan2(ringTx[j] + slope, ringTz[j]) - ringYaw[j], c = Math.cos(turn), sn = Math.sin(turn);
+      const mx = mid[j * 3], mz = mid[j * 3 + 2];
+      for (let q = j * 17; q < Math.min((j + 1) * 17, pos.count); q++) {
+        const ox = base[q * 3] - mx, oz = base[q * 3 + 2] - mz;
+        arr[q * 3] = mx + dx + ox * c + oz * sn;
+        arr[q * 3 + 2] = mz - ox * sn + oz * c;
+      }
+    }
+    pos.needsUpdate = true;
+    if (rig.head) rig.head.rotation.y = Math.sin(S.phase * 0.5) * 0.08;
+  }
+  // the body rises and falls a little with each step
+  if (rig.hips && rig.legs && rig.arms && !rig.hovers) {
+    rig.baseHipY ??= rig.hips.position.y;
+    rig.hips.position.y = rig.baseHipY + (speed > 0.05 ? Math.abs(Math.cos(cycle)) * 0.025 * Math.min(speed, 2) * (rig.H || 1.7) / 1.7 : 0);
+  }
+  if (rig.torso && rig.legs && !rig.arms) {
+    rig.baseTorsoY ??= rig.torso.position.y;
+    rig.torso.position.y = rig.baseTorsoY + (speed > 0.05 ? Math.abs(Math.cos(cycle)) * 0.03 * Math.min(speed, 2) : 0);
+    if (rig.head) rig.head.rotation.x = Math.sin(cycle * 2) * swing * 0.05;
+  }
+  // fliers lean into the way they go, and beat their wings harder
+  if (rig.hovers && rig.wings) rig.root.rotation.x = Math.min(speed, 2) * 0.12;
   if (rig.aura) rig.aura.rotation.y = t * 0.6;
 }

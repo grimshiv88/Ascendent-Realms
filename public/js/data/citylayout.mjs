@@ -46,6 +46,12 @@ export const ESTATE_ID = 'real_estate';
 // the house prices at the Real Estate office, by ring (in Copper)
 export const HOUSE_PRICE = { dump: 1500, common: 8000, noble: 60000 };
 export const ACADEMY_W = 10, ACADEMY_D = 9;
+// How big a home (its storeys and door) is for the folk who live in it: hobbits, fairies and
+// goblins build small, giants and dragonewts build tall. Houses for sale are built for anyone (1).
+export const RACE_HOME = { human: 1, elf: 1.06, dwarf: 0.86, hobbit: 0.76, giant: 1.3, beastkin: 1.1,
+  dragonewt: 1.2, goblin: 0.8, slime: 0.85, fairy: 0.74, lizardman: 1.05, naga: 1.1 };
+// small folk build narrower too (their homes stand back a little from their neighbours)
+export const homeFootprint = (size) => (size < 1 ? 0.7 + 0.3 * size : 1);
 
 // Is a building at radius r, angle a, w wide and d deep, clear of the main roads (and their ramp walls)?
 const CLEAR = ROAD_HALF + RAMP_WALL + 1;

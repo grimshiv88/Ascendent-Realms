@@ -196,10 +196,19 @@ export function scenery() {
   // the trees are grown branch by branch with real leaves (trees.js), once for each leaf detail the
   // graphics ask for (tiles drawn after a change of quality use the new ones)
   const grown = {};
-  const growAll = () => ({
-    pine: pineTree(false), snowpine: pineTree(true), oak: oakTree(), dead: deadTree(), swamp: swampTree(),
-    glow: glowTree(), young: youngTree(), bush: berryBush(), great: greatTree(),
-  });
+  // each kind is grown in a few shapes (other seeds), so no two trees side by side are the same
+  const SHAPES = 3;
+  const growAll = () => {
+    const out = {};
+    for (let v = 0; v < SHAPES; v++) {
+      const k = (base) => base + v * 101;
+      Object.assign(out, {
+        [`pine#${v}`]: pineTree(false, k(2)), [`snowpine#${v}`]: pineTree(true, k(2)), [`oak#${v}`]: oakTree(k(1)), [`dead#${v}`]: deadTree(k(7)),
+        [`swamp#${v}`]: swampTree(k(5)), [`glow#${v}`]: glowTree(k(6)), [`young#${v}`]: youngTree(k(3)), [`bush#${v}`]: berryBush(k(8)), [`great#${v}`]: greatTree(k(4)),
+      });
+    }
+    return out;
+  };
   const treeGeos = () => (grown[getLeafDetail()] ||= growAll());
   // the same trees built lighter, for the middle distance (the full ones are only drawn close by)
   const midGeos = () => (grown['mid' + getLeafDetail()] ||= grownLite(growAll));
@@ -245,7 +254,8 @@ export function scenery() {
           if (s.h < s.water + 0.6 && kind !== 'reeds') break;
           if (kind === 'great' && s.forest < 0.5) break;
           if (BREAKABLE[kind] && isBroken(spotKey(kind, x, z))) break;
-          (spots[`${kind}|${(i >= per / 2 ? 1 : 0) + (j >= per / 2 ? 2 : 0)}`] ||= []).push({ x, z, y: surfaceAt(x, z), region: s.region, dark: s.dark || 0 }); // on the land as drawn, not floating over it
+          const shape = TREES.has(kind) ? `#${((Math.floor(x * 7.3) * 31 + Math.floor(z * 5.1) * 17) % SHAPES + SHAPES) % SHAPES}` : ''; // (from its place, so the rest of the forest stays where it was)
+          (spots[`${kind}${shape}|${(i >= per / 2 ? 1 : 0) + (j >= per / 2 ? 2 : 0)}`] ||= []).push({ x, z, y: surfaceAt(x, z), region: s.region, dark: s.dark || 0 }); // on the land as drawn, not floating over it
           break;
         }
       }
@@ -255,9 +265,10 @@ export function scenery() {
     const pairs = []; // the meshes of each kind in each quarter
     // each kind is drawn per quarter of the tile, so the full-detail trees reach only so far
     for (const [spot, list] of Object.entries(spots)) {
-      const [kind, q] = spot.split('|');
+      const [shaped, q] = spot.split('|');
+      const kind = shaped.split('#')[0];
       const box = { x0: cx * size + (q & 1) * size / 2, z0: cz * size + (q >> 1) * size / 2, s: size / 2 };
-      const mesh = new THREE.InstancedMesh(geos[kind] || treeGeos()[kind], mats[kind] || plain, list.length);
+      const mesh = new THREE.InstancedMesh(geos[kind] || treeGeos()[shaped], mats[kind] || plain, list.length);
       list.forEach((p, i) => {
         const sc = kind === 'rock' ? 0.3 + rand() * rand() * 3 : 0.7 + rand() * 0.6;
         dummy.position.set(p.x, p.y - (kind === 'rock' ? sc * 0.3 : 0.1), p.z);
@@ -280,7 +291,11 @@ export function scenery() {
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
         if (kind === 'rock') tint.set(ROCK_TINT[p.region] || '#888').multiplyScalar(0.85 + rand() * 0.3);
-        else tint.setHSL(0, 0, (0.85 + rand() * 0.3) * (1 - p.dark * 0.5)); // the Dark Forests are gloomier
+        else {
+          // a little lighter or darker, and a touch warmer or cooler, tree by tree
+          const l = (0.85 + rand() * 0.3) * (1 - p.dark * 0.5), w = TREES.has(kind) ? (rand() - 0.5) * 0.14 : 0; // the Dark Forests are gloomier
+          tint.setRGB(l * (1 + w), l * (1 + Math.abs(w) * 0.3), l * (1 - w));
+        }
         mesh.setColorAt(i, tint);
         const entry = SOLID[kind] ? { x: p.x, z: p.z, r: SOLID[kind] * sc } : kind === 'rock' && sc > 0.3 ? { x: p.x, z: p.z, r: sc * 0.8, y: p.y, step: true } : null; // every rock but pebbles is solid, and you can climb on it
         if (BREAKABLE[kind]) {
@@ -319,8 +334,8 @@ export function scenery() {
           meshes.push(m);
           return m;
         };
-        hi = copy(treeGeos()[kind]);
-        mid = copy(midGeos()[kind]);
+        hi = copy(treeGeos()[shaped]);
+        mid = copy(midGeos()[shaped]);
       }
       const lo = low[kind] && new THREE.InstancedMesh(low[kind], mats[kind] || plain, list.length);
       if (lo) {

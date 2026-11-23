@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { heightAt, CITY_R } from '../data/world-layout.mjs';
 import { MARKETS, ITEMS } from '../data/items.mjs';
-import { money } from '../data/money.mjs';
+import { moneyWords } from '../data/money.mjs';
 import { buildSpawn, textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { joinCrowd, bakeCharacter } from '../characters/crowd.js';
@@ -13,7 +13,7 @@ import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, buildShack, paved, pavedGeometry, TOWN_TONES } from './houses.js';
 import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS, familyOf, PARENT_JOBS, townName, seeded } from '../data/birth.mjs';
 import { TIERS, TOP_Y, TERRACE, INNER_R, ROAD_ANGLES, ROAD_HALF, RAMPS, RAMP_IN, RAMP_OUT, RAMP_WALL, ringY, rampAt, alongRoad } from '../data/citylevels.mjs';
-import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, tierY } from '../data/citylayout.mjs';
+import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, tierY, RACE_HOME, homeFootprint } from '../data/citylayout.mjs';
 
 export { PLAZA_R, INNER_R };
 // the look of the city's own buildings: [wall, roof, awning or banner colour]
@@ -72,14 +72,23 @@ function doorKeeper() {
   const doors = [];
   const v = new THREE.Vector3();
   return {
-    add(b) { if (b.userData.door) doors.push({ hinge: b.userData.door, x: null, z: null, open: 0 }); },
-    update(you) {
+    add(b) { if (b.userData.door) doors.push({ hinge: b.userData.door, x: null, z: null, y: 0, open: 0, held: 0 }); },
+    // where each door's middle is in the world, worked out once the buildings stand in place
+    place(d) { d.hinge.updateWorldMatrix(true, false); d.hinge.localToWorld(v.set((d.hinge.userData.w || 1.3) / 2, 1, 0)); d.x = v.x; d.y = v.y; d.z = v.z; },
+    // the doors near (x, z), to click or tap
+    near(x, z, r) { const out = []; for (const d of doors) { if (d.x === null) this.place(d); if (Math.abs(d.x - x) < r && Math.abs(d.z - z) < r) out.push(d); } return out; },
+    // click a door: it swings open and stays open a while (click again to shut it)
+    toggle(d, t) { if (d.open > 0.6) { d.held = 0; d.keepShut = true; } else { d.held = t + 8; d.keepShut = false; } },
+    update(you, t = 0) {
       if (!you) return;
       for (const d of doors) {
-        if (d.x === null) { d.hinge.updateWorldMatrix(true, false); d.hinge.getWorldPosition(v); d.x = v.x + 0.7; d.z = v.z; }
-        const want = Math.abs(you.x - d.x) < 3 && Math.abs(you.z - d.z) < 3 && Math.hypot(you.x - d.x, you.z - d.z) < 3 ? 1.35 : 0;
+        if (d.x === null) this.place(d);
+        const dx = you.x - d.x, dz = you.z - d.z;
+        const near = Math.abs(dx) < 3 && Math.abs(dz) < 3 && Math.hypot(dx, dz) < 2.6;
+        if (!near) d.keepShut = false; // shut by a click: it stays shut till you walk away
+        const want = (near && !d.keepShut) || d.held > t ? 1.35 : 0;
         if (Math.abs(want - d.open) < 0.005) continue;
-        d.open += (want - d.open) * 0.12;
+        d.open += (want - d.open) * 0.1; // a smooth swing on its hinges
         d.hinge.rotation.y = d.open;
       }
     },
@@ -346,11 +355,16 @@ export function buildCity(place, opts = {}) {
   // whose they are once bought: see setOwners)
   const tones = monster ? S.tones : TOWN_TONES;
   const houses = cityHouses(place.id);
+  // the folk of each home: its size (storeys and door) suits them (RACE_HOME)
+  const homeAt = opts.home?.city === place.id ? opts.home.house : -1;
+  const homeRace = (h) => (h.i === homeAt ? opts.home.race : S.guards[h.i % S.guards.length]);
   const putHome = (h, key) => {
     const [wall, roof] = tones[(h.i * 7 + Math.floor(h.i / 3) + (key === 'sale' ? 3 : 0)) % tones.length];
-    const hb = h.style === 'shack' ? buildShack({ w: h.w, d: h.d, seed: `${place.id}:${key}${h.i}`, doorX: h.doorX })
-      : buildHouse({ w: h.w, d: h.d, floors: h.floors, wall: h.style === 'manor' && !monster ? '#ece4d4' : wall, roof, seed: `${place.id}:${key}${h.i}`, doorX: h.doorX, over: 0.1, style: h.style === 'manor' ? 'manor' : 'house' });
-    raise(hb, h.x, h.z, h.fx, h.fz, h.w, h.d, ringRel(h.tier));
+    const size = key === 'sale' ? 1 : RACE_HOME[homeRace(h)] ?? 1, k = homeFootprint(size);
+    const w = h.w * k, d = h.d * k, doorX = h.doorX * k;
+    const hb = h.style === 'shack' ? buildShack({ w, d, seed: `${place.id}:${key}${h.i}`, doorX, size })
+      : buildHouse({ w, d, floors: h.floors, wall: h.style === 'manor' && !monster ? '#ece4d4' : wall, roof, seed: `${place.id}:${key}${h.i}`, doorX, over: 0.1, style: h.style === 'manor' ? 'manor' : 'house', size });
+    raise(hb, h.x, h.z, h.fx, h.fz, w, d, ringRel(h.tier));
     if (h.tilt) hb.rotation.y += h.tilt;
     if (h.style === 'manor') garden(fixed, h, ringRel(h.tier), solid, cx, cz);
   };
@@ -358,7 +372,7 @@ export function buildCity(place, opts = {}) {
   const saleSigns = new Map();
   for (const h of plan.sale) {
     putHome(h, 'sale');
-    const out = h.d / 2 + 2.2, side = h.w / 2 - 0.6;
+    const out = h.d / 2 + 2.2, side = (h.doorX > 0 ? -1 : 1) * Math.max(h.w / 2 - 1.1, Math.abs(h.doorX) + 1.9); // (beside the door, never in front of it)
     const sx = h.x + h.fx * out + h.fz * side, sz = h.z + h.fz * out - h.fx * side;
     saleSigns.set(h.id, houseSign(g, sx, ringRel(h.tier), sz, h.rot, solid, cx, cz));
   }
@@ -498,10 +512,9 @@ export function buildCity(place, opts = {}) {
       animateCharacter(b, t, speed ? 0.9 : 0);
     }
   }
-  const homeAt = opts.home?.city === place.id ? opts.home.house : -1;
   for (const h of houses) {
     if (h.i !== homeAt && h.i % 12) continue;
-    const race = h.i === homeAt ? opts.home.race : S.guards[h.i % S.guards.length];
+    const race = homeRace(h);
     const fam = familyOf(place.id, h.i, race);
     const out = h.d / 2 + 1.4;
     fam.parents.forEach((p, j) => {
@@ -527,7 +540,7 @@ export function buildCity(place, opts = {}) {
   const update = (t, you, blocked) => {
     centre.update?.(t);
     if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z); }
-    doors.update(you);
+    doors.update(you, t);
     for (const b of guards) animateCharacter(b, t, 0);
     walkFolk(t, you, blocked);
     for (const b of bridges) b.update();
@@ -565,7 +578,7 @@ export function buildCity(place, opts = {}) {
   // the houses for sale: show who owns each (`owners`: house id -> owner's name)
   const setOwners = (owners) => { for (const [id, sign] of saleSigns) sign.set(owners?.[id] || null, plan.sale.find((h) => h.id === id)); };
   setOwners({});
-  return { group: g, update, gather, shops, solid, gates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, centre: { x: cx, z: cz } };
+  return { group: g, update, gather, shops, solid, gates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, doors, centre: { x: cx, z: cz } };
 }
 
 // The open ground of the Common Quarter: the lots kept for Businessmen's shops on the market
@@ -676,23 +689,31 @@ function houseSign(g, x, y, z, rot, solid, cx, cz) {
   sp.position.set(x, y, z);
   sp.rotation.y = rot;
   g.add(sp);
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.9, 6), matOf('#4a3424', 0.9));
-  post.position.y = 0.95;
-  sp.add(post);
-  solid.push({ x: cx + x, z: cz + z, r: 0.25, kind: 'wall', height: 1.9 });
+  // two posts at the ends, the board hung between them, so nothing ever covers the words
+  const W = 2.3, BH = 0.7, Y = 1.55;
+  for (const px of [-W / 2 - 0.08, W / 2 + 0.08]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 2.1, 6), matOf('#4a3424', 0.9));
+    post.position.set(px, 1.05, 0);
+    sp.add(post);
+    const at = new THREE.Vector3(px, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+    solid.push({ x: cx + x + at.x, z: cz + z + at.z, r: 0.22, kind: 'wall', height: 2.1 });
+  }
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(W + 0.4, 0.08, 0.08), matOf('#4a3424', 0.9));
+  bar.position.y = 2.05;
+  sp.add(bar);
+  const board = new THREE.Mesh(new THREE.BoxGeometry(W, BH, 0.06), matOf('#7a5a3a', 0.9));
+  board.position.y = Y;
+  sp.add(board);
   const faces = [1, -1].map((side) => {
-    const f = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.55), new THREE.MeshBasicMaterial({ transparent: true }));
-    f.position.set(0, 1.65, side * 0.06); f.rotation.y = side > 0 ? 0 : Math.PI;
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.06, BH - 0.06), new THREE.MeshBasicMaterial());
+    f.position.set(0, Y, side * 0.04); f.rotation.y = side > 0 ? 0 : Math.PI;
     sp.add(f);
     return f;
   });
-  const board = new THREE.Mesh(new THREE.BoxGeometry(2, 0.62, 0.08), matOf('#7a5a3a', 0.9));
-  board.position.y = 1.65;
-  sp.add(board);
   let shown = undefined;
   return {
     set(owner, house) {
-      const text = owner ? `Home of ${owner}` : `For sale · ${money(house.price)}`;
+      const text = owner ? `Home of ${owner}` : `For sale · ${moneyWords(house.price)}`;
       if (text === shown) return;
       shown = text;
       const tex = textTexture(text, { board: true });
@@ -1083,7 +1104,7 @@ export function buildVillage(place) {
   }
   mergeStill(fixed);
   const deckAt = (x, z) => { const pad = padAt(pads, x, z); return pad === undefined ? undefined : baseY + pad; };
-  return { group: g, update: (t, you) => { centre.update(t); doors.update(you); for (const b of guards) animateCharacter(b, t, 0); }, shops, solid, market: centre.market, deckAt };
+  return { group: g, update: (t, you) => { centre.update(t); doors.update(you, t); for (const b of guards) animateCharacter(b, t, 0); }, shops, solid, market: centre.market, deckAt, doors };
 }
 
 // The sign over your parents' heads: a heart and "Your parent", always facing you

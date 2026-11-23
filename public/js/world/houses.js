@@ -257,7 +257,7 @@ const DOORS = ['#6a4026', '#4a2e1c', '#3a4a5a', '#5a2a22', '#3f5a3a'];
 // awning in the shop's colour, `accent`), 'guild' (built all of stone, with long banners in `accent`
 // down its front), 'academy' (a pale stone porch of columns under a pediment, in front of the door)
 // or 'manor' (a noble's house: stone below and the same columned porch)
-export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e', seed = 1, label = null, labelTex = null, doorX = null, over = 0.3, pitch = null, style = 'house', accent = '#8a2a24' }) {
+export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e', seed = 1, label = null, labelTex = null, doorX = null, over = 0.3, pitch = null, style = 'house', accent = '#8a2a24', size = 1 }) {
   const R = rng(seed);
   const g = new THREE.Group();
   const timberM = mat('plain', '#3b281a');
@@ -271,7 +271,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   const shutterM = mat('wood', SHUTTERS[Math.floor(R() * SHUTTERS.length)]);
   const boxM = mat('wood', '#6a4a30');
   const flowers = FLOWERS[Math.floor(R() * FLOWERS.length)];
-  const FH = 3.1, PL = 0.5;
+  const FH = 3.1 * size, PL = 0.5; // size: how big the folk who live here are (see RACE_HOME)
   const stoneGround = allStone || style === 'academy' || style === 'manor' || (style === 'house' && floors > 1 && R() < 0.45);
   const jetty = floors > 1 ? 0.4 : 0;
   const pitchA = pitch ?? 0.82 + R() * 0.22;
@@ -323,7 +323,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
         if (isDoor) continue;
         if (side) {
           // the sides: a narrow window on upper floors, crossed braces below
-          if (f > 0 && timbered && (i + f) % 2 === 0) windowAt(F, bx, y0 + 1.75, 0.7, 1.05, { frameM, glassM });
+          if (f > 0 && timbered && (i + f) % 2 === 0) windowAt(F, bx, y0 + 1.75 * size, 0.7, 1.05 * size, { frameM, glassM });
           else if (timbered) {
             const bh = 0.95 - 0.1, bl = Math.hypot(bw - 0.2, bh);
             detail(() => box(F, 0.12, bl, 0.07, timberM, bx, y0 + 0.5, 0.035, [0, 0, Math.atan2(bw - 0.2, bh)]));
@@ -336,18 +336,18 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
         }
         if (style === 'shop' && f === 0 && front) {
           // a wide display window, to show the wares
-          windowAt(F, bx, y0 + 1.45, Math.max(1, bw - 0.45), 1.7, { frameM: timberM, glassM });
+          windowAt(F, bx, y0 + 1.45 * size, Math.max(1, bw - 0.45), 1.7 * size, { frameM: timberM, glassM });
           continue;
         }
-        const ww = Math.min(1.15, bw - 0.9), wh = f ? 1.35 : 1.25;
-        windowAt(F, bx, y0 + 1.75, ww, wh, { frameM: stoneGround && !f ? stoneM : frameM, glassM, shutterM: front && bw > 1.9 ? shutterM : null, flowers: front && f > 0 && R() < 0.6 && !(label || labelTex) ? flowers : null, boxM, arch: stoneGround && !f });
+        const ww = Math.min(1.15, bw - 0.9), wh = (f ? 1.35 : 1.25) * size;
+        windowAt(F, bx, y0 + 1.75 * size, ww, wh, { frameM: stoneGround && !f ? stoneM : frameM, glassM, shutterM: front && bw > 1.9 ? shutterM : null, flowers: front && f > 0 && R() < 0.6 && !(label || labelTex) ? flowers : null, boxM, arch: stoneGround && !f });
       }
     }
   }
 
   // the front door: a frame, a lintel, two stone steps and a little tiled roof on brackets
   const F = faceOf(g, 0, d / 2, 0);
-  const dw = 1.3, dh = 2.3;
+  const dw = 1.3 * Math.min(1.25, size), dh = 2.3 * size;
   box(F, dw + 0.3, 0.22, 0.16, timberM, doorAt, PL + dh + 0.11, 0.07);
   for (const s of [-1, 1]) box(F, 0.15, dh, 0.16, timberM, doorAt + s * (dw / 2 + 0.075), PL + dh / 2, 0.07);
   box(F, dw, dh, 0.02, mat('plain', '#140e08'), doorAt, PL + dh / 2, 0.005);
@@ -377,6 +377,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   leaf.add(knob);
   hinge.add(leaf);
   g.add(hinge);
+  hinge.userData.w = dw;
   g.userData.door = hinge;
 
   // the look of each kind of building, at its front
@@ -518,10 +519,10 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
 // Its foot at (0, 0, 0), its door on the +z side. Returns the group (userData.door, height, pads, posts).
 const PLANKS = ['#6a5038', '#5a4430', '#7a5c3e', '#4e3c2a', '#806446'];
 const PATCHES = ['#7a4a2a', '#6a6a6a', '#8a5a3a', '#5a5a52'];
-export function buildShack({ w, d, seed = 1, doorX = 0 }) {
+export function buildShack({ w, d, seed = 1, doorX = 0, size = 1 }) {
   const R = rng(seed);
   const g = new THREE.Group();
-  const H = 2.4 + R() * 0.3, back = H - 0.7;
+  const H = (2.4 + R() * 0.3) * size, back = H - 0.7 * size;
   const stone = mat('stone', '#8a8478');
   for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(g, 0.5, 0.25, 0.5, stone, sx * (w / 2 - 0.2), 0.12, sz * (d / 2 - 0.2));
   // the walls: planks standing side by side, each a little different
@@ -537,7 +538,7 @@ export function buildShack({ w, d, seed = 1, doorX = 0 }) {
       b.rotation.z = (R() - 0.5) * 0.03;
     }
   };
-  const dw = 1.05, dh = 2;
+  const dw = 1.05 * Math.min(1.25, size), dh = 2 * size;
   wallRun(w, 0, d / 2, 1, 0, H, H, (a) => Math.abs(a - doorX) < dw / 2);   // front, round the door
   wallRun(w, 0, -d / 2, 1, 0, back, back);                                 // back
   for (const s of [-1, 1]) wallRun(d, s * w / 2, 0, 0, -1, back, H);        // sides (sloping with the roof)
@@ -545,8 +546,8 @@ export function buildShack({ w, d, seed = 1, doorX = 0 }) {
   box(g, dw + 0.2, H - dh - 0.2, 0.08, mat('wood', PLANKS[0]), doorX, 0.2 + dh + (H - dh - 0.2) / 2, d / 2);
   // a window hole with a rag hanging over it
   const wx = doorX > 0 ? -w / 4 : w / 4;
-  box(g, 0.7, 0.55, 0.02, mat('plain', '#140e08'), wx, 1.5, d / 2 + 0.045);
-  box(g, 0.75, 0.4, 0.02, mat('plain', ['#8a7a5a', '#6a4a4a', '#5a6a7a'][Math.floor(R() * 3)]), wx, 1.62, d / 2 + 0.06);
+  box(g, 0.7, 0.55 * size, 0.02, mat('plain', '#140e08'), wx, 1.5 * size, d / 2 + 0.045);
+  box(g, 0.75, 0.4, 0.02, mat('plain', ['#8a7a5a', '#6a4a4a', '#5a6a7a'][Math.floor(R() * 3)]), wx, 1.62 * size, d / 2 + 0.06);
   // the lean-to roof: planks from the front edge down to the back, with rusty patches nailed on
   const roofG = new THREE.Group();
   roofG.position.set(0, 0.2 + (H + back) / 2, 0);
@@ -568,6 +569,7 @@ export function buildShack({ w, d, seed = 1, doorX = 0 }) {
   leaf.userData.moves = true;
   hinge.add(leaf);
   g.add(hinge);
+  hinge.userData.w = dw;
   g.userData.door = hinge;
   g.userData.height = H + 0.3;
   g.userData.pads = [];
