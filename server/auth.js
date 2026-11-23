@@ -21,14 +21,14 @@ function checkPassword(password, stored) {
   return crypto.timingSafeEqual(hash, Buffer.from(hashHex, 'hex'));
 }
 
-function newSession(accountId) {
+async function newSession(accountId) {
   const token = crypto.randomBytes(32).toString('hex');
-  db.prepare('INSERT INTO sessions (token, account_id) VALUES (?, ?)').run(token, accountId);
+  await db.run('INSERT INTO sessions (token, account_id) VALUES (?, ?)', token, accountId);
   return token;
 }
 
-function publicAccount(row) {
-  const character = db.prepare('SELECT data FROM characters WHERE account_id = ?').get(row.id);
+async function publicAccount(row) {
+  const character = await db.get('SELECT data FROM characters WHERE account_id = ?', row.id);
   return {
     username: row.username,
     email: shownEmail(row.email),
@@ -36,7 +36,7 @@ function publicAccount(row) {
   };
 }
 
-function signUp({ email, password, username }) {
+async function signUp({ email, password, username }) {
   email = String(email || '').trim();
   username = String(username || '').trim();
   password = String(password || '');
@@ -46,54 +46,56 @@ function signUp({ email, password, username }) {
   if (!USERNAME_RE.test(username)) {
     return { error: 'Usernames are 3 to 16 letters, numbers or underscores.' };
   }
-  if (email && db.prepare('SELECT 1 FROM accounts WHERE email = ?').get(email)) {
+  if (email && await db.get('SELECT 1 FROM accounts WHERE lower(email) = lower(?)', email)) {
     return { error: 'An account with this email already exists. Try signing in.' };
   }
-  if (db.prepare('SELECT 1 FROM accounts WHERE username = ?').get(username)) {
+  if (await db.get('SELECT 1 FROM accounts WHERE lower(username) = lower(?)', username)) {
     return { error: 'That username is taken. Please choose another.' };
   }
   if (!email) email = `${username.toLowerCase()}${NO_EMAIL}`;
 
-  const { lastInsertRowid } = db
-    .prepare('INSERT INTO accounts (email, username, password_hash) VALUES (?, ?, ?)')
-    .run(email, username, hashPassword(password));
-  const row = db.prepare('SELECT * FROM accounts WHERE id = ?').get(lastInsertRowid);
-  return { token: newSession(row.id), account: publicAccount(row), isNew: true };
+  let row;
+  try {
+    ({ rows: [row] } = await db.run('INSERT INTO accounts (email, username, password_hash) VALUES (?, ?, ?) RETURNING *', email, username, hashPassword(password)));
+  } catch (e) {
+    // someone else took the name in the same moment
+    if (e.code === '23505') return { error: 'That username or email was just taken. Please choose another.' };
+    throw e;
+  }
+  return { token: await newSession(row.id), account: await publicAccount(row), isNew: true };
 }
 
 // `login` is a username or an email
-function signIn({ login, email, password }) {
+async function signIn({ login, email, password }) {
   login = String(login || email || '').trim();
-  const row = login && db.prepare('SELECT * FROM accounts WHERE email = ? OR username = ?').get(login, login);
+  const row = login && await db.get('SELECT * FROM accounts WHERE lower(email) = lower(?) OR lower(username) = lower(?)', login, login);
   if (!row || !checkPassword(String(password || ''), row.password_hash)) {
     return { error: 'That username or email and password don\'t match an account.' };
   }
-  return { token: newSession(row.id), account: publicAccount(row), isNew: false };
+  return { token: await newSession(row.id), account: await publicAccount(row), isNew: false };
 }
 
-function accountRow(token) {
+async function accountRow(token) {
   if (!token) return null;
-  return db
-    .prepare('SELECT a.* FROM sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token = ?')
-    .get(token) || null;
+  return (await db.get('SELECT a.* FROM sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token = ?', token)) || null;
 }
 
-function accountFromToken(token) {
-  const row = accountRow(token);
+async function accountFromToken(token) {
+  const row = await accountRow(token);
   return row ? publicAccount(row) : null;
 }
 
-function signOut(token) {
-  db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+async function signOut(token) {
+  await db.run('DELETE FROM sessions WHERE token = ?', token);
 }
 
 // For now a signed-in player can set a new password straight away.
 // Later this should also ask for the old password or a code sent by email.
-function changePassword(accountId, password, keepToken) {
+async function changePassword(accountId, password, keepToken) {
   password = String(password || '');
   if (password.length < 8) return { error: 'Your new password needs at least 8 characters.' };
-  db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ?').run(hashPassword(password), accountId);
-  db.prepare('DELETE FROM sessions WHERE account_id = ? AND token != ?').run(accountId, keepToken); // other devices sign in again
+  await db.run('UPDATE accounts SET password_hash = ? WHERE id = ?', hashPassword(password), accountId);
+  await db.run('DELETE FROM sessions WHERE account_id = ? AND token != ?', accountId, keepToken); // other devices sign in again
   return { ok: true };
 }
 

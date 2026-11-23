@@ -14,27 +14,27 @@ const { MAX_CHILDREN } = require('../public/js/data/family.mjs');
 const { RACES, CLASSES } = require('../public/js/data/game-data.mjs');
 const { BODYGUARDS } = require('../public/js/data/hire.mjs');
 
-function load(accountId) {
-  const row = db.prepare('SELECT data FROM characters WHERE account_id = ?').get(accountId);
+async function load(accountId) {
+  const row = await db.get('SELECT data FROM characters WHERE account_id = ?', accountId);
   if (!row) return null;
   const c = JSON.parse(row.data);
   // saved before the world grew: carried to the same spot on the new map
-  if (moveToNewWorld(c)) db.prepare('UPDATE characters SET data = ? WHERE account_id = ?').run(JSON.stringify(c), accountId);
+  if (moveToNewWorld(c)) await db.run('UPDATE characters SET data = ? WHERE account_id = ?', JSON.stringify(c), accountId);
   return c;
 }
 
 // Unique Skills held by someone (alive, or kept by a fallen one): their names, how many of each top
 // rank are held, and whether anyone holds Appraisal
-function uniquesHeld() {
-  const rows = db.prepare("SELECT json_extract(data, '$.uniqueSkill.name') AS n, json_extract(data, '$.uniqueSkill.rank') AS r FROM characters UNION ALL SELECT json_extract(data, '$.uniqueSkill.name'), json_extract(data, '$.uniqueSkill.rank') FROM fallen").all();
+async function uniquesHeld() {
+  const rows = await db.all("SELECT (data::jsonb #>> '{uniqueSkill,name}') AS n, (data::jsonb #>> '{uniqueSkill,rank}') AS r FROM characters UNION ALL SELECT (data::jsonb #>> '{uniqueSkill,name}'), (data::jsonb #>> '{uniqueSkill,rank}') FROM fallen");
   const held = {};
   for (const r of rows) if (r.r) held[r.r] = (held[r.r] || 0) + 1;
   const takenUniques = new Set(rows.map((r) => r.n).filter(Boolean));
   return { takenUniques, held, appraisal: ![...takenUniques].some((n) => String(n).toLowerCase() === 'appraisal') };
 }
 // A house with room for one more child: in the city of the race first, then the others in turn
-function findHome(race) {
-  const kids = db.prepare("SELECT json_extract(data, '$.child.family.city') AS city, json_extract(data, '$.child.family.house') AS house, COUNT(*) AS n FROM characters WHERE json_extract(data, '$.child') IS NOT NULL GROUP BY city, house").all();
+async function findHome(race) {
+  const kids = await db.all("SELECT (data::jsonb #>> '{child,family,city}') AS city, (data::jsonb #>> '{child,family,house}') AS house, COUNT(*)::int AS n FROM characters WHERE jsonb_typeof(data::jsonb -> 'child') = 'object' GROUP BY 1, 2");
   const full = new Map(kids.map((k) => [`${k.city}:${k.house}`, k.n]));
   const first = BIRTH_CITY[race] || 'central';
   for (const city of [first, ...BIRTH_CITIES.filter((c) => c !== first)]) {
@@ -47,53 +47,56 @@ function findHome(race) {
 
 // Nobody chooses who they are: a new character is born at random into a family (see data/birth.mjs).
 // `body.side` ('player' or 'monster') narrows the race to one side, if given.
-function create(accountId, username, body) {
-  if (load(accountId)) return { error: 'This account already has a character.' };
-  keepAppraisalHeld();
-  const opts = uniquesHeld();
-  const kept = db.prepare('SELECT data FROM fallen WHERE account_id = ?').get(accountId);
+async function create(accountId, username, body) {
+  if (await load(accountId)) return { error: 'This account already has a character.' };
+  await keepAppraisalHeld();
+  const opts = await uniquesHeld();
+  const kept = await db.get('SELECT data FROM fallen WHERE account_id = ?', accountId);
   const keep = kept ? JSON.parse(kept.data) : null;
   // born again as one of your own children, or at random into a family
   const asKid = Number.isInteger(body?.asChild) ? rebirthAsChild(keep, body.asChild, rollBirth) : null;
   const birth = asKid?.birth || rollBirth(['player', 'monster'].includes(body?.side) ? body.side : null);
-  const result = bornCharacter(username, birth, (asKid?.home && houseCount(asKid.home.city) > asKid.home.house ? asKid.home : null) || findHome(birth.race), opts);
+  const result = bornCharacter(username, birth, (asKid?.home && houseCount(asKid.home.city) > asKid.home.house ? asKid.home : null) || await findHome(birth.race), opts);
   if (result.error) return result;
   if (asKid) { result.character.child.school = asKid.kid.school || null; result.character.child.plan = asKid.kid.plan; result.character.rebornFrom = keep.name || null; }
   // a character who fell before passes their Unique Skill on
   if (keep) rebornWith(result.character, keep);
-  db.prepare('INSERT INTO characters (account_id, data) VALUES (?, ?)').run(accountId, JSON.stringify(result.character));
-  db.prepare('DELETE FROM fallen WHERE account_id = ?').run(accountId);
+  try {
+    await db.run('INSERT INTO characters (account_id, data) VALUES (?, ?)', accountId, JSON.stringify(result.character));
+  } catch (e) {
+    if (e.code === '23505') return { error: 'This account already has a character.' };
+    throw e;
+  }
+  await db.run('DELETE FROM fallen WHERE account_id = ?', accountId);
   return result;
 }
 
 // The Ceremony of Revealing: a child who has reached 7 learns their class
-function ceremony(accountId) {
-  const character = load(accountId);
+async function ceremony(accountId) {
+  const character = await load(accountId);
   if (!character) return { error: 'No character yet.' };
   if (!ceremonyDue(character)) return { error: 'You are not old enough yet.' };
   const cls = rollClass(character);
   const city = character.child?.family?.city || 'central';
   growUp(character, cls);
-  store(accountId, character);
+  await store(accountId, character);
   // the new card is shown in the sky over the city's shrine for a while, for everyone there to see
-  db.exec('CREATE TABLE IF NOT EXISTS world_state (key TEXT PRIMARY KEY, data TEXT NOT NULL)');
   const now = Date.now();
-  const list = recentCeremonies(now);
+  const list = await recentCeremonies(now);
   list.push({ city, name: character.name, race: character.race, cls, level: character.level, rank: character.uniqueSkill?.rank || null, unique: character.uniqueSkill?.name || null, at: now });
-  db.prepare("INSERT INTO world_state (key, data) VALUES ('ceremonies', ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data").run(JSON.stringify(list.slice(-30)));
+  await db.run("INSERT INTO world_state (key, data) VALUES ('ceremonies', ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data", JSON.stringify(list.slice(-30)));
   return { ok: true, character };
 }
 // Ceremonies held in the last CEREMONY_SHOW_MS (see data/birth.mjs)
-function recentCeremonies(now = Date.now()) {
-  db.exec('CREATE TABLE IF NOT EXISTS world_state (key TEXT PRIMARY KEY, data TEXT NOT NULL)');
-  const r = db.prepare("SELECT data FROM world_state WHERE key = 'ceremonies'").get();
+async function recentCeremonies(now = Date.now()) {
+  const r = await db.get("SELECT data FROM world_state WHERE key = 'ceremonies'");
   return (r ? JSON.parse(r.data) : []).filter((c) => now - c.at < CEREMONY_SHOW_MS);
 }
 
 // Raise the Unique Skill one rank when the character has earned a proof of growth for it (see
 // rankProofs): at most two ranks above its birth rank, and SS and SSS only while there is room.
-function rankUp(accountId) {
-  const character = load(accountId);
+async function rankUp(accountId) {
+  const character = await load(accountId);
   if (!character?.uniqueSkill) return { error: 'No Unique Skill yet.' };
   const u = character.uniqueSkill;
   if (isAppraisal(character)) return { error: 'Appraisal has no ranks to climb.' };
@@ -102,50 +105,51 @@ function rankUp(accountId) {
   const born = u.born || rankOf(u);
   const next = climbedRank(born, raised + 1);
   if (next === rankOf(u)) return { error: 'It is already as high as it can go.' };
-  if (RANK_CAP[next] != null && (uniquesHeld().held[next] || 0) >= RANK_CAP[next]) return { error: `Every ${next} place in the world is held. It will climb when one is free.`, full: true };
+  if (RANK_CAP[next] != null && ((await uniquesHeld()).held[next] || 0) >= RANK_CAP[next]) return { error: `Every ${next} place in the world is held. It will climb when one is free.`, full: true };
   character.uniqueSkill = { ...u, rank: next, born, raised: raised + 1 };
-  store(accountId, character);
+  await store(accountId, character);
   return { ok: true, uniqueSkill: character.uniqueSkill };
 }
 
 // Appraisal is held by one person only. If they stay away for more than a month it leaves them
 // and they are given another Unique Skill (alive or fallen).
-function keepAppraisalHeld(now = Date.now()) {
+async function keepAppraisalHeld(now = Date.now()) {
   const away = (iso) => !iso || now - Date.parse(String(iso).replace(' ', 'T') + (String(iso).includes('Z') ? '' : 'Z')) > APPRAISAL_AWAY_MS;
-  const fresh = () => { const o = uniquesHeld(); return uniqueSlot(pickUnique(o.takenUniques, Math.random, { held: o.held })); };
-  for (const r of db.prepare("SELECT account_id, data, updated_at FROM characters WHERE lower(json_extract(data, '$.uniqueSkill.name')) = 'appraisal'").all()) {
+  const fresh = async () => { const o = await uniquesHeld(); return uniqueSlot(pickUnique(o.takenUniques, Math.random, { held: o.held })); };
+  for (const r of await db.all("SELECT account_id, data, updated_at FROM characters WHERE lower((data::jsonb #>> '{uniqueSkill,name}')) = 'appraisal'")) {
     if (!away(r.updated_at)) continue;
     const c = JSON.parse(r.data);
-    c.uniqueSkill = fresh();
+    c.uniqueSkill = await fresh();
     c.appraisalLost = true;
-    db.prepare('UPDATE characters SET data = ? WHERE account_id = ?').run(JSON.stringify(c), r.account_id);
+    await db.run('UPDATE characters SET data = ? WHERE account_id = ?', JSON.stringify(c), r.account_id);
   }
-  for (const r of db.prepare("SELECT account_id, data FROM fallen WHERE lower(json_extract(data, '$.uniqueSkill.name')) = 'appraisal'").all()) {
+  for (const r of await db.all("SELECT account_id, data FROM fallen WHERE lower((data::jsonb #>> '{uniqueSkill,name}')) = 'appraisal'")) {
     const k = JSON.parse(r.data);
     if (!away(k.fell)) continue;
-    k.uniqueSkill = fresh();
-    db.prepare('UPDATE fallen SET data = ? WHERE account_id = ?').run(JSON.stringify(k), r.account_id);
+    k.uniqueSkill = await fresh();
+    await db.run('UPDATE fallen SET data = ? WHERE account_id = ?', JSON.stringify(k), r.account_id);
   }
 }
 
 // Death is final: the character is gone and the player starts again from the beginning, born anew
 // at random into a new family. Only the Unique Skill (and a sinner's or blessed soul) passes on.
-function fall(accountId) {
-  const character = load(accountId);
+async function fall(accountId) {
+  const character = await load(accountId);
   if (!character) return { error: 'No character yet.' };
   const keep = fallenKeep(character);
-  db.prepare('INSERT OR REPLACE INTO fallen (account_id, data) VALUES (?, ?)').run(accountId, JSON.stringify(keep));
-  db.prepare('DELETE FROM characters WHERE account_id = ?').run(accountId);
+  await db.tx(async (t) => {
+    await t.run('INSERT INTO fallen (account_id, data) VALUES (?, ?) ON CONFLICT (account_id) DO UPDATE SET data = excluded.data', accountId, JSON.stringify(keep));
+    await t.run('DELETE FROM characters WHERE account_id = ?', accountId);
+  });
   return { ok: true, kept: keep };
 }
 
-function saveLocation(accountId, loc) {
-  const character = load(accountId);
+async function saveLocation(accountId, loc) {
+  const character = await load(accountId);
   if (!character) return { error: 'No character yet.' };
   const n = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
   character.location = { ...character.location, x: n(loc.x), y: n(loc.y), z: n(loc.z), heading: n(loc.heading) };
-  db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
-    .run(JSON.stringify(character), accountId);
+  await store(accountId, character);
   return { ok: true };
 }
 
@@ -182,8 +186,8 @@ function cleanItem(s) {
 
 // Saves level, EXP, coins, HP, stats and the bag. The game runs these rules in the browser for now;
 // once multiplayer arrives the server will check every change itself.
-function saveProgress(accountId, p) {
-  const character = load(accountId);
+async function saveProgress(accountId, p) {
+  const character = await load(accountId);
   if (!character) return { error: 'No character yet.' };
   const int = (v, min, max) => (Number.isInteger(v) && v >= min && v <= max ? v : null);
   const fields = {
@@ -333,19 +337,17 @@ function saveProgress(accountId, p) {
   // monster players from level 100 can switch to their humanoid form and back
   if ((p.form === 'monster' || p.form === 'humanoid') && mayChangeForm({ ...character, level: fields.level ?? character.level })) character.form = p.form;
   Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
-  db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
-    .run(JSON.stringify(character), accountId);
+  await store(accountId, character);
   return { ok: true };
 }
 
-function store(accountId, character) {
-  db.prepare("UPDATE characters SET data = ?, updated_at = datetime('now') WHERE account_id = ?")
-    .run(JSON.stringify(character), accountId);
+async function store(accountId, character) {
+  await db.run('UPDATE characters SET data = ?, updated_at = now() WHERE account_id = ?', JSON.stringify(character), accountId);
 }
 
 // The highest-level characters on the server (EXP breaks ties)
-function top(limit = 10) {
-  return db.prepare('SELECT data FROM characters').all()
+async function top(limit = 10) {
+  return (await db.all('SELECT data FROM characters'))
     .map((r) => JSON.parse(r.data))
     .map((c) => ({ name: c.name, race: c.race, cls: c.cls, side: c.side, level: c.level || 1, exp: c.exp || 0 }))
     .sort((a, b) => b.level - a.level || b.exp - a.exp)

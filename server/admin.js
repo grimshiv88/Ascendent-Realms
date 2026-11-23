@@ -8,13 +8,13 @@ const { hashPassword, shownEmail } = require('./auth');
 const adminEmails = () => (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
 const isAdmin = (account) => !!account && adminEmails().includes(String(account.email).toLowerCase());
 
-function accounts() {
-  const rows = db.prepare(`
+async function accounts() {
+  const rows = await db.all(`
     SELECT a.id, a.email, a.username, a.created_at, c.data, c.updated_at,
-      (SELECT COUNT(*) FROM sessions s WHERE s.account_id = a.id) AS sessions,
-      (SELECT COUNT(*) FROM lands l WHERE l.account_id = a.id) AS plots
+      (SELECT COUNT(*)::int FROM sessions s WHERE s.account_id = a.id) AS sessions,
+      (SELECT COUNT(*)::int FROM lands l WHERE l.account_id = a.id) AS plots
     FROM accounts a LEFT JOIN characters c ON c.account_id = a.id
-    ORDER BY a.id DESC`).all();
+    ORDER BY a.id DESC`);
   return {
     accounts: rows.map((r) => {
       const c = r.data ? JSON.parse(r.data) : null;
@@ -27,30 +27,28 @@ function accounts() {
   };
 }
 
-function setPassword({ id, password }) {
+async function setPassword({ id, password }) {
   password = String(password || '');
   if (password.length < 8) return { error: 'The new password needs at least 8 characters.' };
-  const row = db.prepare('SELECT id FROM accounts WHERE id = ?').get(Number(id));
+  const row = await db.get('SELECT id FROM accounts WHERE id = ?', Number(id) || 0);
   if (!row) return { error: 'No such account.' };
-  db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ?').run(hashPassword(password), row.id);
-  db.prepare('DELETE FROM sessions WHERE account_id = ?').run(row.id); // sign them out everywhere
+  await db.run('UPDATE accounts SET password_hash = ? WHERE id = ?', hashPassword(password), row.id);
+  await db.run('DELETE FROM sessions WHERE account_id = ?', row.id); // sign them out everywhere
   return { ok: true };
 }
 
-function signOutEverywhere({ id }) {
-  db.prepare('DELETE FROM sessions WHERE account_id = ?').run(Number(id));
+async function signOutEverywhere({ id }) {
+  await db.run('DELETE FROM sessions WHERE account_id = ?', Number(id) || 0);
   return { ok: true };
 }
 
-function remove({ id }, me) {
-  const row = db.prepare('SELECT id, email FROM accounts WHERE id = ?').get(Number(id));
+async function remove({ id }, me) {
+  const row = await db.get('SELECT id, email FROM accounts WHERE id = ?', Number(id) || 0);
   if (!row) return { error: 'No such account.' };
   if (row.id === me.id) return { error: 'You can\'t delete your own admin account from here.' };
   // the account's sessions, character and land go with it
-  db.prepare('DELETE FROM sessions WHERE account_id = ?').run(row.id);
-  db.prepare('DELETE FROM characters WHERE account_id = ?').run(row.id);
-  db.prepare('DELETE FROM lands WHERE account_id = ?').run(row.id);
-  db.prepare('DELETE FROM accounts WHERE id = ?').run(row.id);
+  // everything that belongs to the account is removed with it (ON DELETE CASCADE)
+  await db.run('DELETE FROM accounts WHERE id = ?', row.id);
   return { ok: true };
 }
 
