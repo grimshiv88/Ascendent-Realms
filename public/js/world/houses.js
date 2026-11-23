@@ -312,15 +312,25 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
       const side = Math.abs(rot) === Math.PI / 2;
       const bays = side ? Math.max(1, Math.round(fw / 3.2)) : Math.max(1, Math.round(fw / 2.2));
       const bw = fw / bays;
+      // the doorway (with its frame) on the ground floor at the front: nothing is built across it
+      const doorWall = f === 0 && front, dHalf = (1.3 * Math.min(1.25, size)) / 2 + 0.3;
+      const inDoor = (x, half = 0) => doorWall && Math.abs(x - doorAt) < dHalf + half;
       if (timbered) {
         box(F, fw, 0.16, 0.08, timberM, 0, y0 + h - 0.08, 0.03);
-        box(F, fw, 0.14, 0.08, timberM, 0, y0 + 0.95, 0.03);
-        for (let i = 0; i <= bays; i++) box(F, 0.18, h, 0.08, timberM, -fw / 2 + i * bw, y0 + h / 2, 0.03);
+        if (doorWall) {
+          // the middle rail stops either side of the door
+          for (const [a, b] of [[-fw / 2, doorAt - dHalf], [doorAt + dHalf, fw / 2]]) if (b - a > 0.05) box(F, b - a, 0.14, 0.08, timberM, (a + b) / 2, y0 + 0.95, 0.03);
+        } else box(F, fw, 0.14, 0.08, timberM, 0, y0 + 0.95, 0.03);
+        for (let i = 0; i <= bays; i++) if (!inDoor(-fw / 2 + i * bw, 0.09)) box(F, 0.18, h, 0.08, timberM, -fw / 2 + i * bw, y0 + h / 2, 0.03);
       }
       for (let i = 0; i < bays; i++) {
         const bx = -fw / 2 + (i + 0.5) * bw;
-        const isDoor = f === 0 && front && Math.abs(bx - doorAt) < bw / 2;
+        const isDoor = doorWall && Math.abs(bx - doorAt) < bw / 2;
         if (isDoor) continue;
+        // a window never reaches over the door either (next to it, it goes without shutters)
+        const wwHere = Math.min(1.15, bw - 0.9);
+        if (inDoor(bx, wwHere / 2 + 0.2)) continue;
+        const roomForShutters = !inDoor(bx, wwHere + 0.2);
         if (side) {
           // the sides: a narrow window on upper floors, crossed braces below
           if (f > 0 && timbered && (i + f) % 2 === 0) windowAt(F, bx, y0 + 1.75 * size, 0.7, 1.05 * size, { frameM, glassM });
@@ -330,7 +340,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
           }
           continue;
         }
-        if (timbered) {
+        if (timbered && !inDoor(bx, bw / 2)) {
           // the braces under the windows, as in old timber houses
           for (const k of [-1, 1]) detail(() => box(F, 0.11, Math.hypot(bw / 2 - 0.1, 0.85), 0.06, timberM, bx + k * bw / 4, y0 + 0.5, 0.035, [0, 0, k * Math.atan2(bw / 2 - 0.1, 0.85)]));
         }
@@ -340,7 +350,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
           continue;
         }
         const ww = Math.min(1.15, bw - 0.9), wh = (f ? 1.35 : 1.25) * size;
-        windowAt(F, bx, y0 + 1.75 * size, ww, wh, { frameM: stoneGround && !f ? stoneM : frameM, glassM, shutterM: front && bw > 1.9 ? shutterM : null, flowers: front && f > 0 && R() < 0.6 && !(label || labelTex) ? flowers : null, boxM, arch: stoneGround && !f });
+        windowAt(F, bx, y0 + 1.75 * size, ww, wh, { frameM: stoneGround && !f ? stoneM : frameM, glassM, shutterM: front && bw > 1.9 && roomForShutters ? shutterM : null, flowers: front && f > 0 && R() < 0.6 && !(label || labelTex) ? flowers : null, boxM, arch: stoneGround && !f });
       }
     }
   }

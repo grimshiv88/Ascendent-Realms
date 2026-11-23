@@ -83,12 +83,16 @@ function doorKeeper() {
       if (!you) return;
       for (const d of doors) {
         if (d.x === null) this.place(d);
+        const last = d.last; d.last = t; d.lastWas = last;
         const dx = you.x - d.x, dz = you.z - d.z;
-        const near = Math.abs(dx) < 3 && Math.abs(dz) < 3 && Math.hypot(dx, dz) < 2.6;
+        const near = Math.abs(dx) < 4 && Math.abs(dz) < 4 && Math.hypot(dx, dz) < 3.4; // (it starts to open a few steps before you reach it)
         if (!near) d.keepShut = false; // shut by a click: it stays shut till you walk away
         const want = (near && !d.keepShut) || d.held > t ? 1.35 : 0;
         if (Math.abs(want - d.open) < 0.005) continue;
-        d.open += (want - d.open) * 0.1; // a smooth swing on its hinges
+        // a smooth swing on its hinges, the same speed however fast the game draws (about half a second)
+        const dt = Math.min(0.1, Math.max(0, t - (d.lastWas ?? t)));
+        d.open += (want - d.open) * (1 - Math.exp(-dt * 9));
+        if (Math.abs(want - d.open) < 0.01) d.open = want;
         d.hinge.rotation.y = d.open;
       }
     },
