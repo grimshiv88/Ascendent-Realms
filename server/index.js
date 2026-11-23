@@ -138,6 +138,12 @@ app.post('/api/caves/buy', requireAccount, (req, res) => {
   res.status(result.error ? 400 : 200).json(result);
 });
 
+app.get('/api/homes', requireAccount, (req, res) => res.json(land.homes(req.account.id)));
+app.post('/api/homes/buy', requireAccount, (req, res) => {
+  const result = land.buyHome(req.account.id, req.body || {});
+  res.status(result.error ? 400 : 200).json(result);
+});
+
 // Friends, chat and Status privacy
 app.get('/api/players', requireAccount, (req, res) => res.json(social.search(req.account.id, req.query.q)));
 app.get('/api/appraise/:name', requireAccount, (req, res) => {

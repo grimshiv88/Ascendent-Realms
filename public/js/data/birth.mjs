@@ -7,6 +7,7 @@
 // Shared by the game and the server.
 import { RACES, CLASSES, STARTER_CLASSES, APPEARANCE, newCharacter } from './game-data.mjs';
 import { PLACES, toWorld } from './world-layout.mjs';
+import { cityPlan } from './citylayout.mjs';
 
 export const BORN_AGE = 4;
 export const CEREMONY_AGE = 7;
@@ -23,70 +24,14 @@ export const BIRTH_CITIES = ['central', 'emberfall', 'ashgrave', 'lumenhollow', 
 export const KIDS_PER_HOUSE = 4;
 
 // ---------- the plan of a city (the same in the game and on the server) ----------
-// Every walled city is laid out in quarters around its round plaza, with a main avenue from the
-// north gate to the south gate and a road east and west:
-//   - the east road leads to the Royal Quarter: the Emperors' Castle and its grounds
-//   - north-east, the Civic Quarter: the Main Guild Hall, the Academy and its training grounds, the portal
-//   - south-east, the Market Quarter: the city's shops and tavern along the avenue and the east
-//     road, and behind them lots kept for the shops of Businessmen
-//   - the whole west half is the Neighbourhood: streets of family houses standing side by side,
-//     with a playground for the children
-// (x is east, z is south; positions are from the city's middle)
-export const CASTLE_SPOT = { x: 105, z: 0 };
-// The Neighbourhood, laid out like the old towns: streets (lanes) running north-south. Along each
-// street, houses stand side by side facing it; behind each row stands another row back to back
-// with it (a narrow alley between their back walls), facing the next street, and so on outward.
-// The first row faces the main avenue; the last row backs onto the inner wall. Streets running
-// east-west (the west road and two cross streets each side) cut through the rows.
-export const HOUSE_D = 8;                        // how deep every house is
-export const LANE_W = 6;                         // a street's width
-const FRONT = 1.2;                               // the pavement and steps between a street and the doors
-const ALLEY = 2;                                 // the gap between back walls
-const AVENUE_EDGE = -3.5;                        // the west edge of the main avenue
-const PITCH = LANE_W + 2 * (FRONT + HOUSE_D) + ALLEY;
-const FIRST_LANE = AVENUE_EDGE - FRONT - 2 * HOUSE_D - ALLEY - FRONT - LANE_W / 2;
-export const LANES = [0, 1, 2, 3, 4].map((i) => Math.round((FIRST_LANE - i * PITCH) * 10) / 10); // x of each street's middle
-export const CROSS_STREETS = [-104, -58, 58, 104]; // z of the east-west streets (and the west road at 0)
-export const PLAYGROUND = { x0: -102, x1: -84, z0: 18, z1: 50 };
-const CITY_INNER = 138;                          // houses stay this far in (the inner wall is beyond)
-const PLAZA_CLEAR = 40;                          // and this far from the middle (the plaza)
-// the rows: [x of the row's middle, the way its doors face (fx)]
-const ROWS = [[AVENUE_EDGE - FRONT - HOUSE_D / 2, 1]];
-for (const lane of LANES) ROWS.push([lane + LANE_W / 2 + FRONT + HOUSE_D / 2, -1], [lane - LANE_W / 2 - FRONT - HOUSE_D / 2, 1]);
-// The family houses. Each: { i, x, z, rot (facing), fx, fz (the way the door faces), w (its front),
-// d, floors, doorX (the door's place along the front), door: { x, z } (the door's offset from the middle) }
-let HOUSES = null;
+// Every walled city rises in rings: the Dump by the walls, the Common Quarter, the Noble Quarter and
+// Castle Hill on top (see citylevels.mjs and citylayout.mjs for the whole plan).
+export { CASTLE_SPOT, ACADEMY_W, ACADEMY_D } from './citylayout.mjs';
+// The family houses (shacks, town houses and manors). Each: { i, x, z, rot (facing), fx, fz (the
+// way the door faces), w (its front), d, floors, doorX (the door's place along the front), door:
+// { x, z } (the door's offset from the middle), tier ('dump', 'common' or 'noble'), style }
 export function cityHouses(placeId) {
-  if (HOUSES) return HOUSES;
-  const out = [];
-  const blocked = (x0, x1, z0, z1) => {
-    for (const [x, z] of [[x0, z0], [x0, z1], [x1, z0], [x1, z1]]) {
-      if (Math.hypot(x, z) > CITY_INNER || Math.hypot(x, z) < PLAZA_CLEAR) return true;
-    }
-    if (z1 > -3.5 - 1.5 && z0 < 3.5 + 1.5) return true; // the west road
-    for (const c of CROSS_STREETS) if (z1 > c - 2.5 - 1 && z0 < c + 2.5 + 1) return true;
-    const P = PLAYGROUND;
-    if (x1 > P.x0 && x0 < P.x1 && z1 > P.z0 - 1 && z0 < P.z1 + 1) return true;
-    return false;
-  };
-  ROWS.forEach(([x, fx], r) => {
-    const rnd = seeded(`row${r}`);
-    const x0 = x - HOUSE_D / 2, x1 = x + HOUSE_D / 2;
-    let z = -CITY_INNER;
-    while (z < CITY_INNER) {
-      const w = Math.round((7 + rnd() * 2.6) * 10) / 10;
-      if (blocked(x0, x1, z, z + w)) { z += 1; continue; }
-      const k = out.length;
-      const rot = Math.atan2(fx, 0);
-      const floors = rnd() < 0.3 ? 3 : 2;
-      const doorX = w >= 8.4 && rnd() < 0.4 ? 0 : (rnd() < 0.5 ? -1 : 1) * Math.round((w / 2 - 1.5) * 10) / 10;
-      out.push({ i: k, x, z: z + w / 2, rot, fx, fz: 0, w, d: HOUSE_D, h: floors * 3.1, floors, doorX,
-        door: { x: doorX * Math.cos(rot), z: -doorX * Math.sin(rot) } });
-      z += w + 0.25; // side by side, with only a hand's width between
-    }
-  });
-  HOUSES = out;
-  return out;
+  return cityPlan().family;
 }
 export const houseCount = (placeId) => cityHouses(placeId).length;
 
@@ -200,15 +145,9 @@ export const SCHOOL_TECHNIQUES = {
   healer: ['mend', 'blessing'], blacksmith: ['hammer_blow', 'ground_slam'], businessman: ['coin_toss', 'haggle'],
   builder: ['quick_wall', 'ground_slam'], potion_maker: ['second_wind', 'blessing'], farmer: ['harvest_swing', 'hearty_meal'],
 };
-// Academy Street: east from the avenue, north of the Guild Hall. Five Academies stand on its north
-// side and four on its south side, their doors on the street (x, z from the city's middle).
-export const ACADEMY_STREET = { z: -104, x0: 3.5, x1: 70, w: 6 };
-export const ACADEMY_W = 10, ACADEMY_D = 9;
-export const ACADEMIES = Object.keys(SCHOOLS).map((school, i) => {
-  const north = i < 5, col = north ? i : i - 5;
-  const z = ACADEMY_STREET.z + (north ? -1 : 1) * (ACADEMY_STREET.w / 2 + 1.2 + ACADEMY_D / 2);
-  return { school, x: 11 + col * 13, z, fx: 0, fz: north ? 1 : -1 };
-});
+// The Academies stand on the market street of the Common Quarter, north of the east road, one for
+// each class, their doors on the ring road
+export const ACADEMIES = Object.keys(SCHOOLS).map((school, i) => ({ school, ...cityPlan().academies[i] }));
 // How much each thing weighs on the class a child grows into: every class has a little, each
 // parent's job adds to theirs, and training at a school adds most to its own (up to 10 when fully
 // trained). So a fully trained child usually gets their school's class, but never surely.

@@ -4,40 +4,29 @@
 import * as THREE from 'three';
 import { heightAt, CITY_R } from '../data/world-layout.mjs';
 import { MARKETS, ITEMS } from '../data/items.mjs';
+import { money } from '../data/money.mjs';
 import { buildSpawn, textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { joinCrowd, bakeCharacter } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill, showDetail } from './merge.js';
-import { buildHouse, buildTower, paved, TOWN_TONES } from './houses.js';
-import { cityHouses, CASTLE_SPOT, LANES, CROSS_STREETS, HOUSE_D, LANE_W, PLAYGROUND, ACADEMIES, ACADEMY_STREET, ACADEMY_W, ACADEMY_D, SCHOOLS, familyOf, PARENT_JOBS, townName, seeded } from '../data/birth.mjs';
+import { buildHouse, buildTower, buildShack, paved, pavedGeometry, TOWN_TONES } from './houses.js';
+import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS, familyOf, PARENT_JOBS, townName, seeded } from '../data/birth.mjs';
+import { TIERS, TOP_Y, TERRACE, INNER_R, ROAD_ANGLES, ROAD_HALF, RAMPS, RAMP_IN, RAMP_OUT, RAMP_WALL, ringY, rampAt, alongRoad } from '../data/citylevels.mjs';
+import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, tierY } from '../data/citylayout.mjs';
 
-export const PLAZA_R = 34;
-
-// The city's own buildings, each by its quarter (see the plan in data/birth.mjs):
-// [id, x, z, facing (the way its door looks: [fx, fz]), width, depth, height, wall colour, roof colour]
-// They stand back from the avenue and the roads, never across them.
-export const CITY_SHOPS = [
-  // the Civic Quarter (north-east), along the avenue
-  ['guild', 14, -64, [-1, 0], 18, 12, 9, '#cdbf9e', '#5a2a24'],
-  // the Market Quarter (south-east): along the avenue, and along the east road
-  ['city_potions', 11.5, 52, [-1, 0], 8, 7, 5, '#d8cdb0', '#3a6a3a'],
-  ['city_tailor', 11.5, 64, [-1, 0], 8, 7, 5, '#e0d4c0', '#7a3a5a'],
-  ['city_food', 12, 77, [-1, 0], 10, 8, 5, '#e2d2a8', '#8a5a2a'],
-  ['tavern', 12.5, 93, [-1, 0], 12, 9, 7, '#c8b48e', '#6a3a1e'],
-  ['city_smith', 52, 11, [0, -1], 9, 8, 5, '#9a8e7e', '#3a3632'],
-  ['city_armoury', 66, 11.25, [0, -1], 9, 8, 5.5, '#b0a690', '#4a4a5a'],
-];
-// the colour of each shop's striped awning (and the Guild's banners), so the shops stand out from the
-// houses and from one another
-const SHOP_ACCENT = { guild: '#7a1a1a', city_potions: '#3a7a4a', city_tailor: '#7a3a6a', city_food: '#c8782a', tavern: '#8a4a1e', city_smith: '#4a4a4a', city_armoury: '#2a4a7a' };
-// lots kept for the shops of Businessmen, behind the Market Quarter's shops: [x, z] middles, 14 m square
-export const SHOP_LOTS = [];
-for (const x of [36, 54, 72]) for (const z of [34, 52, 70, 88]) if (Math.hypot(x + 7, z + 7) < 130) SHOP_LOTS.push([x, z]);
+export { PLAZA_R, INNER_R };
+// the look of the city's own buildings: [wall, roof, awning or banner colour]
+const SHOP_LOOK = {
+  guild: ['#cdbf9e', '#5a2a24', '#7a1a1a'], city_potions: ['#d8cdb0', '#3a6a3a', '#3a7a4a'], city_tailor: ['#e0d4c0', '#7a3a5a', '#7a3a6a'],
+  city_food: ['#e2d2a8', '#8a5a2a', '#c8782a'], tavern: ['#c8b48e', '#6a3a1e', '#8a4a1e'], city_smith: ['#9a8e7e', '#3a3632', '#4a4a4a'],
+  city_armoury: ['#b0a690', '#4a4a5a', '#2a4a7a'], furniture_common: ['#e4d6b8', '#7a4a2a', '#6a4a2a'], furniture_noble: ['#efe8da', '#2e3e5e', '#8a6a1a'],
+  furniture_dump: ['#7a6a52', '#5a4a3a', '#6a5a3a'], [ESTATE_ID]: ['#e8e0cc', '#2a4a3a', '#1e5a3a'],
+};
+export const ESTATE_NAME = 'Real Estate Office';
 
 // The walls: the outer fortress wall, the moat inside it, then the inner wall. Only two gates (north
 // and south), each with a bridge over the moat that can be raised to shut the inner gate.
-export const INNER_R = CITY_R - 14;
 export const MOAT = [INNER_R + 0.8, CITY_R - 1]; // right up to both walls: no strip of land to stand on
 export const GATE_ANGLES = [0, Math.PI]; // the gates, along the south-north street (angle as sin = x, cos = z)
 const GATE_HALF = 5; // metres either side of a gate's middle
@@ -165,78 +154,149 @@ export function buildCity(place, opts = {}) {
   const doors = doorKeeper();
   const pads = [];
 
-  // the paved plaza
-  const paving = paved(PLAZA_R + 10, 0, S.paving, true, 5);
+  // how high (x, z) stands above the plaza (the rings drop away from Castle Hill)
+  const top = heightAt(cx, cz);
+  const yAt = (x, z) => heightAt(cx + x, cz + z) - top;
+  const ringRel = (id) => tierY(id) - TOP_Y;
+  const plan = cityPlan();
+
+  // the paved plaza on Castle Hill
+  const paving = paved(PLAZA_R + 6, 0, S.paving, true, 5);
   paving.position.y = 0.03;
   g.add(paving);
-  // streets out to the four gates
-  for (let i = 0; i < 4; i++) {
-    const a = (i * Math.PI) / 2, mid = (CITY_R + PLAZA_R) / 2, along = i % 2 === 0;
-    const st = paved(along ? 7 : CITY_R - PLAZA_R, along ? CITY_R - PLAZA_R : 7, S.street, false, 1);
-    st.position.set(Math.sin(a) * mid, 0.02, Math.cos(a) * mid);
-    g.add(st);
+  // the four main roads, from the plaza down to the inner wall, up and down the ramps on the way
+  // (the north road starts in the Noble Quarter: the castle stands at its top)
+  for (const [name, ra] of Object.entries(ROAD_ANGLES)) {
+    const from = name === 'north' ? TIERS[0].r1 + TERRACE : PLAZA_R + 4, to = INNER_R - 1;
+    const pos = [], idx = [];
+    const n = Math.ceil((to - from) / 2);
+    for (let i = 0; i <= n; i++) {
+      const along = from + (to - from) * (i / n);
+      for (const lat of [-ROAD_HALF, ROAD_HALF]) {
+        const x = Math.sin(ra) * along + Math.cos(ra) * lat, z = Math.cos(ra) * along - Math.sin(ra) * lat;
+        pos.push(x, yAt(Math.sin(ra) * along, Math.cos(ra) * along) + 0.03, z);
+      }
+      if (i) { const k = (i - 1) * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    if (geo.attributes.normal.getY(0) < 0) { geo.setIndex(idx.map((v, i) => idx[i - (i % 3) + [0, 2, 1][i % 3]])); geo.computeVertexNormals(); }
+    g.add(pavedGeometry(geo, S.street, 3));
   }
-  // the Neighbourhood's streets: north-south ones between the rows of houses, with a pavement in
-  // front of each row, and east-west cross streets (see the plan in data/birth.mjs)
-  const zOf = (x) => Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - x * x));
-  const lay = (w, d, color, x, z, y = 0.021, layer = 3) => { const m = paved(w, d, color, false, layer); m.position.set(x, y, z); g.add(m); return m; };
-  for (const lx of LANES) {
-    const zMax = zOf(lx);
-    lay(LANE_W, zMax * 2, S.street, lx, 0);
-    for (const s of [-1, 1]) lay(1.3, zMax * 2, S.paving, lx + s * (LANE_W / 2 + 0.65), 0, 0.03, 6);
-    // the alley behind the next row
-    const ax = lx + LANE_W / 2 + 1.2 + HOUSE_D + 1;
-    lay(2, zOf(ax) * 2, S.street, ax, 0, 0.019, 2);
-  }
-  for (const s of [-1, 1]) lay(1.3, INNER_R - PLAZA_R, S.paving, -3.5 - 0.65, s * (INNER_R + PLAZA_R) / 2, 0.03, 6); // the pavement along the avenue
-  for (const cz of CROSS_STREETS) {
-    const x0 = -Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - cz * cz)), x1 = -3.5;
-    lay(x1 - x0, 5, S.street, (x0 + x1) / 2, cz, 0.021, 4);
+  // the ring roads, and the Dump's dirt track
+  for (const R of RING_ROADS) {
+    const geo = new THREE.RingGeometry(R.r - R.w / 2, R.r + R.w / 2, 160, 1);
+    geo.rotateX(-Math.PI / 2);
+    const m = pavedGeometry(geo, R.dirt ? '#7a6a52' : S.street, 2);
+    if (R.dirt) m.material = new THREE.MeshStandardMaterial({ color: '#76664c', roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }); // packed earth, no cobbles
+    m.position.y = ringRel(R.tier) + 0.025;
+    g.add(m);
   }
 
   // buildings and walls never move: they are merged into a few meshes at the end
   const fixed = new THREE.Group();
   g.add(fixed);
+  const stoneMat = matOf(S.wall, 0.95);
+  const capMat = matOf(monster ? S.tones[0][0] : '#a8a090', 0.95);
 
-  // the city's own buildings, quarter by quarter
-  CITY_SHOPS.forEach(([id, x, z, [fx, fz], w, d, h, wall0, roof0], i) => {
-    const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
-    const name = id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : MARKETS[id].name;
-    const style = id === 'guild' ? 'guild' : 'shop';
-    const b = house(w, d, h, wall, roof, name, { style, accent: SHOP_ACCENT[id] || '#8a2a24' });
+  // ---------- the terrace walls holding up each ring, and the ramps through them ----------
+  const rampBands = []; // for deckAt: the walkway on top of each terrace wall
+  for (let k = 0; k < TIERS.length - 1; k++) {
+    const b = TIERS[k].r1, up = TIERS[k].y - TOP_Y, low = TIERS[k + 1].y - TOP_Y;
+    const face = b + TERRACE;
+    const seg = 3;
+    const n = Math.round((2 * Math.PI * face) / seg);
+    const ramps = RAMPS.filter((R) => R.k === k);
+    const gap = (a, r, w) => ramps.some((R) => { const { along, lat } = alongRoad(Math.sin(a) * r, Math.cos(a) * r, R.a); return along > 0 && Math.abs(lat) < w; });
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      if (gap(a, face, ROAD_HALF + 0.5)) continue;
+      // the face of the wall, from the lower ring up past the higher one (a parapet), and the walk on top
+      const h = up - low + 1.1;
+      const w = new THREE.Mesh(new THREE.BoxGeometry(seg + 0.25, h + 0.6, 1.2), stoneMat);
+      w.position.set(Math.sin(a) * (face - 0.4), low - 0.6 + (h + 0.6) / 2, Math.cos(a) * (face - 0.4));
+      w.rotation.y = a;
+      fixed.add(w);
+      if (!gap(a, b - 1, ROAD_HALF + 0.5)) {
+        const walk = new THREE.Mesh(new THREE.BoxGeometry(seg * (b - 1.5) / face + 0.3, 0.3, TERRACE + 1.5), capMat);
+        walk.position.set(Math.sin(a) * (b + TERRACE / 2 - 1.75), up - 0.12, Math.cos(a) * (b + TERRACE / 2 - 1.75));
+        walk.rotation.y = a;
+        fixed.add(walk);
+      }
+      if (i % 2 === 0) { const m = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.6, 1.2), stoneMat); m.position.set(Math.sin(a) * (face - 0.4), up + 1.4, Math.cos(a) * (face - 0.4)); m.rotation.y = a; fixed.add(m); }
+      if (!gap(a, face, ROAD_HALF + RAMP_WALL + 0.5)) solid.push({ x: cx + Math.sin(a) * (face + 0.2), z: cz + Math.cos(a) * (face + 0.2), r: 1.0, kind: 'wall', height: up - low + 2 });
+    }
+    rampBands.push({ r0: b - 3.5, r1: face, y: up });
+    // the ramps: a road climbing between two stone walls, cut into the higher ring and built out
+    // over the lower one
+    for (const R of ramps) {
+      const lo = b - RAMP_IN, hi = b + TERRACE + RAMP_OUT;
+      for (const side of [-1, 1]) {
+        const lat = side * (ROAD_HALF + RAMP_WALL / 2);
+        for (let along = lo; along < hi; along += 2) {
+          const mid = along + 1, rY = (rampAt(Math.sin(R.a) * mid, Math.cos(R.a) * mid)?.y ?? ringY(mid)) - TOP_Y, gY = ringY(mid) - TOP_Y;
+          const top2 = Math.max(rY, gY) + 0.9, bot = Math.min(rY, gY) - 0.6;
+          const x = Math.sin(R.a) * mid + Math.cos(R.a) * lat, z = Math.cos(R.a) * mid - Math.sin(R.a) * lat;
+          const w = new THREE.Mesh(new THREE.BoxGeometry(RAMP_WALL, top2 - bot, 2.05), stoneMat);
+          w.position.set(x, (top2 + bot) / 2, z);
+          w.rotation.y = R.a;
+          fixed.add(w);
+          // solid along the road's edge (you stay on the ramp) and along the outer edge (nobody
+          // walks into the wall or off its top)
+          for (const L of [side * (ROAD_HALF + 0.5), side * (ROAD_HALF + RAMP_WALL + 0.4)]) {
+            solid.push({ x: cx + Math.sin(R.a) * mid + Math.cos(R.a) * L, z: cz + Math.cos(R.a) * mid - Math.sin(R.a) * L, r: 0.9, kind: 'wall', height: 3 });
+          }
+        }
+      }
+    }
+  }
+
+  // ---------- the buildings ----------
+  // put one up: its middle at (x, z) on its ring, its door facing (fx, fz)
+  const raise = (b, x, z, fx, fz, w, d, y) => {
     doors.add(b);
     if (S.decor === 'reeds') stilts(b, w, d); // up on stilts above the mud
     const at = placeAt(fixed, b, x, z, fx, fz, d);
+    b.position.y += y;
     boxColliders(cx + at.bx, cz + at.bz, w, d, at.rot, solid, b.userData.height);
     fixtures(b, cx + at.bx, cz + at.bz, at.rot, b.position.y, solid, pads);
-    shops.push({ id, name, x: cx + at.x, z: cz + at.z, building: true });
-    // the Guild Hall gets a bell tower at its back
-    if (id === 'guild') {
-      const tower = buildTower({ size: 3.6, height: 16, wall: monster ? S.tones[0][0] : '#d8ccb0', roof });
-      tower.position.set(x - fx * (d / 2 - 1.5), 0, z - fz * (d / 2 - 1.5));
-      fixed.add(tower);
-      solid.push({ x: cx + tower.position.x, z: cz + tower.position.z, r: 2.6, kind: 'wall', height: 16 });
-    }
+    return at;
+  };
+  const shopName = (id) => (id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : id === ESTATE_ID ? ESTATE_NAME : MARKETS[id].name);
+  // the Main Guild Hall on Castle Hill, with its bell tower
+  {
+    const { x, z, w, d, h } = GUILD_SPOT, len = Math.hypot(x, z), fx = -x / len, fz = -z / len;
+    const [wall0, roof0, accent] = SHOP_LOOK.guild;
+    const [wall, roof] = monster ? S.tones[0] : [wall0, roof0];
+    const b = house(w, d, h, wall, roof, shopName('guild'), { style: 'guild', accent });
+    const at = raise(b, x, z, fx, fz, w, d, 0);
+    shops.push({ id: 'guild', name: shopName('guild'), x: cx + at.x, z: cz + at.z, building: true });
+    const tower = buildTower({ size: 3.6, height: 16, wall: monster ? S.tones[0][0] : '#d8ccb0', roof });
+    tower.position.set(x - fx * (d / 2 - 1.5), 0, z - fz * (d / 2 - 1.5));
+    fixed.add(tower);
+    solid.push({ x: cx + tower.position.x, z: cz + tower.position.z, r: 2.6, kind: 'wall', height: 16 });
+  }
+  // the city's shops, the Real Estate office and the furniture shops
+  plan.shops.forEach((p, i) => {
+    const [wall0, roof0, accent] = SHOP_LOOK[p.id];
+    const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
+    const b = house(p.w, p.d, p.h, wall, roof, shopName(p.id), { style: p.id === ESTATE_ID ? 'guild' : 'shop', accent });
+    const at = raise(b, p.x, p.z, p.fx, p.fz, p.w, p.d, ringRel(p.tier));
+    shops.push({ id: p.id, name: shopName(p.id), x: cx + at.x, z: cz + at.z, building: true });
   });
-  // Academy Street, with an Academy for each class on both sides (each roof in its class's colour);
-  // children go in to register and train
-  const A = ACADEMY_STREET;
-  lay(A.x1 - A.x0, A.w, S.street, (A.x0 + A.x1) / 2, A.z, 0.021, 4);
-  for (const s of [-1, 1]) lay(A.x1 - A.x0 - 2, 1.3, S.paving, (A.x0 + A.x1) / 2 + 1, A.z + s * (A.w / 2 + 0.65), 0.03, 6);
-  ACADEMIES.forEach(({ school, x, z, fx, fz }, i) => {
+  // the Academies, each with its class's roof colour; children go in to register and train
+  ACADEMIES.forEach(({ school, x, z, fx, fz, tier }, i) => {
     const name = SCHOOLS[school].academy;
     const wall = monster ? S.tones[(i + 3) % S.tones.length][0] : '#e4dcc8';
     const b = house(ACADEMY_W, ACADEMY_D, 6.5, wall, SCHOOLS[school].roof, name, { style: 'academy', doorX: 0 });
-    doors.add(b);
-    if (S.decor === 'reeds') stilts(b, ACADEMY_W, ACADEMY_D);
-    const at = placeAt(fixed, b, x, z, fx, fz, ACADEMY_D);
-    boxColliders(cx + at.bx, cz + at.bz, ACADEMY_W, ACADEMY_D, at.rot, solid, b.userData.height);
-    fixtures(b, cx + at.bx, cz + at.bz, at.rot, b.position.y, solid, pads);
+    const at = raise(b, x, z, fx, fz, ACADEMY_W, ACADEMY_D, ringRel(tier));
     shops.push({ id: `academy_${school}`, name, school, x: cx + at.x, z: cz + at.z, building: true });
   });
-  const open = quarters(g, S, solid, cx, cz, monster);
+  const open = quarters(g, S, solid, cx, cz, plan, ringRel);
 
-  // the Emperors' Castle in the east of the city: a great keep with four towers
+  // the Emperors' Castle on top of Castle Hill, north of the plaza: a great keep with four towers
   // (only the Central City has it)
   const CASTLE = monster ? { x: 1e6, z: 1e6 } : { ...CASTLE_SPOT, w: 30, d: 24 };
   let castleGrounds = null;
@@ -281,23 +341,38 @@ export function buildCity(place, opts = {}) {
     castleGrounds = buildCastleGrounds(k, CASTLE, rot, cx, cz, solid, S);
   }
 
-  // the houses of the townsfolk, where every newborn's family lives (see data/birth.mjs)
+  // the houses of the townsfolk: shacks in the Dump, town houses in the Common Quarter, manors
+  // in the Noble Quarter; and the houses standing empty, for sale (a sign in front says so, or
+  // whose they are once bought: see setOwners)
   const tones = monster ? S.tones : TOWN_TONES;
   const houses = cityHouses(place.id);
-  for (const h of houses) {
-    const [wall, roof] = tones[(h.i * 7 + Math.floor(h.i / 3)) % tones.length];
-    const hb = buildHouse({ w: h.w, d: h.d, floors: h.floors, wall, roof, seed: `${place.id}:${h.i}`, doorX: h.doorX, over: 0.1 });
-    doors.add(hb);
-    const at = placeAt(fixed, hb, h.x, h.z, h.fx, h.fz, h.d);
-    if (S.decor === 'reeds') stilts(hb, h.w, h.d);
-    boxColliders(cx + at.bx, cz + at.bz, h.w, h.d, at.rot, solid, hb.userData.height);
-    fixtures(hb, cx + at.bx, cz + at.bz, at.rot, hb.position.y, solid, pads);
+  const putHome = (h, key) => {
+    const [wall, roof] = tones[(h.i * 7 + Math.floor(h.i / 3) + (key === 'sale' ? 3 : 0)) % tones.length];
+    const hb = h.style === 'shack' ? buildShack({ w: h.w, d: h.d, seed: `${place.id}:${key}${h.i}`, doorX: h.doorX })
+      : buildHouse({ w: h.w, d: h.d, floors: h.floors, wall: h.style === 'manor' && !monster ? '#ece4d4' : wall, roof, seed: `${place.id}:${key}${h.i}`, doorX: h.doorX, over: 0.1, style: h.style === 'manor' ? 'manor' : 'house' });
+    raise(hb, h.x, h.z, h.fx, h.fz, h.w, h.d, ringRel(h.tier));
+    if (h.tilt) hb.rotation.y += h.tilt;
+    if (h.style === 'manor') garden(fixed, h, ringRel(h.tier), solid, cx, cz);
+  };
+  for (const h of houses) putHome(h, '');
+  const saleSigns = new Map();
+  for (const h of plan.sale) {
+    putHome(h, 'sale');
+    const out = h.d / 2 + 2.2, side = h.w / 2 - 0.6;
+    const sx = h.x + h.fx * out + h.fz * side, sz = h.z + h.fz * out - h.fx * side;
+    saleSigns.set(h.id, houseSign(g, sx, ringRel(h.tier), sz, h.rot, solid, cx, cz));
   }
+  // the junk piled up in the Dump
+  for (const j of plan.junk) junkPile(fixed, j, ringRel('dump'), solid, cx, cz);
 
   // the walls: outer fortress wall, moat, inner wall (see walls())
   const wallMat = matOf(S.wall, 0.95);
-  const bridges = walls(fixed, g, S, wallMat, cx, cz, solid);
-  mergeStill(fixed, { cell: 48 });
+  // (they stand at the city's foot, the Dump's level)
+  const foot = yAt(0, INNER_R + 6), lowFixed = new THREE.Group(), lowLive = new THREE.Group();
+  lowFixed.position.y = foot; lowLive.position.y = foot;
+  fixed.add(lowFixed); g.add(lowLive);
+  const bridges = walls(lowFixed, lowLive, S, wallMat, cx, cz, solid);
+  mergeStill(fixed, { cell: 120 }); // the city is big: coarse cells keep the draw calls down
 
   // street lamps round the plaza
   const lampMat = new THREE.MeshStandardMaterial({ color: S.lamp[0], emissive: S.lamp[1], emissiveIntensity: 1.6 });
@@ -348,7 +423,7 @@ export function buildCity(place, opts = {}) {
     const npc = { ...info, x: cx + x, z: cz + z };
     npcs.push(npc);
     // townsfolk stroll about near their spot: parents in front of their house, traders round the plaza
-    walkers.push({ body, npc, hx: x, hz: z, range: info.still ? 0.4 : info.kind === 'parent' ? 2.6 : info.kind === 'child' ? 7 : 5, tx: x, tz: z, wait: 1 + rnd2() * 4, talk: 0 });
+    walkers.push({ body, npc, hx: x, hy: body.position.y, hz: z, range: info.still ? 0.4 : info.kind === 'parent' ? 2.6 : info.kind === 'child' ? 7 : 5, tx: x, tz: z, wait: 1 + rnd2() * 4, talk: 0 });
   };
   const walkers = [];
   let seed2 = 7;
@@ -367,7 +442,7 @@ export function buildCity(place, opts = {}) {
       const a = (i * 2.399963) % (Math.PI * 2), r = 9.5 + (i % 3) * 1.3;
       if (on) {
         w.slot = { x: Math.cos(a) * r, z: Math.sin(a) * r };
-        if (Math.hypot(w.body.position.x, w.body.position.z) > EDGE + 2) { w.body.position.set(Math.cos(a) * EDGE, w.body.position.y, Math.sin(a) * EDGE); w.away = true; }
+        if (Math.hypot(w.body.position.x, w.body.position.z) > EDGE + 2) { w.body.position.set(Math.cos(a) * EDGE, yAt(Math.cos(a) * EDGE, Math.sin(a) * EDGE), Math.sin(a) * EDGE); w.away = true; }
         w.tx = w.slot.x; w.tz = w.slot.z; w.wait = (i % 7) * 0.4;
       } else if (w.slot) {
         if (w.away) { w.tx = Math.cos(a) * EDGE; w.tz = Math.sin(a) * EDGE; } else { w.tx = w.hx; w.tz = w.hz; }
@@ -387,7 +462,7 @@ export function buildCity(place, opts = {}) {
         b.rotation.y += Math.atan2(Math.sin(want - b.rotation.y), Math.cos(want - b.rotation.y)) * Math.min(1, dt * 4);
       } else if (!w.slot && w.away && !gathering && Math.hypot(w.tx - b.position.x, w.tz - b.position.z) < 0.15) {
         // back at the plaza's edge: home again
-        b.position.x = w.hx; b.position.z = w.hz; w.tx = w.hx; w.tz = w.hz; w.away = false;
+        b.position.set(w.hx, w.hy, w.hz); w.tx = w.hx; w.tz = w.hz; w.away = false;
         w.npc.x = cx + w.hx; w.npc.z = cz + w.hz;
       } else if (w.npc.talkUntil && w.npc.talkUntil > t) {
         // talking: stop and face whoever spoke to them
@@ -402,7 +477,8 @@ export function buildCity(place, opts = {}) {
           for (let k = 0; k < 6; k++) {
             const a = rnd2() * Math.PI * 2, r = w.range * Math.sqrt(rnd2());
             const nx = w.hx + Math.cos(a) * r, nz = w.hz + Math.sin(a) * r, nd = Math.hypot(nx, nz);
-            if (nd <= Math.hypot(w.hx, w.hz) + 0.2 && nd > 11) { w.tx = nx; w.tz = nz; break; }
+            // (and on the same ring: never over a terrace wall, never into the shrine)
+            if (nd > 11 && Math.abs(yAt(nx, nz) - w.hy) < 0.3) { w.tx = nx; w.tz = nz; break; }
           }
         } else {
           speed = w.slot || w.away ? 1.6 : 1.1;
@@ -424,7 +500,7 @@ export function buildCity(place, opts = {}) {
   }
   const homeAt = opts.home?.city === place.id ? opts.home.house : -1;
   for (const h of houses) {
-    if (h.i !== homeAt && h.i % 6) continue;
+    if (h.i !== homeAt && h.i % 12) continue;
     const race = h.i === homeAt ? opts.home.race : S.guards[h.i % S.guards.length];
     const fam = familyOf(place.id, h.i, race);
     const out = h.d / 2 + 1.4;
@@ -467,7 +543,14 @@ export function buildCity(place, opts = {}) {
     const top = castleGrounds?.topAt(x, z);
     if (top !== undefined) return top;
     const pad = padAt(pads, x, z);
-    return pad === undefined ? undefined : cityY + pad;
+    if (pad !== undefined) return cityY + pad;
+    // the walk along the top of a terrace wall, and the ramps (exact, not as the land is drawn)
+    const dx = x - cx, dz = z - cz, r = Math.hypot(dx, dz);
+    if (r > INNER_R) return undefined;
+    const on = rampAt(dx, dz);
+    if (on) return cityY + on.y - TOP_Y;
+    for (const B of rampBands) if (r > B.r0 && r < B.r1 && !rampAt(dx, dz, RAMP_WALL)) return cityY + B.y;
+    return undefined;
   };
   // in the moat's water (and not on a bridge)
   const inMoat = (x, z) => { const d = Math.hypot(x - cx, z - cz); return d > MOAT[0] && d < MOAT[1] && deckAt(x, z) === undefined; };
@@ -479,77 +562,171 @@ export function buildCity(place, opts = {}) {
     return { x: cx + Math.sin(ga) * d, z: cz + Math.cos(ga) * d };
   };
 
-  return { group: g, update, gather, shops, solid, gates, npcs, setRaised, deckAt, inMoat, rescue, centre: { x: cx, z: cz } };
+  // the houses for sale: show who owns each (`owners`: house id -> owner's name)
+  const setOwners = (owners) => { for (const [id, sign] of saleSigns) sign.set(owners?.[id] || null, plan.sale.find((h) => h.id === id)); };
+  setOwners({});
+  return { group: g, update, gather, shops, solid, gates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, centre: { x: cx, z: cz } };
 }
 
-// The quarters' open ground: the lots kept for Businessmen's shops, the Academy's training grounds
-// and the children's playground (see the plan in data/birth.mjs)
-function quarters(g, S, solid, cx, cz, monster) {
+// The open ground of the Common Quarter: the lots kept for Businessmen's shops on the market
+// street, and the children's playground by the west road (see data/citylayout.mjs). Each is laid
+// out in its own space, turned to face the ring road.
+function quarters(g, S, solid, cx, cz, plan, ringRel) {
   const wood = matOf('#7a5a3a', 0.9), dark = matOf('#4a3424', 0.9), sand = matOf('#cdb88a', 1), rope = matOf('#c8b48a', 0.9);
-  const add = (geo, m, x, y, z, ry = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.y = ry; o.castShadow = true; o.receiveShadow = true; g.add(o); return o; };
-  // (layer: drawn over the streets and squares it lies on, so the two never speckle into each other)
-  const flat = (w, d, m, x, z, y = 0.025, layer = 7) => {
-    const lm = matOf('#' + m.color.getHexString(), m.roughness, { polygonOffset: true, polygonOffsetFactor: -layer, polygonOffsetUnits: -4 * layer });
-    const o = new THREE.Mesh(new THREE.PlaneGeometry(w, d), lm); o.rotation.x = -Math.PI / 2; o.position.set(x, y, z); o.receiveShadow = true; g.add(o); return o;
-  };
-  const fence = (x0, z0, x1, z1, gapAt = null) => {
-    for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) {
-      const len = Math.hypot(bx - ax, bz - az), n = Math.round(len / 2.5);
-      for (let i = 0; i <= n; i++) {
-        const x = ax + (bx - ax) * (i / n), z = az + (bz - az) * (i / n);
-        if (gapAt && Math.hypot(x - gapAt.x, z - gapAt.z) < 2.6) continue;
-        add(new THREE.CylinderGeometry(0.09, 0.11, 1.2, 6), wood, x, 0.6, z);
-        solid.push({ x: cx + x, z: cz + z, r: 0.35, kind: 'wall', height: 1.2, step: false });
-      }
-      const rail = add(new THREE.BoxGeometry(len, 0.1, 0.08), wood, (ax + bx) / 2, 1.0, (az + bz) / 2, Math.atan2(-(bz - az), bx - ax));
-      if (gapAt) rail.visible = !(Math.abs((ax + bx) / 2 - gapAt.x) < len / 2 + 0.1 && Math.abs((az + bz) / 2 - gapAt.z) < 0.5 || Math.abs((az + bz) / 2 - gapAt.z) < len / 2 + 0.1 && Math.abs((ax + bx) / 2 - gapAt.x) < 0.5);
-    }
-  };
-  // a signpost: a wooden board hung beside its post, the name on both faces (nothing stands in
-  // front of the words from either side)
-  const sign = (text, x, z, ry) => {
+  // a spot in its own space (x along the street, z out towards it), turned onto the ring
+  const space = (p) => {
     const sg = new THREE.Group();
-    sg.position.set(x, 0, z); sg.rotation.y = ry; g.add(sg);
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 2.5, 6), dark);
-    post.position.set(-1.38, 1.25, 0); sg.add(post);
-    solid.push({ x: cx + x - 1.38 * Math.cos(ry), z: cz + z + 1.38 * Math.sin(ry), r: 0.25, kind: 'wall', height: 2.5 });
-    const back = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.72, 0.06), wood);
-    back.position.set(0, 2, 0); sg.add(back);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.08, 0.08), dark);
-    arm.position.set(0.05, 2.4, 0); sg.add(arm);
-    const tex = textTexture(text, { board: true });
-    for (const side of [1, -1]) {
-      const face = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 0.62), new THREE.MeshBasicMaterial({ map: tex }));
-      face.position.set(0, 2, side * 0.035); face.rotation.y = side > 0 ? 0 : Math.PI; sg.add(face);
-    }
+    sg.position.set(p.x, ringRel(p.tier), p.z);
+    sg.rotation.y = Math.atan2(Math.sin(p.a), Math.cos(p.a));
+    g.add(sg);
+    const c = Math.cos(sg.rotation.y), sn = Math.sin(sg.rotation.y);
+    const world = (lx, lz) => ({ x: p.x + lx * c + lz * sn, z: p.z - lx * sn + lz * c });
+    const add = (geo, m, x, y, z, ry = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.y = ry; o.castShadow = true; o.receiveShadow = true; sg.add(o); return o; };
+    const put = (lx, lz, r, height) => { const w = world(lx, lz); solid.push({ x: cx + w.x, z: cz + w.z, r, kind: 'wall', height }); };
+    const flat = (w, d, m, x, z, y = 0.025, layer = 7) => {
+      const lm = matOf('#' + m.color.getHexString(), m.roughness, { polygonOffset: true, polygonOffsetFactor: -layer, polygonOffsetUnits: -4 * layer });
+      const o = new THREE.Mesh(new THREE.PlaneGeometry(w, d), lm); o.rotation.x = -Math.PI / 2; o.position.set(x, y, z); o.receiveShadow = true; sg.add(o); return o;
+    };
+    // a signpost: a wooden board hung beside its post, the name on both faces
+    const sign = (text, x, z, ry) => {
+      const sp = new THREE.Group();
+      sp.position.set(x, 0, z); sp.rotation.y = ry; sg.add(sp);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 2.5, 6), dark);
+      post.position.set(-1.38, 1.25, 0); sp.add(post);
+      put(x - 1.38 * Math.cos(ry), z + 1.38 * Math.sin(ry), 0.25, 2.5);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.72, 0.06), wood);
+      back.position.set(0, 2, 0); sp.add(back);
+      const tex = textTexture(text, { board: true });
+      for (const side of [1, -1]) {
+        const face = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 0.62), new THREE.MeshBasicMaterial({ map: tex }));
+        face.position.set(0, 2, side * 0.035); face.rotation.y = side > 0 ? 0 : Math.PI; sp.add(face);
+      }
+    };
+    return { sg, world, add, put, flat, sign };
   };
   // Shop lots: marked out with corner stones and a sign, waiting for a Businessman
-  for (const [x, z] of SHOP_LOTS) {
-    const lot = paved(13, 13, S.paving, false, 7); lot.position.set(x, 0.022, z); g.add(lot);
-    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new THREE.BoxGeometry(0.5, 0.5, 0.5), dark, x + sx * 6.5, 0.25, z + sz * 6.5);
-    sign('Shop lot: for Businessmen', x - 5.5, z - 6.8, 0);
+  for (const L of plan.lots) {
+    const { sg, add, sign } = space(L);
+    const lot = paved(L.size, L.size, S.paving, false, 7); lot.position.set(0, 0.022, 0); sg.add(lot);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new THREE.BoxGeometry(0.5, 0.5, 0.5), dark, sx * L.size / 2, 0.25, sz * L.size / 2);
+    sign('Shop lot: for Businessmen', 0, L.size / 2 + 1, 0);
   }
-  // the playground in the Neighbourhood: a sandpit, swings, a see-saw and a slide
-  const P = PLAYGROUND, px = (P.x0 + P.x1) / 2, pz = (P.z0 + P.z1) / 2;
-  flat(P.x1 - P.x0, P.z1 - P.z0, matOf('#7fa24a', 1), px, pz, 0.02);
-  flat(8, 8, sand, px - 5, pz - 8, 0.03, 8);
+  // the playground: a sandpit, swings, a see-saw and a slide
+  const P = plan.playground;
+  const { add, put, flat, sign, world } = space(P);
+  flat(P.w, P.d, matOf('#7fa24a', 1), 0, 0, 0.02);
+  flat(5, 5, sand, -4.5, -1.5, 0.03, 8);
   for (const sx of [-1.6, 1.6]) for (const sz of [-1, 1]) {
-    const leg = add(new THREE.CylinderGeometry(0.07, 0.07, 3, 6), wood, px + 4 + sx, 1.45, pz + 6 + sz * 0.7);
+    const leg = add(new THREE.CylinderGeometry(0.07, 0.07, 3, 6), wood, 4 + sx, 1.45, -1 + sz * 0.7);
     leg.rotation.x = -sz * 0.22;
   }
-  add(new THREE.BoxGeometry(4.2, 0.12, 0.12), wood, px + 4, 2.9, pz + 6);
+  add(new THREE.BoxGeometry(4.2, 0.12, 0.12), wood, 4, 2.9, -1);
   for (const sx of [-0.8, 0.8]) {
-    for (const rx of [-0.25, 0.25]) add(new THREE.CylinderGeometry(0.015, 0.015, 2.2, 4), rope, px + 4 + sx + rx, 1.8, pz + 6);
-    add(new THREE.BoxGeometry(0.6, 0.06, 0.3), dark, px + 4 + sx, 0.7, pz + 6);
+    for (const rx of [-0.25, 0.25]) add(new THREE.CylinderGeometry(0.015, 0.015, 2.2, 4), rope, 4 + sx + rx, 1.8, -1);
+    add(new THREE.BoxGeometry(0.6, 0.06, 0.3), dark, 4 + sx, 0.7, -1);
   }
-  solid.push({ x: cx + px + 4, z: cz + pz + 6, r: 1.6, kind: 'wall', height: 3 });
-  const plank = add(new THREE.BoxGeometry(4, 0.1, 0.35), wood, px - 5, 0.55, pz + 6); plank.rotation.z = 0.12;
-  add(new THREE.BoxGeometry(0.4, 0.5, 0.4), dark, px - 5, 0.25, pz + 6);
-  const slide = add(new THREE.BoxGeometry(0.9, 0.08, 4), matOf('#c8503a', 0.6), px + 4, 1.1, pz - 6); slide.rotation.x = 0.5;
-  add(new THREE.BoxGeometry(1.2, 2.2, 1.2), wood, px + 4, 1.1, pz - 8.4);
-  solid.push({ x: cx + px + 4, z: cz + pz - 7, r: 1.4, kind: 'wall', height: 2.2 });
-  sign('Playground', P.x1 + 0.6, pz, Math.PI / 2);
-  return { kids: [[px - 5, pz - 8], [px - 3, pz - 6], [px + 4, pz + 6], [px, pz], [px - 4, pz + 4], [px + 2, pz - 2]] };
+  put(4, -1, 1.6, 3);
+  const plank = add(new THREE.BoxGeometry(4, 0.1, 0.35), wood, -4, 0.55, 3); plank.rotation.z = 0.12;
+  add(new THREE.BoxGeometry(0.4, 0.5, 0.4), dark, -4, 0.25, 3);
+  const slide = add(new THREE.BoxGeometry(0.9, 0.08, 3.4), matOf('#c8503a', 0.6), 0.5, 1.1, -1.5); slide.rotation.x = 0.5;
+  add(new THREE.BoxGeometry(1.2, 2.2, 1.2), wood, 0.5, 1.1, -3.6);
+  put(0.5, -2.6, 1.4, 2.2);
+  sign('Playground', 0, P.d / 2 + 1, 0);
+  const kids = [[-4.5, -1.5], [-3, 0], [4, 1], [0, 2], [-2, 3], [2, 3.5]].map(([lx, lz]) => { const w = world(lx, lz); return [w.x, w.z]; });
+  return { kids };
+}
+
+// A manor's garden: a low hedge round its sides and back, with trimmed trees at the front corners
+function garden(fixed, h, y, solid, cx, cz) {
+  const hedge = matOf('#3e6a32', 1), trunk = matOf('#5a4030', 0.9), leaf = matOf('#4a7a3a', 1);
+  const g = new THREE.Group();
+  g.position.set(h.x, y, h.z);
+  g.rotation.y = h.rot;
+  fixed.add(g);
+  const W = h.w + 5, D = h.d + 5, c = Math.cos(h.rot), s = Math.sin(h.rot);
+  const run = (x0, z0, x1, z1) => {
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(len, 1.1, 0.7), hedge);
+    m.position.set((x0 + x1) / 2, 0.55, (z0 + z1) / 2);
+    m.rotation.y = Math.atan2(-(z1 - z0), x1 - x0);
+    g.add(m);
+    for (let t = 0; t <= len; t += 1.6) {
+      const lx = x0 + (x1 - x0) * (t / len), lz = z0 + (z1 - z0) * (t / len);
+      solid.push({ x: cx + h.x + lx * c + lz * s, z: cz + h.z - lx * s + lz * c, r: 0.5, kind: 'wall', height: 1.1, step: false });
+    }
+  };
+  run(-W / 2, -D / 2, W / 2, -D / 2);
+  run(-W / 2, -D / 2, -W / 2, D / 2 - 1);
+  run(W / 2, -D / 2, W / 2, D / 2 - 1);
+  for (const sx of [-1, 1]) {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 1.6, 6), trunk);
+    t.position.set(sx * (W / 2 - 1), 0.8, D / 2 - 1.5);
+    const b = new THREE.Mesh(new THREE.SphereGeometry(1.1, 10, 8), leaf);
+    b.position.set(sx * (W / 2 - 1), 2.3, D / 2 - 1.5);
+    g.add(t, b);
+    solid.push({ x: cx + h.x + sx * (W / 2 - 1) * c + (D / 2 - 1.5) * s, z: cz + h.z - sx * (W / 2 - 1) * s + (D / 2 - 1.5) * c, r: 0.4, kind: 'wall', height: 3 });
+  }
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+}
+
+// The board in front of a house for sale: "For sale" and its price, or, once bought, whose it is.
+// Returns { set(owner, house) }.
+function houseSign(g, x, y, z, rot, solid, cx, cz) {
+  const sp = new THREE.Group();
+  sp.position.set(x, y, z);
+  sp.rotation.y = rot;
+  g.add(sp);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.9, 6), matOf('#4a3424', 0.9));
+  post.position.y = 0.95;
+  sp.add(post);
+  solid.push({ x: cx + x, z: cz + z, r: 0.25, kind: 'wall', height: 1.9 });
+  const faces = [1, -1].map((side) => {
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.55), new THREE.MeshBasicMaterial({ transparent: true }));
+    f.position.set(0, 1.65, side * 0.06); f.rotation.y = side > 0 ? 0 : Math.PI;
+    sp.add(f);
+    return f;
+  });
+  const board = new THREE.Mesh(new THREE.BoxGeometry(2, 0.62, 0.08), matOf('#7a5a3a', 0.9));
+  board.position.y = 1.65;
+  sp.add(board);
+  let shown = undefined;
+  return {
+    set(owner, house) {
+      const text = owner ? `Home of ${owner}` : `For sale · ${money(house.price)}`;
+      if (text === shown) return;
+      shown = text;
+      const tex = textTexture(text, { board: true });
+      for (const f of faces) { f.material.map?.dispose(); f.material.map = tex; f.material.needsUpdate = true; }
+    },
+  };
+}
+
+// A pile of junk in the Dump: broken crates, an old barrel, planks, a cart wheel
+function junkPile(fixed, j, y, solid, cx, cz) {
+  const R = seeded(`junk${j.seed}`);
+  const woods = ['#6a5038', '#5a4430', '#7a5c3e'].map((c) => matOf(c, 1)), rust = matOf('#7a4a2a', 0.8);
+  const g = new THREE.Group();
+  g.position.set(j.x, y, j.z);
+  g.rotation.y = R() * 6;
+  fixed.add(g);
+  const k = j.size;
+  for (let i = 0; i < 3 + Math.floor(R() * 3); i++) {
+    const c = new THREE.Mesh(new THREE.BoxGeometry(0.6 * k, 0.5 * k, 0.6 * k), woods[i % 3]);
+    c.position.set((R() - 0.5) * 1.4 * k, 0.25 * k + (i > 2 ? 0.5 * k : 0), (R() - 0.5) * 1.4 * k);
+    c.rotation.set((R() - 0.5) * 0.4, R() * 3, (R() - 0.5) * 0.4);
+    g.add(c);
+  }
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.32 * k, 0.32 * k, 0.8 * k, 10), rust);
+  barrel.position.set(0.9 * k, 0.32 * k, -0.4 * k); barrel.rotation.z = Math.PI / 2; barrel.rotation.y = R() * 3;
+  g.add(barrel);
+  for (let i = 0; i < 3; i++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(2 * k, 0.05, 0.22), woods[(i + 1) % 3]);
+    p.position.set((R() - 0.5) * k, 0.1 + i * 0.06, (R() - 0.5) * k); p.rotation.set(0, R() * 3, (R() - 0.5) * 0.3);
+    g.add(p);
+  }
+  if (R() < 0.5) { const w = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.06, 5, 12), woods[0]); w.position.set(-0.8 * k, 0.5, 0.6 * k); w.rotation.set(0.3, R() * 3, 0.2); g.add(w); }
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  solid.push({ x: cx + j.x, z: cz + j.z, r: 1.1 * k, kind: 'wall', height: 1.2 * k, y: undefined });
 }
 
 // The Emperors' Castle grounds: a curtain wall round the keep with a gate (its portcullis rises as
@@ -732,7 +909,7 @@ function walls(g, live, S, wallMat, cx, cz, solid) {
     const block = [];
     for (let s2 = -GATE_HALF + 1; s2 <= GATE_HALF - 1; s2 += 1.6) block.push({ x: cx + Math.sin(ga) * (INNER_R + 1) + Math.cos(ga) * s2, z: cz + Math.cos(ga) * (INNER_R + 1) - Math.sin(ga) * s2, r: 1, kind: 'wall', height: 8 });
     let up = false, tilt = 0;
-    const baseY = heightAt(cx, cz);
+    const baseY = heightAt(cx + Math.sin(ga) * (INNER_R + 6), cz + Math.cos(ga) * (INNER_R + 6));
     return {
       // the top of the deck under (x, z), if it is lowered and you are on it
       deckAt(x, z) {
@@ -790,7 +967,7 @@ function decorate(g, S, cx, cz, solid) {
       const a = (i / n) * Math.PI * 2;
       if ([0, 1, 2, 3].some((k) => Math.abs(Math.atan2(Math.sin(a - (k * Math.PI) / 2), Math.cos(a - (k * Math.PI) / 2))) < 0.08)) continue;
       const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.35, 3, 6), bone);
-      tusk.position.set(Math.sin(a) * (CITY_R - 1.5), 6.8, Math.cos(a) * (CITY_R - 1.5));
+      tusk.position.set(Math.sin(a) * (CITY_R - 1.5), 6.8 + heightAt(cx + Math.sin(a) * (CITY_R - 1.5), cz + Math.cos(a) * (CITY_R - 1.5)) - baseY, Math.cos(a) * (CITY_R - 1.5));
       tusk.rotation.x = 0.4 * Math.cos(a); tusk.rotation.z = -0.4 * Math.sin(a);
       g.add(tusk);
     }

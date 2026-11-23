@@ -1002,3 +1002,12 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .parent-cards { display: grid; gap: 12px; }
 .id-card.late { filter: grayscale(0.85); opacity: 0.8; }
 .bag-hint.bad { color: #f0a090; }
+
+/* the Real Estate office */
+.sys-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.sys-tab { padding: 4px 10px; font: 600 0.8rem 'Oswald', sans-serif; letter-spacing: 0.06em; color: #cfe3ff; background: rgba(61, 155, 255, 0.08); border: 1px solid rgba(61, 155, 255, 0.4); cursor: pointer; }
+.sys-tab.on { color: #fff; background: rgba(61, 155, 255, 0.3); border-color: var(--sys-hi); }
+.estate-list { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.estate-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 5px 8px; font-size: 0.85rem; background: rgba(255, 255, 255, 0.04); }
+.estate-row.mine { background: rgba(80, 200, 120, 0.14); }
+.estate-row > span:first-child > span { opacity: 0.5; }

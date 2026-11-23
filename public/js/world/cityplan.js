@@ -4,11 +4,15 @@
 // and quarters. North is at the top, as on the rest of the map.
 import { CITY_R } from '../data/world-layout.mjs';
 import { MARKETS } from '../data/items.mjs';
-import { cityHouses, CASTLE_SPOT, LANES, CROSS_STREETS, HOUSE_D, LANE_W, PLAYGROUND, ACADEMIES, ACADEMY_STREET, ACADEMY_W, ACADEMY_D, SCHOOLS } from '../data/birth.mjs';
-import { CITY_SHOPS, SHOP_LOTS, PLAZA_R, INNER_R, MOAT, GATE_ANGLES, GUILD_NAME, DARK_GUILD_NAME } from './city.js';
+import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS } from '../data/birth.mjs';
+import { TIERS, TERRACE, ROAD_ANGLES, ROAD_HALF } from '../data/citylevels.mjs';
+import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID } from '../data/citylayout.mjs';
+import { INNER_R, MOAT, GATE_ANGLES, GUILD_NAME, DARK_GUILD_NAME, ESTATE_NAME } from './city.js';
 import { TOWN_TONES } from './houses.js';
 
-const QUARTERS = [['Civic Quarter', 34, -58], ['Market Quarter', 40, 44], ['Royal Quarter', 104, -40], ['Neighbourhood', -72, -24]];
+// the rings' names, drawn on the ring (at an angle clear of the roads)
+const RING_LABEL_A = Math.PI * 0.75;
+const RING_GROUND = { castle: '#7f9a56', noble: '#7a9450', common: '#6f8f4a', dump: '#7a7458' };
 
 // place: the city (its x, z are the middle); at(x, z): world metres to canvas pixels; k: canvas
 // pixels per metre; alpha: how strongly to draw it (it fades in as you zoom); labels: with names
@@ -47,57 +51,61 @@ export function drawCityPlan(ctx, place, at, k, alpha = 1, labels = true) {
   circle(CITY_R, '#8f8676');
   circle(MOAT[1], '#3a6a9a');
   circle(MOAT[0], '#8f8676');
-  circle(INNER_R, '#6f8f4a');
+  // the rings, from the Dump up to Castle Hill, each ringed by its terrace wall
+  for (let i = TIERS.length - 1; i >= 0; i--) {
+    const T = TIERS[i];
+    circle(i === TIERS.length - 1 ? INNER_R : T.r1 + TERRACE, '#9a9282');
+    circle(i === TIERS.length - 1 ? INNER_R : T.r1, RING_GROUND[T.id]);
+  }
   // the bridges over the moat at the two gates
   for (const a of GATE_ANGLES) rect(Math.sin(a) * (INNER_R + CITY_R) / 2, Math.cos(a) * (INNER_R + CITY_R) / 2, 8, CITY_R - INNER_R + 2, a, '#a39a88');
-  // the plaza and the streets
+  // the plaza, the ring roads and the four main roads
   const street = '#b8b0a0';
-  circle(PLAZA_R + 10, '#c8c0ae');
-  for (let i = 0; i < 4; i++) {
-    const a = (i * Math.PI) / 2, mid = (CITY_R + PLAZA_R) / 2, along = i % 2 === 0;
-    rect(Math.sin(a) * mid, Math.cos(a) * mid, along ? 7 : CITY_R - PLAZA_R, along ? CITY_R - PLAZA_R : 7, 0, street);
+  const ringRoad = (r, w, colour) => { const [x, y] = P(0, 0); ctx.beginPath(); ctx.arc(x, y, r * k, 0, Math.PI * 2); ctx.strokeStyle = colour; ctx.lineWidth = Math.max(1, w * k); ctx.stroke(); };
+  for (const R of RING_ROADS) ringRoad(R.r, R.w, R.dirt ? '#9a8a6a' : street);
+  circle(PLAZA_R + 6, '#c8c0ae');
+  for (const [name, a] of Object.entries(ROAD_ANGLES)) {
+    const from = name === 'north' ? TIERS[0].r1 : PLAZA_R, mid = (from + INNER_R) / 2;
+    rect(Math.sin(a) * mid, Math.cos(a) * mid, ROAD_HALF * 2, INNER_R - from, a, street);
   }
-  const zOf = (x) => Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - x * x));
-  for (const lx of LANES) {
-    rect(lx, 0, LANE_W + 2.6, zOf(lx) * 2, 0, street);
-    const ax = lx + LANE_W / 2 + 1.2 + HOUSE_D + 1;
-    rect(ax, 0, 2, zOf(ax) * 2, 0, street);
-  }
-  for (const z of CROSS_STREETS) { const x0 = -Math.sqrt(Math.max(0, (INNER_R - 6) ** 2 - z * z)); rect((x0 - 3.5) / 2, z, -3.5 - x0, 5, 0, street); }
-  { const A = ACADEMY_STREET; rect((A.x0 + A.x1) / 2, A.z, A.x1 - A.x0, A.w + 2.6, 0, street); }
+  const plan = cityPlan();
   // open ground: shop lots and the playground
-  for (const [x, z] of SHOP_LOTS) rect(x, z, 13, 13, 0, '#cfc6b2', '#7a6a4a', 1);
-  const PG = PLAYGROUND;
-  rect((PG.x0 + PG.x1) / 2, (PG.z0 + PG.z1) / 2, PG.x1 - PG.x0, PG.z1 - PG.z0, 0, '#8fb05a', '#5a7a3a', 1);
-  // the homes, each in its roof's colour
-  for (const h of cityHouses(place.id)) rect(h.x, h.z, h.w, h.d, h.rot, TOWN_TONES[(h.i * 7 + Math.floor(h.i / 3)) % TOWN_TONES.length][1], 'rgba(30, 20, 10, 0.6)', 0.6);
+  for (const L of plan.lots) rect(L.x, L.z, L.size, L.size, L.a, '#cfc6b2', '#7a6a4a', 1);
+  const PG = plan.playground;
+  rect(PG.x, PG.z, PG.w, PG.d, PG.a, '#8fb05a', '#5a7a3a', 1);
+  // the homes, each in its roof's colour; houses for sale outlined in green
+  for (const h of cityHouses(place.id)) rect(h.x, h.z, h.w, h.d, h.rot, h.style === 'shack' ? '#6a5a44' : TOWN_TONES[(h.i * 7 + Math.floor(h.i / 3)) % TOWN_TONES.length][1], 'rgba(30, 20, 10, 0.6)', 0.6);
+  for (const h of plan.sale) rect(h.x, h.z, h.w, h.d, h.rot, h.style === 'shack' ? '#6a5a44' : '#8a7a5a', '#7aff8a', 1.2);
   // the castle and the city's own buildings, outlined in gold
-  if (!monster) {
-    const rot = Math.atan2(-CASTLE_SPOT.x, -CASTLE_SPOT.z);
-    rect(CASTLE_SPOT.x, CASTLE_SPOT.z, 30, 24, rot, '#3a3e5a', '#ffd76a', 2);
-  }
+  if (!monster) rect(CASTLE_SPOT.x, CASTLE_SPOT.z, 30, 24, 0, '#3a3e5a', '#ffd76a', 2);
   const named = [];
-  for (const [id, x, z, [fx, fz], w, d, , , roof] of CITY_SHOPS) {
-    rect(x, z, w, d, Math.atan2(fx, fz), roof, '#ffd76a', 1.6);
-    named.push([id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : MARKETS[id]?.name || id, x, z]);
+  const guildA = Math.atan2(-GUILD_SPOT.x, -GUILD_SPOT.z);
+  rect(GUILD_SPOT.x, GUILD_SPOT.z, GUILD_SPOT.w, GUILD_SPOT.d, guildA, '#5a2a24', '#ffd76a', 1.6);
+  named.push([monster ? DARK_GUILD_NAME : GUILD_NAME, GUILD_SPOT.x, GUILD_SPOT.z]);
+  for (const p of plan.shops) {
+    rect(p.x, p.z, p.w, p.d, p.rot, '#7a4a2a', '#ffd76a', 1.6);
+    named.push([p.id === ESTATE_ID ? ESTATE_NAME : MARKETS[p.id]?.name || p.id, p.x, p.z]);
   }
   const academies = [];
-  for (const { school, x, z, fx, fz } of ACADEMIES) {
-    rect(x, z, ACADEMY_W, ACADEMY_D, Math.atan2(fx, fz), SCHOOLS[school].roof, '#ffd76a', 1.6);
+  for (const { school, x, z, rot } of ACADEMIES) {
+    rect(x, z, ACADEMY_W, ACADEMY_D, rot, SCHOOLS[school].roof, '#ffd76a', 1.6);
     academies.push([SCHOOLS[school].academy, x, z]);
   }
-  // names: the quarters first; the buildings once they are big enough to read
+  // names: the rings first; the buildings once they are big enough to read
   if (!labels) { ctx.restore(); return; }
-  if (!monster) for (const [name, x, z] of QUARTERS) label(name, x, z, Math.min(22, Math.max(11, k * 9)), '#ffe9a8');
+  for (const T of TIERS) {
+    const r = T.id === 'castle' ? 62 : (T.r0 + T.r1) / 2 + TERRACE / 2;
+    label(T.name, Math.sin(RING_LABEL_A) * r, Math.cos(RING_LABEL_A) * r, Math.min(20, Math.max(10, k * 8)), '#ffe9a8');
+  }
   if (k >= 2.5) {
     const size = Math.min(16, Math.max(10, k * 4));
     for (const [name, x, z] of named) label(name, x, z, size);
     if (!monster) label("The Emperors' Castle", CASTLE_SPOT.x, CASTLE_SPOT.z, size);
     if (k >= 3.5) for (const [name, x, z] of academies) label(name, x, z, size * 0.7);
-    else label('Academy Street', (ACADEMY_STREET.x0 + ACADEMY_STREET.x1) / 2, ACADEMY_STREET.z, size * 0.85);
-    label('Playground', (PG.x0 + PG.x1) / 2, (PG.z0 + PG.z1) / 2, size * 0.85);
+    label('Playground', PG.x, PG.z, size * 0.85);
     label('Plaza', 0, 0, size);
-    if (k >= 3.5) for (const [x, z] of SHOP_LOTS) label('Shop lot', x, z, size * 0.7, '#e8dcc0');
+    if (k >= 3.5) for (const L of plan.lots) label('Shop lot', L.x, L.z, size * 0.7, '#e8dcc0');
+    if (k >= 3.5) for (const h of plan.sale) label('For sale', h.x, h.z, size * 0.6, '#b8ffc0');
   }
   ctx.restore();
 }

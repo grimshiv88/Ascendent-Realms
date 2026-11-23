@@ -428,6 +428,36 @@ export async function caveBuy(id) {
   return request('api/caves/buy', { method: 'POST', body: { cave: id } });
 }
 
+// ---------- houses for sale at the Real Estate office of each great city ----------
+const MAX_HOMES = 3;
+const previewHomes = {
+  all() { try { return JSON.parse(storage.get('ar.preview.homes')) || []; } catch { return []; } },
+  save(list) { storage.set('ar.preview.homes', JSON.stringify(list)); cloudPush('world/homes', { homes: list }); },
+};
+const homeView = (list, name) => list.map((h) => ({ city: h.city, house: h.house, owner: h.owner, mine: h.owner === name }));
+export async function homeList() {
+  if (await isPreviewMode()) return updatePreviewAccount((acc) => ({ ok: true, homes: homeView(previewHomes.all(), acc.character.name) }));
+  return request('api/homes');
+}
+export async function homeBuy(city, house) {
+  if (await isPreviewMode()) {
+    const { cityPlan } = await import('./data/citylayout.mjs');
+    return updatePreviewAccount((acc) => {
+      const list = previewHomes.all();
+      const h = cityPlan().sale.find((q) => q.id === house);
+      if (!h) throw new Error('That house is not for sale.');
+      if (list.some((q) => q.city === city && q.house === house)) throw new Error('Someone already owns this house.');
+      if (list.filter((q) => q.owner === acc.character.name).length >= MAX_HOMES) throw new Error(`You can own at most ${MAX_HOMES} houses.`);
+      if (acc.character.coins < h.price) throw poor(`You need ${moneyWords(h.price)}.`, h.price);
+      acc.character.coins -= h.price;
+      list.push({ city, house, owner: acc.character.name });
+      previewHomes.save(list);
+      return { ok: true, coins: acc.character.coins, homes: homeView(list, acc.character.name) };
+    });
+  }
+  return request('api/homes/buy', { method: 'POST', body: { city, house } });
+}
+
 export async function landList() {
   if (await isPreviewMode()) return previewLand.run(() => {});
   return request('api/land');

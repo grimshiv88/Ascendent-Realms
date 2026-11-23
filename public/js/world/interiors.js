@@ -19,7 +19,7 @@ const STEPS = 15; // steps on a staircase
 
 // [width, depth, ceiling] of each kind of room (the Guild Hall's ground floor)
 const SIZES = { castle: [30, 34, 12], guild: [24, 20, 9], tavern: [16, 14, 7], potions: [11, 9, 4.5], smith: [13, 11, 5], armoury: [13, 10, 5], tailor: [11, 9, 4.5], food: [15, 11, 4.5], academy: [15, 13, 5.5] };
-export const kindOf = (shopId) => (String(shopId).startsWith('academy_') ? 'academy' : { castle: 'castle', guild: 'guild', tavern: 'tavern', city_potions: 'potions', city_smith: 'smith', city_armoury: 'armoury', city_tailor: 'tailor', city_food: 'food' }[shopId] || 'tavern');
+export const kindOf = (shopId) => (String(shopId).startsWith('academy_') ? 'academy' : { castle: 'castle', guild: 'guild', tavern: 'tavern', city_potions: 'potions', city_smith: 'smith', city_armoury: 'armoury', city_tailor: 'tailor', city_food: 'food', furniture_dump: 'tailor', furniture_common: 'tailor', furniture_noble: 'tailor', real_estate: 'tailor' }[shopId] || 'tavern');
 // an Academy's training floor: a mat on the left, with the teacher beside it (local x, z)
 const MAT = { x: -3.6, z: 5.6, r: 2.6 };
 

@@ -36,6 +36,7 @@ function describeGear(it, plus = 0) {
     const next = [3, 6, 9].find((n) => n > plus);
     return `${rankTag(it, plus)} ${it.magic ? 'MATK' : 'ATK'} +${upgraded(it.power, plus)} · ${it.speed}s per swing · ${reachText(it)}${it.chop >= 4 ? ' · fells even great trees' : it.chop >= 3 ? ' · fells big trees' : it.chop >= 1.5 ? ' · chops young trees fast' : ''}${fx ? `<br>${fx}` : ''}${next ? `<br><span class="faint">Evolves at +${next}</span>` : ''}`;
   }
+  if (it.kind === 'furniture') return '🏠 Furniture for a home';
   if (it.kind === 'stone') return `💠 Skill Stone · set it into Rare or better gear`;
   if (it.kind === 'coating') return `${EFFECTS[it.coat].icon} Coats a weapon for ${it.hits} hits (Blacksmith)`;
   if (it.kind === 'armour') return `${rankTag(it, plus)} ${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
@@ -200,6 +201,7 @@ export function renderShop(el, game, message = '', market = null) {
       ${group(market === 'city_tailor' ? 'Clothes' : 'Armour', 'armour')}
       ${group(mk?.bot && market !== 'city_potions' ? 'Food and drink (all halal)' : 'Potions and food', 'food')}
       ${group('Coatings for weapons', 'coating')}
+      ${group('Furniture', 'furniture')}
       ${group('Tools', 'material')}
       <h3 class="sys-sub">Sell <small>for less than the shop price</small></h3>
       ${sell}

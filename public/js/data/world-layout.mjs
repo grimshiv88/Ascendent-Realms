@@ -1,3 +1,5 @@
+import { CITY_R, INNER_R, cityLift } from './citylevels.mjs';
+const CITY_FLATS = []; // each walled city's middle and the level of its foot (filled in below)
 // The world's layout, shared by the 3D terrain, the in-game map and the map draft page.
 // Map coordinates are pixels on the 1600 × 1000 map, where 1 pixel = 400 metres (the world is
 // 640 km × 400 km; the Heartland alone is about 300 km across).
@@ -467,6 +469,12 @@ export function sample(x, z, out = {}, withLakes = true) {
     }
   }
 
+  // the walled cities rise in rings to the castle on top (see citylevels.mjs)
+  for (const c of CITY_FLATS) {
+    const dx = x - c.x, dz = z - c.z;
+    if (dx * dx + dz * dz < INNER_R * INNER_R) { h = c.flat + cityLift(dx, dz); forest = 0; break; }
+  }
+
   out.h = h;
   out.water = water;
   out.region = region;
@@ -548,7 +556,7 @@ export function placesWithPositions() {
 // Safe zones: the ground around every waystone, where players spawn and monsters can't go
 export const SAFE_R = 60;
 // The Central City: owned by no one, walled, on levelled ground, and safe all the way to its walls
-export const CITY_R = 160;
+export { CITY_R };
 export const safeRadius = (p) => (p.city ? CITY_R + 8 : SAFE_R);
 export function safeZoneAt(x, z) {
   for (const p of placesWithPositions()) if (!p.cave && (p.x - x) ** 2 + (p.z - z) ** 2 < safeRadius(p) ** 2) return p;
@@ -685,10 +693,12 @@ LAKES.forEach(([px, py, r], i) => LAKE_POS.push({ ...toWorld(px, py), r: r * MET
 for (const p of PLACE_POS) gridAdd(placeGrid, p.x, p.z, 185, p);
 for (const L of LAKE_POS) gridAdd(lakeGrid, L.x, L.z, L.r * 1.8, L);
 
-// Level the ground under the cities for good (it also keeps trees and rocks out)
+// Level the ground under the cities for good (it also keeps trees and rocks out); inside the inner
+// wall the rings rise from there (CITY_FLATS)
 for (const city of PLACES.filter((p) => p.city)) {
   const { x, z } = toWorld(city.px, city.py);
   const flat = Math.round(heightAt(x, z) * 10) / 10;
+  CITY_FLATS.push({ x, z, flat });
   const flats = [];
   const n = Math.ceil((CITY_R + 12) / PLOT);
   for (let ix = Math.floor(x / PLOT) - n; ix <= Math.floor(x / PLOT) + n; ix++) {

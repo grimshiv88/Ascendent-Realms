@@ -15,7 +15,7 @@ import { ITEMS, forgeCost } from './data/items.mjs';
 import { playWork } from './workscene.js';
 import { renderAssess, renderParents } from './idcard.js';
 import { renderQuests, renderGuild } from './quests.js';
-import { renderLand, renderCave } from './landui.js';
+import { renderLand, renderCave, renderEstate } from './landui.js';
 import { caveById } from './data/depths.mjs';
 import { portalFee, portalKm } from './data/portals.mjs';
 import { openBuilder as openBuilderView } from './builder.js';
@@ -462,6 +462,7 @@ function startGame(character) {
     });
   }
   function setLands(list) { ui.myPlots = list.filter((p) => p.mine); ui.otherPlots = list.filter((p) => !p.mine); world.setLands(list); }
+  const loadHomes = () => api.homeList().then((r) => { ui.homes = r.homes || []; world?.setHomes(ui.homes); }).catch(() => {});
   const loadCaves = () => api.caveList().then((r) => { ui.caves = r.caves || []; }).catch(() => {});
   function toggleLand() {
     const on = !world.landMode;
@@ -588,6 +589,7 @@ function startGame(character) {
       const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
       renderCave(overlay, ui.atCave, game, { owner: own?.owner, mine: own?.mine, message: ui.caveMsg || '', busy: ui.caveBusy });
     }
+    else if (name === 'estate' && ui.estateCity) renderEstate(overlay, game, { city: ui.estateCity, homes: ui.homes || [], ring: ui.estateRing, message: ui.estateMsg || '', busy: ui.estateBusy });
     else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy, basket: ui.basket.map((p) => ({ ...p, price: plotPrice(p.ix, p.iz) })) });
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();
@@ -1038,6 +1040,21 @@ function startGame(character) {
     if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }
     if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
     if (t('data-hold-torch') != null) { closePanel(); world?.holdTorch(); return; }
+    if ((v = t('data-estate-ring')) != null) { ui.estateRing = v; ui.estateMsg = ''; drawPanel(); return; }
+    if ((v = t('data-home-buy')) != null && ui.estateCity) {
+      ui.estateBusy = true; drawPanel();
+      (async () => {
+        try {
+          await game.saveNow(); // so the server sees your latest coins
+          const r = await api.homeBuy(ui.estateCity.id, v);
+          game.setCoins(r.coins);
+          ui.homes = r.homes; world?.setHomes(r.homes);
+          ui.estateMsg = 'The house is yours! Its sign now shows your name.';
+        } catch (err) { ui.estateMsg = err.message; }
+        ui.estateBusy = false; drawPanel();
+      })();
+      return;
+    }
     if ((v = t('data-cave-buy')) != null) {
       ui.caveBusy = true; drawPanel();
       (async () => {
@@ -1229,7 +1246,14 @@ function startGame(character) {
           showArea(r.crowned ? `You beat the King in a fight and take the crown: you are the ${data.title}!` : `${data.name} has fallen. You take the EXP and loot; the strongest Overlord will take the throne.`);
         }).catch(() => {});
       }
-      if (type === 'market') { ui.market = data; openPanel('market'); }
+      if (type === 'market' && data === 'real_estate') {
+        const p = world?.outdoors();
+        ui.estateCity = p && placesWithPositions().filter((q) => q.city).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+        ui.estateMsg = ''; ui.estateRing ||= 'common';
+        loadHomes().then(drawPanel);
+        openPanel('estate');
+      }
+      else if (type === 'market') { ui.market = data; openPanel('market'); }
       if (type === 'indoors') {
         $('minimap').classList.add('hidden');
         if (data.kind === 'castle') { showArea("The Emperors' Castle: meetings at the council table are free. The steward's desk by the door (E) opens the chambers for private business."); loadRooms(); }
@@ -1323,6 +1347,7 @@ function startGame(character) {
   // Everyone's land: posts on owned plots, and levelled ground
   api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
   loadCaves();
+  loadHomes();
   api.kingsList().then((r) => { takeCourts(r.courts); world.setCourts(r.courts); }).catch(() => {});
   setInterval(() => api.kingsList().then((r) => takeCourts(r.courts)).catch(() => {}), 60000);
   loadCult(); // a cult's offer, a mission, or news that you were stripped

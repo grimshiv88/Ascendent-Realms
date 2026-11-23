@@ -4,6 +4,8 @@ import { PURPOSES, PURPOSE_FEE, prepareCost, clearCost, PLOT, REACH } from './da
 import { THEMES, SIZES, cavePrice, caveOres, strongCave } from './data/depths.mjs';
 import { ITEMS } from './data/items.mjs';
 import { money } from './data/money.mjs';
+import { cityPlan, HOUSE_PRICE } from './data/citylayout.mjs';
+import { TIERS } from './data/citylevels.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
@@ -79,5 +81,37 @@ export function renderCave(el, cave, game, { owner = null, mine = false, message
       <p class="sys-hint">${strongCave(cave) ? `A strong dungeon (level ${cave.level} wilds): its boss is at least level ${cave.level}, and rare ores and gems lie in its deepest chambers.` : 'No rare ores or gems here: those lie only in the deepest chambers of high-level Dungeons (in wilds of level 60 and up), guarded by strong bosses.'}</p>
       <p class="sys-msg${/need|first|owns/i.test(message) ? ' bad' : ''}" role="status">${esc(message)}</p>
       ${action}
+    </div>`;
+}
+
+// The Real Estate office: the houses for sale in this city, ring by ring, with their price and
+// whose they are once bought. `homes` is everyone's bought houses [{city, house, owner, mine}].
+const SIDES = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
+const side = (a) => SIDES[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
+const KIND = { shack: 'Shack', house: 'Town house', manor: 'Manor with a garden' };
+export function renderEstate(el, game, { city, homes = [], ring = 'common', message = '', busy = false, max = 3 } = {}) {
+  const c = game.character;
+  const here = new Map(homes.filter((h) => h.city === city.id).map((h) => [h.house, h]));
+  const mineCount = homes.filter((h) => h.mine).length;
+  const list = cityPlan().sale.filter((h) => h.tier === ring);
+  const rows = list.map((h) => {
+    const own = here.get(h.id);
+    const what = `${KIND[h.style]}, ${h.floors} floor${h.floors > 1 ? 's' : ''}, ${Math.round(h.w)} m wide <span>·</span> ${side(h.a)} side`;
+    const act = own ? (own.mine ? '<b>✓ Yours</b>' : `Owned by <b>${esc(own.owner)}</b>`)
+      : `<button type="button" class="sys-button" data-home-buy="${h.id}" ${busy || c.coins < h.price || mineCount >= max ? 'disabled' : ''}>Buy</button>`;
+    return `<div class="estate-row${own?.mine ? ' mine' : ''}"><span>No. ${h.i + 1} <span>·</span> ${what}</span><span>${act}</span></div>`;
+  }).join('');
+  const tabs = TIERS.filter((t) => HOUSE_PRICE[t.id]).reverse().map((t) => `<button type="button" class="sys-tab${t.id === ring ? ' on' : ''}" data-estate-ring="${t.id}">${esc(t.name)} · ${money(HOUSE_PRICE[t.id])}</button>`).join('');
+  const free = list.filter((h) => !here.has(h.id)).length;
+  el.innerHTML = `
+    <div class="system-window" role="dialog" aria-label="Real Estate Office">
+      <button type="button" class="sys-close" data-close aria-label="Close">×</button>
+      <div class="sys-title"><span class="sys-bang">!</span><h2>Real Estate Office · ${esc(city.name)}</h2></div>
+      <p class="sys-hint">Houses for sale on every ring of the city. Shacks in the Dump by the walls are cheap; town houses in the Common Quarter cost more; manors with gardens in the Noble Quarter, below Castle Hill, cost the most. A house for sale has a sign by its door, and once you buy it the sign shows your name. You can own up to ${max} houses.</p>
+      <p class="sys-top">You have <b>${money(c.coins)}</b> <span>·</span> Your houses: <b>${mineCount}</b> of ${max}</p>
+      <div class="sys-tabs">${tabs}</div>
+      <p class="sys-hint">${free} of ${list.length} still for sale on this ring.</p>
+      <p class="sys-msg${/need|owns|most|not/i.test(message) ? ' bad' : ''}" role="status">${esc(message)}</p>
+      <div class="estate-list">${rows}</div>
     </div>`;
 }

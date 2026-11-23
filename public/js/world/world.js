@@ -158,6 +158,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     cityRaised = { ...raised };
     for (const s of sites) if (s.built?.setRaised) s.built.setRaised(!!cityRaised[s.place.id], colliders);
   }
+  // who owns the houses for sale in each great city: { city: { house: owner } }
+  let cityHomes = {};
+  function setHomes(list = []) {
+    cityHomes = {};
+    for (const h of list) (cityHomes[h.city] ||= {})[h.house] = h.owner;
+    for (const s of sites) if (s.place.city && s.built?.setOwners) s.built.setOwners(cityHomes[s.place.id] || {});
+  }
   const builtCities = () => sites.filter((s) => s.place.city && s.built?.npcs);
   // the cards of new Ceremonies, hanging in the sky over each city's shrine (the latest one per city)
   const skyCards = new Map(); // city id -> { at, card, place }
@@ -290,6 +297,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         scene.add(s.built.group);
         if (s.built.solid) colliders.add(s.built.solid);
         if (cityRaised[s.place.id]) s.built.setRaised?.(true, colliders);
+        if (s.place.city) s.built.setOwners?.(cityHomes[s.place.id] || {});
         if (s.place.cave) postGuards(s);
       } else if (d > 1400 && s.built) {
         s.built.setRaised?.(false, colliders);
@@ -2164,6 +2172,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     rebuildAvatar,
     jump() { jumpQueued = true; },
     position: () => ({ x: pos.x, z: pos.z, heading }),
+    // where you are out in the world (the door you came in by, while indoors)
+    outdoors: () => (inside ? { x: inside.back.x, z: inside.back.z } : { x: pos.x, z: pos.z }),
     // for testing: where you and the camera are
     // Build from your character: a see-through piece in front of you, where the camera looks
     startWalkBuild(host, opts) {
@@ -2220,6 +2230,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     nextSpell,
     passGate,
     setCityGates,
+    setHomes,
     setCeremonies,
     atShrine,
     riseAtShrine,
@@ -2238,6 +2249,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // where you are inside a building (in its own metres from the door), for the castle's map
     indoors: () => (inside ? { kind: inside.built.kind, x: pos.x - inside.built.exit.x, z: pos.z - inside.built.exit.z + 0.4, up: pos.y > 2 } : null),
     // for testing: go into a city building by its id
+    debugLeave() { if (inside) leaveBuilding(); },
+    debugCounter() { const c = inside?.built?.counter; if (!c) return false; pos.set(c.x, c.y, c.z); useIndoors(); return true; },
     debugEnter(id) { for (const c of builtCities()) { const sh = c.built.shops.find((q) => q.id === id); if (sh) { pos.set(sh.x, pos.y, sh.z); enterBuilding(sh); return true; } } return false; },
     refreshHelper,
     refreshGuard,

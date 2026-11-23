@@ -255,7 +255,8 @@ const DOORS = ['#6a4026', '#4a2e1c', '#3a4a5a', '#5a2a22', '#3f5a3a'];
 // Returns the group, with userData.door (the hinge the door swings on) and userData.height.
 // style: 'house' (a timbered home), 'shop' (wide display windows on the ground floor under a striped
 // awning in the shop's colour, `accent`), 'guild' (built all of stone, with long banners in `accent`
-// down its front) or 'academy' (a pale stone porch of columns under a pediment, in front of the door)
+// down its front), 'academy' (a pale stone porch of columns under a pediment, in front of the door)
+// or 'manor' (a noble's house: stone below and the same columned porch)
 export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e', seed = 1, label = null, labelTex = null, doorX = null, over = 0.3, pitch = null, style = 'house', accent = '#8a2a24' }) {
   const R = rng(seed);
   const g = new THREE.Group();
@@ -271,7 +272,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   const boxM = mat('wood', '#6a4a30');
   const flowers = FLOWERS[Math.floor(R() * FLOWERS.length)];
   const FH = 3.1, PL = 0.5;
-  const stoneGround = allStone || style === 'academy' || (style === 'house' && floors > 1 && R() < 0.45);
+  const stoneGround = allStone || style === 'academy' || style === 'manor' || (style === 'house' && floors > 1 && R() < 0.45);
   const jetty = floors > 1 ? 0.4 : 0;
   const pitchA = pitch ?? 0.82 + R() * 0.22;
 
@@ -359,7 +360,7 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
   g.userData.pads = pads;
   g.userData.posts = posts;
   // (a one-floor shop has its name board there instead, so nothing hangs in front of the name)
-  if (!(floors === 1 && (label || labelTex)) && style !== 'shop' && style !== 'academy') {
+  if (!(floors === 1 && (label || labelTex)) && style !== 'shop' && style !== 'academy' && style !== 'manor') {
     const canopy = new THREE.Group();
     canopy.position.set(doorAt, PL + dh + 0.55, 0);
     F.add(canopy);
@@ -400,8 +401,8 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
       box(FF, 0.78, 0.78, 0.05, mat('plain', accent), bx, by - bh / 2, 0.12, [0, 0, Math.PI / 4]);
       box(FF, 1.4, 0.08, 0.08, mat('plain', '#2a2622'), bx, by + bh / 2 + 0.05, 0.16);
     }
-  } else if (style === 'academy') {
-    // a porch of pale columns under a triangular pediment, in front of the door
+  } else if (style === 'academy' || style === 'manor') {
+    // a porch of pale columns under a triangular pediment, in front of the door (a manor's too)
     const pale = mat('stone', '#ece6da');
     const pw = Math.min(w - 1, 5.6), ph = 3.2, pz = 1.6;
     box(FF, pw + 0.4, 0.3, pz + 0.4, pale, doorAt, PL - 0.15, pz / 2);
@@ -512,6 +513,78 @@ export function buildHouse({ w, d, floors = 2, wall = '#efe6d2', roof = '#b5532e
 }
 
 // colours for the towns of the Heartland: warm plaster and clay or slate roofs
+// A shack in the Dump: walls of rough, mismatched planks on a few stones, a lean-to roof of planks
+// and rusty patches sloping to the back, a crooked door and a hole of a window with a rag over it.
+// Its foot at (0, 0, 0), its door on the +z side. Returns the group (userData.door, height, pads, posts).
+const PLANKS = ['#6a5038', '#5a4430', '#7a5c3e', '#4e3c2a', '#806446'];
+const PATCHES = ['#7a4a2a', '#6a6a6a', '#8a5a3a', '#5a5a52'];
+export function buildShack({ w, d, seed = 1, doorX = 0 }) {
+  const R = rng(seed);
+  const g = new THREE.Group();
+  const H = 2.4 + R() * 0.3, back = H - 0.7;
+  const stone = mat('stone', '#8a8478');
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(g, 0.5, 0.25, 0.5, stone, sx * (w / 2 - 0.2), 0.12, sz * (d / 2 - 0.2));
+  // the walls: planks standing side by side, each a little different
+  const wallRun = (len, x0, z0, ux, uz, h0, h1, skip) => {
+    const n = Math.max(2, Math.round(len / 0.32));
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n, along = -len / 2 + t * len;
+      if (skip && skip(along)) continue;
+      const h = h0 + (h1 - h0) * t - R() * 0.12;
+      const m = mat('wood', PLANKS[Math.floor(R() * PLANKS.length)]);
+      const b = box(g, len / n + 0.02, h, 0.07, m, x0 + ux * along, 0.2 + h / 2, z0 + uz * along);
+      b.rotation.y = Math.atan2(-uz, ux);
+      b.rotation.z = (R() - 0.5) * 0.03;
+    }
+  };
+  const dw = 1.05, dh = 2;
+  wallRun(w, 0, d / 2, 1, 0, H, H, (a) => Math.abs(a - doorX) < dw / 2);   // front, round the door
+  wallRun(w, 0, -d / 2, 1, 0, back, back);                                 // back
+  for (const s of [-1, 1]) wallRun(d, s * w / 2, 0, 0, -1, back, H);        // sides (sloping with the roof)
+  // the plank over the door
+  box(g, dw + 0.2, H - dh - 0.2, 0.08, mat('wood', PLANKS[0]), doorX, 0.2 + dh + (H - dh - 0.2) / 2, d / 2);
+  // a window hole with a rag hanging over it
+  const wx = doorX > 0 ? -w / 4 : w / 4;
+  box(g, 0.7, 0.55, 0.02, mat('plain', '#140e08'), wx, 1.5, d / 2 + 0.045);
+  box(g, 0.75, 0.4, 0.02, mat('plain', ['#8a7a5a', '#6a4a4a', '#5a6a7a'][Math.floor(R() * 3)]), wx, 1.62, d / 2 + 0.06);
+  // the lean-to roof: planks from the front edge down to the back, with rusty patches nailed on
+  const roofG = new THREE.Group();
+  roofG.position.set(0, 0.2 + (H + back) / 2, 0);
+  roofG.rotation.x = Math.atan2(H - back, d);
+  g.add(roofG);
+  const rl = Math.hypot(d, H - back) + 0.5;
+  const n = Math.max(3, Math.round((w + 0.6) / 0.45));
+  for (let i = 0; i < n; i++) box(roofG, (w + 0.6) / n + 0.02, 0.06, rl, mat('wood', PLANKS[Math.floor(R() * PLANKS.length)]), -(w + 0.6) / 2 + (i + 0.5) * (w + 0.6) / n, 0.04 + R() * 0.02, 0);
+  for (let i = 0; i < 2 + Math.floor(R() * 3); i++) box(roofG, 0.8 + R() * 1.2, 0.04, 0.8 + R() * 1.4, mat('plain', PATCHES[Math.floor(R() * PATCHES.length)]), (R() - 0.5) * (w - 1), 0.1, (R() - 0.5) * (rl - 1.2));
+  // a stone on the roof to hold it down, and a crate by the door
+  box(roofG, 0.35, 0.25, 0.35, stone, (R() - 0.5) * (w - 1), 0.2, (R() - 0.5) * 1.5);
+  if (R() < 0.6) box(g, 0.6, 0.55, 0.6, mat('wood', '#7a5a3a'), doorX + (doorX > 0 ? -1.2 : 1.2), 0.28, d / 2 + 0.6);
+  // the door: a few planks on leather hinges, hanging a little crooked
+  const hinge = new THREE.Group();
+  hinge.position.set(doorX - dw / 2, 0.2, d / 2 + 0.04);
+  const leaf = new THREE.Mesh(project(new THREE.BoxGeometry(dw, dh - 0.05, 0.06), 1.2), mat('wood', PLANKS[3]));
+  leaf.position.set(dw / 2, (dh - 0.05) / 2, 0);
+  leaf.rotation.z = (R() - 0.5) * 0.05;
+  leaf.userData.moves = true;
+  hinge.add(leaf);
+  g.add(hinge);
+  g.userData.door = hinge;
+  g.userData.height = H + 0.3;
+  g.userData.pads = [];
+  g.userData.posts = [];
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return g;
+}
+
+// any flat geometry (a strip of road, a ring) paved in cobbles of this colour, layered like paved()
+export function pavedGeometry(geo, color, layer = 0) {
+  project(geo, TEX_SIZE.cobble);
+  const m = paved(1, 1, color, false, layer);
+  m.geometry.dispose();
+  m.geometry = geo;
+  return m;
+}
+
 export const TOWN_TONES = [
   ['#f1e8d4', '#b5532e'], ['#ece0c4', '#a8452a'], ['#f4eee2', '#4d6280'], ['#e6d6b4', '#8a4a2a'],
   ['#efe4cc', '#c2683a'], ['#e9e2d6', '#5a4a40'], ['#f3e3c2', '#9a3e28'], ['#e4dccb', '#3f566e'],

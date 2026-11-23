@@ -6,6 +6,8 @@ const { PURPOSES, PURPOSE_FEE, checkPurchase, prepareCost, levelHeight, clearCos
 const { setPreparedPlots } = require('../public/js/data/world-layout.mjs');
 const { caveById, cavePrice } = require('../public/js/data/depths.mjs');
 const B = require('../public/js/data/building.mjs');
+const { cityPlan } = require('../public/js/data/citylayout.mjs');
+const { PLACES } = require('../public/js/data/world-layout.mjs');
 const { ITEMS, isGear } = require('../public/js/data/items.mjs');
 
 db.exec(`
@@ -146,6 +148,35 @@ function buyCave(accountId, body) {
   return { ok: true, coins: paid.coins, ...caves(accountId) };
 }
 
+// Houses for sale in the great cities, bought at the Real Estate office. One owner per house, and at
+// most MAX_HOMES houses each.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS city_homes (
+    city       TEXT NOT NULL,
+    house      TEXT NOT NULL,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    owner      TEXT NOT NULL,
+    bought_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (city, house)
+  );
+`);
+const MAX_HOMES = 3;
+function homes(accountId) {
+  return { homes: db.prepare('SELECT city, house, owner, account_id FROM city_homes').all().map((r) => ({ city: r.city, house: r.house, owner: r.owner, mine: r.account_id === accountId })) };
+}
+function buyHome(accountId, body) {
+  const city = PLACES.find((p) => p.city && p.id === String(body.city || ''));
+  if (!city) return { error: 'There is no such city.' };
+  const house = cityPlan().sale.find((h) => h.id === String(body.house || ''));
+  if (!house) return { error: 'That house is not for sale.' };
+  if (db.prepare('SELECT 1 FROM city_homes WHERE city = ? AND house = ?').get(city.id, house.id)) return { error: 'Someone already owns this house.' };
+  if (db.prepare('SELECT COUNT(*) AS n FROM city_homes WHERE account_id = ?').get(accountId).n >= MAX_HOMES) return { error: `You can own at most ${MAX_HOMES} houses.` };
+  const paid = spend(accountId, house.price);
+  if (paid.error) return paid;
+  db.prepare('INSERT INTO city_homes (city, house, account_id, owner) VALUES (?, ?, ?, ?)').run(city.id, house.id, accountId, paid.character.name);
+  return { ok: true, coins: paid.coins, ...homes(accountId) };
+}
+
 // A Blacksmith's display stand: put a weapon or piece of armour on it for everyone to see, or take
 // it back off. The game moves it in and out of the bag.
 function show(accountId, body) {
@@ -166,4 +197,4 @@ function show(accountId, body) {
   return { ok: true, old: r.old, ...list(accountId) };
 }
 
-module.exports = { list, buy, setPurpose, prepare, caves, buyCave, build, show };
+module.exports = { list, buy, setPurpose, prepare, caves, buyCave, homes, buyHome, MAX_HOMES, build, show };

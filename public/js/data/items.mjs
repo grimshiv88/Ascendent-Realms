@@ -1,6 +1,6 @@
 // Every item in the game: materials you gather, food, potions, weapons and armour, plus the shop list.
 
-// kind: 'material' | 'food' | 'weapon' | 'armour'. price is what the shop charges; it buys things back for less.
+// kind: 'material' | 'food' | 'weapon' | 'armour' | 'furniture'. price is what the shop charges; it buys things back for less.
 // Armour: slot is where it is worn (head, body, legs, feet, shield); def and mdef add to defence;
 // look is the colour and material it is drawn with.
 // Weapons: type picks the 3D model and swing; power adds to damage; speed is seconds between swings;
@@ -10,6 +10,29 @@ import { SKILLS } from './skills.mjs';
 export const ITEMS = {
   // gathered
   log: { name: 'Log', icon: '🪵', kind: 'material', price: 3, text: 'Wood from a young tree. Used for crafting and building.' },
+  // furniture for a home (kind 'furniture'), from the furniture shops: rough from the Dump's junk
+  // dealer, plain in the Common Quarter, fine in the Noble Quarter
+  straw_bed: { name: 'Straw Bed', icon: '🛏️', kind: 'furniture', price: 20, text: 'A sack of straw to sleep on. Better than the floor.' },
+  crate_table: { name: 'Crate Table', icon: '📦', kind: 'furniture', price: 14, text: 'An old crate turned table.' },
+  stool: { name: 'Stool', icon: '🪑', kind: 'furniture', price: 8, text: 'Three legs, mostly steady.' },
+  rag_rug: { name: 'Rag Rug', icon: '🧶', kind: 'furniture', price: 10, text: 'Woven from old cloth.' },
+  candle_stub: { name: 'Candle Stubs', icon: '🕯️', kind: 'furniture', price: 4, text: 'A little light for a dark room.' },
+  wooden_bed: { name: 'Wooden Bed', icon: '🛏️', kind: 'furniture', price: 120, text: 'A sturdy bed with a wool blanket.' },
+  oak_table: { name: 'Oak Table', icon: '🪵', kind: 'furniture', price: 90, text: 'A table for four.' },
+  chair: { name: 'Chair', icon: '🪑', kind: 'furniture', price: 35, text: 'A plain wooden chair.' },
+  wardrobe: { name: 'Wardrobe', icon: '🚪', kind: 'furniture', price: 150, text: 'Room for clothes and armour.' },
+  wool_rug: { name: 'Wool Rug', icon: '🟫', kind: 'furniture', price: 60, text: 'Warm underfoot.' },
+  oil_lamp: { name: 'Oil Lamp', icon: '🪔', kind: 'furniture', price: 40, text: 'A steady, warm light.' },
+  bookshelf: { name: 'Bookshelf', icon: '📚', kind: 'furniture', price: 110, text: 'Shelves for books and keepsakes.' },
+  potted_plant: { name: 'Potted Plant', icon: '🪴', kind: 'furniture', price: 25, text: 'A bit of green indoors.' },
+  canopy_bed: { name: 'Canopy Bed', icon: '🛏️', kind: 'furniture', price: 1200, text: 'Carved posts and silk curtains, fit for a noble.' },
+  marble_table: { name: 'Marble Table', icon: '⬜', kind: 'furniture', price: 900, text: 'Polished white marble on gilded legs.' },
+  velvet_chair: { name: 'Velvet Chair', icon: '💺', kind: 'furniture', price: 300, text: 'Deep red velvet and carved arms.' },
+  chandelier: { name: 'Chandelier', icon: '💡', kind: 'furniture', price: 800, text: 'Crystal and candles, hung high.' },
+  tapestry: { name: 'Tapestry', icon: '🖼️', kind: 'furniture', price: 500, text: 'A woven scene of the realm\'s old wars.' },
+  gilded_mirror: { name: 'Gilded Mirror', icon: '🪞', kind: 'furniture', price: 600, text: 'A tall mirror in a gold frame.' },
+  grand_wardrobe: { name: 'Grand Wardrobe', icon: '🚪', kind: 'furniture', price: 1000, text: 'Dark wood inlaid with silver.' },
+
   berries: { name: 'Wild Berries', icon: '🫐', kind: 'food', heal: 15, price: 3, text: 'Sweet berries from a bush. Restores 15 HP.' },
   reed: { name: 'Reed', icon: '🌾', kind: 'material', price: 2, text: 'A tough marsh reed.' },
   cactus_flesh: { name: 'Cactus Flesh', icon: '🌵', kind: 'food', heal: 20, price: 4, text: 'Watery and bitter. Restores 20 HP.' },
@@ -418,6 +441,9 @@ Object.assign(MARKETS, {
   city_armoury: { bot: true, name: 'City Armoury', text: 'Plain armour and shields, run by the city.', items: basicGear('armour') },
   city_tailor: { bot: true, name: 'The Silk Thread', text: 'Clothes to wear for looks, not for battle.', items: ['linen_shirt', 'wide_trousers', 'felt_hat', 'sandals', 'embroidered_tunic', 'turban', 'riding_boots', 'silk_robe'] },
   city_food: { bot: true, name: 'The Olive Tree', text: 'Halal meals that heal and give a short boost.', items: ['bread', 'apple', 'lentil_soup', 'falafel_wrap', 'lamb_kebab', 'chicken_rice', 'date_bowl', 'stew'] },
+  furniture_dump: { bot: true, name: 'Junk Dealer', text: 'Second-hand furniture, cheap and a little broken.', items: ['straw_bed', 'crate_table', 'stool', 'rag_rug', 'candle_stub'] },
+  furniture_common: { bot: true, name: 'Oak & Hearth Furniture', text: 'Good plain furniture for a family home.', items: ['wooden_bed', 'oak_table', 'chair', 'wardrobe', 'wool_rug', 'oil_lamp', 'bookshelf', 'potted_plant'] },
+  furniture_noble: { bot: true, name: 'The Gilded Room', text: 'The finest furniture in the realm, for noble houses.', items: ['canopy_bed', 'marble_table', 'velvet_chair', 'chandelier', 'tapestry', 'gilded_mirror', 'grand_wardrobe'] },
   tavern: { bot: true, name: 'Tavern', text: 'Halal food, fresh drinks and rooms to rent. No alcohol is served here.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask', 'herbal_tea', 'lentil_soup', 'bread'] },
 });
 // what a market charges for an item, and pays for one
