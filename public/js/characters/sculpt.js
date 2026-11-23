@@ -94,7 +94,7 @@ export function sculptedRig(race, H, colors, mats, stage = 0) {
     const knee = bone(hip, v3(J.knee, side), v3(J.hip, side));
     const ankle = bone(knee, v3(J.ankle, side), v3(J.knee, side));
     bones.push(hip, knee, ankle);
-    legs.push({ hip, knee, side, thighLen: v3(J.hip).distanceTo(v3(J.knee)), shinLen: v3(J.knee).distanceTo(v3(J.ankle)) });
+    legs.push({ hip, knee, ankle, side, thighLen: v3(J.hip).distanceTo(v3(J.knee)), shinLen: v3(J.knee).distanceTo(v3(J.ankle)) });
   }
   // wings fold from a root on the back; a tail in two pieces
   const wings = J.wing ? [-1, 1].map((side) => bone(spine, v3(J.wing, side), v3(J.spine))) : [];

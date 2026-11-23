@@ -307,7 +307,7 @@ export function sculptedHumanoid(P, mats) {
     const h = hand(H, b * (1 + m * 0.15), skin, { scale: P.handScale ?? 1, claws: clawMat, fingerLen: P.fingerLen ?? 1 });
     h.rotation.y = side * -0.3;
     fore.end.add(h);
-    rig.arms.push({ shoulder: upper.joint, elbow: fore.joint, hand: fore.end, side, len: upLen, foreLen });
+    rig.arms.push({ shoulder: upper.joint, elbow: fore.joint, elbow0: -0.18, hand: fore.end, side, len: upLen, foreLen });
   }
 
   // legs
@@ -336,7 +336,7 @@ export function sculptedHumanoid(P, mats) {
     }
     const f = foot(H, b * (P.bigFeet || 1), P.footMat || skin, { scale: P.footScale ?? 1, toes: P.toes ?? true, claws: clawMat });
     ankle.add(f);
-    rig.legs.push({ hip: thigh.joint, knee: shin.joint, side, digi, shinLen, thighLen });
+    rig.legs.push({ hip: thigh.joint, knee: shin.joint, ankle, side, digi, shinLen, thighLen });
   }
 
   root.userData.height = H;

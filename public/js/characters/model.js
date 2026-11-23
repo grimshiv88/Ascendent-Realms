@@ -1019,24 +1019,89 @@ export function buildCharacter({ race, form = 'monster', stage = 0, growth = 0, 
 }
 
 // Idle and walk animation. `speed` is 0 when standing, 1 when walking, 2 when running.
+const smooth01 = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+
+// Walking and running for two-legged bodies. Each leg lifts its thigh, folds its knee to carry the
+// foot through, and rolls the foot from heel to toe; the hips sink onto the planted leg so the feet
+// stay on the ground. Past a brisk walk it blends into a run: a forward lean, high knees, heels kicked
+// up behind, bent elbows pumping, and a little flight between steps. The step rate builds up smoothly
+// (no jumps when the speed changes) and short bodies take quicker steps.
+function walkCycle(rig, t, speed) {
+  const G = (rig.gait ??= { p: 0, last: t, a: 0 });
+  const dt = Math.max(0, Math.min(0.1, t - G.last));
+  G.last = t;
+  const H = rig.H || rig.root.userData.height || 1.7;
+  const v = Math.max(0, speed);
+  G.p += dt * (3.2 + Math.min(v, 4) * 2.6) * Math.min(1.5, Math.max(0.75, Math.sqrt(1.7 / H)));
+  // ease into and out of moving instead of snapping
+  const want = Math.min(1, v / 1.2);
+  G.a += (want - G.a) * (1 - Math.exp(-dt * 10));
+  const a = G.a, r = smooth01(2.2, 3.3, v) * a;
+  const p = G.p;
+  const bend = rig.restBend || 0;
+  let reach = 0, rest = 0;
+  for (const leg of rig.legs) {
+    const pl = p + (leg.side > 0 ? 0 : Math.PI);
+    const s = Math.sin(pl), c = Math.cos(pl);
+    const hip0 = -bend + (leg.digi ? -0.35 : 0), knee0 = bend * 1.6 + (leg.digi ? 0.75 : 0);
+    // walk: thigh 25 degrees each way, knee folds to about 60 degrees as the foot passes under
+    const wHip = -0.44 * s;
+    const wKnee = 0.12 * Math.max(0, -c) * Math.max(0, s + 0.3) + 1.05 * Math.max(0, c) ** 1.4;
+    // run: knee drives up in front, the heel kicks up behind just after push-off
+    const rHip = -0.72 * s - 0.28 * Math.max(0, c) * Math.max(0, s + 0.6);
+    const rKnee = 0.32 + 1.75 * Math.max(0, Math.cos(pl + 0.55)) ** 1.2;
+    const dHip = (wHip + (rHip - wHip) * (r / Math.max(a, 1e-3))) * a;
+    const dKnee = (wKnee + (rKnee - wKnee) * (r / Math.max(a, 1e-3))) * a;
+    leg.hip.rotation.x = hip0 + dHip;
+    leg.knee.rotation.x = knee0 + dKnee;
+    if (leg.ankle) {
+      leg.ankle0 ??= leg.ankle.rotation.x;
+      // keep the sole level, then toes up as the heel lands and down as the foot pushes off
+      const roll = -(0.22 + 0.08 * r) * s + 0.25 * r * Math.max(0, c);
+      leg.ankle.rotation.x = leg.ankle0 - (dHip + dKnee) + roll * a;
+    }
+    const tl = leg.thighLen || 0, sl = leg.shinLen || 0;
+    reach = Math.max(reach, tl * Math.cos(hip0 + dHip) + sl * Math.cos(hip0 + dHip + knee0 + dKnee));
+    rest = Math.max(rest, tl * Math.cos(hip0) + sl * Math.cos(hip0 + knee0));
+  }
+  // arms swing against the legs; the elbows bend more the faster you go
+  for (const arm of rig.arms) {
+    const pa = p + (arm.side > 0 ? 0 : Math.PI);
+    const sa = Math.sin(pa);
+    arm.shoulder.rotation.x = (0.38 * sa + r * (0.45 * sa - 0.25)) * a;
+    arm.shoulder.rotation.z = arm.side * (0.12 - (rig.armRest || 0) + Math.sin(t * 1.5) * 0.02);
+    if (arm.elbow) arm.elbow.rotation.x = (arm.elbow0 || 0) - (0.22 + 0.18 * Math.max(0, -sa)) * a - r * (1.05 + 0.25 * Math.max(0, -sa));
+  }
+  // the hips sink onto the planted leg (so the feet stay on the ground), twist with the stride,
+  // and the chest twists back the other way; a runner leans forward and floats between steps
+  const c2 = Math.abs(Math.cos(p));
+  if (rig.hips) {
+    rig.baseHipY ??= rig.hips.position.y;
+    const drop = rest > 0 ? Math.max(0, rest - reach) : 0;
+    const keep = 1 - (r / Math.max(a, 1e-3)) * (1 - c2) * 0.8; // in the air between running steps
+    rig.hips.position.y = rig.baseHipY - drop * keep + r * H * 0.03 * (1 - c2) + (1 - r) * a * H * 0.006 * c2;
+    rig.hips.rotation.y = -(0.09 + 0.04 * r) * Math.sin(p) * a;
+    rig.hips.rotation.z = 0.035 * Math.cos(p * 2) * a * (1 - r);
+  }
+  if (rig.spine) {
+    rig.spineX0 ??= rig.spine.rotation.x;
+    rig.spine.rotation.x = rig.spineX0 + 0.03 * a + 0.2 * r;
+    rig.spine.rotation.y = (0.16 + 0.06 * r) * Math.sin(p) * a;
+  }
+  if (rig.head) {
+    rig.headX0 ??= rig.head.rotation.x;
+    rig.head.rotation.x = rig.headX0 - 0.15 * r; // eyes stay on the road ahead
+  }
+}
+
 export function animateCharacter(character, t, speed = 0) {
   const rig = character.userData.rig;
   const swing = Math.min(speed, 2) * 0.45;
   const cycle = t * (4 + speed * 2.5);
-  if (rig.legs && rig.arms) {
-    const bend = rig.restBend || 0;
-    for (const leg of rig.legs) {
-      const ph = leg.side > 0 ? 0 : Math.PI;
-      leg.hip.rotation.x = -bend + Math.sin(cycle + ph) * swing + (leg.digi ? -0.35 : 0);
-      leg.knee.rotation.x = bend * 1.6 + Math.max(0, -Math.sin(cycle + ph)) * swing * 1.4 + (leg.digi ? 0.75 : 0);
-    }
-    for (const arm of rig.arms) {
-      const ph = arm.side > 0 ? Math.PI : 0;
-      arm.shoulder.rotation.x = Math.sin(cycle + ph) * swing * 0.8;
-      arm.shoulder.rotation.z = arm.side * (0.12 - (rig.armRest || 0) + Math.sin(t * 1.5) * 0.02);
-    }
-    if (rig.spine) rig.spine.rotation.y = Math.sin(cycle) * swing * 0.1;
-    if (rig.chest) rig.chest.scale.y = rig.chest.scale.y; // breathing is subtle; skip
+  if (rig.legs && rig.arms && rig.legs[0]?.knee) walkCycle(rig, t, speed);
+  else if (rig.legs && rig.arms) {
+    for (const leg of rig.legs) leg.hip.rotation.x = Math.sin(cycle + (leg.side > 0 ? 0 : Math.PI)) * swing;
+    for (const arm of rig.arms) arm.shoulder.rotation.x = Math.sin(cycle + (arm.side > 0 ? Math.PI : 0)) * swing * 0.8;
   }
   if (rig.torso && rig.legs) {
     for (const leg of rig.legs) {
@@ -1087,11 +1152,6 @@ export function animateCharacter(character, t, speed = 0) {
     }
     pos.needsUpdate = true;
     if (rig.head) rig.head.rotation.y = Math.sin(S.phase * 0.5) * 0.08;
-  }
-  // the body rises and falls a little with each step
-  if (rig.hips && rig.legs && rig.arms && !rig.hovers) {
-    rig.baseHipY ??= rig.hips.position.y;
-    rig.hips.position.y = rig.baseHipY + (speed > 0.05 ? Math.abs(Math.cos(cycle)) * 0.025 * Math.min(speed, 2) * (rig.H || 1.7) / 1.7 : 0);
   }
   if (rig.torso && rig.legs && !rig.arms) {
     rig.baseTorsoY ??= rig.torso.position.y;
