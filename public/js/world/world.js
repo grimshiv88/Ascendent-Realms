@@ -1,10 +1,10 @@
 // The playable world: the whole map as streamed 3D land, your character, monsters, and a third-person camera.
 import * as THREE from 'three';
 import { createLand } from './land.js';
-import { pickQuality } from './quality.js';
+import { pickQuality, createSmoothness } from './quality.js';
 import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
-import { buildCity, buildVillage } from './city.js';
+import { buildCity, buildVillage, setCityDetail } from './city.js';
 import { GUILD_HALL_LEVEL } from '../data/guildcard.mjs';
 import { buildInterior } from './interiors.js';
 import { mayEnterCastle, castleDay } from '../data/interiors.mjs';
@@ -26,7 +26,7 @@ import { placeBuilding, CELL } from '../data/building.mjs';
 import { caveById, THEMES, chestLoot, bossLevel, caveOres, pickOre, SIZES } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
-import { updateCrowd } from '../characters/crowd.js';
+import { updateCrowd, setCrowdFar } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
@@ -90,9 +90,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   const land = createLand(scene);
   // Graphics quality (see quality.js): sharpness, shadows, how far you see, and a frame cap on phones
+  // On Automatic the sharpness also follows how smoothly the game runs (see createSmoothness)
+  const smooth = createSmoothness();
+  const sharpness = () => Math.min(window.devicePixelRatio, quality.pixelRatio) * (quality.auto ? smooth.scale : 1);
   function applyQuality(q) {
     quality = q;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pixelRatio));
+    smooth.reset();
+    renderer.setPixelRatio(sharpness());
+    setCrowdFar(q.crowdFar);
+    setCityDetail(q.detailFar);
     sun.castShadow = q.shadows;
     if (sun.shadow.mapSize.x !== q.shadowSize) { sun.shadow.mapSize.set(q.shadowSize, q.shadowSize); sun.shadow.map?.dispose(); sun.shadow.map = null; }
     if (!depth && !inside) scene.fog.density = q.fog;
@@ -1920,6 +1926,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // a frame cap (phones): fewer frames keep the device cooler and save battery
     if (quality.fps && now - lastFrame < 1000 / quality.fps - 2) return;
     lastFrame = now;
+    if (quality.auto) {
+      const want = quality.fps || 60;
+      if (smooth.frame(now, want * 0.9) !== null) renderer.setPixelRatio(sharpness());
+    }
     const dt = Math.min(clock.getDelta(), 0.1); // a slow frame still moves you the full distance
     const t = clock.elapsedTime;
     tickWind(t); // (the trees and grass sway)
@@ -2547,6 +2557,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setMouseMode(mode) { freeMouse = mode === 'free'; if (freeMouse && locked()) { letGo = true; document.exitPointerLock(); } },
     setGraphics(choice) { applyQuality(pickQuality(choice)); return quality.key; },
     get graphics() { return quality.key; },
+    debug: { scene, renderer, camera }, // (tests: what is drawn, and how much)
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     setView(mode) { setView(mode); },
     // order a drink in the tavern: `served` runs when the waiter brings it to you (wherever you are inside)

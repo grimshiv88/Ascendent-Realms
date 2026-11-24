@@ -7,7 +7,7 @@ import { MARKETS, ITEMS } from '../data/items.mjs';
 import { moneyWords } from '../data/money.mjs';
 import { buildSpawn, textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
-import { joinCrowd, bakeCharacter } from '../characters/crowd.js';
+import { joinCrowd, bakeCharacter, isShown } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, buildShack, paved, pavedGeometry, TOWN_TONES } from './houses.js';
@@ -189,6 +189,11 @@ function cityGate(fixed, R, T, line, stoneMat, capMat, cx, cz) {
   fixed.add(gg);
   return { k: R.k, tier: T.id, name: T.name, a: R.a, road: R.road, line };
 }
+
+// how far a city's small details (window frames, rails) are drawn: less on phones (quality.js)
+let DETAIL_FAR = 90;
+export function setCityDetail(m) { DETAIL_FAR = m || 90; }
+const detailFar = () => DETAIL_FAR;
 
 export function buildCity(place, opts = {}) {
   const S = STYLES[place.style] || STYLES.heart;
@@ -573,7 +578,7 @@ export function buildCity(place, opts = {}) {
           w.npc.x = cx + b.position.x; w.npc.z = cz + b.position.z;
         }
       }
-      animateCharacter(b, t, speed ? 0.9 : 0);
+      if (isShown(b)) animateCharacter(b, t, speed ? 0.9 : 0); // (not the far ones nobody sees)
     }
   }
   for (const h of houses) {
@@ -603,9 +608,9 @@ export function buildCity(place, opts = {}) {
   let detailAt = -1;
   const update = (t, you, blocked) => {
     centre.update?.(t);
-    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z); }
+    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z, detailFar()); }
     doors.update(you, t);
-    for (const b of guards) animateCharacter(b, t, 0);
+    for (const b of guards) if (isShown(b)) animateCharacter(b, t, 0);
     walkFolk(t, you, blocked);
     for (const b of bridges) b.update();
     castleGrounds?.update(t, you);
@@ -908,7 +913,7 @@ function buildCastleGrounds(k, C, rot, cx, cz, solid, S) {
       return undefined;
     },
     update(t, you) {
-      for (const b of guards) animateCharacter(b, t, 0);
+      for (const b of guards) if (isShown(b)) animateCharacter(b, t, 0);
       const g = toWorld(0, z1);
       const near = you && Math.hypot(you.x - g.x, you.z - g.z) < 9;
       lift += ((near ? h - 1.4 : 0) - lift) * 0.05;
@@ -1168,7 +1173,7 @@ export function buildVillage(place) {
   }
   mergeStill(fixed);
   const deckAt = (x, z) => { const pad = padAt(pads, x, z); return pad === undefined ? undefined : baseY + pad; };
-  return { group: g, update: (t, you) => { centre.update(t); doors.update(you, t); for (const b of guards) animateCharacter(b, t, 0); }, shops, solid, market: centre.market, deckAt, doors };
+  return { group: g, update: (t, you) => { centre.update(t); doors.update(you, t); for (const b of guards) if (isShown(b)) animateCharacter(b, t, 0); }, shops, solid, market: centre.market, deckAt, doors };
 }
 
 // The sign over your parents' heads: a heart and "Your parent", always facing you

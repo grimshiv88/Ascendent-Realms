@@ -8,6 +8,9 @@ const crowd = new Set();
 export const SEE_FAR = 75;   // townsfolk further than this are not drawn
 export const SHADOW_FAR = 22; // and only those this close cast shadows
 
+let seeFar = SEE_FAR; // (lower on phones: see world/quality.js crowdFar)
+export function setCrowdFar(m) { seeFar = m || SEE_FAR; }
+
 export function joinCrowd(body) { crowd.add(body); return body; }
 
 // Hide or show each one by its distance from (x, y, z), the camera
@@ -20,7 +23,7 @@ export function updateCrowd(x, y, z, scene) {
     b.userData.inWorld = true;
     b.getWorldPosition(p);
     const d = Math.hypot(p.x - x, p.y - y, p.z - z) / Math.max(1, (b.userData.height || 1.8) / 2.2);
-    const show = d < (b.userData.seeFar || SEE_FAR);
+    const show = d < (b.userData.seeFar ? Math.max(b.userData.seeFar, seeFar) : seeFar);
     const inner = b.children[0];
     if (inner && inner.visible !== show) inner.visible = show;
     const shadow = show && d < SHADOW_FAR;

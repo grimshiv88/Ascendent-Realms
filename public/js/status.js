@@ -17,6 +17,7 @@ import { gameTime, clockText } from './data/clock.mjs';
 import { SKILLS, UPGRADE_EVERY } from './data/skills.mjs';
 import { money } from './data/money.mjs';
 import { INJURY } from './progress.js';
+import { setHtml } from './morph.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -57,7 +58,7 @@ export function bindHud(el, redraw) {
 export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null, portal = null) {
   const hp = Math.round(c.hp ?? d.hp);
   const need = expToNext(c.level, c.race);
-  el.innerHTML = `
+  setHtml(el, `
     ${hudView.hidden ? `<button type="button" class="hud-show" data-hud-show aria-label="Show your status">👤 <b>${esc(c.name)}</b> <span>HP ${hp}</span></button>` : `<div class="hud-card" style="transform: translate(${hudView.x}px, ${hudView.y}px)">
       <div class="hud-tools"><span class="hud-grip" data-hud-drag title="Drag to move" aria-label="Drag to move">⠿</span><button type="button" class="hud-hide" data-hud-hide aria-label="Hide your status">‹</button></div>
       <p class="hud-name">${esc(c.name)} <span>LVL ${c.level} · ${rankFor(c.level)}</span></p>
@@ -86,7 +87,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
         <button type="button" data-signout>Log out</button>
       </div>
     </div>
-    </div>`;
+    </div>`);
 }
 
 // the next upgrade level that isn't an evolution
@@ -233,8 +234,8 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
       <p class="bag-hint">Switch any time with ${esc(keyName(codeFor('view')))}, or scroll all the way in for first person and back out for third.</p>
       <h3 class="bag-sub">Graphics</h3>
       <div class="setting-opts">
-        ${[['auto', 'Automatic', `Picks for your device: ${settings.graphicsNow === 'low' ? 'Battery saver on this one' : 'Far view on this one'}.`],
-          ['low', 'Battery saver', 'For phones and tablets: shorter view, no shadows, 30 frames a second. Keeps the device cooler.'],
+        ${[['auto', 'Automatic', `Picks for your device (${({ low: 'Battery saver', medium: 'Balanced', high: 'Far view' })[settings.graphicsNow] || 'Balanced'} on this one), and draws a little less sharply for a while if the game starts to lag.`],
+          ['low', 'Battery saver', 'For phones and tablets: shorter view, no shadows, fewer far townsfolk and details, 30 frames a second. Keeps the device cooler and smooth.'],
           ['medium', 'Balanced', 'Shadows and a medium view distance.'],
           ['high', 'Far view', 'For computers: sharp, with distant land, trees and grass drawn much further.']]
           .map(([v, title, text]) => `<button type="button" class="setting-opt" data-graphics="${v}" aria-pressed="${(settings.graphics || 'auto') === v}"><b>${title}</b><span>${esc(text)}</span></button>`).join('')}
