@@ -166,9 +166,8 @@ export function createVoice(host, { position }) {
     joinBtn.disabled = true;
     say('Joining…');
     try {
-      const passP = api.voicePass();
+      const pass = await api.voicePass(); // says why not before loading anything
       L = await loadLib();
-      const pass = await passP;
       const R = L.RoomEvent;
       const r = new L.Room({ adaptiveStream: false, dynacast: false, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       r.on(R.TrackSubscribed, (track) => {
