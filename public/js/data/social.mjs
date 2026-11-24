@@ -14,6 +14,13 @@ export const PRIVACY = {
 };
 export const DEFAULT_PRIVACY = 'friends';
 export const privacyOf = (c) => (PRIVACY[c?.privacy] ? c.privacy : DEFAULT_PRIVACY);
+// Who can invite you to a party (chosen in the Status window)
+export const PARTY_INVITES = {
+  anyone: { name: 'Anyone', text: 'Any player can invite you to a party.' },
+  friends: { name: 'Friends only', text: 'Only your friends can invite you to a party.' },
+};
+export const DEFAULT_PARTY_INVITES = 'anyone';
+export const partyInvitesOf = (c) => (PARTY_INVITES[c?.partyInvites] ? c.partyInvites : DEFAULT_PARTY_INVITES);
 export function canSeeStatus(c, { self = false, friend = false } = {}) {
   const p = privacyOf(c);
   return self || p === 'public' || (p === 'friends' && friend);

@@ -1180,6 +1180,12 @@ function startGame(character) {
     if ((v = t('data-graphics')) != null) { settings.graphics = v; saveSettings(); settings.graphicsNow = world?.setGraphics(v); drawPanel(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
+    if ((v = t('data-party-invites')) != null) {
+      const before = character.partyInvites;
+      character.partyInvites = v; drawPanel();
+      api.setPartyInvites(v).catch((err) => { character.partyInvites = before; drawPanel(); showArea(err.message); });
+      return;
+    }
     if ((v = t('data-privacy')) != null) {
       const before = character.privacy;
       character.privacy = v; drawPanel();

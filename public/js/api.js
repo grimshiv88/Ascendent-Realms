@@ -1231,6 +1231,12 @@ export async function roomGuests(id, guests) {
   }
   return request('api/rooms/guests', { method: 'POST', body: { id, guests } });
 }
+export async function setPartyInvites(partyInvites) {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => { acc.character.partyInvites = partyInvites; return { ok: true, partyInvites }; });
+  }
+  return request('api/party-invites', { method: 'POST', body: { partyInvites } });
+}
 export async function setPrivacy(privacy) {
   if (await isPreviewMode()) {
     return updatePreviewAccount((acc) => { acc.character.privacy = privacy; return { ok: true, privacy }; });
