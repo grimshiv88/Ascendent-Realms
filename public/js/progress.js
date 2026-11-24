@@ -2,6 +2,8 @@
 // Every change is saved to the server a moment later.
 import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } from './data/game-data.mjs';
 import { MINT } from './data/money.mjs';
+import { HUNGER_MAX, fillOf, STARVE_ATK } from './data/hunger.mjs';
+import { cleanBeds } from './data/crops.mjs';
 import { ITEMS, shopFor, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, gearSkillSlots, mythicSkill, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
 import { deathOutcome, applyRise, livesLeft } from './data/life.mjs';
@@ -63,6 +65,9 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.torches ||= [];
   c.tent ??= null; // where your tent is pitched
   c.fatigue ??= 0;
+  c.hunger ??= HUNGER_MAX; // how full you are (data/hunger.mjs)
+  c.crops = cleanBeds(c.crops); // the beds you have planted (data/crops.mjs)
+  c.mount ??= null; // where you left your mount: { item, x, z }
   c.trained = { atk: 0, def: 0, matk: 0, mdef: 0, hp: 0, ...(c.trained || {}) }; // Stat Points put straight into ATK, DEF, MATK, MDEF or HP
   c.caves ??= {}; // cave id -> when you last beat its boss
   c.villages ??= { list: [], due: [] }; // monster villages out in the wilds, and when the next ones appear
@@ -115,7 +120,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     const d = derivedStats(base, c.level, c.trained);
     const b = bonus();
     // a broken arm weakens your blows; broken ribs leave you short of breath (less SP)
-    const arm = c.injury?.part === 'arm' ? 0.7 : 1, ribs = c.injury?.part === 'ribs' ? 0.7 : 1;
+    const arm = (c.injury?.part === 'arm' ? 0.7 : 1) * (c.hunger <= 0 ? STARVE_ATK : 1), ribs = c.injury?.part === 'ribs' ? 0.7 : 1;
     return { ...d, sp: Math.round((d.sp + b.sp) * ribs), atk: Math.round((d.atk + b.atk) * arm), matk: Math.round((d.matk + b.matk) * arm), def: d.def + b.def, mdef: d.mdef + b.mdef, bonus: b, base: d };
   }
   if (c.hp == null || c.hp > stats().hp) c.hp = stats().hp;
@@ -141,7 +146,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, dayPass: c.dayPass || null, country: c.country || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
+    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), hunger: Math.round(c.hunger), crops: c.crops, mount: c.mount || null, torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, dayPass: c.dayPass || null, country: c.country || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
     spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null,
   });
 
@@ -246,8 +251,31 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (it.rest) c.fatigue = Math.max(0, c.fatigue - it.rest);
       if (it.heal) c.hp = Math.min(stats().hp, c.hp + it.heal);
       if (it.sp) c.sp = Math.min(stats().sp, c.sp + it.sp);
+      c.hunger = Math.min(HUNGER_MAX, c.hunger + fillOf(e.id, it));
       changed('hp');
     },
+    // ---------- hunting, cooking and the farms ----------
+    // cook every piece of raw meat you carry (by a campfire); returns [[cooked id, n]]
+    cookAll() {
+      const out = [];
+      for (const s of [...c.inventory]) {
+        const to = ITEMS[s.id]?.raw;
+        if (!to) continue;
+        const n = s.n;
+        removeItem(s.id, n);
+        addItem(to, n);
+        out.push([to, n]);
+      }
+      if (out.length) { work(out.reduce((a, [, n]) => a + n, 0)); changed('bag'); }
+      return out;
+    },
+    has: (id) => count(id) > 0,
+    // give one thing from the bag away (fed to an animal)
+    giveAway(id) { if (!removeItem(id, 1)) return false; changed('bag'); return true; },
+    // pay a fee (the Butcher's); false if you can't
+    pay(n) { if (c.coins < n) { poor(n); return false; } c.coins -= n; changed('coins'); return true; },
+    // hunger falls as you play (see world.js); `n` may be negative
+    hungerBy(n) { c.hunger = Math.max(0, Math.min(HUNGER_MAX, c.hunger + n)); },
 
     // Shop: buying needs the level and the coins; selling pays less than the shop asks
     // buy from the ordinary shop, or from a market (by its id) when standing at one
@@ -382,6 +410,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (it.sp) c.sp = Math.min(stats().sp, c.sp + Math.round(it.sp * 1.25));
       if (it.rest) c.fatigue = Math.max(0, c.fatigue - it.rest);
       if (it.boost) c.boosts.push({ sp: it.boost.sp, until: Date.now() + it.boost.minutes * 60000 });
+      c.hunger = Math.min(HUNGER_MAX, c.hunger + fillOf(id, it));
       changed('hp');
     },
     sleepInRoom() {

@@ -15,6 +15,7 @@ const { LIVES, UNDYING_LEVEL, canMarry } = require('../public/js/data/life.mjs')
 const { MAX_CHILDREN } = require('../public/js/data/family.mjs');
 const { RACES, CLASSES } = require('../public/js/data/game-data.mjs');
 const { BODYGUARDS } = require('../public/js/data/hire.mjs');
+const { cleanBeds } = require('../public/js/data/crops.mjs');
 
 async function load(accountId) {
   const row = await db.get('SELECT data FROM characters WHERE account_id = ?', accountId);
@@ -202,7 +203,7 @@ async function saveProgress(accountId, p) {
   const fields = {
     level: int(p.level, 1, 10000), exp: int(p.exp, 0, 1e12), coins: int(p.coins, 0, 1e12), hp: int(p.hp, 0, 1e9), sp: int(p.sp, 0, 1e9),
     unspentPoints: int(p.unspentPoints, 0, 1e6), uniquePoints: int(p.uniquePoints, 0, 1e6),
-    fatigue: int(p.fatigue ?? 0, 0, 100), savedAt: int(p.savedAt ?? 0, 0, 1e15),
+    fatigue: int(p.fatigue ?? 0, 0, 100), hunger: int(p.hunger ?? 100, 0, 100), savedAt: int(p.savedAt ?? 0, 0, 1e15),
   };
   for (const [k, v] of Object.entries(fields)) if (v === null) return { error: `Bad value for ${k}.` };
   const stats = {};
@@ -354,7 +355,11 @@ async function saveProgress(accountId, p) {
   }
   // monster players from level 100 can switch to their humanoid form and back
   if ((p.form === 'monster' || p.form === 'humanoid') && mayChangeForm({ ...character, level: fields.level ?? character.level })) character.form = p.form;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, dayPass, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
+  // the beds you planted (data/crops.mjs) and where you left your mount (data/mounts.mjs)
+  const crops = cleanBeds(p.crops);
+  const mount = p.mount && ITEMS[p.mount.item]?.kind === 'mount' && Number.isFinite(p.mount.x) && Number.isFinite(p.mount.z)
+    ? { item: p.mount.item, x: Math.round(p.mount.x * 10) / 10, z: Math.round(p.mount.z * 10) / 10 } : null;
+  Object.assign(character, fields, { crops, mount, stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, dayPass, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
   await store(accountId, character);
   return { ok: true };
 }

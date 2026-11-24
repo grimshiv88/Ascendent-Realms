@@ -1,4 +1,5 @@
 // The in-game HUD and the Status Window (laid out like Mohammed's black-and-gold design).
+import { HUNGRY, hungerWord } from './data/hunger.mjs';
 import { CASTLES, castleOf, KING_RETURNS_MS, CHALLENGE_ANSWER_MS } from './data/kings.mjs';
 import { CONTROLS, codeFor, keyName } from './data/controls.mjs';
 import {
@@ -64,6 +65,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
       <div class="hud-bar hp" title="HP"><span style="width:${(hp / d.hp) * 100}%"></span><b>HP ${hp} / ${d.hp}</b></div>
       <div class="hud-bar sp" title="SP"><span style="width:${((c.sp ?? d.sp) / d.sp) * 100}%"></span><b>SP ${Math.round(c.sp ?? d.sp)} / ${d.sp}</b></div>
       <div class="hud-bar fatigue" title="Fatigue: sleep (Z) by a fire or torch before it fills"><span style="width:${Math.min(100, c.fatigue || 0)}%"></span><b>FATIGUE ${Math.round(c.fatigue || 0)} / 100</b></div>
+      <div class="hud-bar hunger${(c.hunger ?? 100) < HUNGRY ? ' low' : ''}" title="Hunger: eat before it runs out. Cook meat over a fire, or buy food"><span style="width:${Math.max(0, Math.min(100, c.hunger ?? 100))}%"></span><b>HUNGER ${Math.round(c.hunger ?? 100)} / 100 · ${hungerWord(c.hunger ?? 100).toUpperCase()}</b></div>
       <div class="hud-bar exp" title="EXP"><span style="width:${Math.min(100, (c.exp / need) * 100)}%"></span><b>EXP ${c.exp} / ${need}</b></div>
       ${c.injury ? `<p class="hud-injury" title="${esc(INJURY[c.injury.part].effect)}">🩹 ${INJURY[c.injury.part].name}: treat at The Green Vial</p>` : ''}
       ${c.unspentPoints ? `<button type="button" class="hud-points" data-open="status">${c.unspentPoints} Stat Points to place</button>` : ''}
@@ -148,6 +150,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${row('Stamina', stat('sta'))}
           ${row('Intelligence', stat('int'))}
           ${row('Fatigue', `${Math.round(c.fatigue || 0)} / 100`)}
+          ${row('Hunger', `${Math.round(c.hunger ?? 100)} / 100 (${hungerWord(c.hunger ?? 100)})`)}
           ${c.injury ? row('Injury', `${INJURY[c.injury.part].name} (${c.injury.left} treatment${c.injury.left > 1 ? 's' : ''} left)`) : ''}
         </dl>
       </div>
@@ -386,6 +389,11 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Bag and shop</dt><dd>I and B</dd></div>
       <div class="sw-row"><dt>Quests</dt><dd>Q</dd></div>
       <div class="sw-row"><dt>Skills</dt><dd>K opens them. Use a skill with its key (1 to 6 at first; you can change them), or tap its button</dd></div>
+      <div class="sw-row"><dt>Hunting</dt><dd>Kill a wild animal, then E beside its body: drag it to a Butcher, or cut it up (with a knife, sword, dagger or axe) and cook the meat with E by a campfire. Only halal animals give meat.</dd></div>
+      <div class="sw-row"><dt>Animals</dt><dd>E beside a grazing animal: feed it a vegetable, hay or grain from your bag, or pet it. Farm animals belong to the farmer: feed and pet them, don't hunt them.</dd></div>
+      <div class="sw-row"><dt>Growing crops</dt><dd>Buy seeds at a Farm Stand and press E by one of the farm's visitors' beds to plant them (or dig your own beds with a Hoe on land you set to Farm). They grow while you are away; a Watering Can filled at water makes them grow faster. E again when ripe to harvest.</dd></div>
+      <div class="sw-row"><dt>Riding</dt><dd>Buy a horse or donkey at a Farm Stand, or tame a wild horse or camel: stand still with a carrot or apple in your bag and feed it 3 times. ${keyName(codeFor('mount'))} calls it, and ${keyName(codeFor('mount'))} (or E beside it) gets you on and off. Run to gallop.</dd></div>
+      <div class="sw-row"><dt>Hunger</dt><dd>Eat before the Hunger bar runs out. Hungry: rest stops healing you. Starving: you slowly lose HP and hit softer.</dd></div>
       <div class="sw-row"><dt>Sleep</dt><dd>Z, inside your tent, by a campfire or by a torch (lowers Fatigue; fastest in a tent)</dd></div>
       <div class="sw-row"><dt>Tent</dt><dd>P pitches your tent in front of you (buy one in the shop, or craft it from 8 logs). Press P beside it to pack it up</dd></div>
       <div class="sw-row"><dt>Torches</dt><dd>T places one (buy them in the shop; they keep monsters away at night). Press T beside one to pick it back up</dd></div>

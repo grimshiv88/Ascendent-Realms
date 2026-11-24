@@ -16,7 +16,8 @@ const db = require('./db');
 const mail = require('./mail');
 
 const app = express();
-app.use(express.json({ limit: '10kb' }));
+// (a save can carry up to 80 planted beds, so 64 kB rather than 10)
+app.use(express.json({ limit: '64kb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const bearer = (req) => (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
