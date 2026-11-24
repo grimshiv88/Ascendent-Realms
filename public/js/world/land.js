@@ -2,7 +2,7 @@
 // Near the player the ground is detailed and has trees, rocks and grass; further away it gets
 // coarser; a low-detail "horizon" covers everything out to about 24 km so mountains show far off.
 import * as THREE from 'three';
-import { sample, vnoise, SEA_LEVEL, lakesWithLevels } from '../data/world-layout.mjs';
+import { sample, vnoise, SEA_LEVEL, lakesWithLevels, VOLCANOES, toWorld } from '../data/world-layout.mjs';
 import { scenery, hideInstance, BREAKABLE, setSceneryQuality } from './scenery.js';
 
 export const CHUNK = 256;                 // metres per terrain tile
@@ -26,8 +26,10 @@ const PAL = {
   clay: C('#a8764a'), clay2: C('#c69a68'), fae: C('#4f9a68'), fae2: C('#6fb08a'),
   mud: C('#4a4630'), moss: C('#566a32'), dune: C('#d8b678'), dune2: C('#c49a5e'),
   tundra: C('#9aa08a'), darkFloor: C('#1f2a17'), gold: C('#a39a48'), gold2: C('#b8a457'),
-  jungle: C('#3f8a2c'), heath: C('#7a7a52'),
+  jungle: C('#3f8a2c'), heath: C('#7a7a52'), cinder: C('#2a2220'), lavaRock: C('#6a2412'),
 };
+// the volcanoes' black cinder cones, with no snow on them (they are too hot), and red rock round the craters
+const VOLCANO_AT = VOLCANOES.map(([px, py]) => toWorld(px, py));
 const tmpC = new THREE.Color();
 
 function groundColor(s, ny, wx, wz, far, out) {
@@ -47,11 +49,17 @@ function groundColor(s, ny, wx, wz, far, out) {
       if (s.dark) out.lerp(PAL.darkFloor, Math.min(1, s.dark * 0.8));
       if (h > 260) out.lerp(PAL.rock, Math.min(1, (h - 260) / 300));
       break;
-    case 'peaks':
+    case 'peaks': {
       out.copy(PAL.darkRock).lerp(PAL.ash, n);
       if (h < 300) out.lerp(PAL.grass, (1 - h / 300) * 0.7);
-      if (h > 1100) out.lerp(PAL.snow, Math.min(1, (h - 1100) / 250));
+      let vd = Infinity;
+      for (const v of VOLCANO_AT) vd = Math.min(vd, Math.hypot(wx - v.x, wz - v.z));
+      const hot = vd < 9000 ? 1 - vd / 9000 : 0;
+      if (h > 1100) out.lerp(PAL.snow, Math.min(1, (h - 1100) / 250) * (1 - Math.min(1, hot * 2.5)));
+      if (hot > 0) out.lerp(PAL.cinder, Math.min(0.85, hot * 1.6));
+      if (vd < 480) out.lerp(PAL.lavaRock, Math.min(1, (480 - vd) / 200) * (0.5 + n * 0.4));
       break;
+    }
     case 'warrens':
       out.copy(PAL.clay).lerp(PAL.clay2, 0.5 + Math.sin(h / 6) * 0.5);
       out.lerp(PAL.dirt, n * 0.3);

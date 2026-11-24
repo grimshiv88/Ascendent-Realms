@@ -88,12 +88,15 @@ export function updateSkillBar(el, game, cooling, skillOf) {
   for (const btn of el.querySelectorAll('[data-skill]')) {
     const sk = skillOf(btn.dataset.skill);
     const left = cooling(btn.dataset.skill);
-    btn.querySelector('.sk-cool').style.height = `${Math.round(left * 100)}%`;
+    // (each part is only written when it changes, so an idle bar costs nothing ten times a second)
+    const cool = btn.querySelector('.sk-cool'), h = `${Math.round(left * 100)}%`;
+    if (cool.style.height !== h) cool.style.height = h;
     // the seconds until it can be used again, counting down on the button
     const secs = left * sk.cd, time = btn.querySelector('.sk-time');
-    time.hidden = secs <= 0;
-    if (secs > 0) time.textContent = secs < 10 ? secs.toFixed(1) : String(Math.ceil(secs));
-    btn.classList.toggle('no-sp', game.character.sp < sk.sp);
+    if (time.hidden !== secs <= 0) time.hidden = secs <= 0;
+    if (secs > 0) { const txt = secs < 10 ? secs.toFixed(1) : String(Math.ceil(secs)); if (time.textContent !== txt) time.textContent = txt; }
+    const noSp = game.character.sp < sk.sp;
+    if (btn.classList.contains('no-sp') !== noSp) btn.classList.toggle('no-sp', noSp);
   }
 }
 

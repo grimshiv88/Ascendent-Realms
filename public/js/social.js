@@ -13,6 +13,7 @@ export function createSocial(host, { onError } = {}) {
   host.insertAdjacentHTML('beforeend', `
     <div id="social-top">
       <div class="so-search">
+        <button type="button" class="so-find-btn" aria-label="Find a player" aria-expanded="false">🔍</button>
         <input type="search" placeholder="Find a player…" aria-label="Find a player by username" maxlength="16" autocomplete="off" spellcheck="false">
         <button type="button" class="so-friends-btn" aria-label="Friends" aria-expanded="false">👥<b class="so-badge" hidden></b></button>
       </div>
@@ -198,7 +199,15 @@ export function createSocial(host, { onError } = {}) {
     drop.hidden = false;
     friendsBtn.setAttribute('aria-expanded', String(mode === 'friends'));
   }
-  function closeDrop() { dropMode = null; drop.hidden = true; friendsBtn.setAttribute('aria-expanded', 'false'); }
+  function closeDrop() { dropMode = null; drop.hidden = true; friendsBtn.setAttribute('aria-expanded', 'false'); fold(); }
+
+  // On a phone the search box folds into a 🔍 button (it would cover your status card); a tap opens
+  // it across the top of the screen, and it folds away again when you're done with it
+  const top = $('#social-top'), findBtn = $('.so-find-btn');
+  function unfold(on) { top.classList.toggle('finding', on); findBtn.setAttribute('aria-expanded', String(on)); }
+  function fold() { if (document.activeElement !== search && !search.value.trim() && drop.hidden) unfold(false); }
+  findBtn.addEventListener('click', () => { if (top.classList.contains('finding')) { search.value = ''; search.blur(); closeDrop(); unfold(false); } else { unfold(true); search.focus(); } });
+  search.addEventListener('blur', () => setTimeout(fold, 150));
 
   let searchTimer = 0;
   search.addEventListener('input', () => {

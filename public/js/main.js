@@ -545,9 +545,13 @@ function startGame(character) {
     renderHud($('hud'), character, game.stats(), ui.atCave, world?.atPortal);
     const btn = $('attack-btn');
     const armed = !!game.weapon();
-    btn.innerHTML = armed ? SWORD : FIST;
-    btn.setAttribute('aria-label', armed ? `Attack with ${game.weapon().name}` : 'Punch');
-    btn.classList.toggle('armed', armed);
+    // (only when it changes: a button redrawn under your thumb loses the tap)
+    const label = armed ? `Attack with ${game.weapon().name}` : 'Punch';
+    if (btn.getAttribute('aria-label') !== label || !btn.firstChild) {
+      btn.innerHTML = armed ? SWORD : FIST;
+      btn.setAttribute('aria-label', label);
+      btn.classList.toggle('armed', armed);
+    }
   }
 
   function drawPanel() {
