@@ -10,6 +10,8 @@ import { ANIMALS, wildAnimalsAt } from '../data/animals.mjs';
 import { buildAnimal, animateAnimal, lieDown } from './animalbody.js';
 import { CORPSE_SECS } from './deaths.js';
 import { TAMEABLE } from '../data/mounts.mjs';
+import { BEASTS, BEAST_RETURNS, lairsNear } from '../data/beasts.mjs';
+import { buildBeast, animateBeast, makeBreath, buildLavaLake } from './beasts.js';
 
 // [name, body to build, level range, aggressive?, speed m/s, drops [item, chance, min, max]]
 export const KINDS = {
@@ -45,6 +47,10 @@ export const BY_REGION = {
 // skill and spell works on them; they walk, flee, graze and fall in their own way below.
 for (const [id, a] of Object.entries(ANIMALS)) {
   KINDS[`a_${id}`] = { name: a.name, animal: a, animalId: id, levels: [1, 1], aggressive: a.temper === 'fierce', speed: a.speed, drops: [] };
+}
+// The great beasts (data/beasts.mjs) live at their lairs as kinds named `b_<id>`
+for (const [id, b] of Object.entries(BEASTS)) {
+  KINDS[`b_${id}`] = { name: b.name, beast: b, beastId: id, levels: b.levels, aggressive: !b.peaceful, speed: b.fly, drops: b.drops };
 }
 export const GOBLIN_LINE = ['goblin', 'hobgoblin', 'chieftain', 'goblinlord', 'ogrelord', 'emperor'];
 
@@ -113,7 +119,7 @@ export function monsterHit(atk, level, def) {
 export const monsterExp = (level, stage = 0) => rollKillExp(level, stage);
 
 // `groundAt(x, z, fromY)` is where feet rest (the drawn ground, and built floors); monsters walk on it as players do
-export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null, blockedAt = null, pushOut = null, onCrash = null }) {
+export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null, blockedAt = null, pushOut = null, onCrash = null, onBeast = null }) {
 
   // Is something solid (a wall, fence, tree, rock) in the way of `m` stepping to (nx, nz)? Checks
   // its body and its nose, so long animals don't push their heads into walls. Gives back what it hit.
@@ -169,6 +175,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   function make(kindId, level, x, y, z, extra = {}) {
     const kind = KINDS[kindId];
     if (kind.animal) return makeAnimal(kindId, level, x, y, z, extra);
+    if (kind.beast) return makeBeast(kindId, level, x, y, z, extra);
     const stage = extra.stage ?? kind.body.stage ?? 0;
     const body = buildCharacter({ race: kind.body.race, form: kind.body.form, stage, look: { ...(kind.body.look || {}), size: kind.body.size || 1 } });
     addOrgans(body.userData.rig); // (inside, for a deep cut to spill)
@@ -213,6 +220,194 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     list.push(m);
     return m;
   }
+  // ---------- the great beasts: dragons, wyverns and the Spirit King (data/beasts.mjs) ----------
+  const slain = new Map(); // lair id -> when a new beast comes to it
+  let nowT = 0, beastTimer = 0;
+  const groundH = (x, z) => { const s = sample(x, z, tmp); return Math.max(s.h, s.water); };
+  function makeBeast(kindId, level, x, y, z, extra = {}) {
+    const kind = KINDS[kindId], b = kind.beast;
+    const body = buildBeast(b);
+    const h = body.userData.height;
+    const tag = plate(b.name, level);
+    scene.add(body, tag.sprite);
+    const spirit = b.shape === 'spirit';
+    const maxHp = Math.round((8 + level * 3.5) * (b.boss ? 6 : b.hpMul || 1));
+    const m = {
+      kind, kindId, level, stage: 5, body, tag, x, z, y, heading: Math.random() * 6.28, hp: maxHp, maxHp,
+      atk: Math.round((7 + level * 0.75) * (b.boss ? 2 : 1.5)), def: 1 + level, speed: b.fly,
+      radius: spirit ? b.height * 0.16 : b.len * 0.16, height: h, state: 'wander', timer: 0, attackCd: 0, angry: false, hurt: 0, dead: 0,
+      keep: true, boss: !!b.boss, air: spirit ? 0 : b.cruise, mode: 'circle', modeT: 0, orbit: Math.random() * 6.28, breathCd: 3, ...extra,
+    };
+    if (spirit) body.visible = false; // (until he rises from the lake)
+    body.position.set(x, y + m.air, z);
+    list.push(m);
+    return m;
+  }
+  // the lava lakes in the volcanoes' craters (drawn while you are near)
+  const lavaLakes = new Map(); // lair id -> lake
+  function updateLava(p) {
+    for (const [id, g] of lavaLakes) if (Math.hypot(g.position.x - p.x, g.position.z - p.z) > 3000) { scene.remove(g); lavaLakes.delete(id); }
+    for (const L of lairsNear(p.x, p.z, 2500)) {
+      if (L.kind !== 'fire_dragon' || lavaLakes.has(L.id)) continue;
+      const g = buildLavaLake(170);
+      g.position.set(L.x, sample(L.x + 170, L.z, tmp).h - 6, L.z);
+      scene.add(g); lavaLakes.set(L.id, g);
+    }
+  }
+  function spawnBeasts(p) {
+    updateLava(p);
+    for (const L of lairsNear(p.x, p.z, 700)) {
+      if ((slain.get(L.id) || 0) > nowT || list.some((m) => m.lair === L)) continue;
+      const kindId = `b_${L.kind}`, b = BEASTS[L.kind];
+      const level = Math.round(rand(...b.levels));
+      const a = Math.random() * 6.28, r = b.shape === 'spirit' ? 0 : b.circle;
+      const x = L.x + Math.cos(a) * r, z = L.z + Math.sin(a) * r;
+      const m = make(kindId, level, x, b.shape === 'spirit' ? sample(x, z, tmp).water : groundH(x, z), z, { lair: L, orbit: a });
+      m.home = { x: L.x, z: L.z };
+    }
+  }
+  // a breath of fire, frost, lightning or water, from its mouth (or the Spirit King's hand)
+  function breathe(m, p, secs) {
+    endBreath(m);
+    const b = m.kind.beast;
+    m.breath = makeBreath(b.breath, b.shape === 'wyvern' ? 13 : b.shape === 'spirit' ? 30 : 19, b.shape === 'spirit' ? 1.2 : 3);
+    m.breathT = secs; m.breathHit = 0.4;
+    scene.add(m.breath);
+  }
+  function endBreath(m) {
+    if (!m.breath) return;
+    scene.remove(m.breath); m.breath.userData.dispose(); m.breath = null; m.breathT = 0;
+  }
+  const mouthAt = new THREE.Vector3();
+  function stepBreath(m, dt, t, p, dist) {
+    if (!m.breath) return;
+    m.breathT -= dt;
+    if (m.breathT <= 0 || m.dead) { endBreath(m); return; }
+    m.body.updateMatrixWorld(true);
+    m.body.userData.beast.mouth.getWorldPosition(mouthAt);
+    m.breath.position.copy(mouthAt);
+    m.breath.lookAt(p.x, (p.y ?? m.y) + 1, p.z);
+    m.breath.userData.tick(t);
+    // it scorches (or freezes) you if you are still in its path
+    if (m.breathHit > 0) {
+      m.breathHit -= dt;
+      const reach = m.kind.beast.shape === 'spirit' ? 32 : m.kind.beast.shape === 'wyvern' ? 15 : 21;
+      if (m.breathHit <= 0 && !p.dead && Math.hypot(p.x - mouthAt.x, p.z - mouthAt.z) < reach) onHitPlayer(m, m.kind.beast.breath);
+    }
+  }
+  const turnTo = (m, want, rate, dt) => {
+    const d = Math.atan2(Math.sin(want - m.heading), Math.cos(want - m.heading));
+    m.heading += Math.max(-rate * dt, Math.min(rate * dt, d));
+    return d;
+  };
+
+  function stepBeast(m, dt, t, p, dx, dz, dist) {
+    const b = m.kind.beast;
+    if (dist > 1200) { remove(m); return; }
+    if (b.shape === 'spirit') { stepSpirit(m, dt, t, p, dx, dz, dist); return; }
+    if (m.dead) {
+      // it falls from the sky and lies where it lands
+      m.dead += dt;
+      m.air = Math.max(0, m.air - dt * (6 + m.dead * 14));
+      m.y = groundH(m.x, m.z) + m.air;
+      m.body.position.set(m.x, m.y, m.z);
+      animateBeast(m.body, t, { dead: m.dead });
+      if (m.dead > 150) remove(m);
+      return;
+    }
+    const L = m.home;
+    const fromLair = Math.hypot(p.x - L.x, p.z - L.z);
+    const sees = !p.dead && !p.underground && fromLair < b.range;
+    if (!sees) { if (m.mode !== 'circle') { m.mode = 'circle'; m.angry = false; } }
+    else if (m.mode === 'circle' && (m.angry || dist < b.notice || fromLair < b.circle * 0.8)) { m.mode = 'dive'; m.modeT = 0; m.angry = true; onBeast?.(m, 'notice'); } // (close to it, or into the lair it circles)
+    m.modeT += dt;
+    m.attackCd -= dt; m.breathCd -= dt;
+    let tx = p.x, tz = p.z, wantAir = b.cruise, speed = b.fly, rate = 1.4;
+    if (m.mode === 'circle') {
+      m.orbit += (dt * b.fly * 0.45) / b.circle;
+      tx = L.x + Math.cos(m.orbit) * b.circle; tz = L.z + Math.sin(m.orbit) * b.circle;
+      speed = b.fly * 0.45;
+    } else if (m.mode === 'dive') {
+      // down at you: it breathes from a little way off, then claws and bites from just above
+      const close = m.radius + p.radius + 2.5;
+      wantAir = dist > 45 ? Math.min(b.cruise, 14 + dist * 0.35) : dist > 18 ? 9 : 3.5;
+      speed = dist > 25 ? b.fly : Math.max(0, Math.min(b.fly * 0.5, dist - close));
+      rate = dist < 30 ? 3 : 1.6;
+      const facing = Math.abs(Math.atan2(Math.sin(Math.atan2(dx, dz) - m.heading), Math.cos(Math.atan2(dx, dz) - m.heading)));
+      if (b.breath && dist > 6 && dist < (b.shape === 'wyvern' ? 13 : 18) && m.breathCd <= 0 && facing < 0.5) { breathe(m, p, 1.6); m.breathCd = 6 + Math.random() * 3; }
+      if (dist < close + 1.5 && m.air < 7 && m.attackCd <= 0 && !p.dead) { m.attackCd = 2; m.lunge = 0.3; onHitPlayer(m); }
+      if (m.modeT > 14) { m.mode = 'climb'; m.modeT = 0; }
+    } else {
+      // up and away for a moment, then round for another pass
+      tx = m.x + Math.sin(m.heading) * 50; tz = m.z + Math.cos(m.heading) * 50;
+      wantAir = b.cruise * 0.7;
+      if (m.modeT > 4) { m.mode = 'dive'; m.modeT = 0; }
+    }
+    const turn = turnTo(m, Math.atan2(tx - m.x, tz - m.z), rate, dt);
+    m.x += Math.sin(m.heading) * speed * dt; m.z += Math.cos(m.heading) * speed * dt;
+    const before = m.air;
+    m.air += Math.max(-12 * dt, Math.min(9 * dt, wantAir - m.air));
+    m.air = Math.max(2.5, m.air);
+    m.y = groundH(m.x, m.z) + m.air;
+    m.hurt = Math.max(0, m.hurt - dt);
+    m.lunge = Math.max(0, (m.lunge || 0) - dt);
+    const lunge = m.lunge > 0 ? Math.sin((m.lunge / 0.3) * Math.PI) * 1.2 : 0;
+    m.body.position.set(m.x + Math.sin(m.heading) * lunge, m.y - lunge * 0.5, m.z + Math.cos(m.heading) * lunge);
+    m.body.rotation.y = m.heading;
+    animateBeast(m.body, t, { air: m.air, speed, open: m.breathT > 0 || m.lunge > 0, pitch: Math.max(-0.4, Math.min(0.4, -(m.air - before) / dt * 0.04)), bank: Math.max(-0.5, Math.min(0.5, -turn * 0.6)) });
+    stepBreath(m, dt, t, p, dist);
+    m.tag.sprite.position.set(m.x, m.y + m.height + 1, m.z);
+  }
+
+  // The Spirit King rests under the lake; he rises when you come near, and only fights you if you
+  // strike him first. He never leaves the water.
+  function stepSpirit(m, dt, t, p, dx, dz, dist) {
+    const b = m.kind.beast;
+    const surf = sample(m.x, m.z, tmp).water;
+    if (m.dead) {
+      m.dead += dt;
+      animateBeast(m.body, t, { dead: m.dead });
+      m.tag.sprite.visible = false;
+      if (m.dead > 6) remove(m);
+      return;
+    }
+    if (!m.risen) {
+      m.tag.sprite.visible = false;
+      if (dist > 120 || p.dead) return;
+      m.risen = true; m.riseT = 0; m.body.visible = true;
+      onBeast?.(m, 'rise');
+    }
+    m.riseT += dt;
+    const up = Math.min(1, m.riseT / 4);
+    if (up >= 1 && !m.greeted) { m.greeted = true; onBeast?.(m, 'greet'); }
+    m.tag.sprite.visible = up >= 1;
+    m.attackCd -= dt;
+    let speed = 0;
+    if (m.angry && !p.dead && dist < b.range) {
+      m.heading = Math.atan2(dx, dz);
+      // he glides across the water towards you (never onto land), and hurls the lake at you
+      if (dist > 14) {
+        const nx = m.x + Math.sin(m.heading) * b.fly * dt, nz = m.z + Math.cos(m.heading) * b.fly * dt;
+        const s = sample(nx, nz, tmp);
+        if (s.h < s.water - 0.6) { m.x = nx; m.z = nz; speed = b.fly; }
+      }
+      if (dist < 32 && m.attackCd <= 0) { m.attackCd = 3.2; breathe(m, p, 1.1); }
+    } else {
+      if (m.angry && (p.dead || dist >= b.range)) m.angry = false;
+      if (dist < 80) turnTo(m, Math.atan2(dx, dz), 1, dt);
+      // drifting back to his resting place
+      const hx = m.home.x - m.x, hz = m.home.z - m.z, hd = Math.hypot(hx, hz);
+      if (hd > 3) { m.x += (hx / hd) * Math.min(hd, 2) * dt; m.z += (hz / hd) * Math.min(hd, 2) * dt; }
+    }
+    m.y = surf - (1 - up) * (b.height + 1);
+    m.hurt = Math.max(0, m.hurt - dt);
+    m.body.position.set(m.x, m.y, m.z);
+    m.body.rotation.y = m.heading;
+    animateBeast(m.body, t, { open: m.breathT > 0, speed });
+    stepBreath(m, dt, t, p, dist);
+    m.tag.sprite.position.set(m.x, m.y + m.height + 0.8, m.z);
+  }
+
   // a few metres of open water near (x, z)? (ducks and geese keep to the shore)
   function nearWater(x, z) {
     for (const [dx, dz] of [[25, 0], [-25, 0], [0, 25], [0, -25], [18, 18], [-18, -18]]) { const q = sample(x + dx, z + dz, tmp); if (q.h < q.water) return true; }
@@ -301,6 +496,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   }
 
   function remove(m) {
+    if (m.breath) endBreath(m);
     clearDeath(m);
     scene.remove(m.body, m.tag.sprite);
     m.tag.sprite.material.map.dispose();
@@ -311,7 +507,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   function update(dt, t) {
     const p = getPlayer();
     spawnTimer -= dt;
-    const alive = list.filter((m) => !m.dead && !m.kind.animal);
+    nowT = t;
+    const alive = list.filter((m) => !m.dead && !m.kind.animal && !m.kind.beast);
     // night brings more monsters, and every one of them hunts
     const night = isNight();
     if (spawnTimer <= 0 && alive.length < (night ? MAX_NEAR + 4 : MAX_NEAR) && !p.dead) {
@@ -324,6 +521,10 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       animalTimer = 2;
       if (list.filter((m) => m.kind.animal && !m.dead && !m.farm).length < MAX_ANIMALS) spawnAnimals(p);
     }
+    // the dragons, wyverns and the Spirit King at their lairs near you
+    beastTimer -= dt;
+    if (beastTimer <= 0 && !p.underground) { beastTimer = 3; spawnBeasts(p); }
+    for (const g of lavaLakes.values()) g.userData.tick(t);
     // ambushes only catch you while you're on the move and away from shelter
     if (p.moving && !p.safe && !p.dead) {
       ambushTimer -= dt;
@@ -335,6 +536,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     for (const m of [...list]) {
       const dx = p.x - m.x, dz = p.z - m.z;
       const dist = Math.hypot(dx, dz);
+      if (m.kind.beast) { stepBeast(m, dt, t, p, dx, dz, dist); continue; }
       if (dist > DESPAWN && !m.keep) { remove(m); continue; }
       if (m.dead && m.kind.animal) {
         // a fallen animal rolls onto its side and lies there until it is cut up, taken to the
@@ -481,6 +683,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const out = [];
     for (const m of list) {
       if (m.dead || m.farm) continue; // (the farmer's animals are not for hunting)
+      if (m.kind.beast && (m.air > 7 && reach < 12 || (m.kind.beast.shape === 'spirit' && !m.risen))) continue; // (out of reach up in the sky, or still under the lake)
       const dx = m.x - x, dz = m.z - z;
       const d = Math.hypot(dx, dz) - m.radius;
       if (d > reach) continue;
@@ -515,6 +718,17 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       const a = m.kind.animal;
       return { exp: Math.max(1, Math.round(a.temper === 'fierce' ? monsterExp(m.level, 0) : a.hp / 12)), coins: 0, drops: [], name: a.name, kind: m.kindId, level: m.level, animal: m.kind.animalId };
     }
+    if (m.kind.beast) {
+      if (m.mode === 'circle') { m.mode = 'dive'; m.modeT = 0; }
+      if (m.hp > 0) return null;
+      m.dead = 0.001;
+      endBreath(m);
+      if (m.lair) slain.set(m.lair.id, nowT + BEAST_RETURNS);
+      const drops = [];
+      for (const [id, chance, min, max] of m.kind.drops) if (Math.random() < chance) drops.push([id, min + Math.floor(Math.random() * (max - min + 1))]);
+      onBeast?.(m, 'slain');
+      return { exp: monsterExp(m.level, 5) * (m.boss ? 5 : 2), coins: (1 + m.level + Math.floor(Math.random() * (m.level / 2 + 2))) * (m.boss ? 10 : 3), drops, name: m.kind.name, kind: m.kindId, level: m.level };
+    }
     if (m.hp > 0) { const lost = maim(m, how, dmg, scene); return lost ? { maimed: lost } : null; }
     m.dead = 0.001;
     startDeath(m, how, scene, { strong: strong || dmg >= before * 1.5 || dmg >= m.maxHp * 0.5 });
@@ -534,7 +748,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       for (const m of list) { if (m.dead || !m.kind.animal || m.kind.aggressive) continue; const d = Math.hypot(m.x - x, m.z - z) - m.radius; if (d < bd) { bd = d; best = m; } }
       return best;
     },
-    clear() { for (const m of [...list]) remove(m); },
+    clear() { for (const m of [...list]) remove(m); for (const g of lavaLakes.values()) scene.remove(g); lavaLakes.clear(); },
     // put a monster somewhere on purpose (cave guards, cave dwellers, bosses)
     spawnAt(kindId, level, x, z, extra = {}) {
       const s = sample(x, z, tmp);
@@ -542,6 +756,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       if (extra.boss) { m.body.scale.multiplyScalar(1.45); m.height *= 1.45; m.radius *= 1.45; }
       return m;
     },
+    // where the great beasts are, and one put in front of you (for testing)
+    beastNear: (x, z, r) => list.find((m) => m.kind.beast && !m.dead && Math.hypot(m.x - x, m.z - z) < r) || null,
     removeWhere(fn) { for (const m of [...list]) if (fn(m)) remove(m); },
     get list() { return list; },
   };

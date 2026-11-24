@@ -46,6 +46,11 @@ export const ITEMS = {
   fae_dust: { name: 'Fae Dust', icon: '✨', kind: 'material', price: 12, text: 'Glittering dust from a wisp.' },
   drake_horn: { name: 'Drake Horn', icon: '🦴', kind: 'material', price: 40, text: 'A young drake\'s horn. Prized by smiths.' },
   frost_core: { name: 'Frost Core', icon: '❄️', kind: 'material', price: 25, text: 'A cold heart from a frost slime.' },
+  // from the great beasts (see data/beasts.mjs)
+  dragon_scale: { name: 'Dragon Scale', icon: '🐉', kind: 'material', price: 900, text: 'A scale from a dragon or a wyvern, harder than steel. Smiths pay well for it.' },
+  dragon_heart: { name: 'Dragon Heart', icon: '❤️‍🔥', kind: 'material', price: 6000, text: 'The still-warm heart stone of a slain dragon. Very rare.' },
+  wyvern_fang: { name: 'Wyvern Fang', icon: '🦷', kind: 'material', price: 350, text: 'A long, curved fang from a wyvern.' },
+  spirit_pearl: { name: 'Spirit Pearl', icon: '🫧', kind: 'material', price: 9000, text: 'The glowing heart of the Spirit King of the great lake. There is only ever one at a time.' },
   // mined in the depths; rank shows how rare each one is
   copper_ore: { name: 'Copper Ore', icon: '🟠', kind: 'material', rank: 1, price: 3, text: 'Soft reddish ore, common in shallow caves. Minted into Copper coins, or forged into cheap copper gear.' },
   iron_ore: { name: 'Iron Ore', icon: '⚫', kind: 'material', rank: 1, price: 14, text: 'The smith\'s bread and butter.' },
