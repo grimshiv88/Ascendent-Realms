@@ -17,7 +17,7 @@ import { renderAssess, renderParents } from './idcard.js';
 import { renderQuests, renderGuild } from './quests.js';
 import { renderLand, renderCave, renderEstate } from './landui.js';
 import { caveById } from './data/depths.mjs';
-import { portalFee, portalKm } from './data/portals.mjs';
+import { portalFee, portalKm, portalLevel } from './data/portals.mjs';
 import { openBuilder as openBuilderView } from './builder.js';
 import { loadSculpts } from './characters/sculpt.js';
 
@@ -601,7 +601,7 @@ function startGame(character) {
     else if (name === 'options') renderOptions(overlay);
     else if (name === 'welcome') renderWelcome(overlay, character.name, !(character.level === 1 && !character.exp));
     else if (name === 'portal' && world?.atPortal) {
-      ui.trip = { from: world.atPortal, to: null, onPick: showTrip };
+      ui.trip = { from: world.atPortal, to: null, onPick: showTrip, level: character.level };
       renderMap(overlay, () => world?.position(), [], { plots: ui.myPlots || [], caves: [] }, null, ui.trip);
     }
     else if (name === 'rankings') renderRankings(overlay, ui.top, character.name, ui.courts || []);
@@ -829,8 +829,15 @@ function startGame(character) {
   function showTrip(to, message = '') {
     const box = overlay.querySelector('.portal-pick');
     if (!box) return;
+    const lv = portalLevel(to);
+    // a portal only opens to land whose monsters are your level or lower
+    if (lv > character.level) {
+      box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away</p>
+        <p class="error">🔒 Monsters there are up to level ${lv}. The portal won't send you until you are level ${lv}.</p>`;
+      return;
+    }
     const fee = portalFee(ui.trip.from, to);
-    box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away</p>
+    box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away · monsters up to Lv ${lv}</p>
       <p>Fee: <b>${money(fee)}</b> <small>(you have ${money(character.coins)})</small></p>
       ${message ? `<p class="error">${message}</p>` : ''}
       <button type="button" class="gold-button" data-portal-go="${to.id}">Pay ${money(fee)} and travel</button>`;
@@ -924,7 +931,7 @@ function startGame(character) {
         world.teleport(to.x, to.z);
         showArea(`The portal hums and you step out at ${to.name}.`);
         drawHud();
-      } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : 'That portal is across the sea.');
+      } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : r === 'level' ? 'The monsters there are stronger than you.' : 'That portal is across the sea.');
       return;
     }
     if (t('data-treat') != null) {
@@ -1484,7 +1491,8 @@ function startGame(character) {
 // The region name fades in at the top of the screen when you enter a new area
 let areaTimer = null;
 // The pop-up an item opens (see bag.js itemInfoHtml). `onClick(e, close)` handles its buttons.
-// A hunted animal's body: drag it to a Butcher, or cut it up here (keys: E or 1 drags, 2 cuts)
+// A hunted animal's body: drag it to a Butcher, cut it up here, or set it as bait over a snare
+// (keys: E or 1 drags, 2 cuts, 3 baits)
 function showCarcass(d) {
   world?.releaseMouse?.();
   const pop = showItemPop(`<div class="item-pop-box" role="dialog" aria-label="Hunted animal">
@@ -1494,20 +1502,25 @@ function showCarcass(d) {
       <div class="pop-actions">
         <button type="button" class="gold-button small" data-carcass="drag">Drag it (E)</button>
         <button type="button" class="gold-button small" data-carcass="cut"${d.blade ? '' : ' title="You need a Hunting Knife, or a sword, dagger or axe in your hand"'}>Cut it up (2)${d.blade ? '' : ': needs a blade'}</button>
+        ${d.baited ? '' : `<button type="button" class="gold-button small" data-carcass="bait"${d.snare ? '' : ' title="You need a Hunter\'s Snare Trap"'}>Set it as bait (3)${d.snare ? '' : ': needs a Snare Trap'}</button>`}
       </div>
+      <p class="bag-hint">${d.baited ? 'Your snare is set under it. Stay back and wait for a bigger animal to come for the bait.' : 'As bait, with a Hunter\'s Snare Trap under it, its smell draws a bigger meat-eater (a fox, jackal, lynx, wolf or bear, by the land), and the snare holds it fast.'}</p>
     </div>`, (e, close) => {
     const act = e.target.closest('[data-carcass]')?.dataset.carcass;
     if (!act) return;
     close(); window.removeEventListener('keydown', keys, true);
-    if (act === 'drag') world?.dragCarcass(); else world?.cutCarcass();
+    carcassAct(act);
   });
+  function carcassAct(act) {
+    if (act === 'drag') world?.dragCarcass(); else if (act === 'bait') world?.baitCarcass(); else world?.cutCarcass();
+  }
   function keys(e) {
     if (!document.body.contains(pop)) { window.removeEventListener('keydown', keys, true); return; }
-    const act = e.code === 'KeyE' || e.code === 'Digit1' ? 'drag' : e.code === 'Digit2' ? 'cut' : null;
+    const act = e.code === 'KeyE' || e.code === 'Digit1' ? 'drag' : e.code === 'Digit2' ? 'cut' : e.code === 'Digit3' && !d.baited ? 'bait' : null;
     if (!act) return;
     e.preventDefault(); e.stopPropagation();
     pop.remove(); window.removeEventListener('keydown', keys, true);
-    if (act === 'drag') world?.dragCarcass(); else world?.cutCarcass();
+    carcassAct(act);
   }
   setTimeout(() => window.addEventListener('keydown', keys, true), 50);
 }

@@ -141,6 +141,11 @@ export const ITEMS = {
   animal_hide: { name: 'Animal Hide', icon: '🟫', kind: 'material', price: 6, text: 'A hide from a hunted animal. Tailors and armourers buy it.' },
   animal_fang: { name: 'Beast Fang', icon: '🦷', kind: 'material', price: 5, text: 'A fang from a wolf, fox or bear. Their meat is not eaten.' },
   feather: { name: 'Feathers', icon: '🪶', kind: 'material', price: 1, text: 'Soft feathers from a bird.' },
+  // bows shoot arrows (one used up with each shot); a bundle from the shop opens into 10 arrows
+  arrow: { name: 'Arrow', icon: '🏹', kind: 'material', price: 1, text: 'A straight wooden shaft with an iron head and feathers. A bow uses one with every shot.' },
+  arrow_bundle: { name: 'Bundle of 10 Arrows', icon: '🏹', kind: 'material', price: 10, unpack: ['arrow', 10], text: 'Ten arrows, tied together. They go into your bag as 10 Arrows.' },
+  // a trap you set with a hunted animal's body as bait (see world/husbandry.js)
+  bait_trap: { name: 'Hunter\'s Snare Trap', icon: '🪤', kind: 'material', price: 25, text: 'Set it under a hunted animal\'s body (E beside the body). The smell of the meat draws a bigger animal, and the snare holds it fast while you shoot or strike it.' },
   hunting_knife: { name: 'Hunting Knife', icon: '🔪', kind: 'material', price: 15, text: 'For cutting up a hunted animal. (A sword, dagger or axe in your hand works too.)' },
   firewood: { name: 'Firewood', icon: '🔥', kind: 'material', price: 4, text: 'A bundle of dry wood. Light a campfire with it to cook and keep warm (from your bag).' },
   // from the farms: vegetables you can eat raw, or feed to the animals (E beside one)
@@ -210,6 +215,11 @@ export const ITEMS = {
   sunforged_glaive: { name: 'Sunforged Glaive', icon: '🔱', kind: 'weapon', type: 'spear', model: 'steel_glaive', power: 78, speed: 0.62, chop: 1.4, rank: 5, effect: { id: 'burn', chance: 0.4 }, price: 22000, forged: true, text: 'Forged in dragon fire; the blade never cools.' },
   dragonscale_plate: { name: 'Dragonscale Plate', icon: '🦺', kind: 'armour', slot: 'body', rank: 5, def: 60, mdef: 20, price: 24000, forged: true, look: { color: '#7a2a24', metal: true }, text: 'Scales of an elder dragon set in steel.' },
   dragonscale_helm: { name: 'Dragonscale Helm', icon: '⛑️', kind: 'armour', slot: 'head', rank: 5, def: 34, mdef: 12, price: 15000, forged: true, look: { color: '#7a2a24', metal: true }, text: 'Horned, and hot to the touch.' },
+  // bows: they shoot from far away, but each shot uses an Arrow
+  hunting_bow: { name: 'Hunting Bow', icon: '🏹', kind: 'weapon', type: 'bow', power: 4, speed: 0.9, chop: 0.3, rank: 0, price: 35, text: 'A simple bow of bent ash. Shoots an Arrow up to 30 m.' },
+  longbow: { name: 'Longbow', icon: '🏹', kind: 'weapon', type: 'bow', model: 'longbow', power: 9, speed: 1.0, chop: 0.3, rank: 1, price: 110, text: 'Taller than its archer. Slow to draw, but it shoots far.' },
+  composite_bow: { name: 'Composite Bow', icon: '🏹', kind: 'weapon', type: 'bow', model: 'composite_bow', power: 15, speed: 0.85, chop: 0.3, rank: 2, price: 360, text: 'Horn, wood and sinew glued together: short, strong and quick.' },
+  elven_bow: { name: 'Elven Warbow', icon: '🏹', kind: 'weapon', type: 'bow', model: 'elven_bow', power: 28, speed: 0.8, chop: 0.3, rank: 3, effect: { id: 'bleed', chance: 0.25 }, price: 1500, text: 'A pale curved bow with silver tips. Its arrows bite deep.' },
   wooden_club: { name: 'Wooden Club', icon: '🏏', kind: 'weapon', type: 'club', power: 4, speed: 0.6, chop: 1.5, rank: 0, price: 20, text: 'A heavy stick. Better than fists.' },
   rusty_sword: { name: 'Rusty Sword', icon: '🗡️', kind: 'weapon', type: 'sword', power: 6, speed: 0.55, chop: 1, rank: 0, price: 40, text: 'Old, but still sharp enough.' },
   hand_axe: { name: 'Hand Axe', icon: '🪓', kind: 'weapon', type: 'axe', power: 8, speed: 0.65, chop: 3, rank: 1, price: 90, text: 'Chops young trees in one or two swings.' },
@@ -266,6 +276,8 @@ Object.assign(ITEMS, {
   bone_club: { name: 'Bone Club', human: 'Bone-Studded Club', icon: '🦴', kind: 'weapon', type: 'club', model: 'wooden_club', power: 5, speed: 0.6, chop: 1.5, rank: 0, price: 20, beast: true, text: 'A thighbone as long as an arm.' },
   fang_knife: { name: 'Fang Knife', human: 'Fang Dirk', icon: '🦷', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 6, speed: 0.35, chop: 0.6, rank: 0, price: 40, beast: true, text: 'A great fang bound to a grip.' },
   claw_hatchet: { name: 'Claw Hatchet', human: 'Hooked Hatchet', icon: '🪓', kind: 'weapon', type: 'axe', model: 'hand_axe', power: 8, speed: 0.65, chop: 3, rank: 1, price: 90, beast: true, text: 'A claw on a haft. It chops wood too.' },
+  sinew_bow: { name: 'Sinew Bow', human: 'Hunter\'s Sinew Bow', icon: '🏹', kind: 'weapon', type: 'bow', model: 'sinew_bow', power: 5, speed: 0.9, chop: 0.3, rank: 0, price: 40, beast: true, text: 'Bent bone strung with beast sinew. Shoots Arrows.' },
+  horn_warbow: { name: 'Horn Warbow', human: 'Horned Warbow', icon: '🏹', kind: 'weapon', type: 'bow', model: 'composite_bow', power: 16, speed: 0.85, chop: 0.3, rank: 2, price: 380, beast: true, text: 'Two great horns bound at the grip. Shoots Arrows far.' },
   tusk_spear: { name: 'Tusk Spear', human: 'Tusk-Headed Spear', icon: '🔱', kind: 'weapon', type: 'spear', model: 'iron_spear', power: 10, speed: 0.6, chop: 0.6, rank: 2, price: 140, beast: true, text: 'A boar tusk on a long shaft.' },
   shaman_totem: { name: 'Shaman Totem', human: 'Carved Totem Staff', icon: '🪄', kind: 'weapon', type: 'staff', model: 'oak_staff', power: 8, speed: 0.6, chop: 0.8, magic: true, rank: 2, price: 90, beast: true, text: 'Feathers, bones and old magic. Uses MATK.' },
   crude_cleaver: { name: 'Crude Cleaver', human: 'Heavy Cleaver', icon: '🗡️', kind: 'weapon', type: 'sword', model: 'iron_sword', power: 11, speed: 0.55, chop: 1, rank: 2, price: 160, beast: true, text: 'More slab than sword, and it does the job.' },
@@ -309,7 +321,11 @@ const REACH = {
   mace: { reach: 1.5, arc: 1.15, hits: 2, sharp: 1 },
   staff: { reach: 2.0, arc: 1.1, hits: 2, sharp: 1 },
   spear: { reach: 2.5, arc: 1.1, hits: 2, sharp: 1 },
+  // a bow shoots one arrow at the foe you face, far away (range is how far an arrow can fly)
+  bow: { reach: 1.0, arc: 0.6, hits: 1, sharp: 1, range: 30, aim: 0.3 },
 };
+// how far each bow shoots, beyond the plain one
+const BOW_RANGE = { longbow: 45, composite_bow: 38, elven_bow: 50, horn_warbow: 40 };
 // some weapons are longer than others of their kind
 const LONGER = { steel_sword: 0.15, knight_blade: 0.3, dragonbone_sword: 0.5, war_axe: 0.4, crystal_staff: 0.3, steel_glaive: 0.5 };
 export function weaponReach(it) {
@@ -318,10 +334,12 @@ export function weaponReach(it) {
   r.reach += extra;
   r.arc += extra * 0.4;
   if (extra >= 0.3) r.hits += 1;
+  if (r.range) r.range = BOW_RANGE[it?.id] || r.range;
   return r;
 }
 export function reachText(it) {
   const r = weaponReach(it);
+  if (r.range) return `Shoots arrows up to ${r.range} m · uses 1 Arrow a shot`;
   const width = r.arc >= 1.25 ? 'very wide' : r.arc >= 1.05 ? 'wide' : r.arc >= 0.9 ? 'medium' : 'narrow';
   return `Reach ${r.reach.toFixed(1)} m · ${width} swing${r.hits > 1 ? ` (up to ${r.hits} foes)` : ''}${r.sharp > 1 ? ` · sharp: +${Math.round((r.sharp - 1) * 100)}% damage` : ''}`;
 }
@@ -377,6 +395,7 @@ export const SHOP = [
   ['water_flask', 1], ['apple', 1], ['bread', 1], ['herbal_tea', 1], ['herb', 1], ['honey_cake', 3], ['roast_meat', 4], ['stew', 12], ['torch', 1], ['tent', 1], ['hunting_knife', 1], ['firewood', 1], ['sp_potion', 2], ['calm_draught', 2], ['poison_potion', 3], ['potion', 5], ['sp_booster', 5],
   ['swift_potion', 5], ['strength_potion', 6], ['stone_potion', 6], ['fire_oil', 8], ['frost_oil', 8], ['big_potion', 20],
   // weapons
+  ['arrow_bundle', 1], ['bait_trap', 1], ['hunting_bow', 1], ['longbow', 5], ['composite_bow', 12], ['elven_bow', 20],
   ['wooden_club', 1], ['rusty_sword', 1], ['hand_axe', 3], ['iron_dagger', 3], ['oak_staff', 3], ['iron_sword', 5],
   ['iron_spear', 6], ['iron_mace', 8], ['steel_sword', 12], ['war_axe', 15], ['steel_glaive', 16], ['crystal_staff', 20], ['knight_blade', 20], ['dragonbone_sword', 50],
   // armour
@@ -389,7 +408,7 @@ export const SHOP = [
 // The Dark Market: the monster players' shop (food and potions as in the Shop, all halal; the gear is monster gear)
 export const MONSTER_SHOP = [
   ...SHOP.filter(([id]) => !['weapon', 'armour'].includes(ITEMS[id].kind)),
-  ['bone_club', 1], ['fang_knife', 1], ['claw_hatchet', 3], ['shaman_totem', 3], ['tusk_spear', 6], ['crude_cleaver', 5], ['skull_maul', 8],
+  ['bone_club', 1], ['fang_knife', 1], ['sinew_bow', 1], ['horn_warbow', 12], ['claw_hatchet', 3], ['shaman_totem', 3], ['tusk_spear', 6], ['crude_cleaver', 5], ['skull_maul', 8],
   ['serrated_fang', 12], ['troll_cleaver', 15], ['wyrm_glaive', 16], ['spirit_totem', 20], ['warlord_fang', 20],
   ['hide_cap', 1], ['hide_wrap', 1], ['foot_wraps', 1], ['fur_leggings', 2], ['bone_shield', 2], ['scale_harness', 3], ['bone_mask', 6], ['shaman_mantle', 5],
   ['claw_boots', 6], ['scale_mail', 8], ['chitin_greaves', 8], ['tortoise_shield', 8], ['horned_helm', 15], ['drake_plate', 15], ['drake_greaves', 15],
@@ -476,8 +495,8 @@ export const forgeOres = (it) => (it.ore ? [it.ore] : FORGE_ORES.slice(oreTier(i
 // more of it, and its specialities unlock 5 levels before the ordinary shop sells them. They also
 // stock things the ordinary shop doesn't (ore, wood, gems, more food).
 export const MARKETS = {
-  central: { name: 'Central Market', text: 'A bit of everything, and plenty of food.', kinds: ['food', 'weapon', 'armour', 'coating'], extra: ['log', 'iron_ore', 'roast_meat', 'stew', 'apple', 'water_flask'] },
-  crossroads: { name: 'Crossroads Armoury', text: 'Weapons of every kind.', kinds: ['weapon', 'coating'], extra: ['iron_ore', 'silver_ore'] },
+  central: { name: 'Central Market', text: 'A bit of everything, and plenty of food.', kinds: ['food', 'weapon', 'armour', 'coating'], extra: ['arrow_bundle', 'bait_trap', 'log', 'iron_ore', 'roast_meat', 'stew', 'apple', 'water_flask'] },
+  crossroads: { name: 'Crossroads Armoury', text: 'Weapons of every kind, bows and arrows too.', kinds: ['weapon', 'coating'], extra: ['arrow_bundle', 'iron_ore', 'silver_ore'] },
   riverhold: { name: 'Riverhold Apothecary', text: 'Potions, herbs and food.', kinds: ['food'], extra: ['herb', 'herbal_tea', 'honey_cake', 'stew', 'roast_meat', 'apple', 'water_flask', 'slime_gel', 'fae_dust'] },
   hills: { name: 'Hillfort Outfitters', text: 'Armour and shields.', kinds: ['armour'], extra: ['iron_ore', 'copper_ore', 'silver_ore', 'log'] },
   warrens: { name: 'Warren Trading Post', text: 'Goblin goods: crude weapons and food.', kinds: ['weapon', 'food'], extra: ['goblin_ear', 'iron_ore', 'roast_meat'] },
@@ -493,7 +512,7 @@ export const BOT_MARKUP = 1.4, BOT_BUY_SHARE = 0.7;
 const basicGear = (kind) => SHOP.filter(([id]) => ITEMS[id].kind === kind && (ITEMS[id].rank || 0) <= 1 && !ITEMS[id].fashion).map(([id]) => id);
 Object.assign(MARKETS, {
   city_potions: { bot: true, name: 'The Green Vial', text: 'Small potions and remedies, run by the city.', items: ['potion', 'sp_potion', 'calm_draught', 'herb', 'big_potion', 'strength_potion', 'stone_potion', 'swift_potion'] },
-  city_smith: { bot: true, name: 'City Forge', text: 'Basic weapons and tools, run by the city.', items: [...basicGear('weapon'), 'poison_potion', 'fire_oil', 'frost_oil', 'torch', 'tent', 'hunting_knife', 'firewood'] },
+  city_smith: { bot: true, name: 'City Forge', text: 'Basic weapons and tools, run by the city.', items: [...basicGear('weapon'), 'poison_potion', 'fire_oil', 'frost_oil', 'torch', 'tent', 'hunting_knife', 'firewood', 'arrow_bundle', 'bait_trap'] },
   city_armoury: { bot: true, name: 'City Armoury', text: 'Plain armour and shields, run by the city.', items: basicGear('armour') },
   city_tailor: { bot: true, name: 'The Silk Thread', text: 'Clothes to wear for looks, not for battle.', items: ['linen_shirt', 'wide_trousers', 'felt_hat', 'sandals', 'embroidered_tunic', 'turban', 'riding_boots', 'silk_robe'] },
   city_food: { bot: true, name: 'The Olive Tree', text: 'Halal meals that heal and give a short boost.', items: ['bread', 'apple', 'lentil_soup', 'falafel_wrap', 'lamb_kebab', 'chicken_rice', 'date_bowl', 'stew'] },
@@ -501,7 +520,7 @@ Object.assign(MARKETS, {
   furniture_common: { bot: true, name: 'Oak & Hearth Furniture', text: 'Good plain furniture for a family home.', items: ['wooden_bed', 'oak_table', 'chair', 'wardrobe', 'wool_rug', 'oil_lamp', 'bookshelf', 'potted_plant'] },
   furniture_noble: { bot: true, name: 'The Gilded Room', text: 'The finest furniture in the realm, for noble houses.', items: ['canopy_bed', 'marble_table', 'velvet_chair', 'chandelier', 'tapestry', 'gilded_mirror', 'grand_wardrobe'] },
   farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields, seeds and tools to grow your own, and horses and donkeys to ride.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain', 'seed_carrot', 'seed_cabbage', 'seed_lettuce', 'seed_turnip', 'seed_potato', 'seed_onion', 'seed_pumpkin', 'seed_wheat', 'hoe', 'watering_can', 'riding_donkey', 'riding_horse'] },
-  butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'firewood'] },
+  butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you. Snare traps and arrows for hunters.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'firewood', 'bait_trap', 'arrow_bundle'] },
   tavern: { bot: true, name: 'Tavern', text: 'Halal food, fresh drinks and rooms to rent. No alcohol is served here.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask', 'herbal_tea', 'lentil_soup', 'bread'] },
 });
 // what a market charges for an item, and pays for one
@@ -557,6 +576,7 @@ const MYTHIC_ARTS = {
   dagger: { type: 'dash', mult: 8, dist: 14, names: ['Thousand Cuts', 'Silent Death', 'Shadow Waltz', 'Viper\'s Kiss'] },
   club: { type: 'sweep', mult: 7, radius: 6, names: ['Earthbreaker', 'Titan\'s Fall', 'Quake Heart', 'Giant\'s Wrath'] },
   mace: { type: 'sweep', mult: 7, radius: 6, names: ['Judgement', 'Holy Hammerfall', 'Doom Bell', 'Sun Crusher'] },
+  bow: { type: 'bolt', mult: 7, reach: 50, names: ['Star Arrow', 'Heaven\'s Volley', 'Falcon\'s Eye', 'Arrow of Dawn'] },
   staff: { type: 'bolt', mult: 7, reach: 36, magic: true, names: ['Star Fall', 'Eye of the Storm', 'Arcane Cataclysm', 'Moon Collapse'] },
 };
 const EFFECT_ELEMENT = { burn: 'Fire', frost: 'Water', poison: 'Nature', drain: 'Dark', bleed: 'Light' };
