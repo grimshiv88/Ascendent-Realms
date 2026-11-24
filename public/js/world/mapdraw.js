@@ -1,4 +1,5 @@
 // Draws the world map onto a canvas (1600 × 1000). Used by the map page and the in-game map.
+import { allLairs, BEASTS } from '../data/beasts.mjs';
 import { REGIONS, PLACES, RIVERS, LAKE, LAKES, SECTIONS, METRES_PER_PX, sectionAt, noise1, toMap } from '../data/world-layout.mjs';
 
 let cache = null;
@@ -242,6 +243,20 @@ function paint(ctx, W, H) {
   };
   const VILLAGE = { color: '#5a3a14', size: 11 };
   for (const p of PLACES) marker(p.px, p.py, LABEL[p.id]?.label || p.name, LABEL[p.id] || (p.village ? { ...VILLAGE, color: p.summit ? '#7a6a5a' : VILLAGE.color } : {}));
+
+  // the great beasts' lairs (data/beasts.mjs): dragons, wyverns and the Spirit King
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const L of allLairs()) {
+    const p = toMap(L.x, L.z), b = BEASTS[L.kind];
+    const big = b.boss;
+    ctx.font = `${big ? 18 : 11}px sans-serif`;
+    ctx.fillText(b.shape === 'spirit' ? '👑' : '🐉', p.x, p.y);
+    if (big) {
+      ctx.font = 'italic 700 11px Cinzel, Georgia, serif';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(245,235,205,0.85)'; ctx.strokeText(b.name, p.x, p.y + 15);
+      ctx.fillStyle = '#7a1a10'; ctx.fillText(b.name, p.x, p.y + 15);
+    }
+  }
 
   // --- compass and scale ---
   function compass(x, y) {

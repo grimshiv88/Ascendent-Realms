@@ -28,6 +28,7 @@ import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { updateCrowd, setCrowdFar } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
+import { allLairs } from '../data/beasts.mjs';
 import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime, now as realmNow } from '../data/clock.mjs';
@@ -631,7 +632,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let lastHurt = -99;
   const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
-    getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
+    getPlayer: () => ({ x: pos.x, z: pos.z, y: pos.y, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
     isNight: () => night,
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
@@ -651,12 +652,21 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         else floatText(`-${hit}`, new THREE.Vector3(e.x, (e.y ?? m.y) + 1, e.z), 'dmg');
       } else if (speed > 7) floatText('Thud!', top, 'note');
     },
-    onHitPlayer(m) {
+    // the great beasts (see beasts.js): a dragon sees you, the Spirit King rises, one is slain
+    onBeast(m, what) {
+      const name = m.kind.name;
+      if (what === 'notice') say(`The ${name} has seen you! ${m.kind.beast.breath ? 'Keep out of its breath' : 'It dives at you'}`, 'hurt');
+      else if (what === 'rise') say('The still water of the lake begins to glow…', 'note');
+      else if (what === 'greet') say('The Spirit King rises from the lake: "Walk in peace, traveller. Raise your hand against me and the lake itself will answer."', 'note');
+      else if (what === 'slain') say(m.kind.beast.shape === 'spirit' ? 'The Spirit King sinks back into the lake. One day he will rise again' : `The ${name} crashes to the ground!`, 'exp');
+    },
+    // `breath`: fire, frost, storm or water from a great beast (half again as strong as a bite)
+    onHitPlayer(m, breath = null) {
       if (!game || dead) return;
       const s = game.stats();
-      const dmg = monsterHit(m.atk, m.level, s.def * buffed('def'));
+      const dmg = Math.round(monsterHit(m.atk, m.level, s.def * buffed('def')) * (breath ? 1.5 : 1));
       lastHurt = clock.elapsedTime;
-      floatText(`-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
+      floatText(breath ? `${{ fire: '🔥', frost: '❄️', storm: '⚡', water: '🌊' }[breath] || ''} -${dmg}` : `-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
       if (game.damage(dmg)) defeated(m);
     },
   });
@@ -2446,6 +2456,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugHitAnimal(id, dmg = 15) { const m = creatures.list.filter((q) => q.kind.animalId === id && !q.dead).sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0]; if (!m) return null; finishHit(m, creatures.hit(m, dmg, 'slash')); return { hp: m.hp, dead: !!m.dead }; },
     debugAgeBodies() { for (const m of creatures.list) if (m.death?.animal) m.death.t = Math.max(m.death.t, 2); },
     debugAt: () => ({ x: pos.x, z: pos.z, dragging: husbandry.dragging?.kind.animalId || null }),
+    // the great beasts' lairs, and a jump to one of them (kind: fire_dragon, spirit_king, ...)
+    debugLairs() { return allLairs().map((l) => ({ id: l.id, kind: l.kind, x: Math.round(l.x), z: Math.round(l.z) })); },
+    debugGoLair(kind, back = 150) { const l = allLairs().find((q) => q.kind === kind || q.id === kind); if (!l) return null; const x = l.x + back, z = l.z; this.debugTeleport(x, z); return { x, z }; },
+    debugBeast() { const m = creatures.list.find((q) => q.kind.beast); return m ? { name: m.kind.name, x: Math.round(m.x), z: Math.round(m.z), y: Math.round(m.y), air: Math.round(m.air || 0), mode: m.mode, hp: m.hp, maxHp: m.maxHp, risen: m.risen, dead: m.dead, dist: Math.round(Math.hypot(m.x - pos.x, m.z - pos.z)) } : null; },
+    debugBeastClose(d = 25, air = 10) { const m = creatures.list.find((q) => q.kind.beast && !q.dead); if (!m) return null; m.x = pos.x + d; m.z = pos.z; m.air = air; m.heading = -Math.PI / 2; if (m.kind.beast.shape !== 'spirit') { m.mode = 'dive'; m.angry = true; } return true; },
+    debugHitBeast(dmg) { const m = creatures.list.find((q) => q.kind.beast && !q.dead); if (!m) return null; const r = creatures.hit(m, dmg, 'slash'); finishHit(m, r); return r ? { exp: r.exp, drops: r.drops } : { hp: m.hp }; },
     debugSpawnAnimal(id, dx = 0, dz = 6) { return creatures.spawnAt(`a_${id}`, 1, pos.x + dx, pos.z + dz, { keep: true }); },
     debugTeleport(x, z) { pos.set(x, groundAt(x, z, 1e4), z); snapCam = true; updateSites(x, z); husbandry.updateFarms(x, z); land.update(x, z, Infinity); },
     debugTalkParent() { for (const c of builtCities()) { const n = c.built.npcs.find((q) => q.kind === 'parent' && q.mine); if (n) { pos.set(n.x + 1, pos.y, n.z); talkTo(n); return true; } } return false; },
