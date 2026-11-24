@@ -28,7 +28,7 @@ Once emails are on, every account must confirm its email before playing (account
 
 ### Voice chat (players 16 and over)
 
-Players near each other can talk. Voices fade with distance and can't be heard past 40 m. Each voice has a Mute button (only for you) and a Report button (shows on the admin board). A player muted on the admin board can't talk either. The voices go through [LiveKit Cloud](https://cloud.livekit.io) (free plan to start). Until it is set up, the mic button says voice chat isn't switched on yet.
+Players near each other can talk. Voices fade with distance and can't be heard past 40 m. Each voice has a Mute button (only for you) and a Report button (shows on the admin board). Players in a party (made from the Friends menu) also get a party voice room, heard at full loudness at any distance; a Nearby / Party switch picks where your mic goes. A player muted on the admin board can't talk either. The voices go through [LiveKit Cloud](https://cloud.livekit.io) (free plan to start). Until it is set up, the mic button says voice chat isn't switched on yet.
 
 1. Sign up at cloud.livekit.io and make a project.
 2. **Settings → API Keys → Create key**.
