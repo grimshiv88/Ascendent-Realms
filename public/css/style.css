@@ -1127,3 +1127,9 @@ button, a, label, select, summary, [data-open], [data-act] { touch-action: manip
   #jump-btn { width: 54px; height: 54px; padding: 12px; right: max(108px, calc(env(safe-area-inset-right) + 96px)); }
   #area { top: 60px; }
 }
+/* a phone on its side: the mic button sits just above the (lowered) chat button */
+@media (max-height: 500px) {
+  .vo-toggle { top: auto; bottom: 156px; margin-left: env(safe-area-inset-left); }
+  .vo-panel { top: auto; bottom: 12px; max-height: calc(100vh - 24px); }
+}
+.vo-toggle { margin-left: env(safe-area-inset-left); }
