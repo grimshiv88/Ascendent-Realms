@@ -1,7 +1,8 @@
 // The playable world: the whole map as streamed 3D land, your character, monsters, and a third-person camera.
 import * as THREE from 'three';
 import { createLand } from './land.js';
-import { pickQuality, createSmoothness } from './quality.js';
+import { pickQuality, createSmoothness, isMobile } from './quality.js';
+import { setLeanDetail } from './merge.js';
 import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
 import { buildCity, buildVillage, setCityDetail } from './city.js';
@@ -63,6 +64,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   allCastles(); // levels the ground under the Monster Kings' castles before any land is built
   allFarms(); // ...and under the farms outside the towns
   let quality = pickQuality(view?.graphics);
+  setLeanDetail(isMobile()); // phones skip the cities' smallest parts (see merge.js)
   // (smoothing the edges is chosen once, as the page starts: it can't change later)
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.key !== 'low', logarithmicDepthBuffer: true });
   renderer.shadowMap.enabled = true;
@@ -70,6 +72,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
+  // If the phone takes the graphics away (low on memory, or the app was in the background), wait
+  // for them to come back instead of crashing; if they don't come back soon, reload the page.
+  let glLost = null;
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault(); // (asks the browser to give the graphics back)
+    onEvent?.('graphicsLost');
+    clearTimeout(glLost);
+    glLost = setTimeout(() => onEvent?.('graphicsGone'), 6000);
+  });
+  canvas.addEventListener('webglcontextrestored', () => { clearTimeout(glLost); glLost = null; onEvent?.('graphicsBack'); });
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(HORIZON, quality.fog);

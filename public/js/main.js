@@ -1266,9 +1266,19 @@ function startGame(character) {
     }
   });
 
+  // If the page closed by itself last time while you were in the world (a phone out of memory),
+  // this time the world opens on Battery saver, and says so. Leaving normally clears the mark.
+  let closedBySelf = false;
+  try { closedBySelf = localStorage.getItem('ar.inWorld') === '1'; localStorage.setItem('ar.inWorld', '1'); } catch { /* private window */ }
+  const markInWorld = (on) => { try { if (on) localStorage.setItem('ar.inWorld', '1'); else localStorage.removeItem('ar.inWorld'); } catch { /* private window */ } };
+  window.addEventListener('pagehide', () => markInWorld(false));
+  document.addEventListener('visibilitychange', () => markInWorld(document.visibilityState !== 'hidden'));
+  const safeStart = closedBySelf && settings.graphics !== 'low';
+  if (safeStart) setTimeout(() => showArea('The game closed last time, so it is on Battery saver for now (Settings to change it)'), 4000);
+
   world = startWorld($('world'), character, {
     game,
-    view: { camera: settings.camera, mouse: settings.mouse, view: settings.view, graphics: settings.graphics },
+    view: { camera: settings.camera, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
     onView(v) { settings.view = v; saveSettings(); showArea(v === 'first' ? 'First person view' : 'Third person view'); if (overlay.dataset.panel === 'settings' && !overlay.classList.contains('hidden')) drawPanel(); },
     onArea: (name) => showArea(name),
     onPlot(info) {
@@ -1282,6 +1292,10 @@ function startGame(character) {
     onMouseFreed: () => { if (overlay.classList.contains('hidden')) openPanel('settings'); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
+      // the phone took the graphics away for a moment (see world.js): wait, or reload if they don't come back
+      if (type === 'graphicsLost') { showArea('Getting the graphics back...'); return; }
+      if (type === 'graphicsBack') { showArea('Graphics are back'); return; }
+      if (type === 'graphicsGone') { markInWorld(false); Promise.resolve(game.saveNow()).finally(() => location.reload()); return; }
       if (type === 'carcass') { showCarcass(data); return; }
       if (type === 'plant') { showPlant(data); return; }
       if (type === 'kill') for (const title of game.questKill(data.kind, data.level)) questReady(title);
