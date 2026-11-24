@@ -26,6 +26,17 @@ The game sends its emails through [Resend](https://resend.com) (free for 3,000 e
 
 Once emails are on, every account must confirm its email before playing (accounts from before email was required are asked to add one), and an admin must have confirmed the email listed in `ADMIN_EMAILS`.
 
+### Voice chat (players 16 and over)
+
+Players near each other can talk. Voices fade with distance and can't be heard past 40 m. Each voice has a Mute button (only for you) and a Report button (shows on the admin board). A player muted on the admin board can't talk either. The voices go through [LiveKit Cloud](https://cloud.livekit.io) (free plan to start). Until it is set up, the mic button says voice chat isn't switched on yet.
+
+1. Sign up at cloud.livekit.io and make a project.
+2. **Settings → API Keys → Create key**.
+3. In Vercel, **Settings → Environment Variables**, add `LIVEKIT_URL` (starts with `wss://`), `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`.
+4. Redeploy. `/api/health` then shows `"voice": true`.
+
+The age comes from the birth date given at sign-up. `VOICE_AGE_CHECK=id` makes voice also need `accounts.voice_verified`, for when an ID check service (for example Yoti) is added.
+
 Every change pushed to `main` goes live by itself. No secret key is ever kept in the code: they live only in Vercel's settings.
 
 The tables have Row Level Security switched on with no rules, so Supabase's public web API can't read or change them. Only the game's own server can.

@@ -14,6 +14,7 @@ const bounties = require('./bounties');
 const groups = require('./groups');
 const db = require('./db');
 const mail = require('./mail');
+const voice = require('./voice');
 
 const app = express();
 // (a save can carry up to 80 planted beds, so 64 kB rather than 10)
@@ -42,7 +43,7 @@ function checkAppraisalNow() {
   characters.keepAppraisalHeld().catch((e) => console.error('appraisal check:', e));
 }
 
-app.get('/api/health', async (req, res) => res.json({ ok: true, now: Date.now(), mail: mail.ready() }));
+app.get('/api/health', async (req, res) => res.json({ ok: true, now: Date.now(), mail: mail.ready(), voice: voice.ready() }));
 
 app.post('/api/signup', async (req, res) => {
   const result = await auth.signUp(req.body || {});
@@ -253,6 +254,12 @@ for (const [route, fn] of [['stats', admin.stats], ['player', admin.player], ['c
 }
 
 // A player reports another player (the Report button on a player's card); the admins see it on the board
+// Voice chat (16+): a short pass to join the voice room, or why not
+app.post('/api/voice/pass', requireAccount, async (req, res) => {
+  const r = await voice.pass(req.account);
+  res.status(r.error ? (r.off ? 503 : 403) : 200).json(r);
+});
+
 app.post('/api/report', requireAccount, answer((body, acc) => admin.report(acc, body)));
 
 app.post('/api/signout', async (req, res) => {

@@ -26,6 +26,8 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS birthdate TEXT;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS banned_until BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ban_reason TEXT;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS muted_until BIGINT NOT NULL DEFAULT 0;
+-- voice chat: passed a real age check (an ID check service, for later; the birth date is used until then)
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS voice_verified BOOLEAN NOT NULL DEFAULT false;
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_email ON accounts (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_username ON accounts (lower(username));
 

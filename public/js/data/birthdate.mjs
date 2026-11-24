@@ -25,5 +25,5 @@ export function ageOf(date, now = new Date()) {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 export const birthdateWords = (date) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || '')); return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : ''; };
-// the age that voice chat will need (not built yet)
+// the age voice chat needs (server/voice.js and js/voice.js)
 export const VOICE_AGE = 16;
