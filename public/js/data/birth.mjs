@@ -118,7 +118,7 @@ export const childStatShare = (age) => Math.min(1, 0.55 + 0.13 * (Math.max(BORN_
 export const childSize = (age) => 0.5 + 0.06 * (Math.max(BORN_AGE, Math.min(CEREMONY_AGE, age)) - BORN_AGE);
 
 // ---------- schools ----------
-// One school for each class a child can grow into (the Mage is the Dark Side's alone)
+// One school for each class a child can grow into (the Mages' school is the newest, so it comes last)
 export const SCHOOLS = {
   swordsman: { name: 'School of the Sword', academy: 'Academy of the Sword', roof: '#2a4a7a', icon: '⚔️', text: 'Footwork, guard and the cut.' },
   tank: { name: 'School of the Shield', academy: 'Academy of the Shield', roof: '#5a5a66', icon: '🛡️', text: 'Stand firm and take the blow for others.' },
@@ -129,6 +129,7 @@ export const SCHOOLS = {
   builder: { name: 'Builders\' School', academy: 'Builders\' Academy', roof: '#8a3a2a', icon: '🏗️', text: 'Stone, timber and how a house stands.' },
   potion_maker: { name: 'Herbalists\' School', academy: 'Herbalists\' Academy', roof: '#5a3a8a', icon: '⚗️', text: 'Herbs, brews and what each plant can do.' },
   farmer: { name: 'Farming School', academy: 'Farmers\' Academy', roof: '#3a6a2a', icon: '🌾', text: 'Soil, seed and the care of animals.' },
+  mage: { name: 'School of Magic', academy: 'Mages\' Academy', roof: '#3a2a6a', icon: '🔮', text: 'Spells, staves and the elements.' },
 };
 export const ACADEMY_NAME = 'The Academies';
 // Every city has an Academy for each class, side by side along Academy Street in the Civic Quarter.
@@ -144,6 +145,7 @@ export const SCHOOL_TECHNIQUES = {
   swordsman: ['power_strike', 'charge'], tank: ['shield_bash', 'iron_skin'], assassin: ['backstab', 'shadow_step'],
   healer: ['mend', 'blessing'], blacksmith: ['hammer_blow', 'ground_slam'], businessman: ['coin_toss', 'haggle'],
   builder: ['quick_wall', 'ground_slam'], potion_maker: ['second_wind', 'blessing'], farmer: ['harvest_swing', 'hearty_meal'],
+  mage: ['fire_bolt', 'frost_nova'],
 };
 // The Academies stand on the market street of the Common Quarter, north of the east road, one for
 // each class, their doors on the ring road

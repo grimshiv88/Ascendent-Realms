@@ -36,8 +36,9 @@ export const RACES = {
 };
 
 export const CLASSES = {
-  // only for those who join the Dark Side (see becomeMage): never a starting class
-  mage:        { name: 'Mage',        bonus: { int: 6, dex: 4 },         main: 'int', blurb: 'Spells cost 10% less SP.', dark: true },
+  // a class like any other (it has its own school): Mages cast spells in their elements with a staff.
+  // A Mage on the Dark Side casts the same spells in their dark, stronger form (see data/spells.mjs).
+  mage:        { name: 'Mage',        bonus: { int: 6, dex: 4 },         main: 'int', blurb: 'Casts spells in their elements with a staff. Spells cost 10% less SP.' },
   swordsman:   { name: 'Swordsman',   bonus: { str: 5, dex: 3, agi: 2 }, main: 'str', blurb: '+10% ATK with swords.' },
   tank:        { name: 'Tank',        bonus: { sta: 7, str: 3 },         main: 'sta', blurb: 'Taunts enemies. +15% DEF with shields.' },
   assassin:    { name: 'Assassin',    bonus: { agi: 6, dex: 4 },         main: 'agi', blurb: 'Stealth. +20% critical damage from behind.' },
@@ -51,15 +52,34 @@ export const CLASSES = {
   child:       { name: 'Child',       bonus: {},                         main: 'int', blurb: 'Your class is revealed at the Ceremony, at the age of 7.', hidden: true },
 };
 
-// The classes a new character can start with (the Mage is the Dark Side's alone)
+// The classes a new character can grow into
 export const STARTER_CLASSES = Object.keys(CLASSES).filter((id) => !CLASSES[id].dark && !CLASSES[id].hidden);
-// Someone who joined the Dark Side may become a Mage: their old class's bonus points go and the
-// Mage's come in their place (a stat never drops below 1). For good.
-export function becomeMage(c) {
-  if (c.cls === 'mage' || !CLASSES[c.cls]) return false;
+// Change a grown character's class: the old class's bonus points go and the new one's come in
+// their place (a stat never drops below 1). Used by the Dark Side's switch to Mage and by the admins.
+export function changeClass(c, cls) {
+  if (c.cls === cls || !CLASSES[c.cls] || !CLASSES[cls] || CLASSES[cls].hidden) return false;
   for (const [k, v] of Object.entries(CLASSES[c.cls].bonus)) c.stats[k] = Math.max(1, (c.stats[k] || 0) - v);
-  for (const [k, v] of Object.entries(CLASSES.mage.bonus)) c.stats[k] = (c.stats[k] || 0) + v;
-  c.cls = 'mage';
+  for (const [k, v] of Object.entries(CLASSES[cls].bonus)) c.stats[k] = (c.stats[k] || 0) + v;
+  const oldEl = CLASS_ELEMENT[c.cls], newEl = CLASS_ELEMENT[cls];
+  c.elements = (c.elements || []).filter((e) => e !== oldEl || e === RACES[c.race]?.element);
+  if (newEl && !c.elements.includes(newEl)) c.elements.push(newEl);
+  c.cls = cls;
+  return true;
+}
+export const becomeMage = (c) => changeClass(c, 'mage');
+// Change a character's race (admins only): the old race's base stats go and the new race's come in
+// their place, with its side, its look and its element. Its Unique Skill and everything else stay.
+export function changeRace(c, raceId) {
+  const from = RACES[c.race], to = RACES[raceId];
+  if (!to || c.race === raceId) return false;
+  for (const k of MAIN_STATS) c.stats[k] = Math.max(1, (c.stats[k] || 0) - (from?.stats[k] || 0) + to.stats[k]);
+  c.elements = (c.elements || []).filter((e) => e !== from?.element);
+  if (!c.elements.includes(to.element)) c.elements.unshift(to.element);
+  c.race = raceId;
+  c.side = to.side;
+  c.form = to.side === 'monster' ? 'monster' : 'humanoid';
+  const pal = APPEARANCE[raceId];
+  c.look = { ...(c.look || {}), skin: pal.skin[0], accent: pal.accent[0], eyes: pal.eyes[0] };
   return true;
 }
 
@@ -125,10 +145,23 @@ export const SECOND_ELEMENT_CHANCE = { default: 0.2, mage: 0.35 };
 // Calculated stats (rulebook: Stats → Calculated stats)
 // Stat Points can also go straight into a combat stat: each point gives this much
 export const TRAINED = { atk: 3, def: 2, matk: 3, mdef: 2, hp: 6 };
-export function derivedStats(s, level = 1, t = {}) {
+// Health and healing that grow with level. The admins can change these numbers on the admin board
+// (they are kept on the server and sent to the game when it loads): base HP, HP added for every
+// level, and how much stronger food, drink and potions heal for every level (in percent).
+export const TUNING_DEFAULT = { hpBase: 50, hpPerLevel: 10, healPerLevel: 1 };
+export const TUNING = { ...TUNING_DEFAULT };
+export function cleanTuning(t = {}) {
+  const n = (v, min, max, d) => (Number.isFinite(Number(v)) && Number(v) >= min && Number(v) <= max ? Number(v) : d);
+  return { hpBase: n(t.hpBase, 1, 1e6, TUNING_DEFAULT.hpBase), hpPerLevel: n(t.hpPerLevel, 0, 1e4, TUNING_DEFAULT.hpPerLevel), healPerLevel: n(t.healPerLevel, 0, 100, TUNING_DEFAULT.healPerLevel) };
+}
+export function setTuning(t) { Object.assign(TUNING, cleanTuning(t)); }
+// a heal from food, drink or a potion, made stronger by your level
+export const levelHeal = (n, level = 1) => Math.round(n * (1 + ((level || 1) - 1) * TUNING.healPerLevel / 100));
+// `extraHp`: HP an admin gave this one character on top
+export function derivedStats(s, level = 1, t = {}, extraHp = 0) {
   const d = {
     // grows with Stamina, Strength and level (death is final, so there's a good amount of it)
-    hp: Math.round(50 + s.sta * 10 + s.str * 2 + level * 5),
+    hp: Math.round(TUNING.hpBase + s.sta * 10 + s.str * 2 + level * TUNING.hpPerLevel + (Number(extraHp) || 0)),
     sp: Math.round(10 + s.int * 2 + level),
     atk: Math.round(s.str * 2 + s.dex * 0.5),
     matk: Math.round(s.int * 2 + s.dex * 0.5),
@@ -170,6 +203,13 @@ export function expToNext(level, raceId) {
   let need = normalExp(level);
   if (KEY_LEVELS.includes(level + 1)) need = level < 20 ? 600 : roundNice(2.5 * need);
   return Math.round(need * (RACES[raceId]?.expMult || 1));
+}
+// Stat Points earned by levelling from `from` up to `to`: 3 a level, 10 at a key level (the same as
+// levelling up in the game). Used when an admin raises a level, so the points come with it.
+export function pointsForLevels(from, to) {
+  let n = 0;
+  for (let l = from + 1; l <= to; l++) n += KEY_LEVELS.includes(l) ? 10 : 3;
+  return n;
 }
 // EXP for beating a wild monster, on average (each kill gives between half and one and a half
 // times this). Monsters give more every couple of levels (every 2 levels up to 20, every 3 after),

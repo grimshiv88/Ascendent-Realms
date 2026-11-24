@@ -67,7 +67,7 @@ async function publicAccount(row) {
     age: ageOf(row.birthdate),
     needsBirthdate: !row.birthdate,
     mail: mail.ready(),
-    character: character ? JSON.parse(character.data) : null,
+    character: character ? await require('./characters').withTuning(JSON.parse(character.data)) : null,
   };
 }
 

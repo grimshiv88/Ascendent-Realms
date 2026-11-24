@@ -419,7 +419,7 @@ export function buildCity(place, opts = {}) {
     if (h.tilt) hb.rotation.y += h.tilt;
     if (h.style === 'manor') garden(fixed, h, ringRel(h.tier), solid, cx, cz);
   };
-  for (const h of houses) putHome(h, '');
+  for (const h of houses) if (!h.gone) putHome(h, ''); // (a 'gone' house gave its place to the Mages' Academy)
   const saleSigns = new Map();
   for (const h of plan.sale) {
     putHome(h, 'sale');
