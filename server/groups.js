@@ -4,6 +4,7 @@ const db = require('./db');
 const { moneyWords } = require('../public/js/data/money.mjs');
 const characters = require('./characters');
 const G = require('../public/js/data/groups.mjs');
+const { partyInvitesOf } = require('../public/js/data/social.mjs');
 const { RACES } = require('../public/js/data/game-data.mjs');
 const isMonster = async (id) => { const c = id && await characters.load(id); return c ? RACES[c.race]?.side === 'monster' : null; };
 const { largestTerritory } = require('../public/js/data/building.mjs');
@@ -38,7 +39,15 @@ async function act(me, body = {}) {
   let r;
   let coins;
   switch (body.action) {
-    case 'invite': { const t = await byName(body.name); r = G.invite(s, name, kind, t?.username || null, Date.now(), t ? await isMonster(t.id) : null); break; }
+    case 'invite': {
+      const t = await byName(body.name);
+      // a player who takes party invites from friends only
+      if (kind === 'party' && t && t.id !== me && partyInvitesOf(await characters.load(t.id)) === 'friends') {
+        const [a, b] = [Math.min(me, t.id), Math.max(me, t.id)];
+        const f = await db.get('SELECT accepted FROM friends WHERE a = ? AND b = ?', a, b);
+        if (!f?.accepted) return { error: `${t.username} only takes party invites from friends.` };
+      }
+      r = G.invite(s, name, kind, t?.username || null, Date.now(), t ? await isMonster(t.id) : null); break; }
     case 'respond': r = G.respond(s, name, body.id, body.accept === true); break;
     case 'leave': r = G.leave(s, name, kind); break;
     case 'remove': case 'lead': case 'disband': r = G.manage(s, name, kind, body.action, body.name); break;

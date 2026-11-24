@@ -175,5 +175,14 @@ async function setPrivacy(me, body) {
   return { ok: true, privacy: c.privacy };
 }
 
+async function setPartyInvites(me, body) {
+  if (!S.PARTY_INVITES[body.partyInvites]) return { error: 'Choose Anyone or Friends only.' };
+  const c = await characters.load(me);
+  if (!c) return { error: 'No character yet.' };
+  c.partyInvites = body.partyInvites;
+  await characters.store(me, c);
+  return { ok: true, partyInvites: c.partyInvites };
+}
+
 module.exports = {
-  appraise, search, profile, request, respond, remove, friends, poll, send, setPrivacy };
+  setPartyInvites, appraise, search, profile, request, respond, remove, friends, poll, send, setPrivacy };

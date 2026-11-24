@@ -215,7 +215,7 @@ app.get('/api/players/:name', requireAccount, async (req, res) => {
   res.status(result.error ? 404 : 200).json(result);
 });
 app.get('/api/social', requireAccount, async (req, res) => res.json(await social.poll(req.account.id, req.query.after)));
-for (const [route, fn] of [['friends/request', social.request], ['friends/respond', social.respond], ['friends/remove', social.remove], ['chat', social.send], ['privacy', social.setPrivacy]]) {
+for (const [route, fn] of [['friends/request', social.request], ['friends/respond', social.respond], ['friends/remove', social.remove], ['chat', social.send], ['privacy', social.setPrivacy], ['party-invites', social.setPartyInvites]]) {
   app.post(`/api/${route}`, requireAccount, async (req, res) => {
     const result = await fn(req.account.id, req.body || {});
     res.status(result.error ? 400 : 200).json(result);
