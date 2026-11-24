@@ -8,7 +8,7 @@ import { EVOLUTIONS, rollKillExp } from '../data/game-data.mjs';
 import { wildLevelAt, stageForLevel, wardedAt } from '../data/wilds.mjs';
 import { ANIMALS, wildAnimalsAt } from '../data/animals.mjs';
 import { buildAnimal, animateAnimal, lieDown } from './animalbody.js';
-import { CORPSE_SECS } from './deaths.js';
+import { CORPSE_SECS, animalWounds, tickAnimalBlood } from './deaths.js';
 import { TAMEABLE } from '../data/mounts.mjs';
 import { BEASTS, BEAST_RETURNS, lairsNear } from '../data/beasts.mjs';
 import { buildBeast, animateBeast, makeBreath, buildLavaLake } from './beasts.js';
@@ -545,6 +545,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         lieDown(m.body, m.dead / 0.7);
         if (!m.dragged) m.death.left -= dt;
         m.death.t += dt;
+        tickAnimalBlood(m);
         if (m.death.left <= 0 || m.death.harvested) remove(m);
         continue;
       }
@@ -711,10 +712,12 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     if (m.kind.animal) {
       // a grazing animal runs from the hunter; a wolf or bear turns on them
       if (!m.kind.aggressive) { m.fleeT = 5; m.fedT = 0; }
+      m.hitCount = (m.hitCount || 0) + 1;
       if (m.hp > 0) return null;
       m.dead = 0.001; m.dragged = false;
       m.tag.sprite.visible = false;
       m.death = { corpse: true, animal: true, t: 0, left: CORPSE_SECS, harvested: false };
+      try { animalWounds(m, how, scene); } catch { /* the wounds are only for show */ }
       const a = m.kind.animal;
       return { exp: Math.max(1, Math.round(a.temper === 'fierce' ? monsterExp(m.level, 0) : a.hp / 12)), coins: 0, drops: [], name: a.name, kind: m.kindId, level: m.level, animal: m.kind.animalId };
     }
