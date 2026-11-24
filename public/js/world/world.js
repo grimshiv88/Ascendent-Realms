@@ -33,6 +33,7 @@ import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionNam
 import { createPlots } from './plots.js';
 import { gameTime, now as realmNow } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
+import { spellPower, spellName, darkSpells } from '../data/spells.mjs';
 import { skyCard } from './skycard.js';
 import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
@@ -1518,16 +1519,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
       for (const m of foes) {
         const hp = m.hp;
-        damageMonster(m, sp.power, true, howOf({ spell: sp }));
+        damageMonster(m, spellPower(sp, c), true, howOf({ spell: sp }));
         if (sp.effect && !m.dead && m.hp > 0 && Math.random() < sp.effect.chance) applyEffect(m, sp.effect.id, Math.max(1, hp - m.hp), 1);
       }
-      if (to) skillFx.spell(sp.element, from, to);
-      else for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; skillFx.spell(sp.element, from, new THREE.Vector3(pos.x + Math.sin(a) * 6, pos.y + 0.4, pos.z + Math.cos(a) * 6)); }
+      // the Dark Side's spells come out black with shadow (the Dark element's look)
+      const look = darkSpells(c) ? 'Dark' : sp.element;
+      if (to) skillFx.spell(look, from, to);
+      else for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; skillFx.spell(look, from, new THREE.Vector3(pos.x + Math.sin(a) * 6, pos.y + 0.4, pos.z + Math.cos(a) * 6)); }
       c.sp = Math.max(0, c.sp - cost);
       game.touch('sp');
       spellReady[sp.id] = clock.elapsedTime + sp.cd;
       skillPose = { move: moveFor({ type: 'bolt' }), t: 0, dur: 0.6 };
-      say(sp.name, 'exp');
+      say(spellName(sp, c), 'exp');
       return;
     }
     if (sp && c.sp < cost && !castSpell.warned) { castSpell.warned = true; say(`Not enough SP for ${sp.name}`, 'hurt'); setTimeout(() => { castSpell.warned = false; }, 3000); }

@@ -1,6 +1,7 @@
 // The Cult window and the Order of the Dawn, and the call that brings you to one of them.
 // Everything here is secret: only you see it, and a cult member sees only their own rank and below.
-import { CULT_RANKS, CULT_FOUND_LEVEL, ORDER_NAME, MISSIONS, JOIN_COINS, PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, bookLevel, ACCEPT_TEXT, REJECT_TEXT } from './data/cults.mjs';
+import { CULT_RANKS, CULT_FOUND_LEVEL, ORDER_NAME, MISSIONS, JOIN_COINS, PACT_PCT, DARK_MATK_PCT, DARK_SPELL_EVERY, bookLevel, ACCEPT_TEXT, REJECT_TEXT, LEADER_TITLE } from './data/cults.mjs';
+import { DARK_SPELL_POWER } from './data/spells.mjs';
 import { RACES } from './data/game-data.mjs';
 import { money } from './data/money.mjs';
 
@@ -16,11 +17,21 @@ function missionRows(list, counts) {
 export function renderCult(el, c, v, { message = '', counts = () => 0 } = {}) {
   const monster = RACES[c.race]?.side === 'monster';
   let body = '';
+  // the leader of a sect, appointed by the realm, sees the whole of it
+  const leaderHtml = !v?.leads ? '' : v.leads === 'dark'
+    ? `<p class="cult-rank">👑 <b>${esc(LEADER_TITLE.dark)}</b></p>
+      <p class="bag-hint">Every cult answers to you, and you see every member of every cult, whatever their rank. Tell no one.</p>
+      ${(v.allCults || []).map((k) => `<h3 class="bag-sub">${esc(k.name)} <small>(${esc(RACES[k.race]?.name || k.race)})</small></h3>
+        <ul class="cult-members">${k.members.slice().sort((a, b) => a.rank - b.rank).map((m) => `<li><span>${esc(m.name)}</span> <small>${esc(m.rankName)}</small></li>`).join('')}</ul>`).join('') || '<p class="bag-hint">No cult has been founded yet.</p>'}
+      ${c.cls === 'mage' ? '' : '<button type="button" class="gold-button small cult-dark" data-cult="mage">Become a Mage</button>'}`
+    : `<p class="cult-rank">👑 <b>${esc(LEADER_TITLE.light)}</b></p>
+      <p class="bag-hint">You lead the Order against the cults. Everyone sworn to it:</p>
+      <ul class="cult-members">${(v.orderList || []).map((m) => `<li><span>${esc(m.name)}</span></li>`).join('') || '<li>Nobody else yet.</li>'}</ul>`;
   if (!v) body = '<p class="bag-hint">Loading…</p>';
   else if (v.invited) {
     body = `<div class="cult-offer">
       <p><i>A voice speaks out of the dark, meant for you alone. "We have watched you. Few are ever called. The Dark Side would have you: power beyond your kind, and gold. Or turn from us and fight the Evil, and the Light will take you instead. Choose."</i></p>
-      <p class="bag-hint"><b>The Dark Side:</b> ${money(JOIN_COINS(c.level))}, +${PACT_PCT}% attack, and magic: a spell in each of your elements at once, a new one every ${DARK_SPELL_EVERY} levels, and +${DARK_MATK_PCT}% magic attack. Only the Dark Side may become Mages. You may never say you serve it: give it away and you lose the powers and every coin it gave you. And the dark leaves its mark: die with it and you die a sinner, and your next life begins weaker.<br>
+      <p class="bag-hint"><b>The Dark Side:</b> ${money(JOIN_COINS(c.level))}, +${PACT_PCT}% attack, and magic: a spell in each of your elements at once, a new one every ${DARK_SPELL_EVERY} levels, and +${DARK_MATK_PCT}% magic attack. Every spell you cast takes its dark form, black with shadow and ${Math.round((DARK_SPELL_POWER - 1) * 100)}% stronger. You may never say you serve it: give it away and you lose the powers and every coin it gave you. And the dark leaves its mark: die with it and you die a sinner, and your next life begins weaker.<br>
       <b>The Light:</b> none of the dark's gifts, but the Book of the Dawn, which stops Dark Side spells that hit you (the higher your Intelligence, the stronger the spells it stops). Sworn to the ${ORDER_NAME}, which fights the cults in secret. Die in the Light and your next life begins stronger.<br>
       Whatever you choose, this call is a secret. Speak of it and your words are blotted out.</p>
       <div class="bag-actions cult-choice"><button type="button" class="gold-button cult-dark" data-cult="answer" data-choice="dark">${ACCEPT_TEXT}</button>
@@ -32,7 +43,7 @@ export function renderCult(el, c, v, { message = '', counts = () => 0 } = {}) {
     body = `<p class="cult-rank">${esc(k.name)} · <b>${esc(k.rankName)}</b> <small>(favour ${k.favour})</small></p>
       <p class="bag-hint">Keep it secret. Nobody outside the cult can see you are in it, and those below you can't see you either. Say the word in chat and you lose the cult's powers and the ${money(k.gained)} it has given you.</p>
       ${c.cls === 'mage' ? '' : `<h3 class="bag-sub">Become a Mage</h3>
-        <p class="bag-hint">Only those who serve the Dark Side may become Mages. Your class bonus is swapped for the Mage's (+6 Intelligence, +4 Dexterity) and you rise through the Mage ranks from now on. This is for good.</p>
+        <p class="bag-hint">The Dark Side can make you a Mage at once. Your class bonus is swapped for the Mage's (+6 Intelligence, +4 Dexterity) and you rise through the Mage ranks from now on. This is for good.</p>
         <button type="button" class="gold-button small cult-dark" data-cult="mage">Become a Mage</button>`}
       <h3 class="bag-sub">Your missions</h3>
       ${missionRows(k.missions, counts)}
@@ -62,6 +73,7 @@ export function renderCult(el, c, v, { message = '', counts = () => 0 } = {}) {
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       <h2>${v?.invited ? 'A Voice in the Dark' : v?.cult ? 'The Cult' : v?.order ? ORDER_NAME : 'The Cult'}</h2>
       <p class="shop-msg" role="status">${esc(message)}</p>
+      ${leaderHtml}
       ${body}
     </div>`;
 }

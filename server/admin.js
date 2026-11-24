@@ -73,6 +73,13 @@ const S = require('../public/js/data/social.mjs');
 const B = require('../public/js/data/birth.mjs');
 const { ITEMS } = require('../public/js/data/items.mjs');
 const { PLACES, toWorld } = require('../public/js/data/world-layout.mjs');
+const G = require('../public/js/data/game-data.mjs');
+const { SKILLS, SKILL_CATEGORIES, skillCategory, skillPower } = require('../public/js/data/skills.mjs');
+const { SPELLS } = require('../public/js/data/spells.mjs');
+const U = require('../public/js/data/unique.mjs');
+const P = require('../public/js/data/citypass.mjs');
+const cults = require('./cults');
+const CU = require('../public/js/data/cults.mjs');
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
 const int = (v, min, max) => { const n = num(v); return n !== null && Number.isInteger(n) && n >= min && n <= max ? n : null; };
@@ -120,9 +127,190 @@ async function player({ id }) {
         stats: c.stats, unspentPoints: c.unspentPoints, livesLeft: c.livesLeft, injury: c.injury || null, location: c.location || null,
         inventory: (c.inventory || []).map((s) => ({ ...s, name: ITEMS[s.id]?.name || s.id, icon: ITEMS[s.id]?.icon || '' })),
         equipped: c.equipped || {}, uniqueSkill: c.uniqueSkill || null, child: B.isChild(c) ? { age: Math.floor(B.ageOf(c) * 10) / 10 } : null,
+        skills: c.skills || [], spells: c.spells || [], pact: c.pact || null, elements: c.elements || [], extraHp: c.extraHp || 0,
+        cityAccess: c.cityAccess || null, cityPass: P.cityPass(c), lives: c.lives || 1,
       },
+      pastLives: await pastLives(a.id),
+      leads: c ? CU.leads(await cultsState(), c.name) : null,
     },
   };
+}
+const cultsState = async () => { const r = await db.get("SELECT data FROM world_state WHERE key = 'cults'"); return r ? JSON.parse(r.data) : { leaders: {} }; };
+
+// ---------- past lives ----------
+// Every life a player has lost is kept whole (characters.fall). The admins can read them, change
+// one, and bring the player back to it.
+const lifeSummary = (r) => { const c = JSON.parse(r.data); return { id: r.id, at: r.at, cause: r.cause, name: c.name, race: c.race, cls: c.cls, level: c.level, coins: c.coins, livesLeft: c.livesLeft ?? null, unique: c.uniqueSkill ? `${c.uniqueSkill.name} (${c.uniqueSkill.rank})` : null }; };
+async function pastLives(accountId) {
+  const rows = await db.all('SELECT id, at, cause, data FROM past_lives WHERE account_id = ? ORDER BY id DESC LIMIT 50', accountId);
+  const fell = await db.get('SELECT data FROM fallen WHERE account_id = ?', accountId);
+  return { lives: rows.map(lifeSummary), passedOn: fell ? JSON.parse(fell.data) : null };
+}
+// body: { id (account), life (past life id), name, level, coins, lives, race, cls }
+async function editPastLife(body, me) {
+  const acc = await accountById(body.id);
+  const row = acc && await db.get('SELECT id, data FROM past_lives WHERE id = ? AND account_id = ?', int(body.life, 1, 2e9) || 0, acc.id);
+  if (!row) return { error: 'No such past life.' };
+  const c = JSON.parse(row.data);
+  const said = [];
+  const r = changeCharacter(c, body, said);
+  if (r?.error) return r;
+  if (!said.length) return { error: 'Nothing to change.' };
+  await db.run('UPDATE past_lives SET data = ? WHERE id = ?', JSON.stringify(c), row.id);
+  await log(me, 'edit past life', acc.username, `${c.name}: ${said.join(', ')}`);
+  return { ok: true, ...(await player({ id: acc.id })) };
+}
+// Bring a player back to a past life: it becomes their character again (with at least one life),
+// and the life they have now is kept among the past lives, so it can be brought back too.
+async function restoreLife(body, me) {
+  const acc = await accountById(body.id);
+  const row = acc && await db.get('SELECT id, data FROM past_lives WHERE id = ? AND account_id = ?', int(body.life, 1, 2e9) || 0, acc.id);
+  if (!row) return { error: 'No such past life.' };
+  const back = JSON.parse(row.data);
+  const now = await characters.load(acc.id);
+  back.adminRev = Math.max(back.adminRev || 0, now?.adminRev || 0) + 1; // an open game reloads instead of saving over it
+  if (!Number.isInteger(back.livesLeft) || back.livesLeft < 1) back.livesLeft = 1;
+  back.hp = null; back.injury = null;
+  delete back.tuning;
+  await db.tx(async (t) => {
+    if (now) await t.run('INSERT INTO past_lives (account_id, at, cause, data) VALUES (?, ?, ?, ?)', acc.id, Date.now(), 'set aside by an admin', JSON.stringify(now));
+    await t.run('DELETE FROM past_lives WHERE id = ?', row.id);
+    await t.run('DELETE FROM fallen WHERE account_id = ?', acc.id);
+    await t.run('INSERT INTO characters (account_id, data) VALUES (?, ?) ON CONFLICT (account_id) DO UPDATE SET data = excluded.data, updated_at = now()', acc.id, JSON.stringify(back));
+  });
+  await log(me, 'return to past life', acc.username, `${back.name}, Lv ${back.level} ${back.race} ${back.cls}`);
+  return { ok: true, ...(await player({ id: acc.id })) };
+}
+
+// ---------- the two sects ----------
+// body: { side: 'dark'|'light', id (account, or none to take the title away) }
+async function appointLeader(body, me) {
+  const side = body.side === 'dark' ? 'dark' : body.side === 'light' ? 'light' : null;
+  if (!side) return { error: 'Which sect?' };
+  if (!body.id) {
+    const r = await cults.appoint(side, null);
+    if (r.error) return r;
+    await log(me, 'remove sect leader', r.before, side === 'dark' ? 'evil sect' : 'good sect');
+    return { ok: true, leaders: await cults.leaders() };
+  }
+  const acc = await accountById(body.id);
+  const c = acc && await characters.load(acc.id);
+  if (!c) return { error: 'This account has no character.' };
+  if (B.isChild(c)) return { error: 'A child can\'t lead a sect.' };
+  const r = await cults.appoint(side, c.name);
+  if (r.error) return r;
+  // they serve that side now: the dark pact (spells, dark and stronger), or the Light with its Book
+  await editCharacter(acc.id, (ch) => {
+    ch.pact = side === 'dark' ? 'dark' : 'holy';
+    if (side === 'light' && !(ch.inventory || []).some((x) => x.id === 'dawn_book') && ITEMS.dawn_book) (ch.inventory ||= []).push({ id: 'dawn_book', n: 1 });
+  });
+  await log(me, 'appoint sect leader', acc.username, `${side === 'dark' ? 'evil sect (Dark Side)' : 'good sect (Order of the Dawn)'}${r.before ? `, replacing ${r.before}` : ''}`);
+  return { ok: true, leaders: await cults.leaders(), ...(await player({ id: acc.id })) };
+}
+
+// ---------- health and healing numbers ----------
+async function tuning() { return { tuning: await characters.tuning(), defaults: G.TUNING_DEFAULT }; }
+async function setTuning(body, me) {
+  const t = G.cleanTuning(body);
+  await db.run("INSERT INTO world_state (key, data) VALUES ('tuning', ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data", JSON.stringify(t));
+  await log(me, 'health numbers', null, `base HP ${t.hpBase}, +${t.hpPerLevel} HP a level, heals +${t.healPerLevel}% a level`);
+  return { ok: true, tuning: t, defaults: G.TUNING_DEFAULT };
+}
+
+// ---------- skills ----------
+// Every Unique Skill held in the world, by kind (defence to attack), highest rank first
+async function skillsBoard() {
+  const rows = await db.all('SELECT a.id, a.username, c.data FROM characters c JOIN accounts a ON a.id = c.account_id');
+  const held = rows.map((r) => { const c = JSON.parse(r.data); return { id: r.id, username: r.username, name: c.name, level: c.level || 1, u: c.uniqueSkill }; }).filter((x) => x.u?.name);
+  return {
+    categories: SKILL_CATEGORIES.map((k) => ({
+      ...k,
+      uniques: held.filter((x) => (U.UNIQUE_CATEGORY[U.uniqueByName(x.u.name)?.kind || x.u.kind] || 'attack') === k.id)
+        .sort((a, b) => U.byRank(a.u, b.u) || b.level - a.level)
+        .map((x) => ({ id: x.id, username: x.username, name: x.name, level: x.level, skill: x.u.name, rank: U.rankOf(x.u), element: x.u.element || '' })),
+      skills: Object.values(SKILLS).filter((sk) => skillCategory(sk) === k.id).sort((a, b) => skillPower(b) - skillPower(a)).map((sk) => ({ id: sk.id, name: sk.name, icon: sk.icon, text: sk.text })),
+    })),
+  };
+}
+
+// The changes the board can make to a character (alive, or a past life). Pushes what changed onto
+// `said`; returns { error } when something is wrong.
+function changeCharacter(c, body, said) {
+  if (body.name != null) { const v = short(body.name, 24); if (!v) return { error: 'Type a name.' }; said.push(`name ${c.name} → ${v}`); c.name = v; }
+  if (body.level != null) {
+    const v = int(body.level, 1, 10000);
+    if (v === null) return { error: 'Level is 1 to 10000.' };
+    // raising the level brings the Stat Points of every level gained (3 a level, 10 at key levels);
+    // lowering it takes nothing back
+    const pts = v > (c.level || 1) ? G.pointsForLevels(c.level || 1, v) : 0;
+    said.push(`level ${c.level} → ${v}${pts ? ` (+${pts} Stat Points)` : ''}`);
+    c.unspentPoints = (c.unspentPoints || 0) + pts;
+    c.level = v; c.exp = 0;
+  }
+  if (body.coins != null) { const v = int(body.coins, 0, 1e12); if (v === null) return { error: 'Coins must be a whole number, 0 or more.' }; said.push(`coins ${c.coins} → ${v}`); c.coins = v; }
+  if (body.lives != null) { const v = int(body.lives, 0, 1e9); if (v === null) return { error: 'Lives must be a whole number.' }; said.push(`lives ${c.livesLeft ?? 3} → ${v}`); c.livesLeft = v; }
+  if (body.race != null && body.race !== c.race) {
+    if (!G.RACES[body.race]) return { error: 'No such race.' };
+    const from = c.race;
+    G.changeRace(c, body.race);
+    said.push(`race ${from} → ${body.race}`);
+  }
+  if (body.cls != null && body.cls !== c.cls) {
+    if (!G.CLASSES[body.cls] || body.cls === 'child') return { error: 'No such class.' };
+    const from = c.cls;
+    if (c.cls === 'child') { if (!G.growUp(c, body.cls)) return { error: 'That class can\'t be given.' }; }
+    else G.changeClass(c, body.cls);
+    said.push(`class ${from} → ${body.cls}`);
+  }
+  return null;
+}
+
+// The rest of the admins' powers over one character (see edit)
+function morePowers(c, body, said) {
+  const r = changeCharacter(c, { name: body.rename, level: body.level, race: body.race, cls: body.cls, lives: body.lives }, said);
+  if (r?.error) return r;
+  if (body.extraHp != null) { const v = int(body.extraHp, 0, 1e9); if (v === null) return { error: 'Extra HP must be 0 or more.' }; said.push(`extra HP ${c.extraHp || 0} → ${v}`); c.extraHp = v; c.hp = null; }
+  if (body.cityAccess !== undefined) {
+    const v = body.cityAccess || null;
+    if (v !== null && !P.PASS_ORDER.includes(v)) return { error: 'No such ring of the city.' };
+    said.push(`city pass granted: ${v ? P.PASS_NAME[v] : 'none'}`);
+    c.cityAccess = v;
+  }
+  if (body.addSkill) {
+    if (!SKILLS[body.addSkill]) return { error: 'No such skill.' };
+    c.skills ||= [];
+    if (c.skills.includes(body.addSkill)) return { error: 'They know that skill already.' };
+    c.skills.push(body.addSkill);
+    c.skillBar ||= [];
+    if (c.skillBar.length < 6) c.skillBar.push({ id: body.addSkill, key: null });
+    said.push(`gave skill ${SKILLS[body.addSkill].name}`);
+  }
+  if (body.removeSkill) {
+    if (!(c.skills || []).includes(body.removeSkill)) return { error: 'They don\'t know that skill.' };
+    c.skills = c.skills.filter((x) => x !== body.removeSkill);
+    c.skillBar = (c.skillBar || []).filter((b) => b.id !== body.removeSkill);
+    said.push(`took skill ${SKILLS[body.removeSkill]?.name || body.removeSkill}`);
+  }
+  if (body.addSpell) {
+    if (!SPELLS[body.addSpell]) return { error: 'No such spell.' };
+    c.spells ||= [];
+    if (c.spells.includes(body.addSpell)) return { error: 'They know that spell already.' };
+    c.spells.push(body.addSpell);
+    said.push(`gave spell ${SPELLS[body.addSpell].name}`);
+  }
+  if (body.removeSpell) {
+    c.spells = (c.spells || []).filter((x) => x !== body.removeSpell);
+    said.push(`took spell ${SPELLS[body.removeSpell]?.name || body.removeSpell}`);
+  }
+  if (body.unique) {
+    const u = U.uniqueByName(body.unique.name);
+    if (!u) return { error: 'No Unique Skill has that name. Pick one from the list as you type.' };
+    const rank = u.kind === 'appraise' ? U.APPRAISAL.rank : U.UNIQUE_RANKS.includes(body.unique.rank) ? body.unique.rank : U.rankOf(c.uniqueSkill);
+    const before = c.uniqueSkill ? `${c.uniqueSkill.name} (${c.uniqueSkill.rank})` : 'none';
+    c.uniqueSkill = { ...U.uniqueSlot({ ...u, rank }), born: rank, raised: 0 };
+    said.push(`Unique Skill ${before} → ${u.name} (${rank})`);
+  }
+  return null;
 }
 
 // What the board can give: every item, and every named place to send someone to
@@ -131,6 +319,14 @@ function catalogue() {
     items: Object.entries(ITEMS).map(([id, it]) => ({ id, name: it.name, icon: it.icon || '', kind: it.kind })).sort((x, y) => x.name.localeCompare(y.name)),
     places: PLACES.map((p) => ({ id: p.id, name: p.name, city: !!p.city })),
     races: Object.keys(K.CASTLES),
+    allRaces: Object.entries(G.RACES).map(([id, r]) => ({ id, name: r.name, side: r.side })),
+    classes: Object.entries(G.CLASSES).filter(([id]) => id !== 'child').map(([id, k]) => ({ id, name: k.name })),
+    rings: P.PASS_ORDER.map((id) => ({ id, name: P.PASS_NAME[id] })),
+    categories: SKILL_CATEGORIES,
+    skills: Object.values(SKILLS).map((sk) => ({ id: sk.id, name: sk.name, icon: sk.icon, category: skillCategory(sk), power: skillPower(sk) })),
+    spells: Object.values(SPELLS).map((sp) => ({ id: sp.id, name: sp.name, element: sp.element, level: sp.level })),
+    uniqueRanks: U.UNIQUE_RANKS,
+    uniques: [U.APPRAISAL.name, ...U.UNIQUE_SKILLS.map((u) => u.name)],
   };
 }
 
@@ -148,13 +344,13 @@ async function editCharacter(id, fn) {
   return { ok: true, acc, said: r?.said || '' };
 }
 
-// body: { id, coins, addCoins, level, exp, stat: {key, value}, points, addItem: {id, n}, removeItem: {index, n}, heal, lives }
+// body: { id, coins, addCoins, level, exp, stat: {key, value}, points, addItem: {id, n}, removeItem: {index, n}, heal, lives,
+//   rename, race, cls, extraHp, cityAccess, addSkill, removeSkill, addSpell, removeSpell, unique: {name, rank} }
 async function edit(body, me) {
   const said = [];
   const r = await editCharacter(body.id, (c) => {
     if (body.coins != null) { const v = int(body.coins, 0, 1e12); if (v === null) return { error: 'Coins must be a whole number, 0 or more.' }; said.push(`coins ${c.coins} → ${v}`); c.coins = v; }
     if (body.addCoins != null) { const v = int(body.addCoins, -1e12, 1e12); if (v === null) return { error: 'Bad number of coins.' }; const to = Math.max(0, (c.coins || 0) + v); said.push(`coins ${c.coins} → ${to}`); c.coins = to; }
-    if (body.level != null) { const v = int(body.level, 1, 10000); if (v === null) return { error: 'Level is 1 to 10000.' }; said.push(`level ${c.level} → ${v}`); c.level = v; c.exp = 0; }
     if (body.exp != null) { const v = int(body.exp, 0, 1e12); if (v === null) return { error: 'Bad EXP.' }; said.push(`EXP ${c.exp} → ${v}`); c.exp = v; }
     if (body.points != null) { const v = int(body.points, 0, 1e6); if (v === null) return { error: 'Bad Stat Points.' }; said.push(`unspent points ${c.unspentPoints || 0} → ${v}`); c.unspentPoints = v; }
     if (body.stat) {
@@ -162,7 +358,8 @@ async function edit(body, me) {
       if (!c.stats || !(k in c.stats) || v === null) return { error: 'Choose a stat and a number.' };
       said.push(`${k} ${c.stats[k]} → ${v}`); c.stats[k] = v;
     }
-    if (body.lives != null) { const v = int(body.lives, 1, 3); if (v === null) return { error: 'Lives are 1 to 3.' }; said.push(`lives ${c.livesLeft} → ${v}`); c.livesLeft = v; }
+    const more = morePowers(c, body, said);
+    if (more?.error) return more;
     if (body.heal) { c.injury = null; c.hp = Math.max(c.hp || 0, 1e6); c.fatigue = 0; said.push('healed (HP full, bones mended, rested)'); }
     if (body.addItem) {
       const n = int(body.addItem.n ?? 1, 1, 1e6);
@@ -370,6 +567,7 @@ async function adminLog() {
 }
 
 module.exports = {
+  pastLives, editPastLife, restoreLife, appointLeader, tuning, setTuning, skillsBoard, leaders: async () => ({ leaders: await cults.leaders() }),
   isAdmin, accounts, setPassword, setBirthdate, signOutEverywhere, remove, log,
   stats, player, catalogue, edit, move, ban, mute, chat, deleteMessage, reports, closeReport, announce, announcement, world, take, resetKing, adminLog, skipChildhood, report,
 };

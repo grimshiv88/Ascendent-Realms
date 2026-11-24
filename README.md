@@ -53,4 +53,6 @@ The tables have Row Level Security switched on with no rules, so Supabase's publ
 
 Open http://localhost:3000/admin.html and sign in with an admin account to see every account and character, set a new password for a player who forgot theirs, sign an account out everywhere, or delete it.
 
+The board can also: raise a level (the Stat Points of every level gained come with it), give any number of lives, give extra HP, change race and class, grant a City Pass up to any ring of the cities, give or take skills and spells, change a Unique Skill and its rank, appoint the leaders of the evil sect (Dark Side) and the good sect (Order of the Dawn), change the health and healing numbers for everyone (World tab), list every Unique Skill held by kind and rank (Skills tab), and look at, change, or bring a player back to any life they have lost (Past lives, kept from now on).
+
 Admins are set with the `ADMIN_EMAILS` setting (comma-separated emails) when starting the server, for example `ADMIN_EMAILS=you@example.com npm start`. Passwords are stored hashed, so they can't be shown, only replaced.
