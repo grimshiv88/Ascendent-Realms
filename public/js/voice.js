@@ -1,5 +1,7 @@
 // Voice chat for players 16 and over: talk to the players near you. Voices get quieter with
-// distance and can't be heard past HEAR_M metres. Every voice has a Mute button (only for you)
+// distance and can't be heard past HEAR_M metres. Your party (made from the Friends menu) has
+// its own voice room, heard at full loudness however far apart you are; you choose whether your
+// mic goes to Nearby or to Party. Every voice has a Mute button (only for you)
 // and a Report button (the game's owner sees it on the admin board).
 // The voices travel through LiveKit; the game server only gives out a short pass (api/voice/pass)
 // after checking the player's age and that they aren't muted.
@@ -10,7 +12,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', 
 export const FULL_M = 4; // full loudness this close
 export const HEAR_M = 40; // silent (and not even downloaded) past this
 const TICK_MS = 400; // how often positions are shared and volumes updated
-const RECHECK_MS = 8 * 60 * 1000; // ask the server again whether this player may still talk
+const RECHECK_MS = 30 * 1000; // ask the server again: still allowed to talk? joined or left a party?
 const MUTED_KEY = 'ar.voice.muted';
 const REASONS = ['Bad words', 'Shouting or noise', 'Bullying', 'Too young', 'Other'];
 
@@ -45,11 +47,14 @@ export function createVoice(host, { position }) {
     <button type="button" class="vo-toggle" aria-label="Voice chat" aria-expanded="false" title="Voice chat (${VOICE_AGE}+)">🎙️</button>
     <div class="vo-panel" hidden>
       <div class="vo-head"><b>Voice chat</b><span class="vo-state">Off</span><button type="button" class="vo-close ghost" aria-label="Close">✕</button></div>
-      <p class="vo-note">Talk to players near you. Voices fade with distance. For players ${VOICE_AGE} and over.</p>
+      <p class="vo-note">Talk to players near you, or to your party wherever they are. For players ${VOICE_AGE} and over.</p>
       <div class="vo-actions">
         <button type="button" class="vo-join">Join voice</button>
         <button type="button" class="vo-mic" hidden>🎙️ Mic on</button>
         <button type="button" class="vo-leave ghost" hidden>Leave voice</button>
+      </div>
+      <div class="vo-to" role="group" aria-label="Talk to" hidden>
+        <span>Talk to:</span><button type="button" data-to="near" aria-pressed="true">Nearby</button><button type="button" data-to="party" aria-pressed="false">Party</button>
       </div>
       <p class="vo-msg" role="status"></p>
       <ul class="vo-list"></ul>
@@ -58,30 +63,53 @@ export function createVoice(host, { position }) {
   const $ = (s) => host.querySelector(s);
   const toggle = $('.vo-toggle'), panel = $('.vo-panel'), stateEl = $('.vo-state'), msg = $('.vo-msg');
   const joinBtn = $('.vo-join'), micBtn = $('.vo-mic'), leaveBtn = $('.vo-leave'), list = $('.vo-list'), audioBox = $('.vo-audio');
+  const toBox = $('.vo-to');
 
   let room = null, L = null, tick = null, recheck = null, micOn = true, joining = false;
+  let party = null; // { room: Room, name: 'party-7' }
+  let talkTo = 'near'; // where the mic goes: 'near' or 'party'
   const muted = savedMuted();
   const spots = new Map(); // identity -> { x, z, at }
-  const speaking = new Set();
+  const speaking = { near: new Set(), party: new Set() };
   let reporting = null;
 
   const say = (text) => { msg.textContent = text || ''; };
   function setOpen(v) {
     panel.hidden = !v;
     toggle.setAttribute('aria-expanded', String(v));
+    if (v) drawList();
   }
   toggle.addEventListener('click', () => setOpen(panel.hidden));
   $('.vo-close').addEventListener('click', () => setOpen(false));
 
   function showState() {
     const on = !!room;
-    stateEl.textContent = on ? (micOn ? 'On · talking' : 'On · mic off') : 'Off';
+    const where = talkTo === 'party' && party ? 'party' : 'nearby';
+    stateEl.textContent = on ? (micOn ? `On · talking to ${where}` : 'On · mic off') : 'Off';
     toggle.classList.toggle('on', on);
     toggle.classList.toggle('live', on && micOn);
+    toggle.classList.toggle('party', on && micOn && where === 'party');
     joinBtn.hidden = on;
     micBtn.hidden = leaveBtn.hidden = !on;
     micBtn.textContent = micOn ? '🎙️ Mic on' : '🔇 Mic off';
     micBtn.setAttribute('aria-pressed', String(micOn));
+    toBox.hidden = !(on && party);
+    for (const b of toBox.querySelectorAll('[data-to]')) b.setAttribute('aria-pressed', String(b.dataset.to === (party ? talkTo : 'near')));
+  }
+
+  // the mic goes to one room at a time
+  async function applyMic() {
+    if (!room) return;
+    const toParty = talkTo === 'party' && !!party;
+    try {
+      if (party) await party.room.localParticipant.setMicrophoneEnabled(micOn && toParty);
+      await room.localParticipant.setMicrophoneEnabled(micOn && !toParty);
+      say('');
+    } catch {
+      micOn = false;
+      say('Your microphone is blocked. You can still listen. Allow the microphone in your browser to talk.');
+    }
+    showState();
   }
 
   function near() {
@@ -96,26 +124,34 @@ export function createVoice(host, { position }) {
     return out.sort((a, b) => a.d - b.d);
   }
 
+  function row(n, where, extra) {
+    const m = muted.has(n), talking = speaking[where].has(n) && !m;
+    if (reporting === n) {
+      return `<li class="vo-report"><form data-report-form="${esc(n)}">
+        <b>Report ${esc(n)}</b>
+        <select name="reason">${REASONS.map((r) => `<option>${r}</option>`).join('')}</select>
+        <input name="text" maxlength="200" placeholder="What happened? (optional)">
+        <span><button type="submit">Send</button><button type="button" class="ghost" data-cancel>Cancel</button></span>
+      </form></li>`;
+    }
+    return `<li class="${talking ? 'talking' : ''}">
+      <span class="vo-name">${talking ? '🔊' : '·'} ${esc(n)}</span><small>${extra}</small>
+      <button type="button" class="ghost" data-mute="${esc(n)}" aria-pressed="${m}">${m ? 'Unmute' : 'Mute'}</button>
+      <button type="button" class="ghost" data-report="${esc(n)}">Report</button>
+    </li>`;
+  }
+
   function drawList() {
     if (!room) { list.innerHTML = ''; return; }
+    let html = '';
+    if (party) {
+      const mates = [...party.room.remoteParticipants.values()].map((p) => p.identity);
+      html += '<li class="vo-sec">Party</li>' + (mates.length ? mates.map((n) => row(n, 'party', 'party')).join('') : '<li class="vo-empty">No one else from your party is in voice.</li>');
+      html += '<li class="vo-sec">Nearby</li>';
+    }
     const rows = near().filter((r) => r.d < HEAR_M);
-    if (!rows.length) { list.innerHTML = '<li class="vo-empty">Nobody is close enough to hear.</li>'; return; }
-    list.innerHTML = rows.map(({ p, d }) => {
-      const n = p.identity, m = muted.has(n);
-      if (reporting === n) {
-        return `<li class="vo-report"><form data-report-form="${esc(n)}">
-          <b>Report ${esc(n)}</b>
-          <select name="reason">${REASONS.map((r) => `<option>${r}</option>`).join('')}</select>
-          <input name="text" maxlength="200" placeholder="What happened? (optional)">
-          <span><button type="submit">Send</button><button type="button" class="ghost" data-cancel>Cancel</button></span>
-        </form></li>`;
-      }
-      return `<li class="${speaking.has(n) && !m ? 'talking' : ''}">
-        <span class="vo-name">${speaking.has(n) && !m ? '🔊' : '·'} ${esc(n)}</span><small>${Math.round(d)} m</small>
-        <button type="button" class="ghost" data-mute="${esc(n)}" aria-pressed="${m}">${m ? 'Unmute' : 'Mute'}</button>
-        <button type="button" class="ghost" data-report="${esc(n)}">Report</button>
-      </li>`;
-    }).join('');
+    html += rows.length ? rows.map(({ p, d }) => row(p.identity, 'near', `${Math.round(d)} m`)).join('') : '<li class="vo-empty">Nobody is close enough to hear.</li>';
+    list.innerHTML = html;
   }
 
   list.addEventListener('click', (e) => {
@@ -140,8 +176,19 @@ export function createVoice(host, { position }) {
     reporting = null;
     update();
   });
+  toBox.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-to]');
+    if (!b || !party || talkTo === b.dataset.to) return;
+    talkTo = b.dataset.to;
+    applyMic();
+  });
 
-  // volumes and downloads follow distance; your own spot is shared with the room
+  const listen = (p, v) => {
+    for (const pub of p.audioTrackPublications.values()) if (pub.isSubscribed !== v > 0) pub.setSubscribed(v > 0);
+    p.setVolume(v);
+  };
+  // nearby volumes and downloads follow distance; your own spot is shared with the room.
+  // Party voices are always full loudness (unless you muted them).
   function update() {
     if (!room) return;
     const me = position();
@@ -149,15 +196,39 @@ export function createVoice(host, { position }) {
       const data = new TextEncoder().encode(JSON.stringify({ x: Math.round(me.x * 10) / 10, z: Math.round(me.z * 10) / 10 }));
       room.localParticipant.publishData(data, { reliable: false }).catch(() => {});
     }
-    for (const { p, d } of near()) {
-      const v = muted.has(p.identity) ? 0 : loudness(d);
-      for (const pub of p.audioTrackPublications.values()) {
-        const want = v > 0;
-        if (pub.isSubscribed !== want) pub.setSubscribed(want);
-      }
-      p.setVolume(v);
-    }
+    for (const { p, d } of near()) listen(p, muted.has(p.identity) ? 0 : loudness(d));
+    if (party) for (const p of party.room.remoteParticipants.values()) listen(p, muted.has(p.identity) ? 0 : 1);
     if (!panel.hidden && !reporting) drawList();
+  }
+
+  function makeRoom(where) {
+    const R = L.RoomEvent;
+    const r = new L.Room({ adaptiveStream: false, dynacast: false, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    r.on(R.TrackSubscribed, (track) => { if (track.kind === 'audio') audioBox.appendChild(track.attach()); });
+    r.on(R.TrackUnsubscribed, (track) => { for (const el of track.detach()) el.remove(); });
+    r.on(R.ParticipantDisconnected, (p) => { if (where === 'near') spots.delete(p.identity); speaking[where].delete(p.identity); drawList(); });
+    r.on(R.ParticipantConnected, () => drawList());
+    r.on(R.ActiveSpeakersChanged, (who) => { speaking[where].clear(); for (const p of who) speaking[where].add(p.identity); });
+    return r;
+  }
+
+  // join, switch or leave the party's voice room to match the party you are in now
+  async function syncParty(info, url) {
+    if ((party?.name || null) === (info?.room || null)) return;
+    if (party) {
+      const old = party; party = null;
+      old.room.disconnect().catch(() => {});
+      speaking.party.clear();
+      if (!info) { if (talkTo === 'party') talkTo = 'near'; say('You left your party, so party voice ended.'); }
+    }
+    if (info) {
+      const r = makeRoom('party');
+      r.on(L.RoomEvent.Disconnected, () => { if (party?.room === r) { party = null; applyMic(); drawList(); } });
+      await r.connect(url, info.token, { autoSubscribe: false });
+      party = { room: r, name: info.room };
+    }
+    await applyMic();
+    drawList();
   }
 
   async function join() {
@@ -168,33 +239,27 @@ export function createVoice(host, { position }) {
     try {
       const pass = await api.voicePass(); // says why not before loading anything
       L = await loadLib();
-      const R = L.RoomEvent;
-      const r = new L.Room({ adaptiveStream: false, dynacast: false, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      r.on(R.TrackSubscribed, (track) => {
-        if (track.kind !== 'audio') return;
-        const el = track.attach();
-        audioBox.appendChild(el);
-      });
-      r.on(R.TrackUnsubscribed, (track) => { for (const el of track.detach()) el.remove(); });
-      r.on(R.DataReceived, (payload, p) => {
+      const r = makeRoom('near');
+      r.on(L.RoomEvent.DataReceived, (payload, p) => {
         if (!p) return;
         try {
-          const s = JSON.parse(new TextDecoder().decode(payload));
-          if (Number.isFinite(s.x) && Number.isFinite(s.z)) spots.set(p.identity, { x: s.x, z: s.z, at: Date.now() });
+          const s2 = JSON.parse(new TextDecoder().decode(payload));
+          if (Number.isFinite(s2.x) && Number.isFinite(s2.z)) spots.set(p.identity, { x: s2.x, z: s2.z, at: Date.now() });
         } catch { /* not a spot */ }
       });
-      r.on(R.ParticipantDisconnected, (p) => { spots.delete(p.identity); speaking.delete(p.identity); drawList(); });
-      r.on(R.ActiveSpeakersChanged, (list2) => { speaking.clear(); for (const p of list2) speaking.add(p.identity); });
-      r.on(R.Disconnected, () => { if (room === r) stop('Voice chat ended.'); });
+      r.on(L.RoomEvent.Disconnected, () => { if (room === r) stop('Voice chat ended.'); });
       await r.connect(pass.url, pass.token, { autoSubscribe: false });
       room = r;
       await r.startAudio().catch(() => {});
-      try { await r.localParticipant.setMicrophoneEnabled(micOn); }
-      catch { micOn = false; say('Your microphone is blocked. You can still listen. Allow the microphone in your browser to talk.'); }
-      if (micOn) say('');
+      if (pass.party) talkTo = 'party'; // in a party: talk to them first
+      await syncParty(pass.party, pass.url).catch(() => say('Party voice could not start. Nearby voice still works.'));
+      await applyMic();
       tick = setInterval(update, TICK_MS);
       recheck = setInterval(async () => {
-        try { await api.voicePass(); } catch (err) { stop(err.message); }
+        if (!room) return;
+        let p2;
+        try { p2 = await api.voicePass(); } catch (err) { stop(err.message); return; }
+        syncParty(p2.party, p2.url).catch(() => {});
       }, RECHECK_MS);
       update();
     } catch (err) {
@@ -208,11 +273,12 @@ export function createVoice(host, { position }) {
 
   function stop(why = '') {
     clearInterval(tick); clearInterval(recheck);
-    const r = room;
-    room = null;
+    const r = room, pr = party;
+    room = null; party = null;
     if (r) r.disconnect().catch(() => {});
+    if (pr) pr.room.disconnect().catch(() => {});
     audioBox.innerHTML = '';
-    spots.clear(); speaking.clear();
+    spots.clear(); speaking.near.clear(); speaking.party.clear();
     say(why);
     showState();
     drawList();
@@ -220,13 +286,7 @@ export function createVoice(host, { position }) {
 
   joinBtn.addEventListener('click', join);
   leaveBtn.addEventListener('click', () => stop());
-  micBtn.addEventListener('click', async () => {
-    if (!room) return;
-    micOn = !micOn;
-    try { await room.localParticipant.setMicrophoneEnabled(micOn); say(''); }
-    catch { micOn = false; say('Your microphone is blocked. Allow it in your browser to talk.'); }
-    showState();
-  });
+  micBtn.addEventListener('click', () => { if (!room) return; micOn = !micOn; applyMic(); });
   window.addEventListener('pagehide', () => stop());
   showState();
 

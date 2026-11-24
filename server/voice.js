@@ -1,4 +1,5 @@
-// Voice chat (players 16 and over): the voices go through LiveKit Cloud. The server only hands a
+// Voice chat (players 16 and over): nearby voices, and your party's voices at any distance.
+// The voices go through LiveKit Cloud. The server only hands a
 // player a short pass (a signed token) to join the voice room, after checking they may talk.
 // It turns on by itself once the three LiveKit settings are added in Vercel:
 //   LIVEKIT_URL (wss://….livekit.cloud), LIVEKIT_API_KEY, LIVEKIT_API_SECRET
@@ -32,21 +33,32 @@ function mayTalk(acc, now = Date.now()) {
 
 const b64url = (v) => Buffer.from(typeof v === 'string' ? v : JSON.stringify(v)).toString('base64url');
 // A LiveKit access token: a JWT signed with the API secret (HS256)
-function passFor(identity, name, s = settings(), now = Math.floor(Date.now() / 1000)) {
+function passFor(identity, name, s = settings(), now = Math.floor(Date.now() / 1000), room = ROOM) {
   const head = b64url({ alg: 'HS256', typ: 'JWT' });
   const body = b64url({
     iss: s.key, sub: identity, name, nbf: now - 10, exp: now + PASS_SECONDS, jti: crypto.randomUUID(),
-    video: { room: ROOM, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: ['microphone'] },
+    video: { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: ['microphone'] },
   });
   const sig = crypto.createHmac('sha256', s.secret).update(`${head}.${body}`).digest('base64url');
   return `${head}.${body}.${sig}`;
+}
+
+// Your party (if it has someone besides you): its own voice room, heard at any distance
+async function partyRoom(username) {
+  const groups = require('./groups');
+  const { partyOf } = require('../public/js/data/groups.mjs');
+  const p = partyOf(await groups.load(), username);
+  return p && p.members.length > 1 ? { room: `party-${p.id}`, members: p.members } : null;
 }
 
 async function pass(acc) {
   const ok = mayTalk(acc);
   if (ok.error) return ok;
   const s = settings();
-  return { ok: true, url: s.url, token: passFor(acc.username, acc.username, s), room: ROOM, seconds: PASS_SECONDS };
+  const out = { ok: true, url: s.url, token: passFor(acc.username, acc.username, s), room: ROOM, seconds: PASS_SECONDS, party: null };
+  const p = await partyRoom(acc.username);
+  if (p) out.party = { room: p.room, members: p.members, token: passFor(acc.username, acc.username, s, undefined, p.room) };
+  return out;
 }
 
 module.exports = { ready, mayTalk, passFor, pass, ROOM };
