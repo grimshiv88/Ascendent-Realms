@@ -285,12 +285,28 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   // Something solid (a wall, a column, a post) in the way of a body of radius r at (x, z)
   // (things up on an upper storey and low steps don't count)
-  function blockedAt(x, z, r) {
+  // Gives back what is in the way (or null). With `y` (the feet's height) something standing on
+  // raised ground, like a farm's fence on its levelled yard, counts when it is at that height.
+  function blockedAt(x, z, r, y) {
     for (const e of colliders.near(x, z, r)) {
-      if (e.r <= 0 || e.step || e.y !== undefined || e.kind === 'chest') continue;
-      if (Math.hypot(e.x - x, e.z - z) < e.r + r) return true;
+      if (e.r <= 0 || e.step || e.kind === 'chest') continue;
+      if (e.y !== undefined && (y === undefined || y >= e.y + (e.height || 8) - 0.4 || y + 1.2 < e.y)) continue;
+      if (Math.hypot(e.x - x, e.z - z) < e.r + r) return e;
     }
-    return false;
+    return null;
+  }
+  // A wooden part (a stretch of fence) knocked down: it falls over and stops being solid, and is
+  // put back up after a few minutes
+  const PART_MENDS = 5 * 60 * 1000;
+  function breakPart(part) {
+    part.broken = true;
+    for (const e of part.solid) { e.r0 = e.r; e.r = 0; }
+    for (const o of part.meshes) { o.userData.up ??= { rx: o.rotation.x, rz: o.rotation.z, y: o.position.y }; o.rotation.z += (Math.random() - 0.5) * 2.6; o.rotation.x += (Math.random() - 0.5) * 0.6; o.position.y = Math.min(o.position.y, 0.12); }
+    setTimeout(() => {
+      part.broken = false; part.hp = part.maxHp;
+      for (const e of part.solid) e.r = e.r0 ?? e.r;
+      for (const o of part.meshes) { const u = o.userData.up; if (u) { o.rotation.x = u.rx; o.rotation.z = u.rz; o.position.y = u.y; } }
+    }, PART_MENDS);
   }
   // People are solid too: you can't walk through townsfolk, your helper, your bodyguard or a monster
   function pushOffFolk(p, r) {
@@ -614,7 +630,21 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
     isInsideCave: insideCave,
-    blockedAt: (x, z, r) => !inside && !depth && blockedAt(x, z, r),
+    blockedAt: (x, z, r, y) => (!inside && !depth ? blockedAt(x, z, r, y) : null),
+    // slide a creature out of anything solid it has ended up in (walls, fences, trees, rocks)
+    pushOut: (p, r) => { if (!inside && !depth) colliders.push(p, r); },
+    // an animal running into something solid at speed: wooden fences can break (see farms.js)
+    onCrash(m, e, speed) {
+      const top = new THREE.Vector3(m.x, m.y + m.height + 0.3, m.z);
+      const part = e.part;
+      if (part && !part.broken) {
+        const hit = Math.round(m.kind.animal.len * speed * 3);
+        part.hp -= hit;
+        part.shake = 0.35;
+        if (part.hp <= 0) { breakPart(part); floatText('Crash!', top, 'hurt'); if (Math.hypot(m.x - pos.x, m.z - pos.z) < 40) say(`A ${m.kind.animal.name.toLowerCase()} smashes through the ${part.name || 'fence'}!`, 'note'); }
+        else floatText(`-${hit}`, new THREE.Vector3(e.x, (e.y ?? m.y) + 1, e.z), 'dmg');
+      } else if (speed > 7) floatText('Thud!', top, 'note');
+    },
     onHitPlayer(m) {
       if (!game || dead) return;
       const s = game.stats();
@@ -630,6 +660,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // ---------- hunting, cooking and the farms (see husbandry.js) ----------
   husbandry = createHusbandry({
     scene, colliders, game, say, floatText, onEvent,
+    // your free hand (the rope's end), or your waist if your body has no hands
+    getHand: () => { const a = avatar.userData.rig?.arms; const hand = a?.[1]?.hand || a?.[0]?.hand; if (hand) { avatar.updateMatrixWorld(true); return hand.getWorldPosition(new THREE.Vector3()); } return new THREE.Vector3(pos.x, pos.y + bodyH * 0.5, pos.z); },
     onTame: (item, m) => riding?.adopt(item, m.x, m.z, m.heading),
     creatures: () => creatures,
     getPos: () => pos, getHeading: () => heading,
@@ -2380,6 +2412,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // make every bed `mins` minutes older (for tests)
     debugAgeCrops(mins) { for (const b of game.character.crops) if (b.at) { b.at -= mins * 60000; if (b.w) b.w -= mins * 60000; } crops?.redraw(); },
     debugMount: () => riding?.mount(),
+    debugBlocked: (x, z, r, y) => { const e = blockedAt(x, z, r, y); return e ? { x: e.x, z: e.z, y: e.y, r: e.r, kind: e.kind, part: !!e.part } : null; },
+    debugAnimalYs: () => creatures.list.filter((m) => m.kind.animal).map((m) => ({ id: m.kind.animalId, x: m.x, y: m.y, z: m.z, r: m.radius })),
     debugCalmAnimals() { for (const m of creatures.list) if (m.kind.animal) { m.fedT = Math.min(m.fedT || 0, 20); m.fleeT = 0; } },
     debugSetFarmPlots(list) { myFarmPlots = list; crops?.redraw(); },
     debugFarms: () => husbandry.farms(),

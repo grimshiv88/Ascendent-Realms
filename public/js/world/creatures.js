@@ -113,8 +113,26 @@ export function monsterHit(atk, level, def) {
 export const monsterExp = (level, stage = 0) => rollKillExp(level, stage);
 
 // `groundAt(x, z, fromY)` is where feet rest (the drawn ground, and built floors); monsters walk on it as players do
-export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null, blockedAt = null }) {
-  const list = [];
+export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null, blockedAt = null, pushOut = null, onCrash = null }) {
+
+  // Is something solid (a wall, fence, tree, rock) in the way of `m` stepping to (nx, nz)? Checks
+  // its body and its nose, so long animals don't push their heads into walls. Gives back what it hit.
+  function wallAhead(m, nx, nz) {
+    if (!blockedAt) return null;
+    const r = m.radius * 0.8;
+    const hit = blockedAt(nx, nz, r, m.y);
+    if (hit) return hit;
+    const reach = m.kind.animal ? m.kind.animal.len * 0.45 : m.radius * 0.7;
+    return blockedAt(nx + Math.sin(m.heading) * reach, nz + Math.cos(m.heading) * reach, Math.max(0.1, r * 0.5), m.y);
+  }
+  // after moving: slide out of anything it has ended up inside
+  const tmpP = { x: 0, z: 0, y: 0 };
+  function unstick(m) {
+    if (!pushOut) return;
+    tmpP.x = m.x; tmpP.z = m.z; tmpP.y = m.y;
+    pushOut(tmpP, m.radius * 0.8);
+    m.x = tmpP.x; m.z = tmpP.z;
+  }  const list = [];
   const tmp = {};
   const feet = (x, z, fromY, h) => (groundAt ? groundAt(x, z, fromY) : h);
   let spawnTimer = 0, animalTimer = 1;
@@ -385,9 +403,16 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         // and land with buildings on it or that belongs to a nation
         const blocked = s.h <= s.water + 0.2 || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z)) || (!m.kind.royal && safeZoneAt(nx, nz) && !safeZoneAt(m.x, m.z))
           || (!m.kind.royal && wardedAt(nx, nz) && !wardedAt(m.x, m.z))
-          || (blockedAt?.(nx, nz, m.radius * 0.6) && !blockedAt(m.x, m.z, m.radius * 0.6));
-        if (!blocked) { m.x = nx; m.z = nz; m.y = feet(nx, nz, m.y, s.h); } else m.heading += Math.PI * 0.7;
+          || wallAhead(m, nx, nz);
+        if (!blocked) { m.x = nx; m.z = nz; m.y = feet(nx, nz, m.y, s.h); } else {
+          // a charging wolf or bear crashes into what's in its way (and may break a fence)
+          const wall = m.kind.animal && speed >= 5 && !(m.crashT > 0) && blocked !== true ? blocked : null;
+          if (wall) { m.crashT = 0.8; onCrash?.(m, wall, speed); }
+          m.heading += Math.PI * 0.7;
+        }
       }
+      unstick(m);
+      if (m.crashT > 0) m.crashT -= dt;
       m.hurt = Math.max(0, m.hurt - dt);
       m.lunge = Math.max(0, (m.lunge || 0) - dt);
       const lunge = m.lunge > 0 ? Math.sin((m.lunge / 0.3) * Math.PI) * 0.4 : 0;
@@ -430,12 +455,18 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       const nx = m.x + Math.sin(m.heading) * speed * dt, nz = m.z + Math.cos(m.heading) * speed * dt;
       const s = sample(nx, nz, tmp);
       const out = m.pen && (Math.abs(nx - m.pen.x) > m.pen.hw || Math.abs(nz - m.pen.z) > m.pen.hd);
-      const blocked = s.h <= s.water + 0.1 || out || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z))
-        || (blockedAt?.(nx, nz, m.radius * 0.6) && !blockedAt(m.x, m.z, m.radius * 0.6));
+      const wall = !(s.h <= s.water + 0.1 || out) && wallAhead(m, nx, nz);
+      const blocked = s.h <= s.water + 0.1 || out || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z)) || !!wall;
       if (!blocked) { m.x = nx; m.z = nz; m.y = feet(nx, nz, m.y, s.h); }
       else if (m.pen && out) { m.heading = Math.atan2(m.pen.x - m.x, m.pen.z - m.z) + (Math.random() - 0.5); m.walking = true; m.timer = 2; }
-      else m.heading += Math.PI * 0.6;
+      else {
+        // running flat out into it: a crash (it may break a fence), then it reels back and turns
+        if (wall && speed >= 5 && !(m.crashT > 0)) { m.crashT = 0.8; onCrash?.(m, wall, speed); m.hurt = 0.3; }
+        m.heading += Math.PI * (0.5 + Math.random() * 0.3);
+      }
     }
+    if (m.crashT > 0) m.crashT -= dt;
+    unstick(m);
     m.hurt = Math.max(0, m.hurt - dt);
     m.body.position.set(m.x, m.y + (m.hurt > 0 ? Math.sin(m.hurt * 30) * 0.03 : 0), m.z);
     m.body.rotation.y = m.heading;

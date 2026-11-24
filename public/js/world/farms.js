@@ -122,6 +122,7 @@ function fieldOf(g, solid, f, toW) {
 // a wooden fence round a box (half sizes hx, hz), with a gate gap on one side; solid all round
 function fence(g, solid, toW, cx, cz, hx, hz, gateSide = 'front') {
   const post = mat('#6a4a2c'), rail = mat('#8a6a44');
+  const parts = (g.userData.parts ||= []);
   const sides = [
     ['front', [cx - hx, cz + hz], [cx + hx, cz + hz]], ['back', [cx - hx, cz - hz], [cx + hx, cz - hz]],
     ['left', [cx - hx, cz - hz], [cx - hx, cz + hz]], ['right', [cx + hx, cz - hz], [cx + hx, cz + hz]],
@@ -131,23 +132,34 @@ function fence(g, solid, toW, cx, cz, hx, hz, gateSide = 'front') {
     const gate = name === gateSide ? [len / 2 - 1.3, len / 2 + 1.3] : null;
     const ry = Math.atan2(x1 - x0, z1 - z0);
     const segs = Math.ceil(len / 2.2);
+    const at = (k) => [x0 + ((x1 - x0) * k) / len, z0 + ((z1 - z0) * k) / len];
+    // each stretch between two posts is one part: an animal running into it hard enough knocks it
+    // down (see world.js onCrash); it is put back up after a while
+    const segOf = [];
+    for (let i = 0; i < segs; i++) { const part = { name: 'fence', hp: 120, maxHp: 120, meshes: [], solid: [], broken: false }; segOf.push(part); parts.push(part); }
+    const partAt = (k) => segOf[Math.min(segs - 1, Math.floor((k / len) * segs))];
     for (let i = 0; i <= segs; i++) {
       const k = (i / segs) * len;
       if (gate && k > gate[0] && k < gate[1]) continue;
-      const x = x0 + ((x1 - x0) * k) / len, z = z0 + ((z1 - z0) * k) / len;
-      box(0.14, 1.25, 0.14, post, g, x, 0.62, z);
+      const [x, z] = at(k);
+      const p = box(0.14, 1.25, 0.14, post, g, x, 0.62, z);
+      if (i > 0) segOf[i - 1].meshes.push(p);
       if (i < segs) {
         const k2 = ((i + 1) / segs) * len;
         if (gate && k2 > gate[0] && k < gate[1]) continue;
-        const mx = x0 + ((x1 - x0) * (k + k2)) / 2 / len, mz = z0 + ((z1 - z0) * (k + k2)) / 2 / len;
-        for (const y of [0.45, 0.95]) box(0.06, 0.1, len / segs, rail, g, mx, y, mz, ry);
+        const [mx, mz] = at((k + k2) / 2);
+        for (const y of [0.45, 0.95]) segOf[i].meshes.push(box(0.06, 0.1, len / segs, rail, g, mx, y, mz, ry));
       }
     }
     // solid along its length (but not across the gate)
     for (let k = 0; k <= len; k += 0.45) {
       if (gate && k > gate[0] && k < gate[1]) continue;
-      const w = toW(x0 + ((x1 - x0) * k) / len, z0 + ((z1 - z0) * k) / len);
-      solid.push({ x: w.x, z: w.z, r: 0.25, kind: 'wall', height: 1.25 });
+      const [lx, lz] = at(k);
+      const w = toW(lx, lz);
+      const e = { x: w.x, z: w.z, r: 0.25, kind: 'wall', height: 1.25 };
+      e.part = partAt(k);
+      e.part.solid.push(e);
+      solid.push(e);
     }
   }
 }
@@ -295,6 +307,13 @@ export function buildFarm(f) {
     trough: toW(P.x - P.hx + 1.2, P.z),
     update(t) {
       for (const n of npcs) animateCharacter(n.body, t, 0);
+      // a fence that was rammed shudders for a moment
+      for (const part of g.userData.parts || []) {
+        if (!(part.shake > 0) || part.broken) continue;
+        part.shake = Math.max(0, part.shake - 0.016);
+        const k = Math.sin(t * 60) * part.shake * 0.12;
+        for (const o of part.meshes) { o.userData.rz0 ??= o.rotation.z; o.rotation.z = o.userData.rz0 + k; }
+      }
       fx.flames.forEach((fl, i) => { fl.scale.y = 0.85 + Math.sin(t * 9 + i * 2) * 0.15; });
       fx.light.intensity = 13 + Math.sin(t * 13) * 2;
     },
