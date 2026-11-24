@@ -657,22 +657,26 @@ export function buildCity(place, opts = {}) {
   plan.idlers.forEach((I) => {
     const y = ringRel(I.tier);
     const race = S.guards[(I.seed * 7 + 3) % S.guards.length];
-    const body = buildCharacter({ race, form: 'humanoid', look: {} });
-    const H = body.userData.height || 1.7;
+    const H = bodyHeight(race, 'humanoid');
     const face = I.a + Math.PI / 2 + (I.seed % 2 ? 0.4 : -0.4);
     const at = new THREE.Group(); at.position.set(I.x, y, I.z); at.rotation.y = face; g.add(at);
     const blanket = new THREE.Mesh(new THREE.PlaneGeometry(I.pose === 'lying' ? 1.1 : 1.2, I.pose === 'lying' ? H + 0.3 : 1.2), blanketMats[I.seed % 4]);
     blanket.rotation.x = -Math.PI / 2; blanket.position.set(0, 0.03, I.pose === 'lying' ? -H / 2 : 0.2); at.add(blanket);
-    if (I.pose === 'lying') {
-      // flat on their back on an old blanket, asleep
-      body.rotation.x = -Math.PI / 2; body.position.y = 0.14;
-    } else {
-      // sitting on the ground, legs out in front
-      for (const l of body.userData.rig?.legs || []) l.hip.rotation.x = -Math.PI / 2;
-      body.position.y = (body.userData.rig?.legs?.[0]?.thighLen ?? H * 0.25) * -1 - (body.userData.rig?.legs?.[0]?.shinLen ?? H * 0.25) + 0.08;
-      body.position.y = Math.max(body.position.y, -H * 0.6);
-    }
-    joinCrowd(bakeCharacter(body));
+    // built only when you come near (like all townsfolk)
+    const body = lazyCharacter(() => {
+      const b = buildCharacter({ race, form: 'humanoid', look: {} });
+      const h = b.userData.height || H;
+      if (I.pose === 'lying') {
+        // flat on their back on an old blanket, asleep
+        b.rotation.x = -Math.PI / 2; b.position.y = 0.14;
+      } else {
+        // sitting on the ground, legs out in front
+        const leg = b.userData.rig?.legs?.[0];
+        for (const l of b.userData.rig?.legs || []) l.hip.rotation.x = -Math.PI / 2;
+        b.position.y = Math.max(-(leg?.thighLen ?? h * 0.25) - (leg?.shinLen ?? h * 0.25) + 0.08, -h * 0.6);
+      }
+      return b;
+    }, H);
     at.add(body);
     solid.push({ x: cx + I.x, z: cz + I.z, r: 0.5, kind: 'wall', height: 0.5 });
     npcs.push({ kind: 'idler', name: townName(side, vendorRnd), pose: I.pose, x: cx + I.x, z: cz + I.z });
