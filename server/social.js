@@ -133,13 +133,17 @@ async function poll(me, after) {
     } else if (roomLabel.has(r.channel)) channel = roomLabel.get(r.channel);
     messages.push({ id: r.id, channel, from: r.from_name, mine: r.from_id === me, text: r.text, at: r.at });
   }
-  return { messages, rooms: rc.map((r) => r.label), ...(await friends(me)) };
+  const ann = await db.get("SELECT data FROM world_state WHERE key = 'announcement'");
+  const a = ann ? JSON.parse(ann.data) : null;
+  return { messages, rooms: rc.map((r) => r.label), announcement: a && a.until > Date.now() ? { text: a.text, at: a.at } : null, ...(await friends(me)) };
 }
 
 // Send to the general chat, or to a friend by username
 async function send(me, body) {
   const said = S.cleanText(body.text);
   if (!said) return { error: 'Write something first.' };
+  const muted = await db.get('SELECT muted_until FROM accounts WHERE id = ?', me);
+  if (muted && muted.muted_until > Date.now()) return { error: `You can't chat right now (muted by the game's owner for ${Math.ceil((muted.muted_until - Date.now()) / 60000)} more minute(s)).` };
   // those who have had the cults' call can't speak of it
   const text = await cults.censor(me, said);
   const now = Date.now();

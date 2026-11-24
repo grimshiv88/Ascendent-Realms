@@ -79,11 +79,13 @@ app.get('/api/me', async (req, res) => {
 async function requireSession(req, res, next) {
   req.account = await auth.accountRow(bearer(req));
   if (!req.account) return res.status(401).json({ error: 'Not signed in.' });
+  if (auth.banned(req.account)) return res.status(403).json({ error: auth.banned(req.account), banned: true });
   next();
 }
 async function requireAccount(req, res, next) {
   req.account = await auth.accountRow(bearer(req));
   if (!req.account) return res.status(401).json({ error: 'Not signed in.' });
+  if (auth.banned(req.account)) return res.status(403).json({ error: auth.banned(req.account), banned: true });
   if (auth.mustVerify(req.account)) return res.status(403).json({ error: 'Please confirm your email first.', mustVerify: true });
   checkAppraisalNow();
   next();
@@ -131,12 +133,12 @@ app.post('/api/character/rankup', requireAccount, async (req, res) => {
 });
 app.post('/api/character/location', requireAccount, async (req, res) => {
   const result = await characters.saveLocation(req.account.id, req.body || {});
-  res.status(result.error ? 400 : 200).json(result);
+  res.status(result.reload ? 409 : result.error ? 400 : 200).json(result);
 });
 
 app.post('/api/character/progress', requireAccount, async (req, res) => {
   const result = await characters.saveProgress(req.account.id, req.body || {});
-  res.status(result.error ? 400 : 200).json(result);
+  res.status(result.reload ? 409 : result.error ? 400 : 200).json(result);
 });
 
 // Land: everyone's plots, buying one, choosing its purpose, and clearing it
@@ -235,12 +237,23 @@ app.post('/api/admin/gates', requireAdmin, async (req, res) => {
   await db.run("INSERT INTO world_state (key, data) VALUES ('city_gates', ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data", JSON.stringify(all));
   res.json({ ok: true, raised: all });
 });
-for (const [route, fn] of [['password', admin.setPassword], ['birthdate', admin.setBirthdate], ['signout', admin.signOutEverywhere], ['delete', admin.remove]]) {
+for (const [route, fn] of [['password', admin.setPassword], ['birthdate', admin.setBirthdate], ['signout', admin.signOutEverywhere], ['delete', admin.remove],
+  ['edit', admin.edit], ['move', admin.move], ['ban', admin.ban], ['mute', admin.mute], ['chat/delete', admin.deleteMessage], ['reports/close', admin.closeReport],
+  ['announce', admin.announce], ['take', admin.take], ['kings/reset', admin.resetKing], ['skip/childhood', admin.skipChildhood]]) {
   app.post(`/api/admin/${route}`, requireAdmin, async (req, res) => {
     const result = await fn(req.body || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);
   });
 }
+for (const [route, fn] of [['stats', admin.stats], ['player', admin.player], ['catalogue', admin.catalogue], ['chat', admin.chat], ['reports', admin.reports], ['world', admin.world], ['log', admin.adminLog]]) {
+  app.get(`/api/admin/${route}`, requireAdmin, async (req, res) => {
+    const result = await fn(req.query || {}, req.account);
+    res.status(result.error ? 400 : 200).json(result);
+  });
+}
+
+// A player reports another player (the Report button on a player's card); the admins see it on the board
+app.post('/api/report', requireAccount, answer((body, acc) => admin.report(acc, body)));
 
 app.post('/api/signout', async (req, res) => {
   await auth.signOut(bearer(req));

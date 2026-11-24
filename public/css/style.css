@@ -1039,3 +1039,12 @@ img.flag[data-flag] { background: #8a8070; }
 .acct-more { margin: 4px 0 8px; }
 .acct-more summary { cursor: pointer; color: var(--gold-2); font: 0.9rem Georgia, serif; }
 input[type="date"] { color-scheme: dark; }
+
+/* a message from the game's owner across the top of the screen */
+.announce-banner { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 60; max-width: min(720px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 16px; border: 1px solid #c8921a; border-radius: 6px;
+  background: linear-gradient(180deg, rgba(40, 28, 12, 0.95), rgba(20, 14, 8, 0.95)); color: #f4ead2; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); font-size: 14px; }
+.announce-banner[hidden] { display: none; }
+.announce-banner b { color: #f5c84c; font-family: Cinzel, serif; letter-spacing: 0.04em; white-space: nowrap; }
+.announce-banner button { background: none; border: 0; color: #f4ead2; font-size: 18px; cursor: pointer; padding: 0 4px; }
+.so-report select, .so-report textarea { width: 100%; margin: 4px 0 8px; box-sizing: border-box; }

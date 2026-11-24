@@ -5,50 +5,109 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin Board · Ascendant Realms</title>
   <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@500;700&family=Oswald:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    :root { --gold: #f2b51e; --gold-dim: #8a6a14; --ink: #f4ead2; --quiet: #a99d80; --bg: #0b0906; --panel: #15110b; --bad: #e0574a; --ok: #8fe36a; }
+    :root {
+      --gold-1: #ffe9a8; --gold-2: #f5c84c; --gold-3: #c8921a; --gold-4: #6b4c12;
+      --ink: #f4ead2; --quiet: #a99d80; --bg: #0b0906; --panel: #15110b; --panel-2: #1d170e; --line: #3a2c10;
+      --bad: #e0574a; --ok: #8fe36a;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, sans-serif; }
-    main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 60px; }
-    h1 { margin: 0 0 4px; font: 700 1.6rem Georgia, serif; color: var(--gold); letter-spacing: 0.04em; }
-    .sub { margin: 0 0 20px; color: var(--quiet); }
-    .card { background: var(--panel); border: 1px solid #3a2c10; border-radius: 8px; padding: 18px; }
-    form.signin { max-width: 360px; display: grid; gap: 10px; }
-    label { display: grid; gap: 4px; font-size: 0.9rem; color: var(--quiet); }
-    input { padding: 9px 10px; border-radius: 5px; border: 1px solid #4a3a18; background: #0e0b07; color: var(--ink); font: inherit; }
-    input:focus { outline: 2px solid var(--gold-dim); }
-    button { font: inherit; cursor: pointer; border-radius: 5px; padding: 7px 12px; border: 1px solid var(--gold-dim); background: #2a2010; color: var(--ink); }
-    button.primary { background: var(--gold); color: #1a1206; border-color: var(--gold); font-weight: 600; }
+    body { margin: 0; color: var(--ink); font: 15px/1.45 Oswald, system-ui, sans-serif; letter-spacing: 0.01em;
+      background: radial-gradient(ellipse at top, #241a0b 0%, var(--bg) 60%) fixed, var(--bg); }
+    main { max-width: 1280px; margin: 0 auto; padding: 22px 16px 60px; }
+    h1 { margin: 0; font: 700 clamp(1.4rem, 3vw, 2rem) 'Cinzel Decorative', Cinzel, serif; color: var(--gold-2);
+      text-shadow: 0 2px 0 #3a2508, 0 0 24px rgba(245, 200, 76, 0.25); }
+    h2, h3 { font-family: Cinzel, serif; color: var(--gold-2); letter-spacing: 0.05em; margin: 0 0 10px; }
+    h2 { font-size: 1.15rem; } h3 { font-size: 0.95rem; color: var(--gold-1); }
+    .sub { margin: 2px 0 18px; color: var(--quiet); }
+    .card { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: 8px; padding: 16px;
+      box-shadow: inset 0 1px 0 rgba(255, 233, 168, 0.06), 0 8px 24px rgba(0, 0, 0, 0.35); }
+    label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--quiet); }
+    input, select, textarea { padding: 7px 9px; border-radius: 5px; border: 1px solid #4a3a18; background: #0e0b07; color: var(--ink); font: inherit; min-width: 0; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid var(--gold-4); }
+    button { font: 500 0.92rem Oswald, sans-serif; letter-spacing: 0.03em; cursor: pointer; border-radius: 5px; padding: 6px 12px;
+      border: 1px solid var(--gold-4); background: #2a2010; color: var(--ink); }
+    button:hover { border-color: var(--gold-3); }
+    button.primary { background: linear-gradient(180deg, var(--gold-2), var(--gold-3)); color: #1a1206; border-color: var(--gold-3); font-weight: 500; }
     button.danger { border-color: #7a2a22; color: #ffb3aa; background: #2a100c; }
-    button:disabled { opacity: 0.5; cursor: default; }
-    .msg { min-height: 1.4em; margin: 8px 0; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    .msg { min-height: 1.4em; margin: 6px 0; }
     .msg.bad { color: var(--bad); } .msg.good { color: var(--ok); }
-    .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-    .stats { display: flex; gap: 18px; color: var(--quiet); }
-    .stats b { color: var(--ink); }
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 860px; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #2a2010; vertical-align: top; }
-    th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--quiet); font-weight: 600; }
-    td small { display: block; color: var(--quiet); }
-    .tag { display: inline-block; font-size: 0.75rem; padding: 1px 6px; border-radius: 3px; background: #2a2010; color: var(--gold); margin-left: 4px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+    .row > input { flex: 1 1 120px; }
+    .quiet { color: var(--quiet); font-size: 0.88rem; }
+    .tag { display: inline-block; font-size: 0.72rem; padding: 1px 6px; border-radius: 3px; background: #2a2010; color: var(--gold-2); margin-left: 4px; vertical-align: middle; }
+    .tag.bad { background: #3a120e; color: #ffb3aa; }
     .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #555; margin-right: 6px; }
-    .dot.on { background: var(--ok); }
-    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .pw-form { display: flex; gap: 6px; margin-top: 8px; }
-    .pw-form[hidden] { display: none; }
-    .pw-form input { width: 170px; padding: 6px 8px; }
-    .note { margin-top: 16px; font-size: 0.85rem; color: var(--quiet); }
+    .dot.on { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+
+    /* top: title, numbers, sign out */
+    header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 0 0 16px; }
+    .stat { padding: 10px 14px; }
+    .stat b { display: block; font: 700 1.5rem Cinzel, serif; color: var(--gold-1); }
+    .stat span { color: var(--quiet); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
+    nav { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+    nav button { border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: none; color: var(--quiet); font-family: Cinzel, serif; font-weight: 700; padding: 8px 14px; }
+    nav button[aria-selected="true"] { color: var(--gold-2); border-color: var(--line); background: var(--panel-2); margin-bottom: -1px; }
+    nav button .n { font-family: Oswald, sans-serif; background: var(--bad); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 0.75rem; margin-left: 4px; }
+
+    /* players: the list and the open card */
+    .players { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 14px; align-items: start; }
+    @media (max-width: 820px) { .players { grid-template-columns: 1fr; } }
+    .plist { max-height: 72vh; overflow-y: auto; padding: 8px; }
+    .plist input { width: 100%; margin-bottom: 8px; }
+    .pl { display: block; width: 100%; text-align: left; border: 1px solid transparent; background: none; padding: 8px; border-radius: 6px; }
+    .pl:hover { background: #1f180d; }
+    .pl[aria-current="true"] { border-color: var(--gold-3); background: #241b0c; }
+    .pl small { display: block; color: var(--quiet); }
+    .pcard { display: grid; gap: 12px; }
+    .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+    dt { color: var(--quiet); } dd { margin: 0; }
+    .bag { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+    .slot { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; background: #100c07; font-size: 0.88rem; }
+    .slot .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .slot.eq { border-color: var(--gold-3); }
+    .slot button { padding: 0 6px; font-size: 0.8rem; }
+    .statgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
+    .statgrid label input { width: 100%; }
+    .empty { color: var(--quiet); padding: 14px; text-align: center; }
+
+    /* chat, reports, log */
+    .lines { display: grid; gap: 2px; max-height: 70vh; overflow-y: auto; }
+    .line { display: flex; gap: 10px; align-items: baseline; padding: 5px 6px; border-bottom: 1px solid #221a0c; }
+    .line .t { color: var(--quiet); font-size: 0.8rem; white-space: nowrap; }
+    .line .w { color: var(--gold-2); white-space: nowrap; }
+    .line .x { flex: 1; overflow-wrap: anywhere; }
+    .line button { padding: 0 8px; font-size: 0.8rem; }
+    .report { display: grid; gap: 4px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; background: #100c07; }
+    .report.done { opacity: 0.55; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid #2a2010; vertical-align: top; }
+    th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--quiet); font-weight: 500; }
+    .tablewrap { overflow-x: auto; }
+    form.signin { max-width: 360px; display: grid; gap: 10px; }
+    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
 <main>
-  <h1>Ascendant Realms · Admin Board</h1>
-  <p class="sub">Every account and character on this server. Only admin accounts can open it.</p>
+  <header>
+    <div>
+      <h1>Ascendant Realms</h1>
+      <p class="sub">The Admin Board. Only admin accounts can open it.</p>
+    </div>
+    <button type="button" id="logout" hidden>Sign out of the board</button>
+  </header>
 
   <section id="login" class="card" hidden>
+    <h2>Sign in</h2>
     <form class="signin" id="signin">
-      <label>Email <input name="email" type="email" autocomplete="username" required></label>
+      <label>Username or email <input name="login" autocomplete="username" required></label>
       <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
       <button class="primary" type="submit">Sign in</button>
       <p class="msg bad" id="login-msg" role="status"></p>
@@ -56,21 +115,83 @@
   </section>
 
   <section id="board" hidden>
-    <div class="bar">
-      <input id="search" type="search" placeholder="Search name, email or character" aria-label="Search accounts" style="min-width:260px">
-      <div class="stats" id="stats"></div>
-      <button type="button" id="logout">Sign out of the board</button>
-    </div>
+    <div class="stats" id="stats"></div>
+    <nav role="tablist" id="tabs">
+      <button type="button" role="tab" data-tab="players" aria-selected="true">Players</button>
+      <button type="button" role="tab" data-tab="chat">Chat</button>
+      <button type="button" role="tab" data-tab="reports">Reports</button>
+      <button type="button" role="tab" data-tab="world">World</button>
+      <button type="button" role="tab" data-tab="log">Log</button>
+    </nav>
     <p class="msg" id="msg" role="status"></p>
-    <div class="card table-wrap">
-      <table>
-        <thead><tr><th>Account</th><th>Character</th><th>Level · Coins</th><th>Created</th><th>Last played</th><th>Land</th><th>Actions</th></tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
+
+    <div data-panel="players" class="players">
+      <div class="card plist">
+        <input id="search" type="search" placeholder="Search a name or email" aria-label="Search players">
+        <div id="plist"></div>
+      </div>
+      <div id="pcard" class="pcard"><div class="card empty">Choose a player on the left.</div></div>
     </div>
-    <div class="card"><b>City bridges</b> <span class="note">Raise a city's bridges in a war or a monster attack: they stand up and shut the inner gates.</span>
-      <div class="actions" id="gates"></div></div>
-    <p class="note">Passwords are stored scrambled (hashed), so they can't be shown, not even here. If a player forgets theirs, set a new one and tell them what it is; they are signed out everywhere until they use it.</p>
+
+    <div data-panel="chat" class="card" hidden>
+      <div class="row" style="justify-content: space-between; margin-bottom: 8px">
+        <h2 style="margin:0">General chat</h2>
+        <button type="button" id="chat-refresh">Refresh</button>
+      </div>
+      <p class="quiet">The newest messages are at the bottom. Private messages between friends are not shown.</p>
+      <div class="lines" id="chat"></div>
+    </div>
+
+    <div data-panel="reports" class="card" hidden>
+      <h2>Reports from players</h2>
+      <div id="reports"></div>
+    </div>
+
+    <div data-panel="world" hidden>
+      <div class="grid2">
+        <div class="card">
+          <h2>Announcement</h2>
+          <p class="quiet">Shown across the top of every player's screen.</p>
+          <div id="ann-now" class="quiet"></div>
+          <form id="announce" class="row" style="margin-top:8px">
+            <input name="text" maxlength="240" placeholder="Message to everyone" required>
+            <select name="minutes" aria-label="How long">
+              <option value="30">30 minutes</option><option value="60" selected>1 hour</option><option value="360">6 hours</option>
+              <option value="1440">1 day</option><option value="10080">1 week</option>
+            </select>
+            <button class="primary" type="submit">Show it</button>
+            <button type="button" id="ann-clear">Take it down</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>City bridges</h2>
+          <p class="quiet">Raise a city's bridges in a war or a monster attack: they stand up and shut the inner gates.</p>
+          <div class="row" id="gates"></div>
+        </div>
+        <div class="card">
+          <h2>Kings' thrones</h2>
+          <div class="tablewrap"><table><thead><tr><th>Throne</th><th>King</th><th></th></tr></thead><tbody id="courts"></tbody></table></div>
+        </div>
+        <div class="card">
+          <h2>Land</h2>
+          <div class="tablewrap"><table><thead><tr><th>Owner</th><th>Plots</th><th></th></tr></thead><tbody id="land"></tbody></table></div>
+        </div>
+        <div class="card">
+          <h2>Caves</h2>
+          <div class="tablewrap"><table><thead><tr><th>Cave</th><th>Owner</th><th></th></tr></thead><tbody id="caves"></tbody></table></div>
+        </div>
+        <div class="card">
+          <h2>City houses</h2>
+          <div class="tablewrap"><table><thead><tr><th>House</th><th>Owner</th><th></th></tr></thead><tbody id="homes"></tbody></table></div>
+        </div>
+      </div>
+    </div>
+
+    <div data-panel="log" class="card" hidden>
+      <h2>Admin log</h2>
+      <p class="quiet">Everything done from this board, newest first.</p>
+      <div class="tablewrap"><table><thead><tr><th>When</th><th>Admin</th><th>What</th><th>Who</th><th>Details</th></tr></thead><tbody id="log"></tbody></table></div>
+    </div>
   </section>
 </main>
 <script>
@@ -85,54 +206,318 @@ async function call(path, body) {
   if (!res.ok) { const e = new Error(data.error || 'Something went wrong.'); e.status = res.status; throw e; }
   return data;
 }
+function say(text, good) { $('msg').textContent = text; $('msg').className = `msg ${good ? 'good' : 'bad'}`; }
+const when = (t) => { if (!t) return '—'; const d = new Date(typeof t === 'number' ? t : String(t).replace(' ', 'T')); return isNaN(d) ? '—' : d.toLocaleString(); };
+const ago = (t) => { const s = (Date.now() - new Date(t).getTime()) / 1000; if (!t || isNaN(s)) return 'never'; if (s < 90) return 'just now'; if (s < 5400) return `${Math.round(s / 60)} min ago`; if (s < 129600) return `${Math.round(s / 3600)} h ago`; return `${Math.round(s / 86400)} days ago`; };
+const nice = (s) => String(s || '').replace(/^\w/, (c) => c.toUpperCase());
 
-let all = [];
-const when = (s) => s ? new Date(s.replace(' ', 'T') + 'Z').toLocaleString() : '—';
-function draw() {
-  const q = $('search').value.trim().toLowerCase();
-  const list = all.filter((a) => !q || [a.username, a.email, a.character?.name, a.character?.race, a.character?.cls].some((v) => String(v || '').toLowerCase().includes(q)));
-  $('stats').innerHTML = `<span>Accounts <b>${all.length}</b></span><span>With a character <b>${all.filter((a) => a.character).length}</b></span><span>Signed in on a device <b>${all.filter((a) => a.signedIn).length}</b></span>`;
-  $('rows').innerHTML = list.map((a) => `
-    <tr>
-      <td><span class="dot${a.signedIn ? ' on' : ''}" title="${a.signedIn ? 'Signed in on a device' : 'Signed out'}"></span><b>${esc(a.username)}</b>${a.admin ? '<span class="tag">admin</span>' : ''}<small>${esc(a.email)}${a.birthdate ? ` · age ${a.age}` : ' · no birth date'}</small></td>
-      <td>${a.character ? `${esc(a.character.name)}<small>${esc(a.character.race)} · ${esc(a.character.cls)}${a.character.form === 'humanoid' ? ' · humanoid form' : ''}</small>` : '<small>No character yet</small>'}</td>
-      <td>${a.character ? `Lv ${a.character.level}<small>${a.character.coins} Copper</small>` : '—'}</td>
-      <td>${when(a.createdAt)}</td>
-      <td>${when(a.lastPlayed)}</td>
-      <td>${a.plots ? `${a.plots} plot${a.plots > 1 ? 's' : ''}` : '—'}</td>
-      <td>
-        <div class="actions">
-          <button type="button" data-pw="${a.id}">New password</button>
-          <button type="button" data-bd="${a.id}">Birth date</button>
-          <button type="button" data-out="${a.id}" ${a.signedIn ? '' : 'disabled'}>Sign out</button>
-          <button type="button" class="danger" data-del="${a.id}" ${a.admin ? 'disabled' : ''}>Delete</button>
-        </div>
-        <form class="pw-form" data-pw-form="${a.id}" hidden>
-          <input type="text" name="password" minlength="8" placeholder="New password (8+)" aria-label="New password for ${esc(a.username)}" required>
-          <button class="primary" type="submit">Save</button>
-        </form>
-        <form class="pw-form" data-bd-form="${a.id}" hidden>
-          <input type="date" name="birthdate" value="${esc(a.birthdate || '')}" aria-label="Birth date of ${esc(a.username)}" required>
-          <button class="primary" type="submit">Save</button>
-        </form>
-      </td>
-    </tr>`).join('') || '<tr><td colspan="7">No accounts match.</td></tr>';
+let accounts = [];
+let catalogue = { items: [], places: [], races: [] };
+let open = null; // the player whose card is open
+
+// ---------- the numbers at the top ----------
+async function drawStats() {
+  const { stats: s } = await call('api/admin/stats');
+  const tiles = [['Accounts', s.accounts], ['Characters', s.characters], ['Online now', s.online], ['Played today', s.today], ['Banned', s.banned], ['Open reports', s.reports]];
+  $('stats').innerHTML = tiles.map(([k, v]) => `<div class="card stat"><b>${v}</b><span>${k}</span></div>`).join('');
+  const t = document.querySelector('[data-tab="reports"]');
+  t.innerHTML = `Reports${s.reports ? `<span class="n">${s.reports}</span>` : ''}`;
 }
 
-function say(text, good) { $('msg').textContent = text; $('msg').className = `msg ${good ? 'good' : 'bad'}`; }
+// ---------- tabs ----------
+const loaders = { players: drawPlayers, chat: drawChat, reports: drawReports, world: drawWorld, log: drawLog };
+$('tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-tab]');
+  if (!b) return;
+  for (const x of document.querySelectorAll('[data-tab]')) x.setAttribute('aria-selected', String(x === b));
+  for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== b.dataset.tab;
+  say('');
+  loaders[b.dataset.tab]().catch((err) => say(err.message));
+});
 
-async function load() {
+// ---------- players ----------
+async function drawPlayers() {
+  accounts = (await call('api/admin/accounts')).accounts;
+  drawList();
+}
+function drawList() {
+  const q = $('search').value.trim().toLowerCase();
+  const list = accounts.filter((a) => !q || [a.username, a.email, a.character?.name].some((v) => String(v || '').toLowerCase().includes(q)));
+  $('plist').innerHTML = list.map((a) => `
+    <button type="button" class="pl" data-open="${a.id}" aria-current="${open === a.id}">
+      <span class="dot${a.signedIn ? ' on' : ''}"></span><b>${esc(a.username)}</b>${a.admin ? '<span class="tag">admin</span>' : ''}
+      <small>${a.character ? `${esc(a.character.name)} · Lv ${a.character.level} ${esc(nice(a.character.race))} ${esc(nice(a.character.cls))}` : 'No character yet'}</small>
+    </button>`).join('') || '<p class="empty">No players match.</p>';
+}
+$('search').addEventListener('input', drawList);
+$('plist').addEventListener('click', (e) => { const b = e.target.closest('[data-open]'); if (b) openPlayer(Number(b.dataset.open)); });
+
+async function openPlayer(id) {
+  open = id;
+  drawList();
+  try { drawCard((await call(`api/admin/player?id=${id}`)).player); } catch (err) { say(err.message); }
+}
+
+const STAT_NAMES = { str: 'Strength', agi: 'Agility', dex: 'Dexterity', sta: 'Stamina', int: 'Intellect' };
+function drawCard(p) {
+  const c = p.character;
+  const banned = p.banned ? `<span class="tag bad">banned ${p.banned.until === -1 ? 'forever' : `until ${when(p.banned.until)}`}</span>` : '';
+  const muted = p.muted ? `<span class="tag bad">muted until ${when(p.muted.until)}</span>` : '';
+  const equippedUids = new Set(Object.values(c?.equipped || {}).filter(Boolean));
+  $('pcard').innerHTML = `
+    <div class="card">
+      <div class="row" style="justify-content: space-between; align-items: center">
+        <h2 style="margin:0"><span class="dot${p.online ? ' on' : ''}"></span>${esc(p.username)} ${banned} ${muted}</h2>
+        <span class="quiet">Joined ${when(p.createdAt)} · last played ${ago(p.lastPlayed)}</span>
+      </div>
+      <p class="quiet">${esc(p.email || 'no email')}${p.country ? ` · ${esc(p.country)}` : ''} · owns ${p.owns.plots} plot(s), ${p.owns.caves} cave(s), ${p.owns.homes} house(s)${p.banned ? ` · ban reason: ${esc(p.banned.reason)}` : ''}</p>
+    </div>
+
+    ${c ? `
+    <div class="grid2">
+      <div class="card">
+        <h3>${esc(c.name)} · Lv ${c.level} ${esc(nice(c.race))} ${esc(nice(c.cls))}${c.form === 'humanoid' ? ' (humanoid form)' : ''}</h3>
+        <dl>
+          <dt>Coins</dt><dd>${c.coins} Copper</dd>
+          <dt>EXP</dt><dd>${c.exp}</dd>
+          <dt>HP · SP</dt><dd>${c.hp ?? "—"} · ${c.sp ?? "—"}</dd>
+          <dt>Lives left</dt><dd>${c.livesLeft ?? '—'}</dd>
+          <dt>Unspent points</dt><dd>${c.unspentPoints || 0}</dd>
+          ${c.child ? `<dt>Childhood</dt><dd>a child of ${c.child.age}</dd>` : ''}
+          ${c.injury ? `<dt>Injury</dt><dd>${esc(c.injury.name || c.injury.kind || 'hurt')}</dd>` : ''}
+          ${c.uniqueSkill ? `<dt>Unique Skill</dt><dd>${esc(c.uniqueSkill.name)} (${esc(c.uniqueSkill.rank)})</dd>` : ''}
+          <dt>Where</dt><dd>${c.location ? `${esc(c.location.area || '?')} (${Math.round(c.location.x)}, ${Math.round(c.location.z)})` : '—'}</dd>
+        </dl>
+        <div class="row" style="margin-top:10px">
+          <button type="button" data-act="heal">Heal fully</button>
+          ${c.child ? '<button type="button" data-act="skipchild">Skip childhood</button>' : ''}
+        </div>
+      </div>
+
+      <form class="card" data-form="numbers">
+        <h3>Change numbers</h3>
+        <p class="quiet">Leave a box empty to keep it as it is.</p>
+        <div class="statgrid">
+          <label>Coins (set) <input name="coins" type="number" min="0" placeholder="${c.coins}"></label>
+          <label>Coins (+/−) <input name="addCoins" type="number" placeholder="e.g. 500"></label>
+          <label>Level <input name="level" type="number" min="1" max="10000" placeholder="${c.level}"></label>
+          <label>EXP <input name="exp" type="number" min="0" placeholder="${c.exp}"></label>
+          <label>Unspent points <input name="points" type="number" min="0" placeholder="${c.unspentPoints || 0}"></label>
+          <label>Lives (1–3) <input name="lives" type="number" min="1" max="3" placeholder="${c.livesLeft ?? ''}"></label>
+        </div>
+        <h3 style="margin-top:10px">Stats</h3>
+        <div class="statgrid">
+          ${Object.entries(c.stats || {}).map(([k, v]) => `<label>${esc(STAT_NAMES[k] || k)} <input name="stat_${esc(k)}" type="number" min="0" placeholder="${v}"></label>`).join('')}
+        </div>
+        <div class="row" style="margin-top:10px"><button class="primary" type="submit">Save changes</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Bag (${c.inventory.length}/60)</h3>
+      <div class="bag">
+        ${c.inventory.map((s, i) => `<div class="slot${s.uid && equippedUids.has(s.uid) ? ' eq' : ''}" title="${esc(s.name)}${s.uid && equippedUids.has(s.uid) ? ' (worn)' : ''}">
+          <span>${esc(s.icon || '•')}</span><span class="nm">${esc(s.name)}${s.plus ? ` +${s.plus}` : ''}</span><span class="quiet">×${s.n}</span>
+          <button type="button" data-remove="${i}" title="Take away">✕</button></div>`).join('') || '<p class="quiet">Empty.</p>'}
+      </div>
+      <form data-form="give" class="row" style="margin-top:10px">
+        <input name="item" list="items" placeholder="Item to give (type to search)" required>
+        <input name="n" type="number" min="1" value="1" style="flex:0 0 80px" aria-label="How many">
+        <button class="primary" type="submit">Give</button>
+      </form>
+    </div>
+
+    <form class="card" data-form="move">
+      <h3>Move them</h3>
+      <div class="row">
+        <select name="place" aria-label="Place"><option value="">Choose a place...</option>${catalogue.places.map((pl) => `<option value="${esc(pl.id)}">${esc(pl.name)}${pl.city ? ' (city)' : ''}</option>`).join('')}</select>
+        <span class="quiet">or</span>
+        <input name="x" type="number" step="any" placeholder="X" style="flex:0 0 110px">
+        <input name="z" type="number" step="any" placeholder="Z" style="flex:0 0 110px">
+        <button class="primary" type="submit">Move</button>
+      </div>
+    </form>` : '<div class="card empty">This account has no character yet.</div>'}
+
+    <div class="grid2">
+      <form class="card" data-form="ban">
+        <h3>${p.banned ? 'Banned' : 'Ban'}</h3>
+        ${p.banned ? `<p>Banned ${p.banned.until === -1 ? 'forever' : `until ${when(p.banned.until)}`}. Reason: ${esc(p.banned.reason)}</p><button type="button" data-act="unban">Lift the ban</button>` : `
+        <div class="row">
+          <select name="days" aria-label="How long"><option value="1">1 day</option><option value="3">3 days</option><option value="7" selected>7 days</option><option value="30">30 days</option><option value="forever">Forever</option></select>
+          <input name="reason" maxlength="200" placeholder="Reason (the player sees it)" required>
+          <button class="danger" type="submit">Ban</button>
+        </div>`}
+      </form>
+      <form class="card" data-form="mute">
+        <h3>Chat</h3>
+        ${p.muted ? `<p>Muted until ${when(p.muted.until)}.</p><button type="button" data-act="unmute">Unmute</button>` : `
+        <div class="row">
+          <select name="minutes" aria-label="How long"><option value="10">10 minutes</option><option value="60" selected>1 hour</option><option value="1440">1 day</option><option value="10080">1 week</option></select>
+          <button type="submit">Mute</button>
+        </div>`}
+      </form>
+      <form class="card" data-form="password">
+        <h3>New password</h3>
+        <p class="quiet">Saved scrambled, like every password. They are signed out until they use it.</p>
+        <div class="row"><input name="password" minlength="8" placeholder="8 or more characters" required><button class="primary" type="submit">Save</button></div>
+      </form>
+      <form class="card" data-form="birthdate">
+        <h3>Birth date</h3>
+        <div class="row"><input name="birthdate" type="date" required><button class="primary" type="submit">Save</button></div>
+      </form>
+      <div class="card">
+        <h3>Account</h3>
+        <div class="row">
+          <button type="button" data-act="signout">Sign out everywhere</button>
+          <button type="button" class="danger" data-act="delete">Delete account</button>
+        </div>
+      </div>
+    </div>`;
+  $('pcard').dataset.id = p.id;
+  $('pcard').dataset.name = p.username;
+}
+
+// every button and form on the open card
+async function change(path, body, done) {
   try {
-    all = (await call('api/admin/accounts')).accounts;
-    $('login').hidden = true; $('board').hidden = false;
-    draw();
+    const r = await call(path, { id: open, ...body });
+    if (r.player) drawCard(r.player);
+    say(done, true);
+    drawStats().catch(() => {});
+  } catch (err) { say(err.message); }
+}
+$('pcard').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-act], button[data-remove]');
+  if (!b) return;
+  const name = $('pcard').dataset.name;
+  if (b.dataset.remove) return change('api/admin/edit', { removeItem: { index: Number(b.dataset.remove) } }, 'Taken away.');
+  const a = b.dataset.act;
+  if (a === 'heal') return change('api/admin/edit', { heal: true }, `${name} is healed.`);
+  if (a === 'skipchild') { if (confirm(`Make ${name} 7 now? Their Ceremony happens when they next reach the shrine.`)) change('api/admin/skip/childhood', {}, `${name}'s childhood was skipped.`); return; }
+  if (a === 'unban') return change('api/admin/ban', { lift: true }, `${name}'s ban was lifted.`);
+  if (a === 'unmute') return change('api/admin/mute', { lift: true }, `${name} can chat again.`);
+  if (a === 'signout') return change('api/admin/signout', {}, `${name} was signed out everywhere.`);
+  if (a === 'delete') {
+    if (!confirm(`Delete ${name}'s account, character and land for good? This can't be undone.`)) return;
+    try { await call('api/admin/delete', { id: open }); say(`${name}'s account was deleted.`, true); open = null; $('pcard').innerHTML = '<div class="card empty">Choose a player on the left.</div>'; drawPlayers(); drawStats(); } catch (err) { say(err.message); }
+  }
+});
+$('pcard').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target, kind = f.dataset.form, name = $('pcard').dataset.name;
+  const v = (k) => f.elements[k]?.value.trim();
+  if (kind === 'numbers') {
+    const body = {};
+    for (const k of ['coins', 'addCoins', 'level', 'exp', 'points', 'lives']) if (v(k)) body[k] = Number(v(k));
+    const stats = [...f.elements].filter((el) => el.name?.startsWith('stat_') && el.value.trim());
+    if (!Object.keys(body).length && !stats.length) return say('Type a number in a box first.');
+    try {
+      if (Object.keys(body).length) await call('api/admin/edit', { id: open, ...body });
+      for (const el of stats) await call('api/admin/edit', { id: open, stat: { key: el.name.slice(5), value: Number(el.value) } });
+      say(`${name}'s numbers were changed.`, true);
+      openPlayer(open);
+    } catch (err) { say(err.message); }
+  }
+  if (kind === 'give') {
+    const typed = v('item').toLowerCase();
+    const it = catalogue.items.find((x) => x.name.toLowerCase() === typed || x.id === typed);
+    if (!it) return say('No item with that name. Pick one from the list as you type.');
+    change('api/admin/edit', { addItem: { id: it.id, n: Number(v('n')) || 1 } }, `Gave ${it.name} to ${name}.`);
+  }
+  if (kind === 'move') {
+    const body = v('place') ? { place: v('place') } : { x: Number(v('x')), z: Number(v('z')) };
+    if (!v('place') && (!v('x') || !v('z'))) return say('Choose a place, or type both X and Z.');
+    change('api/admin/move', body, `${name} was moved. If they are playing, their game loads again there.`);
+  }
+  if (kind === 'ban') {
+    if (!confirm(`Ban ${name}? They are signed out at once.`)) return;
+    change('api/admin/ban', v('days') === 'forever' ? { forever: true, reason: v('reason') } : { days: Number(v('days')), reason: v('reason') }, `${name} is banned.`);
+  }
+  if (kind === 'mute') change('api/admin/mute', { minutes: Number(v('minutes')) }, `${name} is muted.`);
+  if (kind === 'password') { await change('api/admin/password', { password: v('password') }, `New password saved for ${name}. Tell them to sign in with it.`); f.reset(); }
+  if (kind === 'birthdate') change('api/admin/birthdate', { birthdate: v('birthdate') }, `Birth date saved for ${name}.`);
+});
+
+// ---------- chat ----------
+async function drawChat() {
+  const { messages } = await call('api/admin/chat');
+  $('chat').innerHTML = messages.map((m) => `<div class="line"><span class="t">${when(m.at)}</span><span class="w">${esc(m.from)}${m.channel !== 'general' ? ` <span class="tag">${esc(m.channel)}</span>` : ''}</span><span class="x">${esc(m.text)}</span><button type="button" class="danger" data-del="${m.id}">Remove</button></div>`).join('') || '<p class="empty">No messages.</p>';
+  $('chat').scrollTop = $('chat').scrollHeight;
+}
+$('chat-refresh').addEventListener('click', () => drawChat().catch((err) => say(err.message)));
+$('chat').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-del]');
+  if (!b) return;
+  try { await call('api/admin/chat/delete', { id: Number(b.dataset.del) }); say('Message removed.', true); drawChat(); } catch (err) { say(err.message); }
+});
+
+// ---------- reports ----------
+async function drawReports() {
+  const { reports } = await call('api/admin/reports');
+  $('reports').innerHTML = reports.map((r) => `<div class="report${r.done ? ' done' : ''}">
+      <div><b>${esc(r.by)}</b> reported <b>${esc(r.target)}</b> for <span class="tag">${esc(r.reason)}</span> <span class="quiet">${when(r.at)}</span></div>
+      ${r.text ? `<div>${esc(r.text)}</div>` : ''}
+      <div class="row">${r.targetId ? `<button type="button" data-look="${r.targetId}">Open ${esc(r.target)}'s card</button>` : ''}${r.done ? '<span class="quiet">Dealt with</span>' : `<button type="button" data-close="${r.id}">Mark as dealt with</button>`}</div>
+    </div>`).join('') || '<p class="empty">No reports. Players can report someone from the player\'s card in the game.</p>';
+}
+$('reports').addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.close) { try { await call('api/admin/reports/close', { id: Number(b.dataset.close) }); drawReports(); drawStats(); } catch (err) { say(err.message); } }
+  if (b.dataset.look) { document.querySelector('[data-tab="players"]').click(); openPlayer(Number(b.dataset.look)); }
+});
+
+// ---------- world ----------
+const CITIES = [['central', 'Central City'], ['emberfall', 'Emberfall'], ['ashgrave', 'Ashgrave'], ['lumenhollow', 'Lumenhollow'], ['mirehaven', 'Mirehaven']];
+async function drawWorld() {
+  const w = await call('api/admin/world');
+  $('ann-now').innerHTML = w.announcement ? `Showing now: “${esc(w.announcement.text)}” until ${when(w.announcement.until)}` : 'Nothing is showing now.';
+  $('courts').innerHTML = w.courts.map((c) => `<tr><td>${esc(nice(c.race))}</td><td>${esc(c.king.name)} <span class="quiet">Lv ${c.king.level}${c.king.npc ? ' · the first King' : ' · a player'}</span></td><td>${c.king.npc ? '' : `<button type="button" class="danger" data-king="${esc(c.race)}">Put the first King back</button>`}</td></tr>`).join('');
+  $('land').innerHTML = w.land.map((l) => `<tr><td>${esc(l.username)}</td><td>${l.plots}</td><td><button type="button" class="danger" data-land="${esc(l.username)}">Take all back</button></td></tr>`).join('') || '<tr><td colspan="3" class="quiet">Nobody owns land yet.</td></tr>';
+  $('caves').innerHTML = w.caves.map((c) => `<tr><td>${esc(c.cave)}</td><td>${esc(c.username)}</td><td><button type="button" class="danger" data-cave="${esc(c.cave)}">Take back</button></td></tr>`).join('') || '<tr><td colspan="3" class="quiet">Nobody owns a cave yet.</td></tr>';
+  $('homes').innerHTML = w.homes.map((h) => `<tr><td>${esc(nice(h.city))} · ${esc(h.house)}</td><td>${esc(h.username)}</td><td><button type="button" class="danger" data-city="${esc(h.city)}" data-house="${esc(h.house)}">Take back</button></td></tr>`).join('') || '<tr><td colspan="3" class="quiet">Nobody owns a city house yet.</td></tr>';
+  const { raised } = await fetch('api/cities').then((r) => r.json()).catch(() => ({ raised: {} }));
+  $('gates').innerHTML = CITIES.map(([id, n]) => `<button type="button" data-gate="${id}" data-up="${raised?.[id] ? '' : '1'}">${raised?.[id] ? `Lower ${n}'s bridges` : `Raise ${n}'s bridges`}</button>`).join('');
+}
+$('board').querySelector('[data-panel="world"]').addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const go = async (path, body, done, ask) => { if (ask && !confirm(ask)) return; try { await call(path, body); say(done, true); drawWorld(); } catch (err) { say(err.message); } };
+  if (b.dataset.gate) return go('api/admin/gates', { city: b.dataset.gate, raised: !!b.dataset.up }, 'Done. Players see it within a minute.');
+  if (b.dataset.king) return go('api/admin/kings/reset', { race: b.dataset.king }, 'The first King is back on the throne.', 'Take the throne from the player King and give it back to the first King?');
+  if (b.dataset.land) return go('api/admin/take', { kind: 'land', username: b.dataset.land }, 'Their land is free again.', `Take back ALL of ${b.dataset.land}'s land? They don't get their coins back.`);
+  if (b.dataset.cave) return go('api/admin/take', { kind: 'cave', cave: b.dataset.cave }, 'The cave is free again.', 'Take this cave back?');
+  if (b.dataset.house) return go('api/admin/take', { kind: 'home', city: b.dataset.city, house: b.dataset.house }, 'The house is free again.', 'Take this house back?');
+  if (b.id === 'ann-clear') return go('api/admin/announce', { clear: true }, 'The announcement was taken down.');
+});
+$('announce').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try { await call('api/admin/announce', { text: e.target.text.value.trim(), minutes: Number(e.target.minutes.value) }); e.target.reset(); say('Everyone sees it within a few seconds.', true); drawWorld(); } catch (err) { say(err.message); }
+});
+
+// ---------- log ----------
+async function drawLog() {
+  const { log } = await call('api/admin/log');
+  $('log').innerHTML = log.map((l) => `<tr><td class="quiet">${when(l.at)}</td><td>${esc(l.admin)}</td><td>${esc(l.action)}</td><td>${esc(l.target || '')}</td><td>${esc(l.detail || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="quiet">Nothing done yet.</td></tr>';
+}
+
+// ---------- signing in ----------
+async function start() {
+  try {
+    await drawStats();
+    $('login').hidden = true; $('board').hidden = false; $('logout').hidden = false;
+    catalogue = await call('api/admin/catalogue');
+    const dl = document.createElement('datalist');
+    dl.id = 'items';
+    dl.innerHTML = catalogue.items.map((i) => `<option value="${esc(i.name)}">`).join('');
+    document.body.append(dl);
+    await drawPlayers();
   } catch (e) {
-    $('board').hidden = true; $('login').hidden = false;
-    if (e.status === 403) $('login-msg').textContent = 'That account is not an admin. Add its email to ADMIN_EMAILS on the server.';
+    $('board').hidden = true; $('login').hidden = false; $('logout').hidden = true;
+    if (e.status === 403) $('login-msg').textContent = 'That account is not an admin. Its email must be in ADMIN_EMAILS on the server (and confirmed).';
     else if (e.status !== 401) $('login-msg').textContent = e.message;
   }
 }
-
 $('signin').addEventListener('submit', async (e) => {
   e.preventDefault();
   $('login-msg').textContent = '';
@@ -145,56 +530,11 @@ $('signin').addEventListener('submit', async (e) => {
       try { r = await call('api/signin/code', { ticket: r.ticket, code }); } catch (err) { alert(err.message); }
     }
     token.set(r.token);
-    load();
+    start();
   } catch (err) { $('login-msg').textContent = err.message; }
 });
 $('logout').addEventListener('click', async () => { await call('api/signout', {}).catch(() => {}); token.set(null); location.reload(); });
-$('search').addEventListener('input', draw);
-// the bridges over the city moats
-const CITIES = [['central', 'Central City'], ['emberfall', 'Emberfall'], ['ashgrave', 'Ashgrave'], ['lumenhollow', 'Lumenhollow'], ['mirehaven', 'Mirehaven']];
-async function drawGates() {
-  const { raised } = await fetch('api/cities').then((r) => r.json()).catch(() => ({ raised: {} }));
-  $('gates').innerHTML = CITIES.map(([id, n]) => `<button type="button" data-gate="${id}" data-up="${raised[id] ? '' : '1'}">${raised[id] ? `Lower ${n}'s bridges` : `Raise ${n}'s bridges`}</button>`).join('');
-}
-$('gates').addEventListener('click', async (e) => {
-  const b = e.target.closest('[data-gate]');
-  if (!b) return;
-  try { await call('api/admin/gates', { city: b.dataset.gate, raised: !!b.dataset.up }); say('Done. Players see it within a minute.', true); drawGates(); } catch (err) { say(err.message); }
-});
-drawGates();
-
-$('rows').addEventListener('click', async (e) => {
-  const b = e.target.closest('button');
-  if (!b) return;
-  const name = (id) => all.find((a) => a.id === Number(id))?.username;
-  if (b.dataset.bd) { const f = document.querySelector(`[data-bd-form="${b.dataset.bd}"]`); f.hidden = !f.hidden; }
-  if (b.dataset.pw) { const f = document.querySelector(`[data-pw-form="${b.dataset.pw}"]`); f.hidden = !f.hidden; f.querySelector('input').focus(); }
-  if (b.dataset.out) {
-    try { await call('api/admin/signout', { id: Number(b.dataset.out) }); say(`${name(b.dataset.out)} was signed out everywhere.`, true); load(); } catch (err) { say(err.message); }
-  }
-  if (b.dataset.del) {
-    const n = name(b.dataset.del);
-    if (!confirm(`Delete ${n}'s account, character and land for good? This can't be undone.`)) return;
-    try { await call('api/admin/delete', { id: Number(b.dataset.del) }); say(`${n}'s account was deleted.`, true); load(); } catch (err) { say(err.message); }
-  }
-});
-$('rows').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (e.target.dataset.bdForm) {
-    const id = Number(e.target.dataset.bdForm);
-    try { await call('api/admin/birthdate', { id, birthdate: e.target.birthdate.value }); say(`Birth date saved for ${all.find((a) => a.id === id)?.username}.`, true); load(); } catch (err) { say(err.message); }
-    return;
-  }
-  const id = Number(e.target.dataset.pwForm);
-  const password = e.target.password.value;
-  try {
-    await call('api/admin/password', { id, password });
-    say(`New password saved for ${all.find((a) => a.id === id)?.username}. Tell them to sign in with it.`, true);
-    load();
-  } catch (err) { say(err.message); }
-});
-
-load();
+start();
 </script>
 </body>
 </html>
