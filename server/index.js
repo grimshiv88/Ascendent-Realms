@@ -240,13 +240,14 @@ app.post('/api/admin/gates', requireAdmin, async (req, res) => {
 });
 for (const [route, fn] of [['password', admin.setPassword], ['birthdate', admin.setBirthdate], ['signout', admin.signOutEverywhere], ['delete', admin.remove],
   ['edit', admin.edit], ['move', admin.move], ['ban', admin.ban], ['mute', admin.mute], ['chat/delete', admin.deleteMessage], ['reports/close', admin.closeReport],
-  ['announce', admin.announce], ['take', admin.take], ['kings/reset', admin.resetKing], ['skip/childhood', admin.skipChildhood]]) {
+  ['announce', admin.announce], ['take', admin.take], ['kings/reset', admin.resetKing], ['skip/childhood', admin.skipChildhood],
+  ['life/edit', admin.editPastLife], ['life/restore', admin.restoreLife], ['sects', admin.appointLeader], ['tuning', admin.setTuning]]) {
   app.post(`/api/admin/${route}`, requireAdmin, async (req, res) => {
     const result = await fn(req.body || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);
   });
 }
-for (const [route, fn] of [['stats', admin.stats], ['player', admin.player], ['catalogue', admin.catalogue], ['chat', admin.chat], ['reports', admin.reports], ['world', admin.world], ['log', admin.adminLog]]) {
+for (const [route, fn] of [['stats', admin.stats], ['player', admin.player], ['catalogue', admin.catalogue], ['chat', admin.chat], ['reports', admin.reports], ['world', admin.world], ['log', admin.adminLog], ['tuning', admin.tuning], ['skills', admin.skillsBoard], ['sects', admin.leaders]]) {
   app.get(`/api/admin/${route}`, requireAdmin, async (req, res) => {
     const result = await fn(req.query || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);

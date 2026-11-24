@@ -74,7 +74,7 @@ export function drawCityPlan(ctx, place, at, k, alpha = 1, labels = true) {
   const PG = plan.playground;
   rect(PG.x, PG.z, PG.w, PG.d, PG.a, '#8fb05a', '#5a7a3a', 1);
   // the homes, each in its roof's colour; houses for sale outlined in green
-  for (const h of cityHouses(place.id)) rect(h.x, h.z, h.w, h.d, h.rot, h.style === 'shack' ? '#6a5a44' : TOWN_TONES[(h.i * 7 + Math.floor(h.i / 3)) % TOWN_TONES.length][1], 'rgba(30, 20, 10, 0.6)', 0.6);
+  for (const h of cityHouses(place.id)) if (!h.gone) rect(h.x, h.z, h.w, h.d, h.rot, h.style === 'shack' ? '#6a5a44' : TOWN_TONES[(h.i * 7 + Math.floor(h.i / 3)) % TOWN_TONES.length][1], 'rgba(30, 20, 10, 0.6)', 0.6);
   for (const h of plan.sale) rect(h.x, h.z, h.w, h.d, h.rot, h.style === 'shack' ? '#6a5a44' : '#8a7a5a', '#7aff8a', 1.2);
   // the castle and the city's own buildings, outlined in gold
   if (!monster) rect(CASTLE_SPOT.x, CASTLE_SPOT.z, 30, 24, 0, '#3a3e5a', '#ffd76a', 2);

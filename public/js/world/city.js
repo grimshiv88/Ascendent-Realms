@@ -6,8 +6,8 @@ import { heightAt, CITY_R } from '../data/world-layout.mjs';
 import { MARKETS, ITEMS } from '../data/items.mjs';
 import { moneyWords } from '../data/money.mjs';
 import { buildSpawn, textTexture } from './spawn.js';
-import { buildCharacter, animateCharacter } from '../characters/model.js';
-import { joinCrowd, bakeCharacter, isShown } from '../characters/crowd.js';
+import { buildCharacter, animateCharacter, bodyHeight } from '../characters/model.js';
+import { lazyCharacter, isShown } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, buildShack, paved, pavedGeometry, TOWN_TONES } from './houses.js';
@@ -61,6 +61,9 @@ const matOf = (color, roughness = 0.9, extra = null) => {
   if (!MATS.has(k)) MATS.set(k, new THREE.MeshStandardMaterial({ color, roughness, ...(extra || {}) }));
   return MATS.get(k);
 };
+// A guard in the city's armour, built only when you come near (see lazyCharacter)
+const lazyGuard = (race, gear) => lazyCharacter(() => { const b = buildCharacter({ race, form: 'humanoid', look: {} }); wearGear(b, gear); return b; }, bodyHeight(race, 'humanoid'));
+
 // A building in the town style (see world/houses.js): w wide, d deep, about h high (3.1 m a storey)
 function house(w, d, h, wall, roof, label, opts = {}) {
   return buildHouse({ w, d, floors: Math.max(1, Math.round(h / 3.1)), wall, roof, seed: opts.seed ?? `${w}:${d}:${h}:${label}`, labelTex: label ? textTexture(label) : null, ...opts });
@@ -419,7 +422,7 @@ export function buildCity(place, opts = {}) {
     if (h.tilt) hb.rotation.y += h.tilt;
     if (h.style === 'manor') garden(fixed, h, ringRel(h.tier), solid, cx, cz);
   };
-  for (const h of houses) putHome(h, '');
+  for (const h of houses) if (!h.gone) putHome(h, ''); // (a 'gone' house gave its place to the Mages' Academy)
   const saleSigns = new Map();
   for (const h of plan.sale) {
     putHome(h, 'sale');
@@ -462,9 +465,7 @@ export function buildCity(place, opts = {}) {
     gates.push({ x: cx + ox * CITY_R, z: cz + oz * CITY_R, a });
     for (const side of [-1, 1]) {
       const race = guardRaces[(k * 2 + (side > 0 ? 1 : 0)) % guardRaces.length];
-      const body = buildCharacter({ race, form: 'humanoid', look: {} });
-      wearGear(body, guardGear);
-      joinCrowd(bakeCharacter(body));
+      const body = lazyGuard(race, guardGear);
       const r = CITY_R + 3.5, lat = side * 3.4;
       const x = ox * r + oz * lat, z = oz * r - ox * lat;
       body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz), z);
@@ -479,9 +480,7 @@ export function buildCity(place, opts = {}) {
   innerGates.forEach((G, n) => {
     for (const side of [-1, 1]) {
       const race = guardRaces[(n * 2 + (side > 0 ? 1 : 0) + 1) % guardRaces.length];
-      const body = buildCharacter({ race, form: 'humanoid', look: {} });
-      wearGear(body, guardGear);
-      joinCrowd(bakeCharacter(body));
+      const body = lazyGuard(race, guardGear);
       const along = G.line - 1.6, lat = side * (ROAD_HALF - 0.7);
       const x = Math.sin(G.a) * along + Math.cos(G.a) * lat, z = Math.cos(G.a) * along - Math.sin(G.a) * lat;
       body.position.set(x, yAt(x, z), z);
@@ -495,11 +494,13 @@ export function buildCity(place, opts = {}) {
   // townsfolk: families at their doors, and merchants and businessmen round the plaza
   const npcs = [];
   const addNpc = (race, x, z, faceA, info) => {
-    const body = buildCharacter({ race, form: 'humanoid', look: info.look || {} });
+    const body = lazyCharacter(() => {
+      const b = buildCharacter({ race, form: 'humanoid', look: info.look || {} });
+      if (info.small) b.scale.setScalar(0.58);
+      return b;
+    }, bodyHeight(race, 'humanoid') * (info.small ? 0.58 : 1));
     body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz), z);
     body.rotation.y = faceA;
-    if (info.small) body.scale.setScalar(0.58);
-    joinCrowd(bakeCharacter(body));
     g.add(body);
     // your own parents carry a sign over their heads, so you can find them in a crowd
     if (info.mine) { const sign = parentSign(); sign.position.y = (body.userData.height || 1.8) + 0.55; body.add(sign); }
@@ -890,9 +891,7 @@ function buildCastleGrounds(k, C, rot, cx, cz, solid, S) {
   const guards = [];
   const gearOf = Object.fromEntries(Object.entries(S.gear).map(([key, id]) => [key, ITEMS[id]]));
   const guard = (lx, lz, y, face, race) => {
-    const b = buildCharacter({ race, form: 'humanoid', look: {} });
-    wearGear(b, gearOf);
-    joinCrowd(bakeCharacter(b));
+    const b = lazyGuard(race, gearOf);
     b.position.set(lx, y, lz); b.rotation.y = face;
     k.add(b); guards.push(b);
     if (!y) put(lx, lz, 0.6, 2);
@@ -1158,9 +1157,7 @@ export function buildVillage(place) {
       solid.push({ x: cx + tx, z: cz + tz, r: 1.5, kind: 'wall', height: 8, y: baseY + ty });
       // a guard outside the gate
       const gx = ox * (R + 2.2) + sx * side * 2.2, gz = oz * (R + 2.2) + sz * side * 2.2;
-      const b = buildCharacter({ race: ['dwarf', 'elf', 'beastkin', 'hobbit'][(guards.length + place.id.length) % 4], form: 'humanoid', look: {} });
-      wearGear(b, gearOf);
-      joinCrowd(bakeCharacter(b));
+      const b = lazyGuard(['dwarf', 'elf', 'beastkin', 'hobbit'][(guards.length + place.id.length) % 4], gearOf);
       b.position.set(gx, heightAt(cx + gx, cz + gz) - baseY, gz);
       b.rotation.y = ga;
       g.add(b); guards.push(b);

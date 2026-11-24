@@ -216,3 +216,9 @@ export const appraisalOf = (c, side = null) => ({
   unique: { name: c.uniqueSkill?.name, rank: c.uniqueSkill?.kind === 'appraise' ? APPRAISAL.rank : rankOf(c.uniqueSkill) },
   allegiance: side,
 });
+
+// The kind of each Unique Skill power, in the same kinds as ordinary skills (data/skills.mjs
+// SKILL_CATEGORIES, defence to attack)
+export const UNIQUE_CATEGORY = { ward: 'defence', heal: 'healing', fury: 'support', appraise: 'support', freeze: 'control', dash: 'movement', strike: 'attack', sweep: 'attack', bolt: 'attack', devour: 'attack' };
+// Sort Unique Skills from the highest rank to the weakest (SSS first, D last)
+export const byRank = (a, b) => UNIQUE_RANKS.indexOf(rankOf(b)) - UNIQUE_RANKS.indexOf(rankOf(a));

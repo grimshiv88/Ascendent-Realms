@@ -17,6 +17,14 @@ const { RACES, CLASSES } = require('../public/js/data/game-data.mjs');
 const { BODYGUARDS } = require('../public/js/data/hire.mjs');
 const { cleanBeds } = require('../public/js/data/crops.mjs');
 
+// The admins' health and healing numbers (data/game-data.mjs TUNING), sent to the game with the character
+const { cleanTuning } = require('../public/js/data/game-data.mjs');
+async function tuning() {
+  const r = await db.get("SELECT data FROM world_state WHERE key = 'tuning'");
+  return cleanTuning(r ? JSON.parse(r.data) : {});
+}
+const withTuning = async (c) => (c ? { ...c, tuning: await tuning() } : c);
+
 async function load(accountId) {
   const row = await db.get('SELECT data FROM characters WHERE account_id = ?', accountId);
   if (!row) return null;
@@ -49,7 +57,8 @@ async function findHome(race) {
       if (open.length) return { city, house: open[Math.floor(Math.random() * open.length)] };
     }
   }
-  return { city: first, house: Math.floor(Math.random() * houseCount(first)) };
+  const open = PASS_ORDER.flatMap((t) => housesOnTier(first, t));
+  return { city: first, house: open[Math.floor(Math.random() * open.length)] ?? 0 };
 }
 
 // Nobody chooses who they are: a new character is born at random into a family (see data/birth.mjs).
@@ -78,7 +87,7 @@ async function create(accountId, username, body) {
     throw e;
   }
   await db.run('DELETE FROM fallen WHERE account_id = ?', accountId);
-  return result;
+  return { ...result, character: await withTuning(result.character) };
 }
 
 // The Ceremony of Revealing: a child who has reached 7 learns their class
@@ -149,6 +158,8 @@ async function fall(accountId) {
   const keep = fallenKeep(character);
   await db.tx(async (t) => {
     await t.run('INSERT INTO fallen (account_id, data) VALUES (?, ?) ON CONFLICT (account_id) DO UPDATE SET data = excluded.data', accountId, JSON.stringify(keep));
+    // the whole of the life is kept too, so an admin can look at it, change it, or bring the player back to it
+    await t.run('INSERT INTO past_lives (account_id, at, cause, data) VALUES (?, ?, ?, ?)', accountId, Date.now(), 'died', JSON.stringify(character));
     await t.run('DELETE FROM characters WHERE account_id = ?', accountId);
   });
   return { ok: true, kept: keep };
@@ -310,7 +321,7 @@ async function saveProgress(accountId, p) {
     .map((k) => ({ name: k.name, race: k.race, plan: { a: CLASSES[k.plan?.a] ? k.plan.a : null, b: CLASSES[k.plan?.b] ? k.plan.b : null }, school: k.school || null, born: int(k.born, 0, 1e15) ?? 0 }));
   const lastChildPlay = int(p.lastChildPlay ?? character.lastChildPlay ?? 0, 0, 1e15) ?? 0;
   const storedLives = Number.isInteger(character.livesLeft) ? character.livesLeft : LIVES;
-  const livesLeft = Math.min(storedLives, int(p.livesLeft ?? storedLives, 1, LIVES) ?? storedLives);
+  const livesLeft = Math.min(storedLives, int(p.livesLeft ?? storedLives, 0, 1e9) ?? storedLives); // (an admin may give more than 3)
   const ageShift = character.level >= UNDYING_LEVEL && Number.isFinite(p.ageShift) && p.ageShift <= 0 && p.ageShift > -1e5 ? p.ageShift : (character.ageShift || 0);
   const growth = { work: int(p.growth?.work ?? 0, 0, 1e9) ?? 0, trials: int(p.growth?.trials ?? 0, 0, 1e6) ?? 0 };
   // a broken bone from a bad fall, and the treatments it has had (one a day)
@@ -386,4 +397,4 @@ async function top(limit = 10) {
     .slice(0, limit);
 }
 
-module.exports = { cleanItem, create, fall, rankUp, load, store, saveLocation, saveProgress, top, ceremony, recentCeremonies, keepAppraisalHeld };
+module.exports = { tuning, withTuning, cleanItem, create, fall, rankUp, load, store, saveLocation, saveProgress, top, ceremony, recentCeremonies, keepAppraisalHeld };
