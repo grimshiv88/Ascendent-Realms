@@ -331,6 +331,16 @@ export function createLand(scene) {
   const detail = detailTextures();
   const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: detail.map, roughness: 0.95, metalness: 0 });
   const farMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+  // The horizon is coarse (a point every 200 m), so in a narrow valley it can rise above the real
+  // ground. Wherever the detailed land is already drawn, the horizon is not drawn at all.
+  const nearBox = { value: new THREE.Vector4(1, 1, -1, -1) }; // minX, minZ, maxX, maxZ (empty to start)
+  farMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uNearBox = nearBox;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFarW;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFarW = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vFarW;\nuniform vec4 uNearBox;')
+      .replace('void main() {', 'void main() {\n  if (vFarW.x > uNearBox.x && vFarW.y > uNearBox.y && vFarW.x < uNearBox.z && vFarW.y < uNearBox.w) discard;');
+  };
   const colliders = makeColliderGrid();
   const veg = scenery();
 
@@ -471,6 +481,11 @@ export function createLand(scene) {
         if (t) setVeg(t, j.wantVeg, j.wantGrass);
       }
     }
+    // the square around you where every detailed tile is built: the horizon is hidden inside it
+    let r = maxR;
+    for (const j of jobs) if (j.kind === 'tile' && j.d <= r && !tiles.has(tkey(j.cx, j.cz))) r = j.d - 1;
+    if (r >= 0) nearBox.value.set((pcx - r) * CHUNK, (pcz - r) * CHUNK, (pcx + r + 1) * CHUNK, (pcz + r + 1) * CHUNK);
+    else nearBox.value.set(1, 1, -1, -1);
     return jobs.length;
   }
 

@@ -424,7 +424,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function rebuildAvatar() {
     const was = avatar;
     avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look, age: ageOf(character) });
-    if (game) wearGear(avatar, game.worn());
+    if (game) { wearGear(avatar, game.worn()); showWeapon(); }
     avatar.position.copy(was.position);
     avatar.rotation.copy(was.rotation);
     scene.remove(was);
@@ -1265,8 +1265,21 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let swingDone = false;
   let cooldown = 0;
   const FIST = { speed: 0.45, chop: 1 };
+  // Inside a city's walls weapons stay put away: no drawing them, no fighting
+  let sheathed = false;
+  let sheathSaidAt = -10;
+  const sayPutAway = () => { if (clock.elapsedTime - sheathSaidAt > 3) { sheathSaidAt = clock.elapsedTime; say('Weapons stay put away inside the city walls', 'note'); } };
+  function showWeapon() { avatar.traverse((o) => { if (o.userData.weapon) o.visible = !sheathed; }); }
+  function checkSheathed() {
+    const now = !depth && builtCities().some((c) => Math.hypot(pos.x - c.place.x, pos.z - c.place.z) < CITY_R);
+    if (now === sheathed) return;
+    sheathed = now;
+    showWeapon();
+    if (sheathed && game?.weapon()) say('You put your weapon away: no weapons are drawn inside the city', 'note');
+  }
   function attack() {
     if (dead || cooldown > 0) return;
+    if (sheathed) { sayPutAway(); return; }
     const w = game?.weapon();
     cooldown = (w || FIST).speed;
     attackT = 0;
@@ -1356,6 +1369,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // Use a skill (see data/skills.mjs). Returns 'ok', 'sp' (not enough SP), 'none' (nothing to hit) or 'busy'.
   function useSkill(sk) {
     if (!game || dead || resting()) return 'busy';
+    if (sheathed && sk.type !== 'appraise') { sayPutAway(); return 'busy'; }
     // Appraisal: look at whatever is in front of you (a monster, if one is near) and open the window
     if (sk.type === 'appraise') {
       const m = creatures.target(pos.x, pos.z, heading, 30);
@@ -1842,7 +1856,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   // the weapon arm's ready pose [shoulder, elbow] with a blade (see gear.js: the blade then points ahead)
   const READY = [-0.35, -0.85];
-  const bladeHeld = () => { const w = game?.weapon(); return !!w && w.type !== 'spear' && w.type !== 'staff'; };
+  const bladeHeld = () => { const w = game?.weapon(); return !sheathed && !!w && w.type !== 'spear' && w.type !== 'staff'; };
   function poseAttack(rig, k, armed) {
     const arm = rig.arms?.[0];
     if (arm) {
@@ -2057,6 +2071,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (!swingDone && k > 0.45) { swingDone = true; resolveSwing(); }
       if (k >= 1) attackT = -1;
     }
+    checkSheathed();
     if (held('attack') && cooldown <= 0 && attackT < 0) attack();
 
     // Fatigue: it builds while you're awake (faster when running) and falls while you sleep.
@@ -2438,7 +2453,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     oldAge,
     trainingAt,
     // Redraw your gear after equipping or taking something off
-    refreshGear() { if (game) wearGear(avatar, game.worn()); },
+    refreshGear() { if (game) { wearGear(avatar, game.worn()); showWeapon(); } },
     holdTorch() { setHolding(!holding); },
     get holding() { return holding; },
     get underground() { return !!depth || !!inside; },

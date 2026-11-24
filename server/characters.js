@@ -154,9 +154,16 @@ async function fall(accountId) {
   return { ok: true, kept: keep };
 }
 
+// An admin changed this character after the game loaded it: the game must load it again instead of
+// saving its older copy over the change
+const staleCopy = (character, p) => ((character.adminRev || 0) > (Number(p?.adminRev) || 0)
+  ? { error: 'Your character was changed by the game\'s owner. Loading it again...', reload: true } : null);
+
 async function saveLocation(accountId, loc) {
   const character = await load(accountId);
   if (!character) return { error: 'No character yet.' };
+  const stale = staleCopy(character, loc);
+  if (stale) return stale;
   const n = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
   character.location = { ...character.location, x: n(loc.x), y: n(loc.y), z: n(loc.z), heading: n(loc.heading) };
   await store(accountId, character);
@@ -199,6 +206,8 @@ function cleanItem(s) {
 async function saveProgress(accountId, p) {
   const character = await load(accountId);
   if (!character) return { error: 'No character yet.' };
+  const stale = staleCopy(character, p);
+  if (stale) return stale;
   const int = (v, min, max) => (Number.isInteger(v) && v >= min && v <= max ? v : null);
   const fields = {
     level: int(p.level, 1, 10000), exp: int(p.exp, 0, 1e12), coins: int(p.coins, 0, 1e12), hp: int(p.hp, 0, 1e9), sp: int(p.sp, 0, 1e9),

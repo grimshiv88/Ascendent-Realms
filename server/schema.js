@@ -1,7 +1,7 @@
 // Every table the game keeps (Postgres). Run on start; safe to run again and again.
 // Row Level Security is switched on for every table with no rules, so the public Supabase web API
 // can't read or change anything: only the game's own server (which connects as the owner) can.
-const TABLES = ['accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes'];
+const TABLES = ['admin_log', 'reports', 'accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes'];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS accounts (
@@ -22,6 +22,10 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS twofa TEXT;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS totp_secret TEXT;
 -- the player's real birth date (YYYY-MM-DD), for age rules; only the player sees it
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS birthdate TEXT;
+-- the admin board: a ban (until when, 0 = none, -1 = forever, and why) and a chat mute (until when)
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS banned_until BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ban_reason TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS muted_until BIGINT NOT NULL DEFAULT 0;
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_email ON accounts (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_username ON accounts (lower(username));
 
@@ -130,6 +134,27 @@ CREATE TABLE IF NOT EXISTS bounties (
   placed_at  BIGINT NOT NULL,
   state      TEXT NOT NULL DEFAULT 'open',
   claimed_by TEXT
+);
+
+-- every change made from the admin board, newest last
+CREATE TABLE IF NOT EXISTS admin_log (
+  id     SERIAL PRIMARY KEY,
+  at     BIGINT NOT NULL,
+  admin  TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT,
+  detail TEXT
+);
+-- players reported by other players (the "Report" button on a player's card)
+CREATE TABLE IF NOT EXISTS reports (
+  id      SERIAL PRIMARY KEY,
+  at      BIGINT NOT NULL,
+  by_id   INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+  by_name TEXT NOT NULL,
+  target  TEXT NOT NULL,
+  reason  TEXT NOT NULL,
+  text    TEXT,
+  done    BOOLEAN NOT NULL DEFAULT false
 );
 
 ${TABLES.map((t) => `ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY;`).join('\n')}

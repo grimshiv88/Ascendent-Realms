@@ -204,6 +204,20 @@ function pen(g, solid, toW, P, coop = false) {
 }
 
 // a market stall: counter, posts, striped awning, crates of goods, and a sign
+// A sign board with the words on both faces, each the right way round (a single two-sided face
+// shows the words mirrored from behind)
+function twoFacedSign(text, w, h) {
+  const tex = textTexture(text, { board: true });
+  const g = new THREE.Group();
+  for (const side of [1, -1]) {
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    face.position.z = side * 0.03;
+    if (side < 0) face.rotation.y = Math.PI;
+    g.add(face);
+  }
+  return g;
+}
+
 function stall(g, solid, toW, S, label, colors, goods) {
   const s = new THREE.Group(); s.position.set(S.x, 0, S.z); g.add(s);
   const wood = mat('#7a5a3a');
@@ -214,7 +228,7 @@ function stall(g, solid, toW, S, label, colors, goods) {
     box(0.55, 0.3, 0.45, mat('#9a7a4a'), s, -1.2 + i * 0.6, 1.15, 0.6);
     for (let k = 0; k < 4; k++) { const v = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 5), mat(c, 0.6)); v.position.set(-1.35 + i * 0.6 + (k % 2) * 0.16, 1.33, 0.5 + Math.floor(k / 2) * 0.16); s.add(v); }
   });
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.6), new THREE.MeshBasicMaterial({ map: textTexture(label, { board: true }), transparent: true, side: THREE.DoubleSide }));
+  const sign = twoFacedSign(label, 3.2, 0.6);
   sign.position.set(0, 3.05, 1.05); s.add(sign);
   for (const x of [-1.2, 0, 1.2]) { const p = toW(S.x + x, S.z + 0.6); solid.push({ x: p.x, z: p.z, r: 0.6, kind: 'wall', height: 1 }); }
   return s;
@@ -274,8 +288,8 @@ export function buildFarm(f) {
   for (const b of VISITOR_BEDS) { const bed = bedSoil(); bed.position.set(b.x, 0, b.z); g.add(bed); }
   const sign = new THREE.Group(); sign.position.set(-14.4, 0, 10.6); g.add(sign);
   box(0.1, 1.3, 0.1, mat('#6a4a2c'), sign, -0.9, 0.65, 0); box(0.1, 1.3, 0.1, mat('#6a4a2c'), sign, 0.9, 0.65, 0);
-  const board = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.4), new THREE.MeshBasicMaterial({ map: textTexture("Visitors' beds", { board: true }), transparent: true, side: THREE.DoubleSide }));
-  board.position.set(0, 1.15, 0.06); sign.add(board);
+  const board = twoFacedSign("Visitors' beds", 2.1, 0.4);
+  board.position.set(0, 1.15, 0); sign.add(board);
   for (const s of solid) s.y = f.flat; // (everything stands on the farm's level ground)
   // the farmer behind the stand, the butcher behind the counter, facing the town
   const npcs = [];

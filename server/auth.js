@@ -36,6 +36,14 @@ function checkPassword(password, stored) {
   return crypto.timingSafeEqual(hash, Buffer.from(hashHex, 'hex'));
 }
 
+// A banned account: what the player is told (null when not banned)
+function banned(row) {
+  const until = Number(row?.banned_until) || 0;
+  if (!(until === -1 || until > Date.now())) return null;
+  const when = until === -1 ? 'for good' : `until ${new Date(until).toUTCString().replace(/:\d\d GMT$/, ' UTC')}`;
+  return `This account is banned ${when}. Reason: ${row.ban_reason || 'not given'}.`;
+}
+
 async function newSession(accountId) {
   const token = crypto.randomBytes(32).toString('hex');
   await db.run('INSERT INTO sessions (token, account_id) VALUES (?, ?)', token, accountId);
@@ -139,6 +147,7 @@ async function signIn({ login, email, password }) {
   if (!row || !checkPassword(password, row.password_hash)) {
     return { error: 'That username or email and password don\'t match an account.' };
   }
+  if (banned(row)) return { error: banned(row), banned: true };
   const way = row.twofa === 'app' && row.totp_secret ? 'app' : row.twofa === 'email' && mail.ready() && hasEmail(row.email) ? 'email' : null;
   if (way) return askSignInCode(row, way);
   return { token: await newSession(row.id), account: await publicAccount(row), isNew: false };
@@ -160,6 +169,7 @@ async function signInCode({ ticket, code }) {
   const row = await db.get('SELECT * FROM accounts WHERE id = ?', t.account_id);
   const r = await useCode(t, code, t.data === 'app' ? (c) => totp.check(row.totp_secret, c) : null);
   if (r.error) return r;
+  if (banned(row)) return { error: banned(row), banned: true };
   return { token: await newSession(row.id), account: await publicAccount(row), isNew: false };
 }
 
@@ -326,6 +336,6 @@ async function twofaOff(row, { password }) {
 }
 
 module.exports = {
-  shownEmail, hasEmail, mustVerify, hashPassword, signUp, signIn, signInCode, signInByEmail, signOut, accountFromToken, accountRow,
+  shownEmail, hasEmail, mustVerify, banned, hashPassword, signUp, signIn, signInCode, signInByEmail, signOut, accountFromToken, accountRow,
   sendVerify, verifyEmail, setEmail, setBirthdate, changePassword, forgotPassword, resetPassword, twofaEmail, twofaAppStart, twofaAppConfirm, twofaOff,
 };

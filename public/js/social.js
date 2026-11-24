@@ -146,6 +146,7 @@ export function createSocial(host, { onError } = {}) {
       take(r.messages || []);
       takeRooms(r.rooms);
       takeLists(r);
+      showAnnouncement(r.announcement);
       loaded = true;
     } catch { /* try again next time */ }
     if (alive && !once) setTimeout(poll, POLL_MS);
@@ -229,6 +230,46 @@ export function createSocial(host, { onError } = {}) {
   }
   friendsBtn.addEventListener('click', () => { if (dropMode === 'friends') closeDrop(); else drawFriends(); });
 
+  // A message from the game's owner across the top of the screen (it can be closed)
+  let bannerAt = 0;
+  let closedAt = 0;
+  try { closedAt = Number(localStorage.getItem('ar.announcement-closed')) || 0; } catch { /* blocked */ }
+  const banner = document.createElement('div');
+  banner.className = 'announce-banner';
+  banner.hidden = true;
+  banner.innerHTML = '<b>Announcement</b><span></span><button type="button" aria-label="Close">×</button>';
+  document.body.append(banner);
+  banner.querySelector('button').addEventListener('click', () => {
+    banner.hidden = true; closedAt = bannerAt;
+    try { localStorage.setItem('ar.announcement-closed', String(bannerAt)); } catch { /* blocked */ }
+  });
+  function showAnnouncement(a) {
+    if (!a || a.at === closedAt) { banner.hidden = true; return; }
+    bannerAt = a.at;
+    banner.querySelector('span').textContent = a.text;
+    banner.hidden = false;
+  }
+
+  const REPORT_REASONS = ['Bad words', 'Bullying', 'Cheating', 'Scamming', 'Bad name', 'Other'];
+  function showReport(name) {
+    openDrop('profile', `
+      <form class="so-profile so-report">
+        <h4>Report ${esc(name)}</h4>
+        <p class="so-empty">Only the game's owner sees reports.</p>
+        <select name="reason">${REPORT_REASONS.map((r) => `<option>${r}</option>`).join('')}</select>
+        <textarea name="text" maxlength="500" rows="3" placeholder="What happened? (optional)"></textarea>
+        <div class="so-actions"><button type="submit">Send report</button><button type="button" class="ghost" data-player="${esc(name)}">Back</button></div>
+      </form>`);
+    const f = drop.querySelector('.so-report');
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api.reportPlayer(name, f.reason.value, f.text.value.trim());
+        openDrop('profile', `<p class="so-empty">Thank you. Your report about ${esc(name)} was sent.</p>`);
+      } catch (err) { say(err.message); }
+    });
+  }
+
   async function showProfile(name) {
     try {
       const { player: p } = await api.playerProfile(name);
@@ -245,7 +286,7 @@ export function createSocial(host, { onError } = {}) {
               ${s.stats ? `<dt>Stats</dt><dd>STR ${s.stats.str} · AGI ${s.stats.agi} · DEX ${s.stats.dex} · STA ${s.stats.sta} · INT ${s.stats.int}</dd>` : ''}
             </dl>`
           : `<p class="so-empty">${esc(p.name)} ${why}.</p>`}
-          <div class="so-actions">${relButton(p.name, p.relation)}${p.relation === 'friend' ? `<button type="button" class="ghost" data-unfriend="${esc(p.name)}">Remove friend</button>` : ''}</div>
+          <div class="so-actions">${relButton(p.name, p.relation)}${p.relation === 'friend' ? `<button type="button" class="ghost" data-unfriend="${esc(p.name)}">Remove friend</button>` : ''}${p.relation !== 'self' ? `<button type="button" class="ghost" data-report="${esc(p.name)}">Report</button>` : ''}</div>
         </div>`);
     } catch (err) { openDrop('profile', `<p class="so-empty">${esc(err.message)}</p>`); }
   }
@@ -257,6 +298,7 @@ export function createSocial(host, { onError } = {}) {
     const d = (k) => e.target.closest(`[data-${k}]`)?.dataset[k.replace(/-(\w)/g, (_, c) => c.toUpperCase())];
     let n;
     if ((n = d('player'))) return showProfile(n);
+    if ((n = d('report'))) return showReport(n);
     if ((n = d('add'))) return act(() => api.friendRequest(n), () => showProfile(n));
     if ((n = d('accept'))) return act(() => api.friendRespond(n, true), () => (dropMode === 'friends' ? drawFriends() : showProfile(n)));
     if ((n = d('decline'))) return act(() => api.friendRespond(n, false), drawFriends);

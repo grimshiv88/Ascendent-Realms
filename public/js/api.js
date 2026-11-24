@@ -47,9 +47,21 @@ async function request(path, { method = 'GET', body } = {}) {
     try { again = sessionStorage.getItem('ar.verify-reload') === '1'; sessionStorage.setItem('ar.verify-reload', '1'); } catch { /* blocked */ }
     if (!again) location.reload();
   }
+  // the game's owner changed this character after it was loaded: load it again instead of saving over the change
+  if (res.status === 409 && data.reload) {
+    let again = false;
+    try { again = Date.now() - (Number(sessionStorage.getItem('ar.admin-reload')) || 0) < 15000; sessionStorage.setItem('ar.admin-reload', String(Date.now())); } catch { /* blocked */ }
+    if (!again) location.reload();
+  }
+  // banned while playing: back to the title screen, where signing in shows why
+  if (res.status === 403 && data.banned && path !== 'api/me') { token.remove(); location.reload(); }
   if (!res.ok) throw poor(data.error || 'Something went wrong. Please try again.', data.need ?? null);
+  // remember which admin change the loaded character has, so saves can say so
+  const ch = ['api/me', 'api/signin', 'api/signin/code', 'api/signup'].includes(path) ? data.account?.character : path === 'api/character' ? data.character : null;
+  if (ch && typeof ch === 'object') adminRev = Number(ch.adminRev) || 0;
   return data;
 }
+let adminRev = 0;
 
 // ---------- private cloud saves ----------
 // Inside the private preview page, accounts, characters and land are also kept in the page's own
@@ -609,7 +621,7 @@ export async function saveLocation(loc) {
       return { ok: true };
     });
   }
-  return request('api/character/location', { method: 'POST', body: loc });
+  return request('api/character/location', { method: 'POST', body: { ...loc, adminRev } });
 }
 
 export async function saveProgress(progress) {
@@ -620,7 +632,7 @@ export async function saveProgress(progress) {
       return { ok: true };
     });
   }
-  return request('api/character/progress', { method: 'POST', body: progress });
+  return request('api/character/progress', { method: 'POST', body: { ...progress, adminRev } });
 }
 
 // ---------- land ----------
@@ -924,6 +936,11 @@ export async function playerSearch(q) {
       .map((a) => ({ name: a.username, relation: previewSocial.relation(d, me.username, a.username), online: false })) };
   }
   return request(`api/players?q=${encodeURIComponent(q)}`);
+}
+// Report a player to the game's owner
+export async function reportPlayer(name, reason, text) {
+  if (await isPreviewMode()) return { ok: true };
+  return request('api/report', { method: 'POST', body: { name, reason, text } });
 }
 export async function playerProfile(name) {
   if (await isPreviewMode()) {
