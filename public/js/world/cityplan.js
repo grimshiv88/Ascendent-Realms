@@ -6,7 +6,8 @@ import { CITY_R } from '../data/world-layout.mjs';
 import { MARKETS } from '../data/items.mjs';
 import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS } from '../data/birth.mjs';
 import { TIERS, TERRACE, ROAD_ANGLES, ROAD_HALF } from '../data/citylevels.mjs';
-import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID } from '../data/citylayout.mjs';
+import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, BANK_ID } from '../data/citylayout.mjs';
+import { BANK_NAME } from '../data/economy.mjs';
 import { INNER_R, MOAT, GATE_ANGLES, GUILD_NAME, DARK_GUILD_NAME, ESTATE_NAME } from './city.js';
 import { TOWN_TONES } from './houses.js';
 
@@ -84,7 +85,7 @@ export function drawCityPlan(ctx, place, at, k, alpha = 1, labels = true) {
   named.push([monster ? DARK_GUILD_NAME : GUILD_NAME, GUILD_SPOT.x, GUILD_SPOT.z]);
   for (const p of plan.shops) {
     rect(p.x, p.z, p.w, p.d, p.rot, '#7a4a2a', '#ffd76a', 1.6);
-    named.push([p.id === ESTATE_ID ? ESTATE_NAME : MARKETS[p.id]?.name || p.id, p.x, p.z]);
+    named.push([p.id === ESTATE_ID ? ESTATE_NAME : p.id === BANK_ID ? BANK_NAME : MARKETS[p.id]?.name || p.id, p.x, p.z]);
   }
   const academies = [];
   for (const { school, x, z, rot } of ACADEMIES) {

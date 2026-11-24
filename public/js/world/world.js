@@ -46,6 +46,7 @@ const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine
 import { money } from '../data/money.mjs';
 import { howOf, canHarvest, harvest } from './deaths.js';
 import { createHusbandry } from './husbandry.js';
+import { createOil } from './oil.js';
 import { createCrops } from './crops.js';
 import { createRiding, poseRide } from './riding.js';
 import { RIDE_FATIGUE } from '../data/mounts.mjs';
@@ -416,6 +417,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let creatures = null; // made below; caves built before then get their guards later
   let husbandry = null; // hunting, cooking and the farms (made below, with the creatures)
   let crops = null, riding = null; // growing your own, and your horse (made with husbandry)
+  let oil = null; // oil seeps, the Oil Companies' derricks and your test pits (see oil.js)
   let myFarmPlots = []; // your own plots set to Farm, where you can dig beds
   let runningNow = false; // (the run key held, for the animals to notice)
   applyQuality(quality);
@@ -698,6 +700,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // the campfire beside each waystone (see spawn.js)
     siteFires: () => sites.filter((s) => s.built && !s.place.cave && Math.hypot(s.place.x - pos.x, s.place.z - pos.z) < 60).map((s) => ({ x: s.place.x + 9.5, z: s.place.z - 11 })),
   });
+  oil = createOil({ scene, colliders, groundAt: (x, z) => groundAt(x, z, 1e4), getPos: () => pos });
   // ---------- growing your own and riding (see crops.js, riding.js) ----------
   if (game) {
     crops = createCrops({
@@ -1228,6 +1231,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (crops?.interact()) return;
       const body = corpseNear(pos.x, pos.z, 2.4);
       if (body) { harvestBody(body); return; }
+      const well = oil?.near(pos.x, pos.z);
+      if (well) { onEvent?.('derrick', well); return; }
+      const seep = oil?.seepAt(pos.x, pos.z);
+      if (seep) { onEvent?.('oil-spot', seep); return; }
       const npc = npcNear(pos.x, pos.z);
       if (npc) { talkTo(npc); return; }
       const shop = shopNear(pos.x, pos.z);
@@ -2235,6 +2242,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else if (inside.leftExit && d < 1.2 && !dead) leaveBuilding();
     }
     for (const q of portals) q.built?.update(t);
+    if (!depth && !inside) oil?.animate(t);
     if (holding) heldTorch.light.intensity = 20 + Math.sin(t * 13) * 2 + Math.sin(t * 7.3) * 1.5;
     if (t - lastArea > 0.5) {
       lastArea = t;
@@ -2244,6 +2252,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else {
         updateSites(pos.x, pos.z);
         husbandry.updateFarms(pos.x, pos.z);
+        oil?.update(pos.x, pos.z);
         tendVillages();
         const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
         const caveHere = sites.find((s) => s.built?.inside?.(pos.x, pos.z));
@@ -2455,6 +2464,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     dragCarcass: () => husbandry.drag(),
     cutCarcass: () => husbandry.cut(),
     lightCampfire: () => (!inside && !depth ? husbandry.lightCampfire() : 'inside'),
+    // oil: everyone's derricks, and where you would dig a test pit (just in front of you), or why not
+    setWells: (list) => oil?.setWells(list),
+    digSpot() {
+      if (inside || depth) return { error: 'You can only dig outside, in the open.' };
+      if (riding?.riding) return { error: 'Get off your mount to dig.' };
+      const x = pos.x + Math.sin(heading) * 1.2, z = pos.z + Math.cos(heading) * 1.2;
+      const s = sample(x, z, tmpS);
+      if (s.h < s.water + 0.1) return { error: 'You can\'t dig in water.' };
+      return { x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 };
+    },
+    digPit: (x, z) => oil?.pit(x, z, heading),
     plantSeed: (id) => (!inside && !depth ? crops?.plantSeed(id) : 'inside'),
     callMount: (id) => riding?.toggle(id),
     riding: () => !!riding?.riding,
@@ -2603,6 +2623,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       sky.dispose();
       floatLayer.remove();
       plots.dispose();
+      oil?.dispose();
       stickEl.remove();
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);

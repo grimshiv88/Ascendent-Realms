@@ -16,6 +16,8 @@ import { playWork } from './workscene.js';
 import { renderAssess, renderParents } from './idcard.js';
 import { renderQuests, renderGuild } from './quests.js';
 import { renderLand, renderCave, renderEstate } from './landui.js';
+import { renderBank, renderDerrick, renderOilSpot } from './bankui.js';
+import { depositById, BANK_ID } from './data/economy.mjs';
 import { caveById } from './data/depths.mjs';
 import { portalFee, portalKm } from './data/portals.mjs';
 import { openBuilder as openBuilderView } from './builder.js';
@@ -481,6 +483,48 @@ function startGame(character) {
   function setLands(list) { ui.myPlots = list.filter((p) => p.mine); ui.otherPlots = list.filter((p) => !p.mine); world.setLands(list); }
   const loadHomes = () => api.homeList().then((r) => { ui.homes = r.homes || []; world?.setHomes(ui.homes); }).catch(() => {});
   const loadCaves = () => api.caveList().then((r) => { ui.caves = r.caves || []; }).catch(() => {});
+  // the Bank and oil (see bankui.js and data/economy.mjs)
+  const takeWells = (list) => { ui.wells = list || []; world?.setWells(ui.wells); if (ui.well) ui.well = ui.wells.find((w) => w.id === ui.well.id) || ui.well; };
+  const loadOil = () => api.oilInfo().then((r) => { takeWells(r.wells); ui.bankInfo = { ...(ui.bankInfo || {}), oil: r.oil }; }).catch(() => {});
+  const loadBank = () => api.bankInfo().then((r) => { game.setCoins(r.coins); ui.bankInfo = { bank: r.bank, oil: r.oil }; }).catch((e) => { ui.econMsg = e.message; ui.econBad = true; });
+  // one thing done at the Bank or with oil: the server sees your latest coins, bag and spot first
+  async function econ(run) {
+    ui.econBusy = true; drawPanel();
+    try {
+      await game.saveNow();
+      if (world) await api.saveLocation(world.here()).catch(() => {});
+      const r = await run();
+      if (r.coins != null) game.setCoins(r.coins);
+      if (r.bank) ui.bankInfo = { ...(ui.bankInfo || {}), bank: r.bank };
+      if (r.oil) ui.bankInfo = { ...(ui.bankInfo || {}), oil: r.oil };
+      if (r.wells) takeWells(r.wells);
+      ui.econMsg = r.message || ''; ui.econBad = false;
+      return r;
+    } catch (err) { ui.econMsg = err.message; ui.econBad = true; return null; }
+    finally { ui.econBusy = false; drawPanel(); }
+  }
+  // dig a test pit with a Shovel, just in front of you
+  let digging = false;
+  function digPit() {
+    if (digging) return;
+    const spot = world?.digSpot();
+    if (!spot || spot.error) { showArea(spot?.error || 'You can\'t dig here.'); return; }
+    digging = true;
+    showArea('You dig a test pit...');
+    setTimeout(async () => {
+      try {
+        await game.saveNow();
+        await api.saveLocation(world.here()).catch(() => {});
+        const r = await api.oilAct({ act: 'dig', x: spot.x, z: spot.z });
+        world?.digPit(spot.x, spot.z);
+        if (r.oil) ui.bankInfo = { ...(ui.bankInfo || {}), oil: r.oil };
+        if (r.wells) takeWells(r.wells);
+        showArea(r.message);
+        if (r.found) { ui.oilSpot = depositById(r.found); ui.econMsg = r.message; ui.econBad = false; openPanel('oilspot'); }
+      } catch (err) { showArea(err.message); }
+      digging = false;
+    }, 2500);
+  }
   function toggleLand() {
     const on = !world.landMode;
     world.setLandMode(on);
@@ -611,6 +655,9 @@ function startGame(character) {
       const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
       renderCave(overlay, ui.atCave, game, { owner: own?.owner, mine: own?.mine, message: ui.caveMsg || '', busy: ui.caveBusy });
     }
+    else if (name === 'bank' && ui.bankCity) renderBank(overlay, game, { city: ui.bankCity, info: ui.bankInfo, tab: ui.bankTab, message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy, wells: ui.wells || [] });
+    else if (name === 'derrick' && ui.well) renderDerrick(overlay, ui.well, { message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
+    else if (name === 'oilspot' && ui.oilSpot) renderOilSpot(overlay, game, ui.oilSpot, { info: ui.bankInfo, well: (ui.wells || []).find((w) => w.id === ui.oilSpot.id), message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
     else if (name === 'estate' && ui.estateCity) renderEstate(overlay, game, { city: ui.estateCity, homes: ui.homes || [], ring: ui.estateRing, message: ui.estateMsg || '', busy: ui.estateBusy });
     else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy, basket: ui.basket.map((p) => ({ ...p, price: plotPrice(p.ix, p.iz) })) });
     else overlay.innerHTML = HELP_HTML;
@@ -1104,6 +1151,21 @@ function startGame(character) {
     if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }
     if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
     if (t('data-hold-torch') != null) { closePanel(); world?.holdTorch(); return; }
+    if (t('data-dig') != null) { closePanel(); digPit(); return; }
+    if ((v = t('data-bank-tab')) != null) { ui.bankTab = v; ui.econMsg = ''; drawPanel(); return; }
+    if ((v = t('data-bank')) != null) {
+      const box = overlay.querySelector('#bank-amount');
+      const amount = box && box.value !== '' ? Math.floor(Number(box.value)) : undefined;
+      const name = overlay.querySelector('#bank-company')?.value;
+      if (v === 'found') econ(() => api.oilAct({ act: 'found', name }));
+      else econ(() => api.bankAct({ act: v, amount, cur: e.target.closest('[data-cur]')?.dataset.cur, from: e.target.closest('[data-from]')?.dataset.from, city: ui.bankCity?.id }));
+      return;
+    }
+    if ((v = t('data-oil')) != null) {
+      if (v === 'drill' && ui.oilSpot) econ(() => api.oilAct({ act: 'drill', x: ui.oilSpot.x, z: ui.oilSpot.z })).then((r) => { if (r?.ok) { ui.well = (ui.wells || []).find((w) => w.id === ui.oilSpot.id); if (ui.well) { overlay.dataset.panel = 'derrick'; drawPanel(); } } });
+      else if (ui.well) econ(() => api.oilAct({ act: v, id: ui.well.id })).then((r) => { if (r?.ok && v === 'close') { ui.well = null; closePanel(); showArea(r.message); } });
+      return;
+    }
     if ((v = t('data-estate-ring')) != null) { ui.estateRing = v; ui.estateMsg = ''; drawPanel(); return; }
     if ((v = t('data-home-buy')) != null && ui.estateCity) {
       ui.estateBusy = true; drawPanel();
@@ -1342,6 +1404,16 @@ function startGame(character) {
         loadHomes().then(drawPanel);
         openPanel('estate');
       }
+      if (type === 'market' && data === BANK_ID) {
+        const p = world?.outdoors();
+        ui.bankCity = p && placesWithPositions().filter((q) => q.city).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+        ui.econMsg = ''; ui.econBad = false; ui.bankTab ||= 'safe';
+        loadBank().then(loadOil).then(drawPanel);
+        openPanel('bank');
+        return;
+      }
+      if (type === 'derrick') { ui.well = data; ui.econMsg = ''; ui.econBad = false; openPanel('derrick'); loadOil().then(drawPanel); return; }
+      if (type === 'oil-spot') { ui.oilSpot = data; ui.econMsg = ''; ui.econBad = false; openPanel('oilspot'); loadOil().then(drawPanel); return; }
       else if (type === 'market') { ui.market = data; openPanel('market'); }
       if (type === 'indoors') {
         $('minimap').classList.add('hidden');
@@ -1440,6 +1512,8 @@ function startGame(character) {
   api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
   loadCaves();
   loadHomes();
+  loadOil();
+  setInterval(loadOil, 120000); // derricks' tanks fill, and others put new ones up
   api.kingsList().then((r) => { takeCourts(r.courts); world.setCourts(r.courts); }).catch(() => {});
   setInterval(() => api.kingsList().then((r) => takeCourts(r.courts)).catch(() => {}), 60000);
   loadCult(); // a cult's offer, a mission, or news that you were stripped

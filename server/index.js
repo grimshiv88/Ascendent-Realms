@@ -15,6 +15,7 @@ const groups = require('./groups');
 const db = require('./db');
 const mail = require('./mail');
 const voice = require('./voice');
+const economy = require('./economy');
 
 const app = express();
 // (a save can carry up to 80 planted beds, so 64 kB rather than 10)
@@ -125,6 +126,7 @@ app.post('/api/character/ceremony', requireAccount, async (req, res) => {
 app.post('/api/character/fall', requireAccount, async (req, res) => {
   await cults.forget(req.account.id);
   const result = await characters.fall(req.account.id);
+  if (result.ok) await economy.forget(req.account.id); // the derricks of a life that ended come down
   res.status(result.error ? 400 : 200).json(result);
 });
 
@@ -203,6 +205,12 @@ app.post('/api/homes/buy', requireAccount, async (req, res) => {
   const result = await land.buyHome(req.account.id, req.body || {});
   res.status(result.error ? 400 : 200).json(result);
 });
+
+// The Bank (safekeeping, halal loans, changing money, selling oil) and oil derricks
+app.get('/api/bank', requireAccount, async (req, res) => { const r = await economy.bank(req.account.id); res.status(r.error ? 400 : 200).json(r); });
+app.post('/api/bank', requireAccount, async (req, res) => { const r = await economy.bankAct(req.account.id, req.body || {}); res.status(r.error ? 400 : 200).json(r); });
+app.get('/api/oil', requireAccount, async (req, res) => res.json(await economy.oil(req.account.id)));
+app.post('/api/oil', requireAccount, async (req, res) => { const r = await economy.oilAct(req.account.id, req.body || {}); res.status(r.error ? 400 : 200).json(r); });
 
 // Friends, chat and Status privacy
 app.get('/api/players', requireAccount, async (req, res) => res.json(await social.search(req.account.id, req.query.q)));
