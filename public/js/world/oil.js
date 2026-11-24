@@ -51,8 +51,8 @@ export function createOil({ scene, colliders, groundAt, getPos }) {
     for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, H + 0.4, 0.22), timber);
       leg.position.set(sx * (base + top) / 2, H / 2, sz * (base + top) / 2);
-      leg.rotation.z = -sx * Math.atan((base - top) / H);
-      leg.rotation.x = sz * Math.atan((base - top) / H);
+      leg.rotation.z = sx * Math.atan((base - top) / H);
+      leg.rotation.x = -sz * Math.atan((base - top) / H);
       leg.castShadow = true;
       g.add(leg);
     }
