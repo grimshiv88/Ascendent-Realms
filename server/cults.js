@@ -67,6 +67,8 @@ const seenBy = async (viewer, target) => C.seenBy(await load(), viewer, target);
 // For Appraisal: which secret side a player serves ({ cult, rank } / { order } / null)
 async function allegiance(name) {
   const s = await load();
+  const lead = C.leads(s, name);
+  if (lead) return lead === 'dark' ? { cult: C.LEADER_TITLE.dark, rank: 'Leader' } : { order: C.LEADER_TITLE.light };
   const cult = C.cultOf(s, name);
   if (cult) return { cult: cult.name, rank: C.CULT_RANKS[C.memberOf(cult, name).rank] };
   return C.inOrder(s, name) ? { order: C.ORDER_NAME } : null;
@@ -80,4 +82,13 @@ async function forget(accountId) {
   await save(s);
 }
 
-module.exports = { list, act, checkChat, censor, seenBy, forget, allegiance };
+// The admins appoint (or remove) the leader of the evil sect ('dark') or the good sect ('light')
+async function appoint(side, name) {
+  const s = await load();
+  const r = C.appoint(s, side, name);
+  if (!r.error) await save(s);
+  return r;
+}
+const leaders = async () => ({ ...{ dark: null, light: null }, ...((await load()).leaders || {}) });
+
+module.exports = { appoint, leaders, list, act, checkChat, censor, seenBy, forget, allegiance };

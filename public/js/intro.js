@@ -187,6 +187,7 @@ export function startIntro(canvas, { onFlash, onTitle, onDone }) {
       running = false;
       window.removeEventListener('resize', resize);
       renderer.dispose();
+      renderer.forceContextLoss(); // free its graphics memory for the world
     },
   };
 }

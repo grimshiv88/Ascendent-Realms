@@ -1,7 +1,8 @@
 // The playable world: the whole map as streamed 3D land, your character, monsters, and a third-person camera.
 import * as THREE from 'three';
 import { createLand } from './land.js';
-import { pickQuality, createSmoothness } from './quality.js';
+import { pickQuality, createSmoothness, isMobile } from './quality.js';
+import { setLeanDetail } from './merge.js';
 import { createSky, HORIZON } from './sky.js';
 import { buildSpawn } from './spawn.js';
 import { buildCity, buildVillage, setCityDetail } from './city.js';
@@ -33,6 +34,7 @@ import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionNam
 import { createPlots } from './plots.js';
 import { gameTime, now as realmNow } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
+import { spellPower, spellName, darkSpells } from '../data/spells.mjs';
 import { skyCard } from './skycard.js';
 import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
@@ -63,6 +65,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   allCastles(); // levels the ground under the Monster Kings' castles before any land is built
   allFarms(); // ...and under the farms outside the towns
   let quality = pickQuality(view?.graphics);
+  setLeanDetail(isMobile()); // phones skip the cities' smallest parts (see merge.js)
   // (smoothing the edges is chosen once, as the page starts: it can't change later)
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.key !== 'low', logarithmicDepthBuffer: true });
   renderer.shadowMap.enabled = true;
@@ -70,6 +73,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
+  // If the phone takes the graphics away (low on memory, or the app was in the background), wait
+  // for them to come back instead of crashing; if they don't come back soon, reload the page.
+  let glLost = null;
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault(); // (asks the browser to give the graphics back)
+    onEvent?.('graphicsLost');
+    clearTimeout(glLost);
+    glLost = setTimeout(() => onEvent?.('graphicsGone'), 6000);
+  });
+  canvas.addEventListener('webglcontextrestored', () => { clearTimeout(glLost); glLost = null; onEvent?.('graphicsBack'); });
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(HORIZON, quality.fog);
@@ -1520,16 +1533,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
       for (const m of foes) {
         const hp = m.hp;
-        damageMonster(m, sp.power, true, howOf({ spell: sp }));
+        damageMonster(m, spellPower(sp, c), true, howOf({ spell: sp }));
         if (sp.effect && !m.dead && m.hp > 0 && Math.random() < sp.effect.chance) applyEffect(m, sp.effect.id, Math.max(1, hp - m.hp), 1);
       }
-      if (to) skillFx.spell(sp.element, from, to);
-      else for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; skillFx.spell(sp.element, from, new THREE.Vector3(pos.x + Math.sin(a) * 6, pos.y + 0.4, pos.z + Math.cos(a) * 6)); }
+      // the Dark Side's spells come out black with shadow (the Dark element's look)
+      const look = darkSpells(c) ? 'Dark' : sp.element;
+      if (to) skillFx.spell(look, from, to);
+      else for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; skillFx.spell(look, from, new THREE.Vector3(pos.x + Math.sin(a) * 6, pos.y + 0.4, pos.z + Math.cos(a) * 6)); }
       c.sp = Math.max(0, c.sp - cost);
       game.touch('sp');
       spellReady[sp.id] = clock.elapsedTime + sp.cd;
       skillPose = { move: moveFor({ type: 'bolt' }), t: 0, dur: 0.6 };
-      say(sp.name, 'exp');
+      say(spellName(sp, c), 'exp');
       return;
     }
     if (sp && c.sp < cost && !castSpell.warned) { castSpell.warned = true; say(`Not enough SP for ${sp.name}`, 'hurt'); setTimeout(() => { castSpell.warned = false; }, 3000); }

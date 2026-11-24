@@ -192,8 +192,37 @@ export function strip(s, name, now = Date.now()) {
   }
   return { coins: m.gained, cult: cult.name };
 }
-// Only a cult member may become a Mage
-export const mayBecomeMage = (s, name) => !!cultOf(s, name);
+// ---------- the leaders of the two sects ----------
+// The realm's admins may appoint one leader of the evil sect (the whole Dark Side, above every cult)
+// and one leader of the good sect (the Order of the Dawn). Only one of each at a time. The Dark
+// leader sees every cult and every member, whatever their rank; the Light leader sees everyone
+// sworn to the Order. `side` is 'dark' or 'light'; `name` null takes the title away.
+export const LEADER_TITLE = { dark: 'Leader of the Dark Side', light: `Leader of the ${ORDER_NAME}` };
+export const leaderOf = (s, side) => s.leaders?.[side] || null;
+export const leads = (s, name) => (['dark', 'light'].find((k) => s.leaders?.[k] && same(s.leaders[k], name)) || null);
+export function appoint(s, side, name, now = Date.now()) {
+  if (!LEADER_TITLE[side]) return { error: 'Which sect?' };
+  s.leaders ||= { dark: null, light: null };
+  const before = s.leaders[side];
+  if (!name) { s.leaders[side] = null; return { ok: true, before }; }
+  // one person can't lead both, and a leader leaves the other side
+  const other = side === 'dark' ? 'light' : 'dark';
+  if (s.leaders[other] && same(s.leaders[other], name)) s.leaders[other] = null;
+  if (side === 'dark') {
+    s.order = s.order.filter((m) => !same(m.name, name));
+    s.choices[String(name).toLowerCase()] = 'joined';
+  } else {
+    const cult = cultOf(s, name);
+    if (cult) forget(s, name);
+    if (!inOrder(s, name)) s.order.push({ name, joined: now, gained: 0 });
+    s.choices[String(name).toLowerCase()] = 'order';
+  }
+  s.leaders[side] = name;
+  return { ok: true, before };
+}
+
+// A cult member, or the leader of the Dark Side, may switch to Mage from the Cult window
+export const mayBecomeMage = (s, name) => !!cultOf(s, name) || leads(s, name) === 'dark';
 // A character has died: their place in a cult or the Order dies with them (a new life is called anew)
 export function forget(s, name) {
   const cult = cultOf(s, name);
@@ -211,6 +240,7 @@ export function forget(s, name) {
   for (const c of s.cults) c.invites = c.invites.filter((i) => !same(i.to, name));
   delete s.choices[String(name).toLowerCase()];
   s.stripped = s.stripped.filter((x) => !same(x.name, name));
+  for (const k of ['dark', 'light']) if (s.leaders?.[k] && same(s.leaders[k], name)) s.leaders[k] = null; // (a leader's title dies with them)
   return { ok: true };
 }
 // Does this chat message give the cult away? (its name, or the word "cult")
@@ -297,8 +327,12 @@ export function view(s, me, now = Date.now()) {
     order: order ? { name: ORDER_NAME, members: s.order.length, missions: mine(s.missions) } : null,
     invited,
     // whether you have had the call (the Cult / Order window shows only to those who have)
-    called: !!choiceOf(s, me.name) || !!m || order,
+    called: !!choiceOf(s, me.name) || !!m || order || !!leads(s, me.name),
     choice: choiceOf(s, me.name),
+    // the leader of a sect sees all of it
+    leads: leads(s, me.name),
+    allCults: leads(s, me.name) === 'dark' ? s.cults.map((k) => ({ name: k.name, race: k.race, members: k.members.map((x) => ({ name: x.name, rank: x.rank, rankName: CULT_RANKS[x.rank] })) })) : null,
+    orderList: leads(s, me.name) === 'light' ? s.order.map((x) => ({ name: x.name, joined: x.joined })) : null,
     // whether this monster could found their race's cult
     canFound: !m && !order && me.side === 'monster' && me.level >= CULT_FOUND_LEVEL && !raceCult,
     stripped: stripped.length ? stripped : null,

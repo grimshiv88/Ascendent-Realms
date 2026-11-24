@@ -64,3 +64,35 @@ export function randomSkill(c, rnd = Math.random) {
   return pool[pool.length - 1];
 }
 
+
+// ---------- categories ----------
+// Skills are sorted into kinds, from defence to attack: Defence (guards that raise DEF), Healing,
+// Support (war cries that raise ATK), Control (slowing and holding foes), Movement (rushes and
+// steps) and Attack (blows, sweeps and shots). Inside each kind the strongest come first.
+export const SKILL_CATEGORIES = [
+  { id: 'defence', name: 'Defence', icon: '🛡️' },
+  { id: 'healing', name: 'Healing', icon: '✚' },
+  { id: 'support', name: 'Support', icon: '📯' },
+  { id: 'control', name: 'Control', icon: '❄️' },
+  { id: 'movement', name: 'Movement', icon: '⚡' },
+  { id: 'attack', name: 'Attack', icon: '⚔️' },
+];
+// the kind of a skill (a skill from this file, a Unique Skill as uniqueAbility gives it, or its `kind`)
+export function skillCategory(s) {
+  if (!s) return 'attack';
+  if (s.kind === 'freeze' || s.hold) return 'control';
+  if (s.type === 'buff') return s.stat === 'def' ? 'defence' : 'support';
+  if (s.type === 'heal') return 'healing';
+  if (s.type === 'dash') return 'movement';
+  if (s.type === 'appraise') return 'support';
+  return 'attack';
+}
+// how strong a skill is, to rank skills of one kind
+export const skillPower = (s) => (s.mult || 0) * (s.radius ? 1.3 : 1) + (s.pct || 0) / 20 + (s.sp || 0) / 50;
+// skill ids grouped by kind (defence first, attack last), strongest first in each:
+// [{ id, name, icon, skills: [ids] }]
+export function byCategory(ids) {
+  const list = [...new Set(ids)].filter((id) => SKILLS[id]);
+  return SKILL_CATEGORIES.map((k) => ({ ...k, skills: list.filter((id) => skillCategory(SKILLS[id]) === k.id).sort((a, b) => skillPower(SKILLS[b]) - skillPower(SKILLS[a])) }))
+    .filter((k) => k.skills.length);
+}

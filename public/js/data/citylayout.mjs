@@ -245,11 +245,21 @@ export function cityPlan() {
     shops.push(onRing(r, ja, 8, 6, 1, { id: 'furniture_dump', h: 3.5, tier: 'dump' }));
   }
 
+  // the Mages' Academy, the tenth, added after the others (when the Mage became a class like any
+  // other): it stands next along the Academy row, where two town houses stood. Those two stay in the
+  // list as 'gone' (so every other house keeps its number) but are not built and nobody is born there.
+  {
+    const last = academies[academies.length - 1];
+    const ma = last.a + (ACADEMY_W + 3) / MR;
+    academies.push(onRing(MR, ma, ACADEMY_W, ACADEMY_D, 1, { k: academies.length, tier: 'common' }));
+    for (const h of homes) if (h.r === MR && Math.abs(h.a - ma) < (ACADEMY_W / 2 + h.w / 2) / MR) h.gone = true;
+  }
+
   // number them: the townsfolk's homes, then the houses for sale (each with its price)
   // (the outer Dump's shacks come last, so every older home keeps its number)
   { const rnd = seeded('dumpout-sale'); for (const b of extra) addHome(b, rnd); }
   const family = homes.filter((h) => !h.sale).map((h, i) => ({ ...h, i, h: h.floors * 3.1 }));
-  const sale = homes.filter((h) => h.sale).map((h, i) => ({ ...h, i, h: h.floors * 3.1, id: `${h.tier}${i}`, price: HOUSE_PRICE[h.tier] }));
+  const sale = homes.filter((h) => h.sale).map((h, i) => ({ ...h, i, h: h.floors * 3.1, id: `${h.tier}${i}`, price: HOUSE_PRICE[h.tier] })).filter((h) => !h.gone);
   PLAN = { family, sale, shops, academies, lots, junk, playground, stalls, yards, idlers, checkpoint: cp };
   return PLAN;
 }
