@@ -1,6 +1,8 @@
 // Character creation and saving. The rules live in the shared game-data module.
 const db = require('./db');
 const { fallenKeep, rebornWith, rebirthAsChild, mayChangeForm, growUp } = require('../public/js/data/game-data.mjs');
+const { rollBirthTier, housesOnTier, PASS_ORDER, DAY_PASS_MS } = require('../public/js/data/citypass.mjs');
+const { cleanCountry } = require('../public/js/data/countries.mjs');
 const { SCHOOLS, BIRTH_CITY, BIRTH_CITIES, KIDS_PER_HOUSE, houseCount, rollBirth, bornCharacter, ceremonyDue, rollClass, CEREMONY_SHOW_MS } = require('../public/js/data/birth.mjs');
 const { moveToNewWorld } = require('../public/js/data/world-layout.mjs');
 const { pickUnique, uniqueSlot, APPRAISAL_AWAY_MS, rankProofs, climbedRank, rankOf, RANK_CAP, isAppraisal } = require('../public/js/data/unique.mjs');
@@ -13,6 +15,7 @@ const { LIVES, UNDYING_LEVEL, canMarry } = require('../public/js/data/life.mjs')
 const { MAX_CHILDREN } = require('../public/js/data/family.mjs');
 const { RACES, CLASSES } = require('../public/js/data/game-data.mjs');
 const { BODYGUARDS } = require('../public/js/data/hire.mjs');
+const { cleanBeds } = require('../public/js/data/crops.mjs');
 
 async function load(accountId) {
   const row = await db.get('SELECT data FROM characters WHERE account_id = ?', accountId);
@@ -32,15 +35,19 @@ async function uniquesHeld() {
   const takenUniques = new Set(rows.map((r) => r.n).filter(Boolean));
   return { takenUniques, held, appraisal: ![...takenUniques].some((n) => String(n).toLowerCase() === 'appraisal') };
 }
-// A house with room for one more child: in the city of the race first, then the others in turn
+// A house with room for one more child: in the city of the race first, then the others in turn.
+// Birth luck picks the ring first (a noble house, the Common Quarter or the Dump: see
+// data/citypass.mjs); if that ring's houses are all full, the other rings of the same city.
 async function findHome(race) {
   const kids = await db.all("SELECT (data::jsonb #>> '{child,family,city}') AS city, (data::jsonb #>> '{child,family,house}') AS house, COUNT(*)::int AS n FROM characters WHERE jsonb_typeof(data::jsonb -> 'child') = 'object' GROUP BY 1, 2");
   const full = new Map(kids.map((k) => [`${k.city}:${k.house}`, k.n]));
   const first = BIRTH_CITY[race] || 'central';
+  const luck = rollBirthTier();
   for (const city of [first, ...BIRTH_CITIES.filter((c) => c !== first)]) {
-    const open = [];
-    for (let h = 0; h < houseCount(city); h++) if ((full.get(`${city}:${h}`) || 0) < KIDS_PER_HOUSE) open.push(h);
-    if (open.length) return { city, house: open[Math.floor(Math.random() * open.length)] };
+    for (const tier of [luck, ...PASS_ORDER.filter((t) => t !== luck)]) {
+      const open = housesOnTier(city, tier).filter((h) => (full.get(`${city}:${h}`) || 0) < KIDS_PER_HOUSE);
+      if (open.length) return { city, house: open[Math.floor(Math.random() * open.length)] };
+    }
   }
   return { city: first, house: Math.floor(Math.random() * houseCount(first)) };
 }
@@ -58,6 +65,9 @@ async function create(accountId, username, body) {
   const birth = asKid?.birth || rollBirth(['player', 'monster'].includes(body?.side) ? body.side : null);
   const result = bornCharacter(username, birth, (asKid?.home && houseCount(asKid.home.city) > asKid.home.house ? asKid.home : null) || await findHome(birth.race), opts);
   if (result.error) return result;
+  // the flag chosen at sign-up goes on the ID
+  const acc = await db.get('SELECT country FROM accounts WHERE id = ?', accountId);
+  result.character.country = cleanCountry(acc?.country);
   if (asKid) { result.character.child.school = asKid.kid.school || null; result.character.child.plan = asKid.kid.plan; result.character.rebornFrom = keep.name || null; }
   // a character who fell before passes their Unique Skill on
   if (keep) rebornWith(result.character, keep);
@@ -295,6 +305,15 @@ async function saveProgress(accountId, p) {
   const ageShift = character.level >= UNDYING_LEVEL && Number.isFinite(p.ageShift) && p.ageShift <= 0 && p.ageShift > -1e5 ? p.ageShift : (character.ageShift || 0);
   const growth = { work: int(p.growth?.work ?? 0, 0, 1e9) ?? 0, trials: int(p.growth?.trials ?? 0, 0, 1e6) ?? 0 };
   // a broken bone from a bad fall, and the treatments it has had (one a day)
+  // a day pass bought at a city's inner gate: which ring, which city, until when (one day of the realm)
+  const dp = p.dayPass;
+  const dayPass = dp && PASS_ORDER.includes(dp.tier) && (dp.city == null || (typeof dp.city === 'string' && dp.city.length <= 32)) && int(dp.until, 0, Date.now() + DAY_PASS_MS + 60000) !== null
+    ? { tier: dp.tier, city: dp.city || null, until: dp.until } : null;
+  // the real-world country the player said they are from (a flag on the ID), or none
+  if (p.country !== undefined && cleanCountry(p.country) !== (character.country ?? null)) {
+    character.country = cleanCountry(p.country);
+    await db.run('UPDATE accounts SET country = ? WHERE id = ?', character.country, accountId); // (kept for the next life too)
+  }
   const injury = p.injury && ['leg', 'arm', 'ribs'].includes(p.injury.part) && int(p.injury.left, 1, 5) !== null
     ? { part: p.injury.part, left: p.injury.left, lastTreat: int(p.injury.lastTreat ?? 0, 0, 1e15) ?? 0 } : null;
   const torches = (Array.isArray(p.torches) ? p.torches.slice(0, 10) : [])
@@ -336,7 +355,11 @@ async function saveProgress(accountId, p) {
   }
   // monster players from level 100 can switch to their humanoid form and back
   if ((p.form === 'monster' || p.form === 'humanoid') && mayChangeForm({ ...character, level: fields.level ?? character.level })) character.form = p.form;
-  Object.assign(character, fields, { stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
+  // the beds you planted (data/crops.mjs) and where you left your mount (data/mounts.mjs)
+  const crops = cleanBeds(p.crops);
+  const mount = p.mount && ITEMS[p.mount.item]?.kind === 'mount' && Number.isFinite(p.mount.x) && Number.isFinite(p.mount.z)
+    ? { item: p.mount.item, x: Math.round(p.mount.x * 10) / 10, z: Math.round(p.mount.z * 10) / 10 } : null;
+  Object.assign(character, fields, { crops, mount, stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, dayPass, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
   await store(accountId, character);
   return { ok: true };
 }

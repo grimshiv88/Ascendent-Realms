@@ -13,9 +13,11 @@ const rooms = require('./rooms');
 const bounties = require('./bounties');
 const groups = require('./groups');
 const db = require('./db');
+const mail = require('./mail');
 
 const app = express();
-app.use(express.json({ limit: '10kb' }));
+// (a save can carry up to 80 planted beds, so 64 kB rather than 10)
+app.use(express.json({ limit: '64kb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const bearer = (req) => (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
@@ -40,7 +42,7 @@ function checkAppraisalNow() {
   characters.keepAppraisalHeld().catch((e) => console.error('appraisal check:', e));
 }
 
-app.get('/api/health', async (req, res) => res.json({ ok: true, now: Date.now() }));
+app.get('/api/health', async (req, res) => res.json({ ok: true, now: Date.now(), mail: mail.ready() }));
 
 app.post('/api/signup', async (req, res) => {
   const result = await auth.signUp(req.body || {});
@@ -52,6 +54,20 @@ app.post('/api/signin', async (req, res) => {
   res.status(result.error ? 401 : 200).json(result);
 });
 
+// The second step of signing in (2-step sign-in), "Forgot password?" and the link in the email
+const answer = (fn, bad = 400) => async (req, res) => {
+  const result = await fn(req.body || {}, req.account);
+  res.status(result.error ? bad : 200).json(result);
+};
+app.post('/api/signin/code', answer(auth.signInCode, 401));
+app.post('/api/signin/by-email', answer(auth.signInByEmail));
+app.post('/api/password/forgot', answer(auth.forgotPassword));
+app.post('/api/password/reset', answer(auth.resetPassword));
+app.post('/api/email/verify', async (req, res) => {
+  const result = await auth.verifyEmail(req.body || {}, await auth.accountRow(bearer(req)));
+  res.status(result.error ? 400 : 200).json(result);
+});
+
 app.get('/api/me', async (req, res) => {
   const account = await auth.accountFromToken(bearer(req));
   if (!account) return res.status(401).json({ error: 'Not signed in.' });
@@ -59,12 +75,35 @@ app.get('/api/me', async (req, res) => {
 });
 
 // Requests below need a signed-in account
+// (an account that must still confirm its email may only use the account requests)
+async function requireSession(req, res, next) {
+  req.account = await auth.accountRow(bearer(req));
+  if (!req.account) return res.status(401).json({ error: 'Not signed in.' });
+  next();
+}
 async function requireAccount(req, res, next) {
   req.account = await auth.accountRow(bearer(req));
   if (!req.account) return res.status(401).json({ error: 'Not signed in.' });
+  if (auth.mustVerify(req.account)) return res.status(403).json({ error: 'Please confirm your email first.', mustVerify: true });
   checkAppraisalNow();
   next();
 }
+
+// The account itself: its email, password and 2-step sign-in
+app.post('/api/email/send', requireSession, async (req, res) => {
+  const result = await auth.sendVerify(req.account);
+  res.status(result.error ? 400 : 200).json(result);
+});
+app.post('/api/birthdate', requireSession, answer((body, acc) => auth.setBirthdate(acc, body)));
+app.post('/api/email/set', requireSession, answer((body, acc) => auth.setEmail(acc, body)));
+app.post('/api/password', requireSession, async (req, res) => {
+  const result = await auth.changePassword(req.account, req.body || {}, bearer(req));
+  res.status(result.error ? 400 : 200).json(result);
+});
+app.post('/api/2fa/email', requireSession, answer((body, acc) => auth.twofaEmail(acc, body)));
+app.post('/api/2fa/app/start', requireSession, answer((body, acc) => auth.twofaAppStart(acc, body)));
+app.post('/api/2fa/app/confirm', requireSession, answer((body, acc) => auth.twofaAppConfirm(acc, body)));
+app.post('/api/2fa/off', requireSession, answer((body, acc) => auth.twofaOff(acc, body)));
 
 app.post('/api/character', requireAccount, async (req, res) => {
   const result = await characters.create(req.account.id, req.account.username, req.body || {});
@@ -101,10 +140,6 @@ app.post('/api/character/progress', requireAccount, async (req, res) => {
 });
 
 // Land: everyone's plots, buying one, choosing its purpose, and clearing it
-app.post('/api/password', requireAccount, async (req, res) => {
-  const result = await auth.changePassword(req.account.id, req.body?.password, bearer(req));
-  res.status(result.error ? 400 : 200).json(result);
-});
 app.get('/api/top', async (req, res) => res.json({ players: await characters.top() }));
 
 app.get('/api/land', requireAccount, async (req, res) => res.json(await land.list(req.account.id)));
@@ -200,7 +235,7 @@ app.post('/api/admin/gates', requireAdmin, async (req, res) => {
   await db.run("INSERT INTO world_state (key, data) VALUES ('city_gates', ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data", JSON.stringify(all));
   res.json({ ok: true, raised: all });
 });
-for (const [route, fn] of [['password', admin.setPassword], ['signout', admin.signOutEverywhere], ['delete', admin.remove]]) {
+for (const [route, fn] of [['password', admin.setPassword], ['birthdate', admin.setBirthdate], ['signout', admin.signOutEverywhere], ['delete', admin.remove]]) {
   app.post(`/api/admin/${route}`, requireAdmin, async (req, res) => {
     const result = await fn(req.body || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);

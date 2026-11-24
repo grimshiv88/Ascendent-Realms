@@ -6,7 +6,9 @@ import {
   RACES, CLASSES, CLASS_GUIDE, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor, mayChangeForm, FORM_SWITCH_LEVEL,
 } from './data/game-data.mjs';
 import { tabsHtml } from './bag.js';
-import { lifeRows } from './idcard.js';
+import { lifeRows, passRows } from './idcard.js';
+import { fillFlags, flagHtml, countryOptions } from './flag.js';
+import { birthdateWords } from './data/birthdate.mjs';
 import { uniqueAbility, uniqueTier, TIER_NAMES, rankProofs, isAppraisal, RANK_UP_MAX, TRIALS_PER_PROOF, WORK_PER_PROOF } from './data/unique.mjs';
 import { ageOf, CEREMONY_AGE, PARENT_JOBS, parentAlive, visitDue } from './data/birth.mjs';
 import { ageYears, livesLeft, LIVES, MARRY_AGE, UNDYING_LEVEL } from './data/life.mjs';
@@ -91,7 +93,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
 const nextUpgrade = (level) => { let l = (Math.floor(level / UPGRADE_EVERY) + 1) * UPGRADE_EVERY; while (KEY_LEVELS.includes(l)) l += UPGRADE_EVERY; return l; };
 
 // `pending` holds Stat Points placed with the + buttons but not yet confirmed
-export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.level)) {
+export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.level), perks = {}) {
   const placed = Object.values(pending).reduce((a, b) => a + b, 0);
   const left = c.unspentPoints - placed;
   // HP, SP, ATK, MATK, DEF and MDEF grow from the main stats; points can't go into them directly
@@ -120,7 +122,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${c.neglect ? row('Soul', 'Sinner <small>(left parents unvisited)</small>') : ''}
           ${row('EXP', `${c.exp} / ${need}`)}
           ${row('Coins', money(c.coins))}
-          ${lifeRows(c).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
+          ${(passRows(c, perks) + lifeRows(c)).replace(/<div><dt>([^<]*)<\/dt>/g, '<div class="sw-row"><dt>$1:</dt>')}
         </dl>
         <dl>
           ${row('LVL', c.level)}
@@ -174,6 +176,43 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
         <button type="button" class="gold-button small" data-confirm-points>Confirm</button>
         <button type="button" class="link-button" data-reset-points>Undo</button></p>` : ''}
     </div>`;
+  fillFlags(el);
+}
+
+// The account part of Settings: the email (confirmed or not) and 2-step sign-in.
+// `st` is what is going on: { msg, app: { secret, uri } while an authenticator app is being set up, code }
+function accountSettings(a, st) {
+  const pw = '<input name="password" type="password" autocomplete="current-password" placeholder="Your password" required>';
+  const email = a.email
+    ? `<p class="bag-hint">Email: <b>${esc(a.email)}</b> · ${a.emailVerified ? 'confirmed' : '<b>not confirmed yet</b>'}</p>
+       ${a.emailVerified ? '' : `<form class="pw-change" data-acct="verify"><label>Code from the email <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></label>
+         <div class="pw-buttons"><button type="submit" class="gold-button small">Confirm</button><button type="button" class="link-button" data-acct-send>Send the email again</button></div></form>`}`
+    : '<p class="bag-hint"><b>No email yet.</b> Add one below.</p>';
+  const change = `<details class="acct-more"><summary>${a.email ? 'Change email' : 'Add an email'}</summary>
+      <form class="pw-change" data-acct="email"><label>New email <input name="email" type="email" autocomplete="email" required></label>
+      ${a.email ? `<label>Password ${pw}</label>` : ''}<div class="pw-buttons"><button type="submit" class="gold-button small">Save email</button></div></form></details>`;
+  let twofa;
+  if (st.app) {
+    twofa = `<p class="bag-hint">1. Install an authenticator app (Google Authenticator, Microsoft Authenticator or Authy).<br>
+      2. On this phone, <a href="${esc(st.app.uri)}">open it in your authenticator app</a>. On another device, choose "Enter a setup key" in the app and type this key:</p>
+      <p class="totp-key">${esc(st.app.secret.replace(/(.{4})/g, '$1 ').trim())}</p>
+      <form class="pw-change" data-acct="app-confirm"><label>3. Type the 6-digit code the app shows <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></label>
+      <div class="pw-buttons"><button type="submit" class="gold-button small">Turn it on</button><button type="button" class="link-button" data-acct-cancel>Cancel</button></div></form>`;
+  } else if (a.twofa) {
+    twofa = `<p class="bag-hint"><b>On</b>: signing in needs a code ${a.twofa === 'app' ? 'from your authenticator app' : 'sent to your email'} as well as the password.</p>
+      <form class="pw-change" data-acct="off"><label>Password ${pw}</label><div class="pw-buttons"><button type="submit" class="gold-button small">Turn off 2-step sign-in</button></div></form>`;
+  } else {
+    const emailOk = a.email && a.emailVerified && a.mail;
+    twofa = `<p class="bag-hint"><b>Off.</b> Turn it on so nobody can get in with only your password.</p>
+      <form class="pw-change" data-acct="twofa"><label>Password ${pw}</label>
+      <div class="pw-buttons">${emailOk ? '<button type="submit" class="gold-button small" name="way" value="email">Codes by email</button>' : ''}<button type="submit" class="gold-button small" name="way" value="app">Authenticator app</button></div>
+      ${emailOk ? '' : `<p class="bag-hint">${a.mail ? 'Codes by email need a confirmed email.' : 'Codes by email can be used once the game can send emails.'}</p>`}</form>`;
+  }
+  const born = a.birthdate ? `<p class="bag-hint">Birth date: <b>${esc(birthdateWords(a.birthdate))}</b> (age ${a.age}). Only you can see it. If it is wrong, ask the game's owner.</p>` : '';
+  return `${born}<h4 class="ctl-group">Email</h4>${email}${change}
+    <h4 class="ctl-group">2-step sign-in</h4>${twofa}
+    ${st.code ? `<p class="preview-code">Preview only, no real email is sent here. Your code is <b>${esc(st.code)}</b></p>` : ''}
+    <p class="shop-msg" role="status">${esc(st.msg || '')}</p>`;
 }
 
 // Player settings, kept in this browser
@@ -216,7 +255,11 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
       ${controls}
       <button type="button" class="link-button" data-controls-reset>Put every key back to how it started</button>
       <h3 class="bag-sub">Account</h3>
+      ${keys.country !== undefined ? `<label class="country-setting">Where you are from <small>(its flag is on your ID)</small><span class="country-field"><select data-country>${countryOptions(keys.country || '')}</select><span data-country-flag>${flagHtml(keys.country)}</span></span></label>` : ''}
+      ${keys.account ? accountSettings(keys.account, keys.acct || {}) : ''}
       <form class="pw-change" data-password>
+        <h4 class="ctl-group">Password</h4>
+        <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
         <label>New password <input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
         <label>Type it again <input name="confirm" type="password" minlength="8" autocomplete="new-password" required></label>
         <div class="pw-buttons"><button type="submit" class="gold-button small">Change password</button>
@@ -229,6 +272,7 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
       <p class="bag-hint">${cloud ? 'Saved privately online, so they follow you to any device you open the game on.' : 'Kept in this browser only.'} Passwords are stored scrambled, so they can't be shown.</p>
       <ul class="device-accounts">${accounts.map((a) => `<li><b>${esc(a.username)}</b> <small>${esc(a.email)}</small><br>${a.character ? `${esc(a.character.name)} · ${esc(RACES[a.character.race]?.name || a.character.race)} ${esc(CLASSES[a.character.cls]?.name || a.character.cls)} · Lv ${a.character.level} · ${money(a.character.coins)}` : 'No character yet'}</li>`).join('') || '<li>None</li>'}</ul>` : ''}
     </div>`;
+  fillFlags(el);
 }
 
 // The highest-level players. `me` is your character's name, to mark your own row.
@@ -347,6 +391,8 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Skills</dt><dd>K opens them. Use a skill with its key (1 to 6 at first; you can change them), or tap its button</dd></div>
       <div class="sw-row"><dt>Hunting</dt><dd>Kill a wild animal, then E beside its body: drag it to a Butcher, or cut it up (with a knife, sword, dagger or axe) and cook the meat with E by a campfire. Only halal animals give meat.</dd></div>
       <div class="sw-row"><dt>Animals</dt><dd>E beside a grazing animal: feed it a vegetable, hay or grain from your bag, or pet it. Farm animals belong to the farmer: feed and pet them, don't hunt them.</dd></div>
+      <div class="sw-row"><dt>Growing crops</dt><dd>Buy seeds at a Farm Stand and press E by one of the farm's visitors' beds to plant them (or dig your own beds with a Hoe on land you set to Farm). They grow while you are away; a Watering Can filled at water makes them grow faster. E again when ripe to harvest.</dd></div>
+      <div class="sw-row"><dt>Riding</dt><dd>Buy a horse or donkey at a Farm Stand, or tame a wild horse or camel: stand still with a carrot or apple in your bag and feed it 3 times. ${keyName(codeFor('mount'))} calls it, and ${keyName(codeFor('mount'))} (or E beside it) gets you on and off. Run to gallop.</dd></div>
       <div class="sw-row"><dt>Hunger</dt><dd>Eat before the Hunger bar runs out. Hungry: rest stops healing you. Starving: you slowly lose HP and hit softer.</dd></div>
       <div class="sw-row"><dt>Sleep</dt><dd>Z, inside your tent, by a campfire or by a torch (lowers Fatigue; fastest in a tent)</dd></div>
       <div class="sw-row"><dt>Tent</dt><dd>P pitches your tent in front of you (buy one in the shop, or craft it from 8 logs). Press P beside it to pack it up</dd></div>

@@ -1,5 +1,6 @@
 // The Bag (inventory with your character and equipment), the Shop and the Blacksmith's merging.
 // They share one window with the Status Window, with tabs along the top.
+import { MOUNTS } from './data/mounts.mjs';
 import { ITEMS, shopFor, formName, SLOTS, isGear, slotOf, upgraded, reachText, RANKS, rankOf, evolvedName, effectText, EFFECTS, BREWS, POTION_MAKER, brewCost, brewSeconds, brewHerbs, categoryOf, forgeCost, forgeOres, FORGE, FORGE_WORKSHOP, FORGE_RANK_LEVEL, MARKETS, marketStock, marketPrice, gearSkillSlots, mythicSkill } from './data/items.mjs';
 import { SKILLS } from './data/skills.mjs';
 import { codeFor, keyName } from './data/controls.mjs';
@@ -37,6 +38,8 @@ function describeGear(it, plus = 0) {
     return `${rankTag(it, plus)} ${it.magic ? 'MATK' : 'ATK'} +${upgraded(it.power, plus)} · ${it.speed}s per swing · ${reachText(it)}${it.chop >= 4 ? ' · fells even great trees' : it.chop >= 3 ? ' · fells big trees' : it.chop >= 1.5 ? ' · chops young trees fast' : ''}${fx ? `<br>${fx}` : ''}${next ? `<br><span class="faint">Evolves at +${next}</span>` : ''}`;
   }
   if (it.kind === 'furniture') return '🏠 Furniture for a home';
+  if (it.kind === 'seed') return '🌱 Plants one bed (E by an empty bed)';
+  if (it.kind === 'mount') return `🐎 Yours to ride · ${MOUNTS[it.mount]?.about || ''}`;
   if (it.kind === 'stone') return `💠 Skill Stone · set it into Rare or better gear`;
   if (it.kind === 'coating') return `${EFFECTS[it.coat].icon} Coats a weapon for ${it.hits} hits (Blacksmith)`;
   if (it.kind === 'armour') return `${rankTag(it, plus)} ${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
@@ -124,6 +127,8 @@ export function renderBag(el, game, selected) {
     if (e.id === 'torch') actions.push(`<button type="button" class="gold-button small" data-hold-torch>Hold / put out</button>`, `<button type="button" class="gold-button small" data-torch>Place here (T)</button>`);
     if (e.id === 'tent') actions.push(`<button type="button" class="gold-button small" data-tent>Pitch here (P)</button>`);
     if (e.id === 'firewood') actions.push(`<button type="button" class="gold-button small" data-campfire>Light a campfire here</button>`);
+    if (sel.kind === 'seed') actions.push(`<button type="button" class="gold-button small" data-plant="${e.id}">Plant in the bed beside you</button>`);
+    if (sel.kind === 'mount') actions.push(`<button type="button" class="gold-button small" data-mount="${e.id}">Call it to you (H)</button>`);
     if (sel.kind === 'food') actions.push(`<button type="button" class="gold-button small" data-use="${keyOf(e)}">Use</button>`);
     actions.push(`<button type="button" class="link-button" data-drop="${keyOf(e)}">Drop one</button>`);
     details = `<div class="bag-detail"><span class="bag-big">${pic(e.id, e.plus, '')}</span><div><h3>${esc(nameOf(e))}</h3><p>${esc(sel.text)}</p><p class="bag-stat">${describe(sel, e.plus)}${e.coat ? `<br>${EFFECTS[e.coat.id].icon} Coated with ${EFFECTS[e.coat.id].name}: ${e.coat.hits} hits left` : ''}</p><div class="bag-actions">${actions.join('')}</div>${isGear(sel) && e.uid ? gearSkillsHtml(game, e, sel) : ''}</div></div>`;

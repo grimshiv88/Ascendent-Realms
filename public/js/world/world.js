@@ -37,10 +37,15 @@ import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
 import { ageOf, isChild, parentAlive, ceremonyDue, CEREMONY_SHOW_MS } from '../data/birth.mjs';
+import { mayEnter, cityPass, PASS_NAME } from '../data/citypass.mjs';
+import { rampAt, RAMP_WALL, INNER_R } from '../data/citylevels.mjs';
 const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine after a new card goes up
 import { money } from '../data/money.mjs';
 import { howOf, canHarvest, harvest } from './deaths.js';
 import { createHusbandry } from './husbandry.js';
+import { createCrops } from './crops.js';
+import { createRiding, poseRide } from './riding.js';
+import { RIDE_FATIGUE } from '../data/mounts.mjs';
 import { allFarms } from '../data/farms.mjs';
 import { HUNGER_DRAIN, HUNGRY, STARVE_HIT, STARVE_FLOOR } from '../data/hunger.mjs';
 
@@ -255,7 +260,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       for (const it of doorsNear(pos.x, pos.z, 14)) list.push([it.d.x, it.d.y, it.d.z, 6, () => useDoor(it)]);
     }
     if (!inside) for (const m of creatures?.list || []) if (canHarvest(m) && !m.kind.animal && Math.hypot(m.x - pos.x, m.z - pos.z) < 12) list.push([m.x, m.y + 0.3, m.z, 2.6, () => harvestBody(m)]);
-    if (!inside && !depth) husbandry?.tapTargets(list);
+    if (!inside && !depth) { husbandry?.tapTargets(list); crops?.tapTargets(list); const mt = riding?.mount(); if (mt && !mt.riding) list.push([mt.x, g(mt.x, mt.z) + 1.3, mt.z, 3.2, () => riding.toggle(mt.item)]); }
     for (const e of colliders.near(pos.x, pos.z, 12)) if (e.kind === 'chest') list.push([e.x, (e.y ?? g(e.x, e.z)) + 0.6, e.z, e.r + 1.6, () => openChest(e)]);
     const r = canvas.getBoundingClientRect();
     let best = null, bd = 70;
@@ -374,6 +379,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const FALL_SAFE = 4; // metres you can drop without getting hurt
   let creatures = null; // made below; caves built before then get their guards later
   let husbandry = null; // hunting, cooking and the farms (made below, with the creatures)
+  let crops = null, riding = null; // growing your own, and your horse (made with husbandry)
+  let myFarmPlots = []; // your own plots set to Farm, where you can dig beds
   let runningNow = false; // (the run key held, for the animals to notice)
   applyQuality(quality);
   updateSites(pos.x, pos.z);
@@ -602,7 +609,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let lastHurt = -99;
   const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
-    getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside }),
+    getPlayer: () => ({ x: pos.x, z: pos.z, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
     isNight: () => night,
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
@@ -623,12 +630,34 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // ---------- hunting, cooking and the farms (see husbandry.js) ----------
   husbandry = createHusbandry({
     scene, colliders, game, say, floatText, onEvent,
+    onTame: (item, m) => riding?.adopt(item, m.x, m.z, m.heading),
     creatures: () => creatures,
     getPos: () => pos, getHeading: () => heading,
     groundAt: (x, z) => groundAt(x, z, pos.y),
     // the campfire beside each waystone (see spawn.js)
     siteFires: () => sites.filter((s) => s.built && !s.place.cave && Math.hypot(s.place.x - pos.x, s.place.z - pos.z) < 60).map((s) => ({ x: s.place.x + 9.5, z: s.place.z - 11 })),
   });
+  // ---------- growing your own and riding (see crops.js, riding.js) ----------
+  if (game) {
+    crops = createCrops({
+      scene, game, say, floatText, onEvent,
+      getPos: () => pos, getHeading: () => heading,
+      groundAt: (x, z) => groundAt(x, z, pos.y),
+      farmBeds: () => husbandry.built().flatMap((b) => b.beds),
+      farmTroughs: () => husbandry.built().map((b) => b.trough),
+      myFarmPlots: () => myFarmPlots,
+      // a river, lake or the sea within a step or two
+      nearWater: (x, z) => [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [1.5, 1.5], [-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5]].some(([dx, dz]) => { const s = sample(x + dx, z + dz, tmpS); return s.h < s.water + 0.05; }),
+    });
+    riding = createRiding({
+      scene, game, say,
+      getPos: () => pos, getHeading: () => heading,
+      groundAt: (x, z) => groundAt(x, z, pos.y),
+      riderHeight: () => bodyH,
+      canRide: () => (inside ? 'Your mount waits outside' : depth ? 'Mounts can\'t go underground' : dead ? 'You can\'t ride now' : null),
+    });
+    riding.restore();
+  }
   husbandry.updateFarms(pos.x, pos.z);
 
   // ---------- monster villages out in the wilds (see data/mobvillages.mjs) ----------
@@ -1132,7 +1161,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const stand = standNear(pos.x, pos.z);
       if (stand) { onEvent?.('stand', stand); return; }
       if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
+      if (crops?.interactFirst()) return;
       if (husbandry.interact()) return;
+      if (riding?.interact()) return;
+      if (crops?.interact()) return;
       const body = corpseNear(pos.x, pos.z, 2.4);
       if (body) { harvestBody(body); return; }
       const npc = npcNear(pos.x, pos.z);
@@ -1495,6 +1527,44 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       onEvent?.('gate', { barred, monster, city: city.place.name });
     }
   }
+  // ---------- the gates between a city's rings: the guards read your City Pass going in ----------
+  // (see data/citypass.mjs) Going down and out is free. Going up past a gate's line without the
+  // pass (or a day pass) stops you there and the guard asks to see your ID.
+  const inner = { prev: null, asked: 0, nodded: null };
+  let passPerks = { homes: [], crowned: false };
+  function checkInnerGates(t) {
+    const city = builtCities().find((s) => s.built.innerGates && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < INNER_R);
+    if (!city) { inner.prev = null; return; }
+    const { x: cx, z: cz } = city.built.centre;
+    const on = rampAt(pos.x - cx, pos.z - cz, RAMP_WALL);
+    const G = on && city.built.innerGates.find((q) => q.k === on.ramp.k && q.a === on.ramp.a);
+    if (!G) { inner.prev = null; return; }
+    const prev = inner.prev?.G === G ? inner.prev.along : null;
+    inner.prev = { G, along: on.along };
+    if (prev === null || prev < G.line || on.along >= G.line || prev - on.along > 3) return;
+    // going in past the gate: is the pass good for the ring above?
+    const homes = passPerks.homes.filter((h) => h.city === city.place.id).map((h) => h.tier);
+    const may = mayEnter(character, G.tier, { perks: { homes, crowned: passPerks.crowned }, city: city.place.id, ceremony: ceremonyDue(character) });
+    if (may.ok) {
+      if (inner.nodded !== G || t - inner.asked > 20) {
+        inner.nodded = G; inner.asked = t;
+        say({ pass: `Guard: "${PASS_NAME[cityPass(character, { homes, crowned: passPerks.crowned }).tier]} pass. Go ahead."`, day: 'Guard: "Your day pass is good. Go ahead."', school: 'Guard: "Off to school? Up you go."', ceremony: 'Guard: "Your Ceremony is today? Go up to the shrine, young one."' }[may.how], 'exp');
+      }
+      return;
+    }
+    // stopped: back a step, and the guard asks for your ID
+    const back = G.line + 0.6;
+    pos.x = cx + Math.sin(G.a) * back + Math.cos(G.a) * on.lat;
+    pos.z = cz + Math.cos(G.a) * back - Math.sin(G.a) * on.lat;
+    inner.prev = { G, along: back };
+    autoWalk = false;
+    speedNow = 0;
+    if (t - inner.asked > 4 || inner.nodded !== G) {
+      inner.asked = t; inner.nodded = null;
+      say(`Guard: "Halt! The ${G.name} is not for everyone. Your ID."`, 'hurt');
+      onEvent?.('citygate', { tier: G.tier, name: G.name, city: city.place.name, cityId: city.place.id });
+    }
+  }
   function passGate() {
     if (gate.leaving) {
       gate.leaving = false;
@@ -1587,6 +1657,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (act === 'torch') placeTorch();
     if (act === 'tent') pitchTent();
     if (act === 'interact') interact();
+    if (act === 'mount' && !e.repeat && game) riding?.toggle();
     if (act === 'spell' && !e.repeat) nextSpell();
     onKey?.(e);
   };
@@ -1849,7 +1920,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (Math.abs(fz) > 0.05) {
         const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
         move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
-        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1);
+        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1);
       }
       if (!look) {
         const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
@@ -1869,7 +1940,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       if (!fp) heading += diff * Math.min(1, dt * TURN);
       // move the way you want to go, even while still turning to face it
-      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1);
+      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
@@ -1917,7 +1988,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const floatAt = water - bodyH * 0.7;
     swimming = ground < floatAt;
     if (swimming) ground = floatAt;
-    if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = game?.injurySpeed() < 1 ? 1.6 : 4.2; airborne = true; fallFrom = pos.y; }
+    if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = riding?.jump() ?? (game?.injurySpeed() < 1 ? 1.6 : 4.2); airborne = true; fallFrom = pos.y; }
     jumpQueued = false;
     // walking down a slope keeps your feet on it; only a real drop (a cliff, a ledge) is a fall
     const drop = pos.y - ground;
@@ -1957,7 +2028,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const rig = avatar.userData.rig;
     if (rig.head) rig.head.visible = !eyes; // so your own head (and helmet) doesn't fill the view
     rig.root.position.z = 0;
-    animateCharacter(avatar, t, airborne ? 0.3 : speedNow / WALK * 1.6);
+    // in the saddle you get off to go in, sit, sleep, or when you are knocked down
+    if (riding?.riding && (inside || depth || sitting || sleeping || dead || collapsed > 0)) riding.dismount(true);
+    const onHorse = !!riding?.riding;
+    animateCharacter(avatar, t, onHorse ? 0 : airborne ? 0.3 : speedNow / WALK * 1.6);
+    if (onHorse) {
+      poseRide(rig);
+      // sit on the saddle: your hips on its seat, a little in front of the middle of its back
+      avatar.position.x += Math.sin(heading) * riding.seatZ(); avatar.position.z += Math.cos(heading) * riding.seatZ();
+      avatar.updateMatrixWorld(true);
+      const hipY = rig.legs?.[0]?.hip ? rig.legs[0].hip.getWorldPosition(v3).y - pos.y : bodyH * 0.5;
+      avatar.position.y = pos.y + riding.saddle() - hipY + bodyH * 0.01;
+    }
     if (sitting) { poseSit(rig); avatar.position.y = sitting.y + 0.5 - bodyH * 0.27; }
     // a blade (sword, axe, club...) is held ready: the hand in front at the waist, the blade pointing ahead
     else if (bladeHeld() && !sleeping && !dead && rig.arms) { rig.arms[0].shoulder.rotation.x = READY[0]; rig.arms[0].elbow.rotation.x = READY[1]; }
@@ -1994,7 +2076,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
           c.fatigue = Math.max(0, c.fatigue - step * 0.6);
           if (collapsed <= 0) say('You get back on your feet', 'note');
         } else {
-          c.fatigue = Math.min(100, c.fatigue + step * (100 / 5400) * (running && speedNow > WALK ? 2.5 : 1) * (night ? 1.3 : 1));
+          c.fatigue = Math.min(100, c.fatigue + step * (100 / 5400) * (riding?.riding ? RIDE_FATIGUE : running && speedNow > WALK ? 2.5 : 1) * (night ? 1.3 : 1));
           if (c.fatigue >= 100) { collapsed = 25; say('Exhausted! You collapse', 'hurt'); onEvent?.('collapsed'); }
           else if (c.fatigue >= 85 && !warnedTired) { warnedTired = true; onEvent?.('tired'); }
           if (c.fatigue < 80) warnedTired = false;
@@ -2002,7 +2084,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         // Hunger: you grow hungry as you play (faster running, slower asleep). Hungry, rest stops
         // healing; starving, you slowly lose health (never below a tenth)
         const was = c.hunger ?? 100;
-        game.hungerBy(-step * HUNGER_DRAIN * (sleeping ? 0.5 : running && speedNow > WALK ? 1.8 : 1));
+        game.hungerBy(-step * HUNGER_DRAIN * (sleeping ? 0.5 : riding?.riding ? 1 : running && speedNow > WALK ? 1.8 : 1));
         if (was >= HUNGRY && c.hunger < HUNGRY) { say('You are hungry. Eat something soon', 'hurt'); onEvent?.('hungry'); }
         if (was > 0 && c.hunger <= 0) say('You are starving! Eat, or you will grow weak', 'hurt');
         if (c.hunger <= 0) {
@@ -2056,6 +2138,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (!depth && !inside) {
       checkGates(t);
+      checkInnerGates(t);
       // walk into a townsperson and they talk to you
       const n = npcNear(pos.x, pos.z, bodyR + 0.55);
       if (n && n !== touched) { touched = n; talkTo(n); }
@@ -2096,7 +2179,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
 
     // Camera follows behind and above, pulled in so trees and cave walls don't block the view
-    const focus = new THREE.Vector3(pos.x, pos.y + bodyH * 0.8, pos.z);
+    const focus = new THREE.Vector3(pos.x, pos.y + bodyH * 0.8 + (riding?.saddle() || 0) * 0.85, pos.z);
     const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     let want = dist;
     // (indoors the walls keep the camera in instead: pulling it in for every chair and table made it shake)
@@ -2155,7 +2238,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
     for (const q of mobVillages.values()) q.built.update(t, pos, creatures.list);
-    if (!depth && !inside) husbandry.tick(dt, t);
+    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); }
     walkBuild?.update();
     sky.follow(camera);
 
@@ -2290,6 +2373,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     dragCarcass: () => husbandry.drag(),
     cutCarcass: () => husbandry.cut(),
     lightCampfire: () => (!inside && !depth ? husbandry.lightCampfire() : 'inside'),
+    plantSeed: (id) => (!inside && !depth ? crops?.plantSeed(id) : 'inside'),
+    callMount: (id) => riding?.toggle(id),
+    riding: () => !!riding?.riding,
+    debugCrops: () => crops?.beds(),
+    // make every bed `mins` minutes older (for tests)
+    debugAgeCrops(mins) { for (const b of game.character.crops) if (b.at) { b.at -= mins * 60000; if (b.w) b.w -= mins * 60000; } crops?.redraw(); },
+    debugMount: () => riding?.mount(),
+    debugCalmAnimals() { for (const m of creatures.list) if (m.kind.animal) { m.fedT = Math.min(m.fedT || 0, 20); m.fleeT = 0; } },
+    debugSetFarmPlots(list) { myFarmPlots = list; crops?.redraw(); },
     debugFarms: () => husbandry.farms(),
     debugAnimals: () => creatures.list.filter((m) => m.kind.animal).map((m) => ({ id: m.kind.animalId, x: m.x, z: m.z, dead: !!m.dead, farm: m.farm || null, hp: m.hp, death: m.death ? { t: m.death.t, left: m.death.left } : null, vis: m.body.visible })),
     debugHitAnimal(id, dmg = 15) { const m = creatures.list.filter((q) => q.kind.animalId === id && !q.dead).sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0]; if (!m) return null; finishHit(m, creatures.hit(m, dmg, 'slash')); return { hp: m.hp, dead: !!m.dead }; },
@@ -2335,6 +2427,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     useSkill,
     nextSpell,
     passGate,
+    // what lifts your City Pass besides birth and level: houses you own ({ city, tier }) and a crown
+    setPassPerks(p) { passPerks = { homes: p?.homes || [], crowned: p?.crowned || false }; },
+    passPerks: () => passPerks,
     setCityGates,
     setHomes,
     setCeremonies,
@@ -2393,6 +2488,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         land.refreshAt((ix + 0.5) * PLOT, (iz + 0.5) * PLOT, 30);
       }
       plots.setLands(list);
+      myFarmPlots = list.filter((p) => p.mine && p.purpose === 'farm');
+      crops?.redraw();
       setSettledLand(list); // settled land tames the wilds around it
       showStructures(list);
     },

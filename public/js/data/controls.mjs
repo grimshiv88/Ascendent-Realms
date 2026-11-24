@@ -20,6 +20,7 @@ export const CONTROLS = [
   ['torch', 'Torch', 'KeyT', 'Doing'],
   ['tent', 'Pitch / pack tent', 'KeyP', 'Doing'],
   ['portal', 'Use a portal', 'KeyG', 'Doing'],
+  ['mount', 'Call / ride your horse', 'KeyH', 'Doing'],
   ['land', 'Land grid', 'KeyL', 'Doing'],
   ['builder', 'Builder View', 'KeyV', 'Doing'],
   ['chat', 'Chat', 'Enter', 'Doing'],
@@ -33,7 +34,7 @@ export const CONTROLS = [
   ['map', 'World map', 'KeyM', 'Windows'],
   ['rankings', 'Top players', 'KeyR', 'Windows'],
   ['settings', 'Settings', 'KeyO', 'Windows'],
-  ['help', 'Controls help', 'KeyH', 'Windows'],
+  ['help', 'Controls help', 'Slash', 'Windows'],
 ];
 const DEFAULTS = Object.fromEntries(CONTROLS.map(([id, , code]) => [id, code]));
 // keys no action can take
@@ -42,6 +43,8 @@ export const FIXED_KEYS = ['Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'Arrow
 const STORE = 'ar-keys';
 let keys = { ...DEFAULTS };
 try { keys = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORE) || '{}') }; } catch { /* no storage */ }
+// (H used to open the help; it calls your horse now, and the help moved to /)
+if (keys.help === 'KeyH' && keys.mount === 'KeyH') keys.help = 'Slash';
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(keys)); } catch { /* private window */ } };
 
 export const codeFor = (id) => keys[id];

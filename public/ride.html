@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ride test</title>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+<style>html,body{margin:0;height:100%}canvas{display:block;width:100%;height:100%}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+// dev page: riders on each mount (?races=elf,dwarf&mount=horse&speed=0&rot=1.57)
+import * as THREE from 'three';
+import { buildCharacter, animateCharacter } from './js/characters/model.js';
+import { createRiding, poseRide } from './js/world/riding.js';
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+r.setSize(innerWidth, innerHeight, false);
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#b8c8d8');
+scene.add(new THREE.HemisphereLight('#ffffff', '#5a6a3a', 1.6));
+const sun = new THREE.DirectionalLight('#fff4e0', 2.2); sun.position.set(5, 10, 8); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: '#6a8a4a' })); ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const races = (q.get('races') || 'elf,human,dwarf').split(',');
+const items = (q.get('mounts') || 'riding_horse,riding_donkey,tamed_camel').split(',');
+const rot = Number(q.get('rot') ?? 1.57);
+const pairs = [];
+races.forEach((race, i) => {
+  const pos = new THREE.Vector3((i - (races.length - 1) / 2) * 3.6, 0, 0);
+  const game = { has: () => true, touch() {}, character: {} };
+  const av = buildCharacter({ race, form: 'humanoid' });
+  const R = createRiding({ scene, game, say() {}, getPos: () => pos, getHeading: () => rot, groundAt: () => 0, canRide: () => null, riderHeight: () => av.userData.height });
+  R.adopt(items[i % items.length], pos.x, pos.z, rot);
+  R.toggle(items[i % items.length]); // on
+  scene.add(av);
+  pairs.push({ R, av, pos });
+});
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 200);
+cam.position.set(Number(q.get('cx') ?? 0), Number(q.get('cy') ?? 2.2), Number(q.get('cz') ?? 11)); cam.lookAt(0, 1.3, 0);
+const speed = Number(q.get('speed') || 0);
+const v = new THREE.Vector3();
+function frame(ms) {
+  const t = ms / 1000;
+  for (const { R, av, pos } of pairs) {
+    R.tick(0.016, t, speed, false);
+    av.position.copy(pos); av.rotation.y = rot;
+    animateCharacter(av, t, 0);
+    const rig = av.userData.rig;
+    poseRide(rig);
+    av.position.x += Math.sin(rot) * R.seatZ(); av.position.z += Math.cos(rot) * R.seatZ();
+    av.updateMatrixWorld(true);
+    const hipY = rig.legs[0].hip.getWorldPosition(v).y - pos.y;
+    av.position.y = pos.y + R.saddle() - hipY + av.userData.height * 0.01;
+  }
+  r.render(scene, cam); requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.ready = true;
+</script></body></html>

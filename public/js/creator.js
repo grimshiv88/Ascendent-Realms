@@ -8,6 +8,7 @@ import { RACES, CLASSES, MAIN_STATS, STAT_NAMES } from './data/game-data.mjs';
 import { PARENT_JOBS, BORN_AGE, CEREMONY_AGE } from './data/birth.mjs';
 import { uniqueAbility } from './data/unique.mjs';
 import { PLACES } from './data/world-layout.mjs';
+import { bornTier } from './data/citypass.mjs';
 
 export function openCreator(root, { username, onBorn, onEnter }) {
   root.innerHTML = `
@@ -74,6 +75,7 @@ export function openCreator(root, { username, onBorn, onEnter }) {
     body.innerHTML = `
       <h2>You are born</h2>
       <p class="blurb">A ${escapeHtml(RACES[c.race].name)} child of ${BORN_AGE}, in ${escapeHtml(city)}.</p>
+      <p class="facts">${{ noble: '<b>Lucky!</b> Your family is a noble house: you grow up in a manor in the Noble Quarter.', dump: '<b>Unlucky.</b> Your family lives in a shack in the Dump, down by the city walls.', common: 'Your family lives in a town house in the Common Quarter.' }[bornTier(c)] || ''}</p>
       <p class="facts">Your parents: ${f.parents.map((p) => `<b>${escapeHtml(p.name)}</b>, ${escapeHtml(PARENT_JOBS[p.job]?.name || p.job)}`).join(' · ')}</p>
       <p class="facts">Element: <b>${escapeHtml(c.elements.join(', '))}</b></p>
       <p class="facts">Unique Skill: <b>${escapeHtml(c.uniqueSkill.name)}</b> (${escapeHtml(u.rank)}-Rank)${u.fit && CLASSES[u.fit] ? ` · suits a <b>${escapeHtml(CLASSES[u.fit].name)}</b>` : ''}</p>

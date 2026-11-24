@@ -56,16 +56,22 @@ import { renderAcademy, renderCeremony } from './schoolui.js';
 import { renderAppraise } from './appraiseui.js';
 import { piecesCost } from './data/building.mjs';
 import { money, moneyWords } from './data/money.mjs';
+import { PASS_NAME } from './data/citypass.mjs';
+import { flagHtml, fillFlags, countryOptions, wireCountryPicker } from './flag.js';
+import { accountSteps } from './accountsteps.js';
 
 paintCloudBanks();
 
 const $ = (id) => document.getElementById(id);
-const panels = ['choose', 'signup', 'signin', 'story'];
+const panels = ['choose', 'signup', 'signin', 'story', 'forgot', 'auth-step'];
 
 function show(panelId) {
   for (const id of panels) $(id).classList.toggle('hidden', id !== panelId);
   $(panelId).querySelector('input')?.focus();
 }
+
+// sign-in codes, adding and confirming the email, new passwords (enterRealm is hoisted)
+const steps = accountSteps({ el: $('auth-step'), show, enter: (r) => enterRealm(r) });
 
 const intro = startIntro($('scene'), {
   onFlash() {
@@ -84,7 +90,8 @@ const intro = startIntro($('scene'), {
     // after "Switch account" the sign-in form opens straight away
     let switching = false;
     try { switching = sessionStorage.getItem('ar.switch') === '1'; sessionStorage.removeItem('ar.switch'); } catch { /* blocked */ }
-    setTimeout(() => show(switching ? 'signin' : 'choose'), 900);
+    // the link in an email (confirm the email, reset the password) opens its own step
+    setTimeout(async () => { if (!(await steps.fromLink())) show(switching ? 'signin' : 'choose'); }, 900);
     removeSkip();
   },
 });
@@ -109,7 +116,7 @@ api.resume().then((r) => {
   if (!r?.account) return;
   $('welcome-name').textContent = r.account.character?.name || r.account.username;
   $('welcome-back').classList.remove('hidden');
-  $('continue-btn').addEventListener('click', () => enterRealm(r));
+  $('continue-btn').addEventListener('click', () => steps.next(r));
   $('signout-btn').addEventListener('click', async () => { await api.signOut(); $('welcome-back').classList.add('hidden'); });
 });
 
@@ -124,7 +131,9 @@ async function cloudTransition(loadNext) {
 }
 
 // After signing in: character creation for a new account, otherwise straight into the world.
+let myAccount = null; // the signed-in account (its email and 2-step sign-in, for Settings)
 function enterRealm({ account }) {
+  myAccount = account;
   return cloudTransition(async () => {
     await sculptsReady; // the sculpted bodies, so characters are built from them
     intro.stop();
@@ -170,6 +179,13 @@ function startGame(character) {
   $('game').classList.remove('hidden');
   const overlay = $('overlay');
   const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '', plot: null, landChoice: 'house', landMsg: '', landBusy: false, basket: [] };
+  // what lifts your City Pass besides birth and level (see data/citypass.mjs): houses you own, a crown
+  const passPerks = () => {
+    const homes = (ui.homes || []).filter((h) => h.mine).map((h) => ({ city: h.city, tier: String(h.house).replace(/\d+$/, '') }));
+    const king = (ui.courts || []).some((q) => q.king && !q.king.npc && q.king.name === character.name);
+    return { homes, crowned: king ? 'King' : ui.groups?.nation ? 'Emperor' : false };
+  };
+  setInterval(() => world?.setPassPerks(passPerks()), 3000);
   let hudQueued = false;
 
   // The Unique Skill climbs a rank when a proof of growth is earned (the server checks the proof
@@ -544,7 +560,7 @@ function startGame(character) {
   }
   function drawPanelNow() {
     const name = overlay.dataset.panel;
-    if (name === 'status') renderStatus(overlay, character, ui.pending, game.stats());
+    if (name === 'status') renderStatus(overlay, character, ui.pending, game.stats(), passPerks());
     else if (name === 'bag') { renderBag(overlay, game, ui.selected); preview.mount(overlay.querySelector('[data-preview]')); }
     else if (name === 'shop') renderShop(overlay, game, ui.shopMsg);
     else if (name === 'market' && ui.market) renderShop(overlay, game, ui.shopMsg, ui.market);
@@ -554,7 +570,8 @@ function startGame(character) {
     else if (name === 'parents') renderParents(overlay, game, { visited: ui.parentsVisited });
     else if (name === 'academy') renderAcademy(overlay, game, { school: ui.academySchool, message: ui.academyMsg || '' });
     else if (name === 'ceremony') renderCeremony(overlay, game, { result: ui.grown, busy: ui.ceremonyBusy, message: ui.ceremonyMsg || '' });
-    else if (name === 'gate') renderIdCard(overlay, game, { city: ui.gate?.city, leaving: ui.gate?.leaving, monster: ui.gate?.barred, barredText: ui.gate?.barred && !ui.gate?.monster ? 'The guards bare their fangs. "No outsiders in a monster city."' : null, courts: ui.courts || [], nation: ui.groups?.nation?.name });
+    else if (name === 'gate') renderIdCard(overlay, game, { city: ui.gate?.city, leaving: ui.gate?.leaving, monster: ui.gate?.barred, barredText: ui.gate?.barred && !ui.gate?.monster ? 'The guards bare their fangs. "No outsiders in a monster city."' : null, courts: ui.courts || [], nation: ui.groups?.nation?.name, perks: passPerks() });
+    else if (name === 'citygate' && ui.cityGate) renderIdCard(overlay, game, { city: ui.cityGate.city, inner: ui.cityGate, courts: ui.courts || [], nation: ui.groups?.nation?.name, perks: passPerks(), message: ui.cityGateMsg || '' });
     else if (name === 'smith') renderSmith(overlay, game, ui.pick, ui.smithMsg, { workshop: !!ui.workshop });
     else if (name === 'potions') renderPotions(overlay, game, ui.potionMsg || '');
     else if (name === 'quests') renderQuests(overlay, game, tabsHtml, ui.questMsg);
@@ -573,7 +590,7 @@ function startGame(character) {
         else if (info.owned && !info.owned.mine) ui.landMsg = `Owned by ${info.owned.owner}.`;
         updateMapBasket();
       } : null);
-    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '' });
+    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '', country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
     else if (name === 'options') renderOptions(overlay);
@@ -604,7 +621,7 @@ function startGame(character) {
     overlay.dataset.panel = name;
     if (name !== 'power') ui.powers = [];
     ui.workshop = false;
-    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.skillMsg = ''; ui.binding = null;
+    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.acct = {}; ui.skillMsg = ''; ui.binding = null;
     if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
     if (name === 'cult') { ui.cultMsg = ''; loadCult(); }
     if (name === 'family') { ui.familyMsg = ''; loadFamily(); }
@@ -730,6 +747,12 @@ function startGame(character) {
     drawPanel();
   });
   overlay.addEventListener('change', (e) => {
+    if (e.target.matches?.('[data-country]')) {
+      game.setCountry(e.target.value);
+      const f = overlay.querySelector('[data-country-flag]');
+      if (f) { f.innerHTML = flagHtml(character.country); fillFlags(f); }
+      return;
+    }
     const i = e.target.dataset?.kidSchool;
     if (i != null) { game.setChildSchool(Number(i), e.target.value); ui.familyMsg = 'School chosen.'; }
   });
@@ -746,13 +769,42 @@ function startGame(character) {
     } catch (err) { ui.bounty = { ...(ui.bounty || {}), message: err.message }; }
     drawPanel();
   });
+  // Settings: the email and 2-step sign-in
+  const acctDo = async (fn) => {
+    try {
+      const r = await fn();
+      if (r?.account) myAccount = { ...myAccount, ...r.account };
+      return r;
+    } catch (err) { ui.acct = { ...(ui.acct || {}), msg: err.message, code: null }; drawPanel(); return null; }
+  };
+  overlay.addEventListener('submit', async (e) => {
+    const kind = e.target.dataset?.acct;
+    if (!kind) return;
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const way = e.submitter?.value;
+    let r;
+    if (kind === 'verify') { if ((r = await acctDo(() => api.verifyEmail({ code: f.code })))) ui.acct = { msg: 'Email confirmed. Thank you!' }; }
+    else if (kind === 'email') { if ((r = await acctDo(() => api.setEmail(f.email, f.password)))) ui.acct = { msg: myAccount.mail ? `Saved. We sent a code to ${f.email}: type it above to confirm it.` : 'Saved.', code: r.previewCode }; }
+    else if (kind === 'twofa' && way === 'email') { if ((r = await acctDo(() => api.twofaEmail(f.password)))) ui.acct = { msg: '2-step sign-in is on: codes will come by email.' }; }
+    else if (kind === 'twofa') { if ((r = await acctDo(() => api.twofaAppStart(f.password)))) ui.acct = { app: { secret: r.secret, uri: r.uri } }; }
+    else if (kind === 'app-confirm') { if ((r = await acctDo(() => api.twofaAppConfirm(f.code)))) ui.acct = { msg: '2-step sign-in is on: you will need a code from the app each time you sign in.' }; }
+    else if (kind === 'off') { if ((r = await acctDo(() => api.twofaOff(f.password)))) ui.acct = { msg: '2-step sign-in is off.' }; }
+    if (r) drawPanel();
+  });
+  overlay.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-acct-cancel]')) { ui.acct = {}; drawPanel(); return; }
+    if (!e.target.closest('[data-acct-send]')) return;
+    const r = await acctDo(() => api.sendVerify());
+    if (r) { ui.acct = { msg: r.already ? 'Your email is already confirmed.' : 'Sent. Look for the newest email.', code: r.previewCode }; drawPanel(); }
+  });
   overlay.addEventListener('submit', async (e) => {
     if (!e.target.matches('[data-password]')) return;
     e.preventDefault();
-    const { password, confirm } = Object.fromEntries(new FormData(e.target));
+    const { current, password, confirm } = Object.fromEntries(new FormData(e.target));
     try {
       if (password !== confirm) throw new Error('The two passwords don\'t match.');
-      await api.changePassword(password);
+      await api.changePassword(current, password);
       ui.passwordMsg = 'Password changed. Use the new one next time you sign in.';
     } catch (err) { ui.passwordMsg = err.message; }
     drawPanel();
@@ -1032,6 +1084,13 @@ function startGame(character) {
       return;
     }
     if (t('data-show-id') != null) { if (world?.passGate()) closePanel(); return; }
+    // a day pass at a gate between a city's rings
+    if ((v = t('data-day-pass')) != null) {
+      const r = game.buyDayPass(v, ui.cityGate?.cityId);
+      if (r === 'bought') { ui.cityGateMsg = ''; drawHud(); closePanel(); showArea(`Day pass bought: the ${PASS_NAME[v]} is open to you for one day of the realm.`); }
+      else { ui.cityGateMsg = r === 'coins' ? 'Insufficient funds.' : 'The guard shakes their head.'; drawPanel(); }
+      return;
+    }
     if ((v = t('data-spell')) != null) { const r = game.attachSpell(v); ui.skillMsg = { ok: `${SPELLS[v].name} attached to your staff.`, full: 'Your staff is full: detach a spell first.', staff: 'Hold a staff first.' }[r] || ''; drawPanel(); return; }
     if ((v = t('data-unspell')) != null) { game.detachSpell(v); ui.skillMsg = `${SPELLS[v].name} detached.`; drawPanel(); return; }
     if ((v = t('data-ready')) != null) { game.readySkill(v); ui.skillMsg = ''; drawPanel(); return; }
@@ -1071,6 +1130,8 @@ function startGame(character) {
     }
     if (t('data-tent') != null) { closePanel(); world?.pitchTent(); return; }
     if (t('data-campfire') != null) { closePanel(); world?.lightCampfire(); return; }
+    if ((v = t('data-plant')) != null) { closePanel(); world?.plantSeed(v); return; }
+    if ((v = t('data-mount')) != null) { closePanel(); world?.callMount(v); return; }
     if ((v = t('data-cult')) != null) {
       const btn = e.target.closest('[data-cult]');
       const body = { action: v };
@@ -1217,6 +1278,7 @@ function startGame(character) {
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       if (type === 'carcass') { showCarcass(data); return; }
+      if (type === 'plant') { showPlant(data); return; }
       if (type === 'kill') for (const title of game.questKill(data.kind, data.level)) questReady(title);
       if (type === 'kill') {
         const t = realmTime();
@@ -1309,6 +1371,7 @@ function startGame(character) {
           if (overlay.dataset.panel === 'appraise') drawPanel();
         }).catch(() => {});
       }
+      if (type === 'citygate') { ui.cityGate = data; ui.cityGateMsg = ''; if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'citygate') openPanel('citygate'); }
       if (type === 'gate') { ui.gate = data; if (overlay.classList.contains('hidden') || overlay.dataset.panel !== 'gate') openPanel('gate'); }
       if (type === 'guild') { game.fillQuests(here(), 'guild'); openPanel('guild'); loadBounties(); }
       if (type === 'guild-denied') showArea(`The guards at the Main Guild Hall turn you away: only hunters of level ${data.level} or more may enter.`);
@@ -1435,6 +1498,31 @@ function showCarcass(d) {
   }
   setTimeout(() => window.addEventListener('keydown', keys, true), 50);
 }
+// Which seeds to plant in this bed (when you carry more than one kind); keys 1 to 9 pick one too
+function showPlant(d) {
+  world?.releaseMouse?.();
+  const pop = showItemPop(`<div class="item-pop-box" role="dialog" aria-label="Plant seeds">
+      <button type="button" class="sw-close" data-pop-close aria-label="Close">×</button>
+      <h3>🌱 What will you plant?</h3>
+      <p class="bag-hint">One packet plants the whole bed. It grows even while you are away.</p>
+      <div class="pop-actions">${d.seeds.map((q, i) => `<button type="button" class="gold-button small" data-plant-seed="${q.id}">${escHtml(q.crop)} <small>(${i + 1}) · ${q.mins} min</small></button>`).join('')}</div>
+    </div>`, (e, close) => {
+    const id = e.target.closest('[data-plant-seed]')?.dataset.plantSeed;
+    if (!id) return;
+    close(); window.removeEventListener('keydown', keys, true);
+    world?.plantSeed(id);
+  });
+  function keys(e) {
+    if (!document.body.contains(pop)) { window.removeEventListener('keydown', keys, true); return; }
+    const n = /^Digit([1-9])$/.exec(e.code)?.[1];
+    const q = n && d.seeds[Number(n) - 1];
+    if (!q) return;
+    e.preventDefault(); e.stopPropagation();
+    pop.remove(); window.removeEventListener('keydown', keys, true);
+    world?.plantSeed(q.id);
+  }
+  setTimeout(() => window.addEventListener('keydown', keys, true), 50);
+}
 const escHtml = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 function showItemPop(html, onClick = null) {
@@ -1467,7 +1555,7 @@ function showArea(name) {
   areaTimer = setTimeout(() => el.classList.remove('show'), 4000);
 }
 
-function wireForm(formId, action) {
+function wireForm(formId, action, after = (result) => steps.next(result)) {
   const form = $(formId);
   const error = form.querySelector('.error');
   const button = form.querySelector('button[type=submit]');
@@ -1479,7 +1567,7 @@ function wireForm(formId, action) {
       const result = await action(Object.fromEntries(new FormData(form)));
       form.reset();
       form.querySelectorAll('.reveal[aria-pressed="true"]').forEach((b) => b.click());
-      await enterRealm(result);
+      await after(result);
     } catch (err) {
       error.textContent = err.message;
     } finally {
@@ -1500,9 +1588,13 @@ document.querySelectorAll('.reveal').forEach((btn) => {
   });
 });
 
+// the country picker on the sign-up form, with its flag beside it
+$('signup-country').innerHTML = countryOptions('');
+wireCountryPicker($('signup-country'), $('signup-flag'));
 wireForm('signup-form', ({ confirm, ...fields }) => {
   if (fields.password !== confirm) throw new Error('The two passwords don\'t match.');
   return api.signUp(fields);
 });
 wireForm('signin-form', api.signIn);
+wireForm('forgot-form', ({ login }) => api.forgotPassword(login), (f) => steps.askReset(f));
 

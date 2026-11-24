@@ -9,6 +9,7 @@ import { wildLevelAt, stageForLevel, wardedAt } from '../data/wilds.mjs';
 import { ANIMALS, wildAnimalsAt } from '../data/animals.mjs';
 import { buildAnimal, animateAnimal, lieDown } from './animalbody.js';
 import { CORPSE_SECS } from './deaths.js';
+import { TAMEABLE } from '../data/mounts.mjs';
 
 // [name, body to build, level range, aggressive?, speed m/s, drops [item, chance, min, max]]
 export const KINDS = {
@@ -405,11 +406,16 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     let speed = 0;
     if (m.fedT > 0) m.fedT -= dt;
     const friendly = m.fedT > 0 || m.farm;
-    if (!friendly && !p.dead && a.temper === 'shy' && dist < (p.moving && p.running ? SHY_RUN : SHY_RANGE)) m.fleeT = Math.max(m.fleeT, 2.5);
+    // a wild horse or camel is curious: stand still with food in your bag and it comes to you
+    const lured = !friendly && p.lure && TAMEABLE[m.kind.animalId] && !p.dead && m.fleeT <= 0 && dist < 28;
+    if (!friendly && !lured && !p.dead && a.temper === 'shy' && dist < (p.moving && p.running ? SHY_RUN : SHY_RANGE)) m.fleeT = Math.max(m.fleeT, 2.5);
     if (m.fleeT > 0) {
       m.fleeT -= dt;
       m.heading = Math.atan2(-dx, -dz) + Math.sin(t * 1.7 + m.x) * 0.3;
       speed = m.speed * (m.farm ? 0.5 : 1);
+    } else if (lured && dist > 2.2) {
+      m.heading = Math.atan2(dx, dz);
+      speed = Math.min(1.1, dist - 2);
     } else if (m.fedT > 0 && !m.farm && dist > 3 && dist < 30) {
       // following the one who fed it
       m.heading = Math.atan2(dx, dz);

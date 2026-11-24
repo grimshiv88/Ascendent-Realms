@@ -11,6 +11,7 @@ import { FARM_HERD } from '../data/animals.mjs';
 import { ITEMS } from '../data/items.mjs';
 import { buildFarm } from './farms.js';
 import { canHarvest } from './deaths.js';
+import { TAMEABLE, TAME_FEEDS } from '../data/mounts.mjs';
 
 const FARM_BUILD = 650, FARM_DROP = 850;
 const CAMPFIRE_SECS = 6 * 60, CAMPFIRES_MAX = 3;
@@ -18,7 +19,7 @@ export const CAMPFIRE_SAFE = 9; // metres round a lit campfire where monsters wo
 const BLADES = ['sword', 'dagger', 'axe'];
 const BIRD_FOOD = ['grain', 'lettuce', 'cabbage', 'carrot'];
 
-export function createHusbandry({ scene, colliders, creatures, game, say, floatText, onEvent, getPos, getHeading, groundAt, siteFires }) {
+export function createHusbandry({ scene, colliders, creatures, game, say, floatText, onEvent, onTame, getPos, getHeading, groundAt, siteFires }) {
   const farms = allFarms().map((f) => ({ f, built: null }));
   const fires = []; // campfires you lit: { x, z, group, flames, light, left }
   let dragging = null; // the body you are dragging
@@ -157,10 +158,25 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     const bird = a.shape === 'bird';
     const food = (bird ? BIRD_FOOD : Object.keys(ITEMS).filter((id) => ITEMS[id].feed && id !== 'grain')).find((id) => game.has(id));
     const top = new THREE.Vector3(m.x, m.y + m.height + 0.3, m.z);
-    if (food && !(m.fedT > 30)) {
+    const tame = !m.farm && TAMEABLE[m.kind.animalId];
+    if (food && !(m.fedT > (tame ? 110 : 30))) {
       game.giveAway(food);
       m.fedT = 120; m.fleeT = 0; m.petT = 2.5;
       floatText('♥', top, 'exp');
+      // a wild horse or camel fed three times comes to trust you, and is yours to ride
+      if (tame) {
+        m.tamed = (m.tamed || 0) + 1;
+        if (m.tamed >= TAME_FEEDS) {
+          creatures().removeWhere((q) => q === m);
+          game.addItem(tame, 1); game.touch('bag');
+          onTame?.(tame, m);
+          floatText('♥ Yours!', top, 'exp');
+          say(`The ${a.name.toLowerCase()} trusts you now. It is yours: press H beside it to ride (it is in your bag as ${ITEMS[tame].name})`, 'exp');
+          return;
+        }
+        say(`You feed the ${a.name.toLowerCase()} ${ITEMS[food].name.toLowerCase()}. It is starting to trust you (${m.tamed} of ${TAME_FEEDS})`, 'note');
+        return;
+      }
       say(`You feed the ${a.name} ${ITEMS[food].name.toLowerCase()}. ${m.farm ? 'It nuzzles your hand' : 'It trusts you now and follows you for a while'}`, 'note');
       return;
     }
@@ -232,6 +248,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     get dragging() { return dragging; },
     nearCampfire: (x, z) => fires.some((f) => Math.hypot(f.x - x, f.z - z) < CAMPFIRE_SAFE),
     farms: () => farms.map((q) => ({ ...q.f, built: !!q.built })),
+    built: () => builtFarms().map((q) => q.built),
     clear() { dragging = null; offered = null; },
   };
 }

@@ -65,3 +65,13 @@ export function cityLift(dx, dz) {
   const on = rampAt(dx, dz);
   return on ? on.y : ringY(r);
 }
+// The ground as the land draws it (see world-layout.mjs). Where a ramp is built out over a lower
+// ring, the land stays down at that ring's level under it: the ramp's own road is drawn on top at
+// its exact height and its stone walls close the sides. (If the land rose with the ramp there, its
+// coarse triangles poked out past the ramp's foot as patches of grass over the street.)
+export function cityGround(dx, dz) {
+  const r = Math.hypot(dx, dz);
+  if (r > INNER_R) return 0;
+  const on = rampAt(dx, dz), ring = ringY(r);
+  return on ? Math.min(on.y, ring) : ring;
+}

@@ -8,6 +8,7 @@ import { textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
 import { ITEMS } from '../data/items.mjs';
+import { VISITOR_BEDS, BED_W, BED_D } from '../data/crops.mjs';
 
 const mats = new Map();
 const mat = (color, rough = 0.9, extra = {}) => {
@@ -34,6 +35,46 @@ const CROPS = {
   turnip: { leaf: '#4a8a3a', leafGeo: () => new THREE.ConeGeometry(0.13, 0.3, 5), leafY: 0.2, veg: '#c890b8', vegGeo: () => new THREE.SphereGeometry(0.08, 7, 6), vegY: 0.05 },
 };
 const ROWS = ['carrot', 'carrot', 'cabbage', 'wheat', 'wheat', 'wheat', 'lettuce', 'potato', 'onion', 'pumpkin', 'turnip', 'cabbage', 'carrot', 'wheat'];
+
+// One bed of a crop you planted (see world/crops.js): `k` is how far it has grown (0 to 1). The
+// plants grow from little shoots; the vegetables show once it is ripe. Stands on the bed's top.
+export function bedPlants(id, k) {
+  const c = CROPS[id];
+  const g = new THREE.Group();
+  if (!c) return g;
+  const few = id === 'pumpkin';
+  const spots = few ? [[-0.45, -0.5], [0.45, 0.5]] : [];
+  if (!few) for (const x of [-0.5, 0.5]) for (const z of [-0.75, -0.25, 0.25, 0.75]) spots.push([x, z]);
+  const s = 0.2 + 0.8 * Math.min(1, k);
+  const leafM = mat(k < 0.25 ? '#7ab84a' : c.leaf, 0.85);
+  for (const [x, z] of spots) {
+    const leaf = new THREE.Mesh(c.leafGeo(), leafM);
+    leaf.scale.set(...(c.leafScale || [1, 1, 1])).multiplyScalar(s);
+    leaf.position.set(x, c.leafY * s, z);
+    leaf.rotation.y = (x * 7 + z * 13) % 6.28;
+    leaf.castShadow = true;
+    g.add(leaf);
+    if (c.veg && k >= 1) {
+      const v = new THREE.Mesh(c.vegGeo(), mat(c.veg, 0.7));
+      v.scale.set(...(c.vegScale || [1, 1, 1]));
+      v.position.set(x, c.vegY + 0.03, z);
+      v.rotation.x = c.vegRx || 0;
+      g.add(v);
+    }
+  }
+  // ripe wheat turns gold and heavy at the top
+  if (id === 'wheat' && k >= 1) g.traverse((o) => { if (o.isMesh) o.material = mat('#e8c860', 0.8); });
+  return g;
+}
+// a bed of tilled earth with a low wooden edge (its top is at y = 0.16)
+export function bedSoil(w = BED_W, d = BED_D) {
+  const g = new THREE.Group();
+  const soil = box(w - 0.15, 0.14, d - 0.15, mat('#4a3220', 1), g, 0, 0.08, 0); soil.castShadow = false;
+  for (const z of [-0.6, -0.2, 0.2, 0.6]) box(w - 0.3, 0.04, 0.12, mat('#5a3e26', 1), g, 0, 0.16, z * (d / 2)).castShadow = false;
+  const edge = mat('#7a5a3a');
+  for (const s of [-1, 1]) { box(w, 0.2, 0.08, edge, g, 0, 0.1, s * d / 2); box(0.08, 0.2, d, edge, g, s * w / 2, 0.1, 0); }
+  return g;
+}
 
 function fieldOf(g, solid, f, toW) {
   const F = LAYOUT.field;
@@ -229,6 +270,12 @@ export function buildFarm(f) {
   stall(g, solid, toW, LAYOUT.stand, 'Farm Stand', ['#e8d8a8', '#5a8a3a'], ['#e07020', '#6aa04a', '#e0801a', '#c83a2a']);
   butcherShed(g, solid, toW);
   const fx = fire(g, toW);
+  // the visitors' beds, lent to anyone who wants to grow their own, with a sign
+  for (const b of VISITOR_BEDS) { const bed = bedSoil(); bed.position.set(b.x, 0, b.z); g.add(bed); }
+  const sign = new THREE.Group(); sign.position.set(-14.4, 0, 10.6); g.add(sign);
+  box(0.1, 1.3, 0.1, mat('#6a4a2c'), sign, -0.9, 0.65, 0); box(0.1, 1.3, 0.1, mat('#6a4a2c'), sign, 0.9, 0.65, 0);
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.4), new THREE.MeshBasicMaterial({ map: textTexture("Visitors' beds", { board: true }), transparent: true, side: THREE.DoubleSide }));
+  board.position.set(0, 1.15, 0.06); sign.add(board);
   for (const s of solid) s.y = f.flat; // (everything stands on the farm's level ground)
   // the farmer behind the stand, the butcher behind the counter, facing the town
   const npcs = [];
@@ -244,6 +291,8 @@ export function buildFarm(f) {
     farm: f, group: g, solid, npcs,
     pens: { pen: farmBox(f, P.x, P.z, P.hx - 0.8, P.hz - 0.8), yard: farmBox(f, Y.x, Y.z, Y.hx - 0.6, Y.hz - 0.6) },
     fire: fx.at,
+    beds: VISITOR_BEDS.map((b, i) => ({ k: `${f.id}:${i}`, ...toW(b.x, b.z), y: f.flat, farm: f.id })),
+    trough: toW(P.x - P.hx + 1.2, P.z),
     update(t) {
       for (const n of npcs) animateCharacter(n.body, t, 0);
       fx.flames.forEach((fl, i) => { fl.scale.y = 0.85 + Math.sin(t * 9 + i * 2) * 0.15; });

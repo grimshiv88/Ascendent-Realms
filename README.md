@@ -11,6 +11,21 @@ The game runs on [Vercel](https://vercel.com), and every account, character and 
 3. In **Settings → Environment Variables**, add `ADMIN_EMAILS` with your own email, so your account can open the admin board.
 4. Redeploy. The tables are made by the game itself the first time anyone opens it.
 
+### Emails (confirm email, welcome, password reset, 2-step sign-in)
+
+The game sends its emails through [Resend](https://resend.com) (free for 3,000 emails a month). Until it is set up, players can still sign up and play, but no email is sent, "Forgot password?" says it isn't switched on yet, and 2-step sign-in works only with an authenticator app.
+
+1. Buy a domain (for example at Cloudflare, Porkbun or Namecheap).
+2. In Resend: **Domains → Add Domain**, then copy the DNS records it shows into your domain's DNS settings and wait until it says **Verified**.
+3. In Resend: **API Keys → Create API Key** with "Sending access".
+4. In Vercel, **Settings → Environment Variables**, add:
+   - `RESEND_API_KEY`: the key from step 3
+   - `MAIL_FROM`: `Ascendant Realms <noreply@yourdomain.com>`
+   - `APP_URL`: the game's address, for the links in the emails (for example `https://ascendent-realms.vercel.app`)
+5. Redeploy. `/api/health` then shows `"mail": true`.
+
+Once emails are on, every account must confirm its email before playing (accounts from before email was required are asked to add one), and an admin must have confirmed the email listed in `ADMIN_EMAILS`.
+
 Every change pushed to `main` goes live by itself. No secret key is ever kept in the code: they live only in Vercel's settings.
 
 The tables have Row Level Security switched on with no rules, so Supabase's public web API can't read or change them. Only the game's own server can.

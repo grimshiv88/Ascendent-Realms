@@ -3,9 +3,11 @@
 import { fallenKeep, rebornWith, rebirthAsChild, growUp } from './data/game-data.mjs';
 import { moneyWords } from './data/money.mjs';
 import * as birthData from './data/birth.mjs';
+import * as P from './data/citypass.mjs';
 import { setServerNow } from './data/clock.mjs';
 import * as uniqueData from './data/unique.mjs';
 import { moveToNewWorld } from './data/world-layout.mjs';
+import { checkBirthdate, ageOf } from './data/birthdate.mjs';
 
 const TOKEN_KEY = 'ar.token';
 
@@ -39,6 +41,12 @@ async function request(path, { method = 'GET', body } = {}) {
   if (t) headers.Authorization = `Bearer ${t}`;
   const res = await fetch(path, { method, headers, body: body && JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
+  // emails were just switched on and this account hasn't confirmed one: back to the title screen to do it
+  if (res.status === 403 && data.mustVerify && path !== 'api/me') {
+    let again = false;
+    try { again = sessionStorage.getItem('ar.verify-reload') === '1'; sessionStorage.setItem('ar.verify-reload', '1'); } catch { /* blocked */ }
+    if (!again) location.reload();
+  }
   if (!res.ok) throw poor(data.error || 'Something went wrong. Please try again.', data.need ?? null);
   return data;
 }
@@ -119,9 +127,67 @@ async function cloudStart() {
 }
 export const cloudSaves = () => !!cloud;
 
-// Email is optional; an account made without one keeps this stand-in and shows it as blank
+// Accounts made before email was required keep this stand-in and are asked to add a real one.
+// In the preview the stand-in stays the account's key (its place in the page's database), and the
+// real email is kept beside it as `mail`.
 const NO_EMAIL = '@no-email.local';
 const shownEmail = (email) => (email && email.endsWith(NO_EMAIL) ? '' : email);
+const realEmail = (a) => a.mail || shownEmail(a.email);
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+// Preview mode: no email is really sent. Each code is handed back as `previewCode` and shown on
+// screen instead, so every step can be tried. (The live game never does this.)
+const previewCodes = new Map(); // ticket -> { email, kind, code, expires, tries, data }
+function previewCode(acc, kind, data = null) {
+  for (const [t, c] of previewCodes) if (c.email === acc.email && c.kind === kind) previewCodes.delete(t);
+  const ticket = [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1e6).padStart(6, '0');
+  previewCodes.set(ticket, { email: acc.email, kind, code, data, expires: Date.now() + 15 * 60 * 1000, tries: 0 });
+  return { ticket, code };
+}
+async function usePreviewCode(ticket, kind, code, check = null) {
+  const c = previewCodes.get(ticket);
+  if (!c || c.kind !== kind || c.expires < Date.now()) throw new Error('That code has run out. Please ask for a new one.');
+  if (c.tries >= 5) throw new Error('Too many wrong codes. Please ask for a new one.');
+  code = String(code || '').replace(/\D/g, '');
+  if (!(check ? await check(code) : code === c.code)) { c.tries++; throw new Error('That code isn\'t right. Check it and try again.'); }
+  previewCodes.delete(ticket);
+  return c;
+}
+const hideEmail = (email) => email.replace(/^(.{1,2})[^@]*(@.*)$/, (m, a, b) => `${a}****${b}`);
+const previewAccount = (a) => ({
+  email: realEmail(a), username: a.username, character: a.character, emailVerified: !!a.verified, needsEmail: !realEmail(a),
+  mustVerify: !realEmail(a) || (!a.verified && !a.welcomed), twofa: a.twofa || null, mail: true, preview: true,
+  birthdate: a.birthdate || null, age: ageOf(a.birthdate), needsBirthdate: !a.birthdate,
+});
+
+// Authenticator-app codes (TOTP, the same as server/totp.js), for the preview
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function unbase32(s) {
+  let bits = 0, val = 0; const out = [];
+  for (const ch of s.toUpperCase().replace(/[^A-Z2-7]/g, '')) { val = (val << 5) | B32.indexOf(ch); bits += 5; if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; } }
+  return new Uint8Array(out);
+}
+function newSecret() {
+  let bits = 0, val = 0, out = '';
+  for (const b of crypto.getRandomValues(new Uint8Array(20))) { val = (val << 8) | b; bits += 8; while (bits >= 5) { out += B32[(val >>> (bits - 5)) & 31]; bits -= 5; } }
+  return out;
+}
+async function totpCheck(secret, code) {
+  if (!secret || code.length !== 6) return false;
+  const key = await crypto.subtle.importKey('raw', unbase32(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const step = Math.floor(Date.now() / 30000);
+  for (const d of [-1, 0, 1]) {
+    const msg = new DataView(new ArrayBuffer(8));
+    msg.setUint32(4, step + d);
+    const h = new Uint8Array(await crypto.subtle.sign('HMAC', key, msg.buffer));
+    const o = h[19] & 15;
+    const n = (((h[o] & 0x7f) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1e6;
+    if (String(n).padStart(6, '0') === code) return true;
+  }
+  return false;
+}
+const totpUri = (secret, username) => `otpauth://totp/${encodeURIComponent(`Ascendant Realms:${username}`)}?secret=${secret}&issuer=${encodeURIComponent('Ascendant Realms')}&digits=6&period=30`;
 
 // Preview mode: the same rules as the server, stored in localStorage (and the cloud, when there is one).
 const preview = {
@@ -131,32 +197,51 @@ const preview = {
     storage.set('ar.preview.accounts', JSON.stringify(list));
     if (changed) cloudPush(`accounts/${cloudKey(changed.email)}`, changed);
   },
-  async signUp({ email, password, username, remember }) {
+  emailTaken(email, me = null) {
+    email = email.toLowerCase();
+    return this.accounts().some((a) => a !== me && a.email !== me?.email && (a.email.toLowerCase() === email || (a.mail || '').toLowerCase() === email));
+  },
+  async signUp({ email, password, username, remember, country, birthdate }) {
     email = (email || '').trim(); username = username.trim();
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please enter a valid email address, or leave it blank.');
+    if (!email) throw new Error('Please enter your email. It is needed to confirm your account and to get it back if you forget your password.');
+    if (!EMAIL_RE.test(email) || email.toLowerCase().endsWith(NO_EMAIL)) throw new Error('Please enter a valid email address.');
     if (password.length < 8) throw new Error('Your password needs at least 8 characters.');
     if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) throw new Error('Usernames are 3 to 16 letters, numbers or underscores.');
+    const born = checkBirthdate(birthdate);
+    if (born.error) throw new Error(born.error);
     const list = this.accounts();
-    if (list.some((a) => a.email.toLowerCase() === email.toLowerCase())) throw new Error('An account with this email already exists. Try signing in.');
+    if (this.emailTaken(email)) throw new Error('An account with this email already exists. Try signing in.');
     if (list.some((a) => a.username.toLowerCase() === username.toLowerCase())) throw new Error('That username is taken. Please choose another.');
-    if (!email) email = `${username.toLowerCase()}${NO_EMAIL}`; // the same stand-in the server stores
     const digest = await sha256(password);
-    const acc = { email, username, digest, character: null };
+    const acc = { email, username, digest, character: null, country: country || null, verified: false, birthdate: born.date };
     list.push(acc);
     this.save(list, acc);
     token.set(`preview:${email}`, remember);
-    return { account: { email: shownEmail(email), username, character: null }, isNew: true };
+    const c = previewCode(acc, 'verify');
+    return { account: previewAccount(acc), isNew: true, previewCode: c.code, sentTo: hideEmail(email) };
+  },
+  find(login) {
+    login = (login || '').trim().toLowerCase();
+    return this.accounts().find((a) => a.email.toLowerCase() === login || (a.mail || '').toLowerCase() === login || a.username.toLowerCase() === login);
   },
   async signIn({ login, password, remember }) {
     const digest = await sha256(password);
-    login = (login || '').trim().toLowerCase();
-    const acc = this.accounts().find((a) => (a.email.toLowerCase() === login || a.username.toLowerCase() === login) && a.digest === digest);
-    if (!acc) throw new Error('That username or email and password don\'t match an account.');
+    const acc = this.find(login);
+    if (!acc || acc.digest !== digest) throw new Error('That username or email and password don\'t match an account.');
+    if (acc.twofa) {
+      pendingRemember = remember;
+      const c = previewCode(acc, 'signin', acc.twofa);
+      return { twofa: acc.twofa, ticket: c.ticket, sentTo: acc.twofa === 'email' ? hideEmail(realEmail(acc)) : null, canEmail: !!acc.verified, previewCode: acc.twofa === 'email' ? c.code : null };
+    }
+    return this.enter(acc, remember);
+  },
+  enter(acc, remember) {
     token.set(`preview:${acc.email}`, remember);
     if (moveToNewWorld(acc.character)) preview.save(preview.accounts().map((a) => (a.email === acc.email ? acc : a)), acc);
-    return { account: { email: shownEmail(acc.email), username: acc.username, character: acc.character }, isNew: false };
+    return { account: previewAccount(acc), isNew: false };
   },
 };
+let pendingRemember = false;
 
 // Preview mode: find the signed-in preview account and change it in place
 function updatePreviewAccount(change) {
@@ -195,8 +280,8 @@ export function isPreviewMode() {
 // Preview mode only: the accounts saved in this browser (without their scrambled passwords)
 export function deviceAccounts() {
   if (previewMode !== true) return null;
-  return preview.accounts().map(({ email, username, character: c }) => ({
-    email: shownEmail(email), username, character: c && { name: c.name, race: c.race, cls: c.cls, level: c.level || 1, coins: c.coins || 0 },
+  return preview.accounts().map(({ email, mail, username, character: c }) => ({
+    email: realEmail({ email, mail }), username, character: c && { name: c.name, race: c.race, cls: c.cls, level: c.level || 1, coins: c.coins || 0 },
   }));
 }
 
@@ -208,21 +293,174 @@ export async function signUp({ remember, ...fields }) {
   return data;
 }
 
+// With 2-step sign-in on, the answer has `twofa` and a `ticket` instead: then call signInCode
 export async function signIn({ remember, ...fields }) {
   if (await isPreviewMode()) return preview.signIn({ ...fields, remember });
   const data = await request('api/signin', { method: 'POST', body: fields });
+  if (data.twofa) { pendingRemember = remember; return data; }
   token.set(data.token, remember);
   return data;
 }
 
-// For now no old password is asked for; later this will need it, or a code sent by email
-export async function changePassword(password) {
+export async function signInCode(ticket, code) {
+  if (await isPreviewMode()) {
+    const c = previewCodes.get(ticket);
+    const acc = c && preview.accounts().find((a) => a.email === c.email);
+    await usePreviewCode(ticket, 'signin', code, c?.data === 'app' ? (x) => totpCheck(acc?.totp, x) : null);
+    return preview.enter(acc, pendingRemember);
+  }
+  const data = await request('api/signin/code', { method: 'POST', body: { ticket, code } });
+  token.set(data.token, pendingRemember);
+  return data;
+}
+
+// lost the phone with the authenticator app: the code by email instead
+export async function signInByEmail(ticket) {
+  if (await isPreviewMode()) {
+    const c = previewCodes.get(ticket);
+    const acc = c && preview.accounts().find((a) => a.email === c.email);
+    if (!acc) throw new Error('This sign-in has run out. Please sign in again.');
+    if (!acc.verified) throw new Error('This account has no confirmed email to send a code to.');
+    previewCodes.delete(ticket);
+    const n = previewCode(acc, 'signin', 'email');
+    return { twofa: 'email', ticket: n.ticket, sentTo: hideEmail(realEmail(acc)), previewCode: n.code };
+  }
+  return request('api/signin/by-email', { method: 'POST', body: { ticket } });
+}
+
+// whether the game can send emails (on the live game, only once the email service is set up)
+export async function mailOn() {
+  if (await isPreviewMode()) return true;
+  try { return !!(await (await fetch('api/health')).json()).mail; } catch { return false; }
+}
+
+// the email that confirms the address: send it (again), or confirm with its code (or its link's ticket)
+export async function sendVerify() {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => {
+      if (!realEmail(acc)) throw new Error('Please add your email first.');
+      const c = previewCode(acc, 'verify');
+      return { ok: true, sentTo: hideEmail(realEmail(acc)), previewCode: c.code };
+    });
+  }
+  return request('api/email/send', { method: 'POST' });
+}
+export async function verifyEmail({ ticket = null, code }) {
+  if (await isPreviewMode()) {
+    let t = ticket;
+    const me = (token.get() || '').replace(/^preview:/, '');
+    if (!t) for (const [k, c] of previewCodes) if (c.email === me && c.kind === 'verify') t = k;
+    const c = await usePreviewCode(t, 'verify', code);
+    const list = preview.accounts();
+    const acc = list.find((a) => a.email === c.email);
+    acc.verified = true; acc.welcomed = true;
+    preview.save(list, acc);
+    return { ok: true, account: previewAccount(acc) };
+  }
+  return request('api/email/verify', { method: 'POST', body: { ticket, code } });
+}
+export async function setEmail(email, password = '') {
+  email = String(email || '').trim();
+  if (await isPreviewMode()) {
+    if (!EMAIL_RE.test(email) || email.toLowerCase().endsWith(NO_EMAIL)) throw new Error('Please enter a valid email address.');
+    const digest = await sha256(password);
+    return updatePreviewAccount((acc) => {
+      if (realEmail(acc) && acc.digest !== digest) throw new Error('Your password isn\'t right.');
+      if (realEmail(acc).toLowerCase() === email.toLowerCase()) throw new Error('That is already your email.');
+      if (preview.emailTaken(email, acc)) throw new Error('Another account already uses this email.');
+      acc.mail = email; acc.verified = false;
+      if (acc.twofa === 'email') acc.twofa = null;
+      const c = previewCode(acc, 'verify');
+      return { ok: true, sentTo: hideEmail(email), previewCode: c.code, account: previewAccount(acc) };
+    });
+  }
+  return request('api/email/set', { method: 'POST', body: { email, password } });
+}
+
+// the birth date, for accounts from before it was asked (once saved, only an admin can change it)
+export async function setBirthdate(birthdate) {
+  if (await isPreviewMode()) {
+    const born = checkBirthdate(birthdate);
+    if (born.error) throw new Error(born.error);
+    return updatePreviewAccount((acc) => {
+      if (acc.birthdate) throw new Error('Your birth date is already saved. If it is wrong, ask the game\'s owner.');
+      acc.birthdate = born.date;
+      return { ok: true, account: previewAccount(acc) };
+    });
+  }
+  return request('api/birthdate', { method: 'POST', body: { birthdate } });
+}
+
+// a signed-in player changes the password: the current one is needed
+export async function changePassword(current, password) {
   if (password.length < 8) throw new Error('Your new password needs at least 8 characters.');
   if (await isPreviewMode()) {
-    const digest = await sha256(password);
-    return updatePreviewAccount((acc) => { acc.digest = digest; return { ok: true }; });
+    const [old, digest] = await Promise.all([sha256(current), sha256(password)]);
+    return updatePreviewAccount((acc) => {
+      if (acc.digest !== old) throw new Error('Your current password isn\'t right.');
+      acc.digest = digest; return { ok: true };
+    });
   }
-  return request('api/password', { method: 'POST', body: { password } });
+  return request('api/password', { method: 'POST', body: { current, password } });
+}
+
+// "Forgot password?": a code by email, then the new password with that code
+export async function forgotPassword(login) {
+  if (await isPreviewMode()) {
+    const acc = preview.find(login);
+    if (!acc || !realEmail(acc)) return { ok: true, ticket: 'none' };
+    const c = previewCode(acc, 'reset');
+    return { ok: true, ticket: c.ticket, previewCode: c.code };
+  }
+  return request('api/password/forgot', { method: 'POST', body: { login } });
+}
+export async function resetPassword({ ticket, code, password }) {
+  if (password.length < 8) throw new Error('Your new password needs at least 8 characters.');
+  if (await isPreviewMode()) {
+    const c = await usePreviewCode(ticket, 'reset', code).catch(() => { throw new Error('That code isn\'t right, or it has run out. Please ask for a new one.'); });
+    const list = preview.accounts();
+    const acc = list.find((a) => a.email === c.email);
+    acc.digest = await sha256(password); acc.verified = true;
+    preview.save(list, acc);
+    return { ok: true, username: acc.username };
+  }
+  return request('api/password/reset', { method: 'POST', body: { ticket, code, password } });
+}
+
+// 2-step sign-in: by email code, or by an authenticator app (start shows the key, confirm checks its first code)
+async function previewWithPassword(password, change) {
+  const digest = await sha256(password);
+  return updatePreviewAccount((acc) => { if (acc.digest !== digest) throw new Error('Your password isn\'t right.'); return change(acc); });
+}
+export async function twofaEmail(password) {
+  if (await isPreviewMode()) return previewWithPassword(password, (acc) => {
+    if (!realEmail(acc) || !acc.verified) throw new Error('Please confirm your email first.');
+    acc.twofa = 'email'; delete acc.totp; return { ok: true, account: previewAccount(acc) };
+  });
+  return request('api/2fa/email', { method: 'POST', body: { password } });
+}
+export async function twofaAppStart(password) {
+  if (await isPreviewMode()) return previewWithPassword(password, (acc) => {
+    const secret = newSecret();
+    previewCode(acc, 'totp', secret);
+    return { ok: true, secret, uri: totpUri(secret, acc.username) };
+  });
+  return request('api/2fa/app/start', { method: 'POST', body: { password } });
+}
+export async function twofaAppConfirm(code) {
+  if (await isPreviewMode()) {
+    const me = (token.get() || '').replace(/^preview:/, '');
+    let t = null;
+    for (const [k, c] of previewCodes) if (c.email === me && c.kind === 'totp') t = k;
+    const secret = previewCodes.get(t)?.data;
+    await usePreviewCode(t, 'totp', code, (x) => totpCheck(secret, x));
+    return updatePreviewAccount((acc) => { acc.twofa = 'app'; acc.totp = secret; return { ok: true, account: previewAccount(acc) }; });
+  }
+  return request('api/2fa/app/confirm', { method: 'POST', body: { code } });
+}
+export async function twofaOff(password) {
+  if (await isPreviewMode()) return previewWithPassword(password, (acc) => { acc.twofa = null; delete acc.totp; return { ok: true, account: previewAccount(acc) }; });
+  return request('api/2fa/off', { method: 'POST', body: { password } });
 }
 
 // The highest-level characters
@@ -241,7 +479,7 @@ export async function resume() {
   if (await isPreviewMode()) {
     const acc = preview.accounts().find((a) => `preview:${a.email}` === t);
     if (acc && moveToNewWorld(acc.character)) preview.save(preview.accounts().map((a) => (a.email === acc.email ? acc : a)), acc);
-    return acc ? { account: { email: shownEmail(acc.email), username: acc.username, character: acc.character } } : null;
+    return acc ? { account: previewAccount(acc) } : null;
   }
   try {
     return await request('api/me');
@@ -265,9 +503,12 @@ export async function createCharacter(choice) {
       const asKid = Number.isInteger(choice?.asChild) ? rebirthAsChild(acc.fallen, choice.asChild, B.rollBirth) : null;
       const birth = asKid?.birth || B.rollBirth(choice?.side || null);
       const city = B.BIRTH_CITY[birth.race];
+      // birth luck: a noble house, the Common Quarter or the Dump (data/citypass.mjs)
+      const onTier = P.housesOnTier(city, P.rollBirthTier());
       const held = acc.fallen?.uniqueSkill ? new Set([acc.fallen.uniqueSkill.name]) : new Set();
-      const result = B.bornCharacter(acc.username, birth, asKid?.home || { city, house: Math.floor(Math.random() * B.houseCount(city)) }, { takenUniques: held, appraisal: !held.has('Appraisal') });
+      const result = B.bornCharacter(acc.username, birth, asKid?.home || { city, house: onTier.length ? onTier[Math.floor(Math.random() * onTier.length)] : Math.floor(Math.random() * B.houseCount(city)) }, { takenUniques: held, appraisal: !held.has('Appraisal') });
       if (result.error) throw new Error(result.error);
+      result.character.country = acc.country || null; // the flag chosen at sign-up
       if (asKid) { result.character.child.school = asKid.kid.school || null; result.character.child.plan = asKid.kid.plan; result.character.rebornFrom = acc.fallen.name || null; }
       if (acc.fallen) { rebornWith(result.character, acc.fallen); delete acc.fallen; }
       acc.character = result.character;
@@ -375,6 +616,7 @@ export async function saveProgress(progress) {
   if (await isPreviewMode()) {
     return updatePreviewAccount((acc) => {
       if (acc.character) Object.assign(acc.character, progress);
+      if (progress.country !== undefined) acc.country = progress.country || null; // (kept for the next life too)
       return { ok: true };
     });
   }

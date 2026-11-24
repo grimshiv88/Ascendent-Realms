@@ -65,7 +65,7 @@ export const ITEMS = {
   torch: { name: 'Torch', icon: '🔥', kind: 'material', price: 12, text: 'Stand it in the ground with T; press T beside it to pick it back up. In the dark caves, T lights it in your hand instead. Its light keeps monsters away at night, and lets you sleep (Z) beside it.' },
   tent: { name: 'Tent', icon: '⛺', kind: 'material', price: 60, text: 'Pitch it anywhere (P, or from your bag) and sleep inside it (Z) to clear your Fatigue. Monsters leave you alone near it. Pack it up again when you move on.' },
   water_flask: { name: 'Water Flask', icon: '🫗', kind: 'food', heal: 12, price: 2, text: 'A drink of clean water. Restores 12 HP.' },
-  apple: { name: 'Apple', icon: '🍎', kind: 'food', heal: 18, price: 3, text: 'Crisp and sweet. Restores 18 HP.' },
+  apple: { name: 'Apple', icon: '🍎', kind: 'food', heal: 18, feed: true, price: 3, text: 'Crisp and sweet. Restores 18 HP.' },
   bread: { name: 'Bread', icon: '🍞', kind: 'food', heal: 25, price: 6, text: 'Restores 25 HP.' },
   herbal_tea: { name: 'Herbal Tea', icon: '🍵', kind: 'food', sp: 15, price: 4, text: 'A warm cup that clears the head. Restores 15 SP.' },
   honey_cake: { name: 'Honey Cake', icon: '🍯', kind: 'food', sp: 35, heal: 10, price: 12, text: 'Sweet and filling. Restores 35 SP and 10 HP.' },
@@ -148,6 +148,23 @@ export const ITEMS = {
   pumpkin: { name: 'Pumpkin', icon: '🎃', kind: 'food', heal: 20, fill: 22, feed: true, price: 6, text: 'Big and orange. Feeds a family, or a whole farmyard.' },
   hay: { name: 'Hay', icon: '🌾', kind: 'material', feed: true, price: 1, text: 'Dried grass. Feed it to horses, cows, sheep and goats.' },
   grain: { name: 'Grain', icon: '🌾', kind: 'material', feed: true, price: 1, text: 'A handful of wheat. Chickens, ducks and turkeys peck it up.' },
+  // growing your own (see data/crops.mjs): a packet plants one bed
+  seed_carrot: { name: 'Carrot Seeds', icon: '🌱', kind: 'seed', crop: 'carrot', price: 3, text: 'Plant a bed of carrots. Ripe in about 8 minutes.' },
+  seed_cabbage: { name: 'Cabbage Seeds', icon: '🌱', kind: 'seed', crop: 'cabbage', price: 4, text: 'Plant a bed of cabbages. Ripe in about 15 minutes.' },
+  seed_lettuce: { name: 'Lettuce Seeds', icon: '🌱', kind: 'seed', crop: 'lettuce', price: 2, text: 'Plant a bed of lettuce. Ripe in about 6 minutes.' },
+  seed_turnip: { name: 'Turnip Seeds', icon: '🌱', kind: 'seed', crop: 'turnip', price: 3, text: 'Plant a bed of turnips. Ripe in about 10 minutes.' },
+  seed_potato: { name: 'Seed Potatoes', icon: '🌱', kind: 'seed', crop: 'potato', price: 4, text: 'Plant a bed of potatoes. Ripe in about 15 minutes.' },
+  seed_onion: { name: 'Onion Sets', icon: '🌱', kind: 'seed', crop: 'onion', price: 2, text: 'Plant a bed of onions. Ripe in about 12 minutes.' },
+  seed_pumpkin: { name: 'Pumpkin Seeds', icon: '🌱', kind: 'seed', crop: 'pumpkin', price: 6, text: 'Plant a bed of pumpkins. Slow, about 30 minutes, but big.' },
+  seed_wheat: { name: 'Seed Wheat', icon: '🌱', kind: 'seed', crop: 'wheat', price: 3, text: 'Plant a bed of wheat for grain and hay. Ripe in about 20 minutes.' },
+  hoe: { name: 'Hoe', icon: '⛏️', kind: 'material', price: 12, text: 'Digs a new bed on your own Farm land (E where you want it).' },
+  watering_can: { name: 'Watering Can', icon: '🪣', kind: 'material', price: 8, text: 'Fill it at a river, lake, well or trough (E), then water a bed (E) to make it grow faster.' },
+  watering_can_full: { name: 'Watering Can (full)', icon: '🪣', kind: 'material', price: 8, text: 'Full of water. E by a growing bed waters it: it grows half as fast again.' },
+  // mounts (see data/mounts.mjs): the animal is yours while you keep this in your bag
+  riding_horse: { name: 'Riding Horse', icon: '🐎', kind: 'mount', mount: 'horse', price: 600, text: 'A saddled horse of your own. Call it from your bag, or press H, and ride.' },
+  riding_donkey: { name: 'Riding Donkey', icon: '🫏', kind: 'mount', mount: 'donkey', price: 200, text: 'Slow but sure-footed, and cheap to keep. Call it from your bag, or press H.' },
+  tamed_horse: { name: 'Tamed Wild Horse', icon: '🐎', kind: 'mount', mount: 'wild_horse', price: 500, text: 'A wild horse that came to trust you. The fastest mount there is.' },
+  tamed_camel: { name: 'Tamed Camel', icon: '🐪', kind: 'mount', mount: 'camel', price: 400, text: 'A camel that came to trust you. Tireless in the desert.' },
   // clothes: worn for looks, not protection (a little DEF at most)
   linen_shirt: { name: 'Linen Shirt', icon: '👕', kind: 'armour', slot: 'body', rank: 0, def: 1, fashion: true, price: 35, look: { color: '#e8e0cc' }, text: 'Light, clean linen.' },
   embroidered_tunic: { name: 'Embroidered Tunic', icon: '👘', kind: 'armour', slot: 'body', rank: 1, def: 1, fashion: true, price: 120, look: { color: '#7a2a3a' }, text: 'Gold thread at the collar and cuffs.' },
@@ -401,6 +418,7 @@ export function categoryOf(it) {
   if (it.kind === 'coating') return { cat: 'Coating', sub: 'For weapons' };
   if (it.kind === 'food') return { cat: it.heal || it.sp ? 'Food & drink' : 'Potion', sub: null };
   if (it.kind === 'seed') return { cat: 'Seeds', sub: null };
+  if (it.kind === 'mount') return { cat: 'Mount', sub: null };
   if (it.kind === 'stone') return { cat: 'Skill Stone', sub: null };
   return { cat: 'Material', sub: it.rank != null ? 'Ore' : null };
 }
@@ -477,7 +495,7 @@ Object.assign(MARKETS, {
   furniture_dump: { bot: true, name: 'Junk Dealer', text: 'Second-hand furniture, cheap and a little broken.', items: ['straw_bed', 'crate_table', 'stool', 'rag_rug', 'candle_stub'] },
   furniture_common: { bot: true, name: 'Oak & Hearth Furniture', text: 'Good plain furniture for a family home.', items: ['wooden_bed', 'oak_table', 'chair', 'wardrobe', 'wool_rug', 'oil_lamp', 'bookshelf', 'potted_plant'] },
   furniture_noble: { bot: true, name: 'The Gilded Room', text: 'The finest furniture in the realm, for noble houses.', items: ['canopy_bed', 'marble_table', 'velvet_chair', 'chandelier', 'tapestry', 'gilded_mirror', 'grand_wardrobe'] },
-  farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain'] },
+  farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields, seeds and tools to grow your own, and horses and donkeys to ride.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain', 'seed_carrot', 'seed_cabbage', 'seed_lettuce', 'seed_turnip', 'seed_potato', 'seed_onion', 'seed_pumpkin', 'seed_wheat', 'hoe', 'watering_can', 'riding_donkey', 'riding_horse'] },
   butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'firewood'] },
   tavern: { bot: true, name: 'Tavern', text: 'Halal food, fresh drinks and rooms to rent. No alcohol is served here.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask', 'herbal_tea', 'lentil_soup', 'bread'] },
 });

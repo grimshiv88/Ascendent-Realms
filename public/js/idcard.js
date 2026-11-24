@@ -7,6 +7,10 @@ import { CARD_RANKS, rankIndex } from './data/guildcard.mjs';
 import { now, DAY_MS } from './data/clock.mjs';
 import { PLACES } from './data/world-layout.mjs';
 import { familyOfChar, parentInfo, parentAlive, visitDue, VISIT_EVERY_MS } from './data/birth.mjs';
+import { cityPass, DAY_PASS, PASS_NAME } from './data/citypass.mjs';
+import { countryName } from './data/countries.mjs';
+import { moneyWords } from './data/money.mjs';
+import { flagHtml, fillFlags } from './flag.js';
 // the city or village a player was born in, as written on their ID
 const birthplace = (c) => { const id = (c.child?.family || c.family)?.city; return id ? PLACES.find((p) => p.id === id)?.name.replace(/ \(.*\)/, '') || null : null; };
 
@@ -32,7 +36,18 @@ export function lifeRows(c) {
 }
 
 let photo = { key: '', url: null };
-export function renderIdCard(el, game, { city = 'Central City', leaving = false, monster = false, barredText = null, courts = [], nation = null, message = '' } = {}) {
+// The rows every ID shows below the photo's: the City Pass (how far into a city you may go, and
+// why) and the flag of the country the player is from
+export function passRows(c, perks = {}) {
+  const pass = cityPass(c, perks);
+  const day = c.dayPass && c.dayPass.until > Date.now() ? c.dayPass : null;
+  return `<div><dt>City pass</dt><dd><span class="pass-badge pass-${pass.tier}">${esc(pass.name)}</span> <small>${esc(pass.why)}</small>${day ? `<br><small>Day pass: ${esc(PASS_NAME[day.tier])}, ${Math.max(1, Math.ceil((day.until - Date.now()) / 60000))} min left</small>` : ''}</dd></div>
+    <div><dt>From</dt><dd>${c.country ? `${flagHtml(c.country)} ${esc(countryName(c.country) || '')}` : '<small>Not given</small>'}</dd></div>`;
+}
+
+// `inner`: stopped at a gate between a city's rings ({ tier, name, city }): the guard reads the
+// City Pass and offers a day pass instead
+export function renderIdCard(el, game, { city = 'Central City', leaving = false, monster = false, barredText = null, courts = [], nation = null, message = '', perks = {}, inner = null } = {}) {
   const c = game.character;
   const key = JSON.stringify([c.race, c.form, c.stage, c.look, c.equipped]);
   if (photo.key !== key) photo = { key, url: characterPortrait(c, game.worn()) };
@@ -40,8 +55,8 @@ export function renderIdCard(el, game, { city = 'Central City', leaving = false,
   el.innerHTML = `
     <div class="status-window id-window" role="dialog" aria-label="City gate">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>${esc(city || 'Central City')} Gate</h2>
-      <p class="bag-hint">${monster ? esc(barredText || 'The guards cross their spears. "No monsters in the city."') : leaving ? 'A guard holds out a hand. "Your ID before you leave, please."' : 'A guard holds out a hand. "Your ID, please."'}</p>
+      <h2>${inner ? `${esc(inner.name)} Gate` : `${esc(city || 'Central City')} Gate`}</h2>
+      <p class="bag-hint">${inner ? `The guard reads your City Pass and shakes their head. "Only folk with a ${esc(inner.name)} pass go up. You can buy a day pass, good for one day."` : monster ? esc(barredText || 'The guards cross their spears. "No monsters in the city."') : leaving ? 'A guard holds out a hand. "Your ID before you leave, please."' : 'A guard holds out a hand. "Your ID, please."'}</p>
       <div class="id-card">
         ${photo.url ? `<img class="id-photo" src="${photo.url}" alt="Photo of ${esc(c.name)}">` : '<div class="id-photo"></div>'}
         <dl>
@@ -51,12 +66,14 @@ export function renderIdCard(el, game, { city = 'Central City', leaving = false,
           <div><dt>Title</dt><dd>${esc(titleOf(c, courts, nation))}</dd></div>
           <div><dt>Class</dt><dd>${esc(cls)}</dd></div>
           ${birthplace(c) ? `<div><dt>Born in</dt><dd>${esc(birthplace(c))}</dd></div>` : ''}
+          ${passRows(c, perks)}
           ${lifeRows(c)}
         </dl>
       </div>
       <p class="shop-msg" role="status">${esc(message)}</p>
-      ${monster ? '<button type="button" class="link-button" data-close>Turn back</button>' : '<button type="button" class="gold-button" data-show-id>Show your ID</button>'}
+      ${inner ? `<button type="button" class="gold-button" data-day-pass="${esc(inner.tier)}">Buy a day pass (${esc(moneyWords(DAY_PASS[inner.tier]))})</button><button type="button" class="link-button" data-close>Turn back</button>` : monster ? '<button type="button" class="link-button" data-close>Turn back</button>' : '<button type="button" class="gold-button" data-show-id>Show your ID</button>'}
     </div>`;
+  fillFlags(el);
 }
 
 // The Assessment Room: the crystal reads your level and stats and ranks your Hunter's Guild Card.

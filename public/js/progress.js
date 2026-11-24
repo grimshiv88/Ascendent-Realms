@@ -3,10 +3,13 @@
 import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } from './data/game-data.mjs';
 import { MINT } from './data/money.mjs';
 import { HUNGER_MAX, fillOf, STARVE_ATK } from './data/hunger.mjs';
+import { cleanBeds } from './data/crops.mjs';
 import { ITEMS, shopFor, RECIPES, SLOTS, isGear, slotOf, sellPrice, upgraded, mergeCost, evolvedName, POTION_MAKER, BREWS, brewCost, brewSeconds, brewHerbs, forgeCost, forgeLevel, workshopLevel, rankOf, gearSkillSlots, mythicSkill, marketStock, marketPrice, MARKETS, BOT_BUY_SHARE } from './data/items.mjs';
 import { mergeOutcome } from './data/merges.mjs';
 import { deathOutcome, applyRise, livesLeft } from './data/life.mjs';
 import { BODYGUARDS, HIRE_SPANS, hireCost, guardActive } from './data/hire.mjs';
+import { DAY_PASS, DAY_PASS_MS } from './data/citypass.mjs';
+import { cleanCountry } from './data/countries.mjs';
 import { WEDDING_FEE, ADOPT_FEE, MAX_CHILDREN, newChild, nextChildIn } from './data/family.mjs';
 import { canMarry } from './data/life.mjs';
 import { ageOf, childStatShare, classOdds, SCHOOLS, TRAIN_FULL_MS, visitDue, CHILD_MAX_LEVEL, TRAIN_EXP, TRAIN_HIT_EXP, TECHNIQUE_AT, SCHOOL_TECHNIQUES } from './data/birth.mjs';
@@ -63,6 +66,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.tent ??= null; // where your tent is pitched
   c.fatigue ??= 0;
   c.hunger ??= HUNGER_MAX; // how full you are (data/hunger.mjs)
+  c.crops = cleanBeds(c.crops); // the beds you have planted (data/crops.mjs)
+  c.mount ??= null; // where you left your mount: { item, x, z }
   c.trained = { atk: 0, def: 0, matk: 0, mdef: 0, hp: 0, ...(c.trained || {}) }; // Stat Points put straight into ATK, DEF, MATK, MDEF or HP
   c.caves ??= {}; // cave id -> when you last beat its boss
   c.villages ??= { list: [], due: [] }; // monster villages out in the wilds, and when the next ones appear
@@ -141,7 +146,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), hunger: Math.round(c.hunger), torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
+    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), hunger: Math.round(c.hunger), crops: c.crops, mount: c.mount || null, torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, dayPass: c.dayPass || null, country: c.country || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
     spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null,
   });
 
@@ -685,6 +690,20 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return 'hired';
     },
     dismissGuard() { c.guard = null; changed('guard'); },
+    // ---- the gates between a city's rings (see data/citypass.mjs) ----
+    // buy a day pass at an inner gate: 'bought' or 'coins'
+    buyDayPass(tier, city) {
+      const cost = DAY_PASS[tier];
+      if (!cost) return 'bad';
+      if (c.coins < cost) return 'coins';
+      c.coins -= cost;
+      c.dayPass = { tier, city: city || null, until: Date.now() + DAY_PASS_MS };
+      changed('coins');
+      this.saveNow();
+      return 'bought';
+    },
+    // the real-world country on the ID (a code from data/countries.mjs, or null)
+    setCountry(code) { c.country = cleanCountry(code); changed('country'); this.saveNow(); },
     // ---- marriage and children (see data/family.mjs) ----
     // marry a townsperson: 'married', 'young', 'married-already' or 'coins'
     marryNpc(s) {
