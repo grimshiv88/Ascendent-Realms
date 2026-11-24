@@ -249,6 +249,12 @@ export function buildCity(place, opts = {}) {
     g.add(m);
   }
 
+  // the ground of each ring: one flat, solid floor per ring at its exact level, from the foot of
+  // the terrace wall below it out to under the next wall (the land itself is sunk out of sight
+  // inside the inner wall, so its coarse slopes never poke out over the streets as grass). Where a
+  // ramp is cut down into a ring, the floor leaves a gap for it (the ramp's road and walls fill it).
+  g.add(ringFloors(S, monster, ringRel));
+
   // buildings and walls never move: they are merged into a few meshes at the end
   const fixed = new THREE.Group();
   g.add(fixed);
@@ -729,6 +735,63 @@ export function buildCity(place, opts = {}) {
   const setOwners = (owners) => { for (const [id, sign] of saleSigns) sign.set(owners?.[id] || null, plan.sale.find((h) => h.id === id)); };
   setOwners({});
   return { group: g, update, gather, shops, solid, gates, innerGates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, doors, centre: { x: cx, z: cz }, checkpoint: { x: cx + plan.checkpoint.x + plan.checkpoint.fx * 3.4, z: cz + plan.checkpoint.z + plan.checkpoint.fz * 3.4 } };
+}
+
+// The rings' floors (see buildCity): grassy lawns on Castle Hill, in the Noble and the Common
+// Quarter, packed earth in the Dump. Built as one polar grid per ring, about 1.5 m a cell round,
+// with the cells over a ramp cut left out.
+const FLOOR_LOOK = { castle: '#5f7d38', noble: '#5a7a34', common: '#667a3c', dump: '#6e5e46' };
+let floorTex = null;
+function floorTexture() {
+  if (floorTex) return floorTex;
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(128, 128);
+  let sd = 9;
+  const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  for (let i = 0; i < 128 * 128; i++) { const v = 205 + rnd() * 50; img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v * 0.97; img.data[i * 4 + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+  floorTex = new THREE.CanvasTexture(c);
+  floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+  floorTex.colorSpace = THREE.SRGBColorSpace;
+  return floorTex;
+}
+function ringFloors(S, monster, ringRel) {
+  const group = new THREE.Group();
+  const cut = (k, x, z) => RAMPS.some((R) => {
+    if (R.k !== k) return false;
+    const { along, lat } = alongRoad(x, z, R.a), b = TIERS[k].r1;
+    return Math.abs(lat) < ROAD_HALF + RAMP_WALL / 2 && along > b - RAMP_IN - 0.5 && along < b + TERRACE + 1;
+  });
+  TIERS.forEach((T, k) => {
+    const r0 = k === 0 ? 0.5 : TIERS[k - 1].r1 + TERRACE - 0.8;
+    const r1 = k === TIERS.length - 1 ? INNER_R + 0.6 : T.r1 + TERRACE - 0.6;
+    // rows: every 2 m near the terrace (where the ramps cut in), wider apart elsewhere
+    const rows = [r0];
+    const fine = k < TIERS.length - 1 ? T.r1 - RAMP_IN - 1 : Infinity;
+    while (rows[rows.length - 1] < r1 - 0.01) { const last = rows[rows.length - 1]; rows.push(Math.min(r1, last + (last >= fine - 0.01 ? 2 : Math.max(4, Math.min(12, fine - last))))); }
+    const n = Math.ceil((2 * Math.PI * r1) / 1.5);
+    const pos = [], uv = [], idx = [];
+    const y = ringRel(T.id);
+    for (const r of rows) for (let i = 0; i <= n; i++) { const a = (i / n) * Math.PI * 2, x = Math.sin(a) * r, z = Math.cos(a) * r; pos.push(x, y, z); uv.push(x / 6, z / 6); }
+    for (let j = 0; j < rows.length - 1; j++) for (let i = 0; i < n; i++) {
+      const am = ((i + 0.5) / n) * Math.PI * 2, rm = (rows[j] + rows[j + 1]) / 2;
+      if (cut(k, Math.sin(am) * rm, Math.cos(am) * rm)) continue;
+      const a = j * (n + 1) + i, b2 = a + 1, c = a + n + 1, d = c + 1;
+      idx.push(a, b2, c, b2, d, c);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    if (geo.attributes.normal.getY(0) < 0) { for (let q = 0; q < idx.length; q += 3) [idx[q + 1], idx[q + 2]] = [idx[q + 2], idx[q + 1]]; geo.setIndex(idx); geo.computeVertexNormals(); }
+    const color = monster && T.id !== 'dump' ? (S.ground || FLOOR_LOOK[T.id]) : FLOOR_LOOK[T.id];
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, map: floorTexture(), roughness: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 4 }));
+    m.receiveShadow = true;
+    group.add(m);
+  });
+  return group;
 }
 
 // The open ground of the Common Quarter: the lots kept for Businessmen's shops on the market

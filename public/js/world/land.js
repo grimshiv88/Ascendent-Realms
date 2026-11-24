@@ -2,7 +2,7 @@
 // Near the player the ground is detailed and has trees, rocks and grass; further away it gets
 // coarser; a low-detail "horizon" covers everything out to about 24 km so mountains show far off.
 import * as THREE from 'three';
-import { sample, vnoise, SEA_LEVEL, lakesWithLevels, VOLCANOES, toWorld } from '../data/world-layout.mjs';
+import { sample, vnoise, SEA_LEVEL, lakesWithLevels, VOLCANOES, toWorld, cityFloorAt } from '../data/world-layout.mjs';
 import { scenery, hideInstance, BREAKABLE, setSceneryQuality } from './scenery.js';
 
 export const CHUNK = 256;                 // metres per terrain tile
@@ -176,7 +176,9 @@ function buildTileGeometry(cx, cz, segs) {
       const wx = ox + i * step, wz = oz + j * step;
       const inner = i >= 0 && j >= 0 && i < n && j < n;
       const s = sample(wx, wz, inner ? {} : S);
-      hs[(j + 1) * b + (i + 1)] = s.h;
+      // inside a great city's inner wall the land sinks out of sight: the city draws its own floors
+      const city = cityFloorAt(wx, wz, 0.3);
+      hs[(j + 1) * b + (i + 1)] = city ? city.flat - 2.5 : s.h;
       if (inner) info[j * n + i] = s;
     }
   }

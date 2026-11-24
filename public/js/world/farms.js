@@ -233,6 +233,7 @@ function barn(g, solid, toW) {
   // a lantern hanging from the ceiling, lit at night (see update)
   const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.2), new THREE.MeshStandardMaterial({ color: '#ffd890', emissive: '#ffb040', emissiveIntensity: 0 }));
   lamp.position.set(0, H - 0.6, 0); b.add(lamp);
+  const glow = new THREE.PointLight('#ffc070', 0, 12, 1.6); glow.position.set(0, H - 0.9, 0); b.add(glow);
   // solid: the walls (not the doorway), the stall walls and the mangers
   const w = (lx, lz) => toW(B.x + lx, B.z + lz);
   const put = (lx, lz, r = 0.3, h = H) => { const p = w(lx, lz); solid.push({ x: p.x, z: p.z, r, kind: 'wall', height: h }); };
@@ -244,7 +245,7 @@ function barn(g, solid, toW) {
   for (let i = 1; i < n; i++) for (let z = 0; z <= STALL_D; z += 0.4) put(-W / 2 + WALL_T + sw * i, -D / 2 + WALL_T + z, 0.18, 1.4);
   for (let i = 0; i < n; i++) for (const dx of [-0.6, 0, 0.6]) put(-W / 2 + WALL_T + sw * (i + 0.5) + dx, -D / 2 + WALL_T + 0.3, 0.3, 1);
   put(W / 2 - 1, D / 2 - 1.75, 0.6, 1.6);
-  return { doors, stalls, lamp, door: w(0, D / 2 + 0.3) };
+  return { doors, stalls, lamp, glow, door: w(0, D / 2 + 0.3) };
 }
 
 function pen(g, solid, toW, P, coop = false) {
@@ -418,6 +419,7 @@ export function buildFarm(f) {
         }
       }
       stable.lamp.material.emissiveIntensity = night ? 2.5 : 0;
+      stable.glow.intensity = night ? 6 : 0;
       for (const n of npcs) animateCharacter(n.body, t, 0);
       // a fence that was rammed shudders for a moment
       for (const part of g.userData.parts || []) {

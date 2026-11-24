@@ -817,6 +817,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const spots = placesWithPositions().filter((p) => !p.cave && (p.city || p.village || p.spawn));
     const best = spots.reduce((a, b) => (Math.hypot(b.x - pos.x, b.z - pos.z) < Math.hypot(a.x - pos.x, a.z - pos.z) ? b : a));
     pos.set(best.x + 3, 0, best.z + 3);
+    // in a great walled city you rise at its checkpoint in the Dump, by the south gate, far below the castle
+    if (best.city) { updateSites(best.x, best.z); const c = builtCities().find((q) => q.place.id === best.id)?.built.checkpoint; if (c) pos.set(c.x, 0, c.z); }
     updateSites(pos.x, pos.z);
     land.update(pos.x, pos.z, Infinity);
     pos.y = groundAt(pos.x, pos.z);
