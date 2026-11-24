@@ -4,7 +4,7 @@
 // hold up each ring, and ramps climb them where the four main roads cross.
 // Shared by the land (world-layout.mjs), the game and the server. No imports, so anything can use it.
 
-export const CITY_R = 240;           // the outer fortress wall
+export const CITY_R = 280;           // the outer fortress wall (the Dump was made bigger 2026-11-24)
 export const INNER_R = CITY_R - 14;  // the inner wall (the moat lies between)
 
 // The rings from the middle out: each stands `y` metres above the city's foot (its gates).

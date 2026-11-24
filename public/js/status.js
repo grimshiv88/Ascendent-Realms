@@ -166,7 +166,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
         ${row('Elements', c.elements.join(', '))}
         ${row('Skills', c.skills.length ? c.skills.map((id) => esc(SKILLS[id]?.name || id)).join(', ') : 'None yet')}
       </dl>
-      <p class="sw-points">Unspent points: <b>${left}</b>${c.unspentPoints ? ' <small>Put points into Strength, Agility, Dex, Stamina or Intelligence. HP, SP, ATK, MATK, DEF and MDEF grow with them.</small>' : ''}</p>
+      <p class="sw-points">Unspent points: <b>${left}</b></p>
       <hr>
       <div class="sw-privacy" role="radiogroup" aria-label="Who can see your Status">
         <span>Who can see this Status:</span>

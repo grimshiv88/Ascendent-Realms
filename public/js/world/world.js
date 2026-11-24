@@ -680,7 +680,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     getHand: () => { const a = avatar.userData.rig?.arms; const hand = a?.[1]?.hand || a?.[0]?.hand; if (hand) { avatar.updateMatrixWorld(true); return hand.getWorldPosition(new THREE.Vector3()); } return new THREE.Vector3(pos.x, pos.y + bodyH * 0.5, pos.z); },
     onTame: (item, m) => riding?.adopt(item, m.x, m.z, m.heading),
     creatures: () => creatures,
-    getPos: () => pos, getHeading: () => heading,
+    getPos: () => pos, getHeading: () => heading, isNight: () => night,
     groundAt: (x, z) => groundAt(x, z, pos.y),
     // the campfire beside each waystone (see spawn.js)
     siteFires: () => sites.filter((s) => s.built && !s.place.cave && Math.hypot(s.place.x - pos.x, s.place.z - pos.z) < 60).map((s) => ({ x: s.place.x + 9.5, z: s.place.z - 11 })),

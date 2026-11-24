@@ -129,46 +129,60 @@ function fence(g, solid, toW, cx, cz, hx, hz, gateSide = 'front') {
   ];
   for (const [name, [x0, z0], [x1, z1]] of sides) {
     const len = Math.hypot(x1 - x0, z1 - z0);
-    const gate = name === gateSide ? [len / 2 - 1.3, len / 2 + 1.3] : null;
     const ry = Math.atan2(x1 - x0, z1 - z0);
-    const segs = Math.ceil(len / 2.2);
     const at = (k) => [x0 + ((x1 - x0) * k) / len, z0 + ((z1 - z0) * k) / len];
-    // each stretch between two posts is one part: an animal running into it hard enough knocks it
-    // down (see world.js onCrash); it is put back up after a while
-    const segOf = [];
-    for (let i = 0; i < segs; i++) { const part = { name: 'fence', hp: 120, maxHp: 120, meshes: [], solid: [], broken: false }; segOf.push(part); parts.push(part); }
-    const partAt = (k) => segOf[Math.min(segs - 1, Math.floor((k / len) * segs))];
-    for (let i = 0; i <= segs; i++) {
-      const k = (i / segs) * len;
-      if (gate && k > gate[0] && k < gate[1]) continue;
-      const [x, z] = at(k);
-      const p = box(0.14, 1.25, 0.14, post, g, x, 0.62, z);
-      if (i > 0) segOf[i - 1].meshes.push(p);
-      if (i < segs) {
-        const k2 = ((i + 1) / segs) * len;
-        if (gate && k2 > gate[0] && k < gate[1]) continue;
-        const [mx, mz] = at((k + k2) / 2);
-        for (const y of [0.45, 0.95]) segOf[i].meshes.push(box(0.06, 0.1, len / segs, rail, g, mx, y, mz, ry));
+    // the fence runs in one piece, or in two either side of the gate: each run has its own posts
+    // (a stout gatepost at each side of the opening) and rails right up to them, and is solid
+    // exactly where it stands, so there is no unseen wall and no gap without a rail
+    const runs = name === gateSide ? [[0, len / 2 - 1.3], [len / 2 + 1.3, len]] : [[0, len]];
+    for (const [r0, r1] of runs) {
+      const rl = r1 - r0, segs = Math.max(1, Math.ceil(rl / 2.2));
+      // each stretch between two posts is one part: an animal running into it hard enough knocks it
+      // down (see world.js onCrash); it is put back up after a while
+      const segOf = [];
+      for (let i = 0; i < segs; i++) { const part = { name: 'fence', hp: 120, maxHp: 120, meshes: [], solid: [], broken: false }; segOf.push(part); parts.push(part); }
+      for (let i = 0; i <= segs; i++) {
+        const k = r0 + (i / segs) * rl;
+        const [x, z] = at(k);
+        const gatepost = runs.length > 1 && ((i === 0 && r0 > 0) || (i === segs && r1 < len));
+        const p = gatepost ? box(0.2, 1.45, 0.2, post, g, x, 0.72, z) : box(0.14, 1.25, 0.14, post, g, x, 0.62, z);
+        if (i > 0) segOf[i - 1].meshes.push(p);
+        if (i < segs) {
+          const [mx, mz] = at(k + rl / segs / 2);
+          for (const y of [0.45, 0.95]) segOf[i].meshes.push(box(0.06, 0.1, rl / segs, rail, g, mx, y, mz, ry));
+        }
       }
-    }
-    // solid along its length (but not across the gate)
-    for (let k = 0; k <= len; k += 0.45) {
-      if (gate && k > gate[0] && k < gate[1]) continue;
-      const [lx, lz] = at(k);
-      const w = toW(lx, lz);
-      const e = { x: w.x, z: w.z, r: 0.25, kind: 'wall', height: 1.25 };
-      e.part = partAt(k);
-      e.part.solid.push(e);
-      solid.push(e);
+      for (let k = r0; k <= r1 + 0.01; k += Math.min(0.45, rl)) {
+        const [lx, lz] = at(Math.min(k, r1));
+        const w = toW(lx, lz);
+        const e = { x: w.x, z: w.z, r: 0.25, kind: 'wall', height: 1.25 };
+        e.part = segOf[Math.min(segs - 1, Math.floor(((k - r0) / rl) * segs))];
+        e.part.solid.push(e);
+        solid.push(e);
+      }
     }
   }
 }
 
+// The stable: a red barn you can walk into. Its big double doors swing open as you come up to
+// them. Inside, on a straw floor, are three stalls along the back wall, each with a manger of hay
+// and a water bucket: the farm's horses and donkey sleep here at night, safe from the monsters
+// (see husbandry.js), and go back out to the pen in the morning.
+const DOOR_W = 3.2, DOOR_H = 3.3, WALL_T = 0.2;
 function barn(g, solid, toW) {
   const B = LAYOUT.barn, W = B.w, D = B.d, H = 4.2;
   const b = new THREE.Group(); b.position.set(B.x, 0, B.z); g.add(b);
-  const red = mat('#8a2a1e', 0.85), white = mat('#ece4d4', 0.8), roof = mat('#4a3a30', 0.9);
-  box(W, H, D, red, b, 0, H / 2, 0);
+  const red = mat('#8a2a1e', 0.85), inner = mat('#6e3a26', 0.9), white = mat('#ece4d4', 0.8), roof = mat('#4a3a30', 0.9);
+  const plank = mat('#7a5a3a'), dark = mat('#5a3e26');
+  // the walls (hollow now): back, two sides, and the front either side of the doorway and over it
+  box(W, H, WALL_T, red, b, 0, H / 2, -D / 2 + WALL_T / 2);
+  for (const s of [-1, 1]) box(WALL_T, H, D, red, b, s * (W / 2 - WALL_T / 2), H / 2, 0);
+  const side = (W - DOOR_W) / 2;
+  for (const s of [-1, 1]) box(side, H, WALL_T, red, b, s * (DOOR_W / 2 + side / 2), H / 2, D / 2 - WALL_T / 2);
+  box(DOOR_W, H - DOOR_H, WALL_T, red, b, 0, DOOR_H + (H - DOOR_H) / 2, D / 2 - WALL_T / 2);
+  // a darker inside skin, so the walls read from within, and a ceiling of boards at the eaves
+  box(W - WALL_T * 2 - 0.02, H - 0.02, 0.02, inner, b, 0, H / 2, -D / 2 + WALL_T + 0.01).castShadow = false;
+  const ceil = box(W - WALL_T * 2, 0.08, D - WALL_T * 2, dark, b, 0, H - 0.04, 0); ceil.castShadow = false;
   // gable ends and a roof of two slopes
   const rise = D * 0.32, slope = Math.hypot(D / 2, rise) + 0.35, tilt = Math.atan2(rise, D / 2);
   for (const s of [-1, 1]) {
@@ -178,18 +192,59 @@ function barn(g, solid, toW) {
     const r = box(W + 0.6, 0.22, slope, roof, b, 0, H + rise / 2 + 0.05, s * D / 4);
     r.rotation.x = s * tilt;
   }
-  // big double doors facing the town, with white braces
-  box(2.8, 3, 0.1, mat('#6a1a14'), b, 0, 1.5, D / 2 + 0.05);
-  for (const s of [-1, 1]) { const x = box(0.14, 3.9, 0.12, white, b, s * 0.7, 1.5, D / 2 + 0.12); x.rotation.z = s * 0.75; }
-  box(3.1, 0.16, 0.14, white, b, 0, 3.05, D / 2 + 0.12);
-  // hay bales by the door
-  for (const [x, z, y] of [[-3, D / 2 + 1, 0.4], [-2, D / 2 + 1.2, 0.4], [-2.5, D / 2 + 1.1, 1.15]]) {
+  // white trim round the doorway
+  for (const s of [-1, 1]) box(0.16, DOOR_H + 0.1, 0.12, white, b, s * (DOOR_W / 2 + 0.08), DOOR_H / 2, D / 2 + 0.02);
+  box(DOOR_W + 0.32, 0.16, 0.12, white, b, 0, DOOR_H + 0.05, D / 2 + 0.02);
+  // the two door leaves, each hung on its own hinge at the side of the doorway, with white braces
+  const doors = [];
+  for (const s of [-1, 1]) {
+    const hinge = new THREE.Group(); hinge.position.set(s * DOOR_W / 2, 0, D / 2 + 0.06); b.add(hinge);
+    const leaf = DOOR_W / 2 - 0.02, mid = -s * leaf / 2;
+    box(leaf, DOOR_H - 0.05, 0.1, mat('#6a1a14'), hinge, mid, DOOR_H / 2, 0);
+    const brace = Math.hypot(leaf - 0.2, DOOR_H - 0.4);
+    box(0.13, brace, 0.04, white, hinge, mid, DOOR_H / 2, 0.07).rotation.z = s * Math.atan2(leaf - 0.2, DOOR_H - 0.4);
+    for (const y of [0.25, DOOR_H - 0.3]) box(leaf - 0.05, 0.13, 0.04, white, hinge, mid, y, 0.07);
+    doors.push({ hinge, s, open: 0 });
+  }
+  // straw on the floor
+  box(W - WALL_T * 2, 0.04, D - WALL_T * 2, mat('#b89a58', 1), b, 0, 0.02, 0).castShadow = false;
+  // three stalls along the back wall: low plank walls between them, a manger of hay and a bucket
+  const STALL_D = 3.2, n = 3, sw = (W - WALL_T * 2) / n;
+  const stalls = [];
+  for (let i = 0; i < n; i++) {
+    const x = -W / 2 + WALL_T + sw * (i + 0.5);
+    if (i > 0) {
+      const px = x - sw / 2;
+      box(0.1, 1.4, STALL_D, plank, b, px, 0.7, -D / 2 + WALL_T + STALL_D / 2);
+      box(0.16, 1.7, 0.16, dark, b, px, 0.85, -D / 2 + WALL_T + STALL_D);
+    }
+    // the manger against the back wall, heaped with hay
+    box(sw - 0.6, 0.5, 0.5, dark, b, x, 0.75, -D / 2 + WALL_T + 0.3);
+    const hay = new THREE.Mesh(new THREE.BoxGeometry(sw - 0.75, 0.25, 0.4), mat('#d8b860', 1)); hay.position.set(x, 1.05, -D / 2 + WALL_T + 0.3); b.add(hay);
+    const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 0.35, 10), mat('#6a5a4a', 0.7)); bucket.position.set(x + sw / 2 - 0.4, 0.18, -D / 2 + WALL_T + 0.35); b.add(bucket);
+    const water = new THREE.Mesh(new THREE.CircleGeometry(0.18, 10), mat('#4a7a9a', 0.2)); water.rotation.x = -Math.PI / 2; water.position.set(bucket.position.x, 0.34, bucket.position.z); b.add(water);
+    stalls.push({ lx: B.x + x, lz: B.z - D / 2 + WALL_T + STALL_D / 2 + 0.2, hw: sw / 2 - 0.55, hd: STALL_D / 2 - 0.6 });
+  }
+  // hay bales stacked inside by the door, and a couple outside
+  for (const [x, z, y] of [[W / 2 - 1, D / 2 - 1.2, 0.4], [W / 2 - 1, D / 2 - 2.3, 0.4], [W / 2 - 1, D / 2 - 1.75, 1.15], [-W / 2 - 0.9, D / 2 + 0.2, 0.4]]) {
     const h = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 1, 12), mat('#d8b860', 1));
     h.rotation.z = Math.PI / 2; h.position.set(x, y, z); h.castShadow = true; b.add(h);
   }
+  // a lantern hanging from the ceiling, lit at night (see update)
+  const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.2), new THREE.MeshStandardMaterial({ color: '#ffd890', emissive: '#ffb040', emissiveIntensity: 0 }));
+  lamp.position.set(0, H - 0.6, 0); b.add(lamp);
+  // solid: the walls (not the doorway), the stall walls and the mangers
   const w = (lx, lz) => toW(B.x + lx, B.z + lz);
-  for (let x = -W / 2; x <= W / 2; x += 0.7) for (const z of [-D / 2, D / 2]) { const p = w(x, z); solid.push({ x: p.x, z: p.z, r: 0.4, kind: 'wall', height: H }); }
-  for (let z = -D / 2; z <= D / 2; z += 0.7) for (const x of [-W / 2, W / 2]) { const p = w(x, z); solid.push({ x: p.x, z: p.z, r: 0.4, kind: 'wall', height: H }); }
+  const put = (lx, lz, r = 0.3, h = H) => { const p = w(lx, lz); solid.push({ x: p.x, z: p.z, r, kind: 'wall', height: h }); };
+  for (let x = -W / 2 + 0.15; x <= W / 2 - 0.15; x += 0.45) {
+    put(x, -D / 2 + 0.15);
+    if (Math.abs(x) > DOOR_W / 2 + 0.1) put(x, D / 2 - 0.15);
+  }
+  for (let z = -D / 2 + 0.15; z <= D / 2 - 0.15; z += 0.45) for (const x of [-W / 2 + 0.15, W / 2 - 0.15]) put(x, z);
+  for (let i = 1; i < n; i++) for (let z = 0; z <= STALL_D; z += 0.4) put(-W / 2 + WALL_T + sw * i, -D / 2 + WALL_T + z, 0.18, 1.4);
+  for (let i = 0; i < n; i++) for (const dx of [-0.6, 0, 0.6]) put(-W / 2 + WALL_T + sw * (i + 0.5) + dx, -D / 2 + WALL_T + 0.3, 0.3, 1);
+  put(W / 2 - 1, D / 2 - 1.75, 0.6, 1.6);
+  return { doors, stalls, lamp, door: w(0, D / 2 + 0.3) };
 }
 
 function pen(g, solid, toW, P, coop = false) {
@@ -230,19 +285,50 @@ function twoFacedSign(text, w, h) {
   return g;
 }
 
-function stall(g, solid, toW, S, label, colors, goods) {
-  const s = new THREE.Group(); s.position.set(S.x, 0, S.z); g.add(s);
-  const wood = mat('#7a5a3a');
+// The awning slopes down to the front: it rests on the tops of the back posts and is tied to the
+// front posts, which go on up to hold the sign board well clear above it (nothing covers the words).
+const STALL = { front: 1.0, back: -1.4, yFront: 2.5, yBack: 2.9, half: 1.7 };
+const awningY = (z) => STALL.yFront + ((STALL.front - z) * (STALL.yBack - STALL.yFront)) / (STALL.front - STALL.back);
+// A market stall, built facing +z (its front, where you stand to buy) in its own group: returns
+// { group, solid: [[x, z, r, height]] } in the stall's own space. Used at the farms and in the
+// cities' markets (city.js).
+export function marketStall(label, colors, goods) {
+  const s = new THREE.Group();
+  const out = [];
+  const wood = mat('#7a5a3a'), dark = mat('#5a3e26');
+  const { front, back, half } = STALL;
   box(3.4, 1, 0.9, wood, s, 0, 0.5, 0.6);
-  for (const [x, z] of [[-1.7, 1], [1.7, 1], [-1.7, -1.4], [1.7, -1.4]]) box(0.12, 2.6, 0.12, wood, s, x, 1.3, z);
-  for (let i = 0; i < 6; i++) box(3.6 / 6, 0.06, 2.8, mat(colors[i % 2], 0.8), s, -1.5 + i * 0.6, 2.7, -0.2).rotation.x = -0.18;
+  // back posts stop right under the cloth; front posts run up past it to carry the sign
+  const signY = 3.2, signH = 0.62, postTop = signY + signH / 2 + 0.08;
+  for (const x of [-half, half]) {
+    box(0.12, awningY(back), 0.12, wood, s, x, awningY(back) / 2, back);
+    box(0.12, postTop, 0.12, wood, s, x, postTop / 2, front);
+  }
+  // the beams the cloth lies on, along the front and the back, and one down each side
+  box(half * 2 + 0.12, 0.1, 0.12, dark, s, 0, awningY(front) - 0.08, front);
+  box(half * 2 + 0.12, 0.1, 0.12, dark, s, 0, awningY(back) - 0.08, back);
+  const run = front - back, tilt = Math.atan2(STALL.yBack - STALL.yFront, run);
+  for (const x of [-half, half]) box(0.1, 0.1, Math.hypot(run, STALL.yBack - STALL.yFront), dark, s, x, (awningY(front) + awningY(back)) / 2 - 0.08, (front + back) / 2).rotation.x = tilt;
+  // the striped cloth, a little past the posts all round
+  const zc = (front + back) / 2 - 0.05, depth = Math.hypot(run + 0.7, (STALL.yBack - STALL.yFront) * (run + 0.7) / run);
+  for (let i = 0; i < 6; i++) box(3.7 / 6, 0.05, depth, mat(colors[i % 2], 0.8), s, -3.7 / 2 + 3.7 / 12 + i * (3.7 / 6), awningY(zc) + 0.03, zc).rotation.x = tilt;
   goods.forEach((c, i) => {
     box(0.55, 0.3, 0.45, mat('#9a7a4a'), s, -1.2 + i * 0.6, 1.15, 0.6);
     for (let k = 0; k < 4; k++) { const v = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 5), mat(c, 0.6)); v.position.set(-1.35 + i * 0.6 + (k % 2) * 0.16, 1.33, 0.5 + Math.floor(k / 2) * 0.16); s.add(v); }
   });
-  const sign = twoFacedSign(label, 3.2, 0.6);
-  sign.position.set(0, 3.05, 1.05); s.add(sign);
-  for (const x of [-1.2, 0, 1.2]) { const p = toW(S.x + x, S.z + 0.6); solid.push({ x: p.x, z: p.z, r: 0.6, kind: 'wall', height: 1 }); }
+  // the sign between the front posts, on a wooden board with a top rail
+  box(half * 2 - 0.1, signH + 0.06, 0.05, dark, s, 0, signY, front);
+  const sign = twoFacedSign(label, half * 2 - 0.16, signH);
+  sign.position.set(0, signY, front); s.add(sign);
+  box(half * 2 + 0.2, 0.1, 0.14, dark, s, 0, postTop + 0.05, front);
+  for (const x of [-1.2, 0, 1.2]) out.push([x, 0.6, 0.6, 1]);
+  for (const x of [-half, half]) out.push([x, back, 0.15, 2.9]);
+  return { group: s, solid: out };
+}
+function stall(g, solid, toW, S, label, colors, goods) {
+  const { group: s, solid: parts } = marketStall(label, colors, goods);
+  s.position.set(S.x, 0, S.z); g.add(s);
+  for (const [x, z, r, height] of parts) { const p = toW(S.x + x, S.z + z); solid.push({ x: p.x, z: p.z, r, kind: 'wall', height }); }
   return s;
 }
 
@@ -250,7 +336,7 @@ function butcherShed(g, solid, toW) {
   const S = LAYOUT.butcher;
   const s = stall(g, solid, toW, S, 'Halal Butcher', ['#f0ece4', '#2a6a3a'], ['#a83a2a', '#b8483a', '#c8a070']);
   // a back wall, a chopping block and the cooling room door
-  box(3.6, 2.6, 0.15, mat('#d8d0c0', 0.8), s, 0, 1.3, -1.45);
+  box(3.4, awningY(-1.5), 0.15, mat('#d8d0c0', 0.8), s, 0, awningY(-1.5) / 2, -1.5);
   box(0.6, 0.8, 0.6, mat('#8a6a4a'), s, 1, 0.4, -0.6);
   box(0.9, 1.9, 0.08, mat('#5a4a3a'), s, -0.9, 0.95, -1.38);
   for (let z = -1.4; z <= 0.6; z += 0.5) for (const x of [-1.8, 1.8]) { const p = toW(S.x + x, S.z + z); solid.push({ x: p.x, z: p.z, r: 0.3, kind: 'wall', height: 2.6 }); }
@@ -292,7 +378,7 @@ export function buildFarm(f) {
   fieldOf(g, solid, f, toW);
   pen(g, solid, toW, LAYOUT.pen);
   pen(g, solid, toW, LAYOUT.yard, true);
-  barn(g, solid, toW);
+  const stable = barn(g, solid, toW);
   stall(g, solid, toW, LAYOUT.stand, 'Farm Stand', ['#e8d8a8', '#5a8a3a'], ['#e07020', '#6aa04a', '#e0801a', '#c83a2a']);
   butcherShed(g, solid, toW);
   const fx = fire(g, toW);
@@ -319,7 +405,19 @@ export function buildFarm(f) {
     fire: fx.at,
     beds: VISITOR_BEDS.map((b, i) => ({ k: `${f.id}:${i}`, ...toW(b.x, b.z), y: f.flat, farm: f.id })),
     trough: toW(P.x - P.hx + 1.2, P.z),
-    update(t) {
+    // the stalls in the stable, as boxes in the world, for the horses at night
+    stalls: stable.stalls.map((q) => farmBox(f, q.lx, q.lz, q.hw, q.hd)),
+    update(t, you = null, night = false) {
+      // the stable doors swing open while you are near them, and shut behind you
+      if (you) {
+        const near = Math.hypot(you.x - stable.door.x, you.z - stable.door.z) < 4.2;
+        for (const d of stable.doors) {
+          const want = near ? 1.45 : 0;
+          d.open += (want - d.open) * 0.12;
+          d.hinge.rotation.y = d.s * d.open;
+        }
+      }
+      stable.lamp.material.emissiveIntensity = night ? 2.5 : 0;
       for (const n of npcs) animateCharacter(n.body, t, 0);
       // a fence that was rammed shudders for a moment
       for (const part of g.userData.parts || []) {

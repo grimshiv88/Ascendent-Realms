@@ -14,12 +14,14 @@ import { canHarvest } from './deaths.js';
 import { TAMEABLE, TAME_FEEDS } from '../data/mounts.mjs';
 
 const FARM_BUILD = 650, FARM_DROP = 850;
+const STABLED = new Set(['horse', 'donkey']); // they sleep in the stable at night
+const STABLE_SWAP = 45; // ...moved in or out only while you are this far from the farm
 const CAMPFIRE_SECS = 6 * 60, CAMPFIRES_MAX = 3;
 export const CAMPFIRE_SAFE = 9; // metres round a lit campfire where monsters won't find you at night
 const BLADES = ['sword', 'dagger', 'axe'];
 const BIRD_FOOD = ['grain', 'lettuce', 'cabbage', 'carrot'];
 
-export function createHusbandry({ scene, colliders, creatures, game, say, floatText, onEvent, onTame, getPos, getHeading, groundAt, siteFires, getHand = null }) {
+export function createHusbandry({ scene, colliders, creatures, game, say, floatText, onEvent, onTame, getPos, getHeading, groundAt, siteFires, getHand = null, isNight = () => false }) {
   // the rope you drag a body by: from your hand to its neck, sagging a little in the middle
   const ropeMat = new THREE.MeshStandardMaterial({ color: '#a8824a', roughness: 0.95 });
   let rope = null;
@@ -59,8 +61,11 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
           for (let i = 0; i < n; i++) {
             const m = c.spawnAt(`a_${id}`, 1, pen.x + (Math.random() - 0.5) * pen.hw * 1.6, pen.z + (Math.random() - 0.5) * pen.hd * 1.6, { keep: true, farm: q.f.id, pen });
             m.heading = Math.random() * 6.28;
+            if (STABLED.has(id)) m.dayPen = pen;
           }
         }
+        q.stabled = null;
+        stable(q, isNight());
       } else if (d > FARM_DROP && q.built) {
         scene.remove(q.built.group);
         colliders.remove(q.built.solid);
@@ -70,6 +75,25 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     }
   }
   const builtFarms = () => farms.filter((q) => q.built);
+  // At night the horses and the donkey sleep in the stable, one to a stall with hay and water,
+  // safe from the monsters; in the morning they go back out to the pen. They are moved while
+  // nobody is watching (you are away from the farm), so none ever walks through a fence.
+  function stable(q, night) {
+    if (q.stabled === night) return;
+    const p = getPos();
+    if (q.stabled !== null && Math.hypot(p.x - q.f.x, p.z - q.f.z) < STABLE_SWAP) return;
+    q.stabled = night;
+    const herd = creatures().list.filter((m) => m.farm === q.f.id && m.dayPen && !m.dead);
+    herd.forEach((m, i) => {
+      const box = night ? q.built.stalls[i % q.built.stalls.length] : m.dayPen;
+      m.pen = box;
+      m.x = box.x + (night ? 0 : (Math.random() - 0.5) * box.hw * 1.6);
+      m.z = box.z + (night ? 0 : (Math.random() - 0.5) * box.hd * 1.6);
+      m.walking = false; m.timer = 2 + Math.random() * 4;
+      // in its stall it faces the manger at the back wall
+      if (night) m.heading = q.f.rot + Math.PI;
+    });
+  }
   function npcNear(x, z, r = 2.8) {
     for (const q of builtFarms()) for (const n of q.built.npcs) if (Math.hypot(n.x - x, n.z - z) < r) return n;
     return null;
@@ -238,7 +262,8 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
 
   // ---------- every frame ----------
   function tick(dt, t) {
-    for (const q of builtFarms()) q.built.update(t);
+    const night = isNight();
+    for (const q of builtFarms()) { stable(q, night); q.built.update(t, getPos(), night); }
     for (const f of [...fires]) {
       f.left -= dt;
       f.flames.forEach((fl, i) => { fl.scale.y = 0.85 + Math.sin(t * 9 + i * 2) * 0.15; });

@@ -69,7 +69,7 @@ export const LAYOUT = {
   field: { x: -8, z: -6, hx: 10.5, hz: 11 },      // the vegetable field
   pen: { x: 11, z: -9, hx: 7, hz: 8.5 },          // horses, cows, sheep, goats, a donkey
   yard: { x: 12.5, z: 6, hx: 5.5, hz: 4 },        // chickens and turkeys
-  barn: { x: 14, z: 15, w: 8, d: 6 },             // a red barn, doors to the front
+  barn: { x: 14, z: 15, w: 10.5, d: 8 },          // the stable: a red barn with stalls, doors to the front
   stand: { x: -6, z: 14 },                        // the Farm Stand, with the farmer behind it
   butcher: { x: 4, z: 15 },                       // the Halal Butcher's shed, with the butcher
   fire: { x: -15, z: 14 },                        // a cooking fire anyone may use
