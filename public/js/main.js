@@ -40,6 +40,7 @@ import { GATES_R } from './data/cults.mjs';
 import { gameTime as realmTime } from './data/clock.mjs';
 import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
+import { createVoice } from './voice.js';
 
 // Nothing in the game can be selected, copied or right-clicked, except the boxes you type in
 const typing = (e) => e.target.closest?.('input, textarea, select, [contenteditable="true"]');
@@ -1413,6 +1414,8 @@ function startGame(character) {
   window.addEventListener('pagehide', () => game.saveNow());
   // Friends and chat: search at the top right, chat at the bottom left
   social = createSocial($('game'));
+  // Voice chat (16+): a mic button under the chat button; voices fade with distance
+  createVoice($('game'), { position: () => world?.position() });
   // Everyone's land: posts on owned plots, and levelled ground
   api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
   loadCaves();

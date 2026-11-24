@@ -1049,6 +1049,32 @@ input[type="date"] { color-scheme: dark; }
 .announce-banner button { background: none; border: 0; color: #f4ead2; font-size: 18px; cursor: pointer; padding: 0 4px; }
 .so-report select, .so-report textarea { width: 100%; margin: 4px 0 8px; box-sizing: border-box; }
 
+/* Voice chat (16+): a mic button under the chat button, and its panel */
+.vo-toggle { position: absolute; left: 0; top: calc(50% + 34px); z-index: 2; width: 34px; height: 40px; padding: 0; font-size: 1.05rem; color: #fff; cursor: pointer;
+  background: rgba(10, 8, 4, 0.78); border: 1px solid rgba(200, 146, 26, 0.55); border-left: 0; border-radius: 0 10px 10px 0; filter: grayscale(0.8); }
+.vo-toggle.on { filter: none; }
+.vo-toggle.live { box-shadow: 0 0 0 2px #5fe08a inset; }
+.vo-panel { position: absolute; left: 40px; top: calc(50% + 34px); z-index: 4; width: min(300px, calc(100vw - 56px)); max-height: 46vh; overflow-y: auto; padding: 10px; font: 0.85rem Georgia, serif; color: #f5ebd0;
+  background: rgba(14, 10, 4, 0.94); border: 1px solid var(--gold-3); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); }
+.vo-head { display: flex; align-items: center; gap: 8px; }
+.vo-head b { font: 600 0.9rem 'Cinzel', serif; color: var(--gold-2); }
+.vo-state { flex: 1; font-size: 0.75rem; opacity: 0.8; }
+.vo-note, .vo-msg { margin: 6px 0; font-size: 0.78rem; opacity: 0.85; }
+.vo-msg:empty { display: none; }
+.vo-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.vo-panel button { padding: 4px 10px; font: 600 0.75rem 'Oswald', sans-serif; letter-spacing: 0.06em; text-transform: uppercase; color: #1a1205; background: var(--gold-2); border: 0; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.vo-panel button.ghost { color: var(--gold-2); background: none; border: 1px solid var(--gold-3); }
+.vo-panel button:disabled { opacity: 0.6; cursor: default; }
+.vo-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.vo-list li { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-top: 1px solid rgba(200, 146, 26, 0.2); }
+.vo-list li.talking .vo-name { color: #5fe08a; }
+.vo-list .vo-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vo-list small { opacity: 0.7; }
+.vo-list .vo-empty { opacity: 0.7; border: 0; }
+.vo-report form { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.vo-report select, .vo-report input { font: inherit; padding: 3px 5px; color: #f5ebd0; background: rgba(0, 0, 0, 0.4); border: 1px solid var(--gold-3); border-radius: 4px; }
+.vo-report span { display: flex; gap: 6px; }
+
 /* ---------- phones and tablets ---------- */
 /* Taps answer straight away: no waiting to see if it's a double-tap zoom, no grey flash */
 button, a, label, select, summary, [data-open], [data-act] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
@@ -1101,3 +1127,9 @@ button, a, label, select, summary, [data-open], [data-act] { touch-action: manip
   #jump-btn { width: 54px; height: 54px; padding: 12px; right: max(108px, calc(env(safe-area-inset-right) + 96px)); }
   #area { top: 60px; }
 }
+/* a phone on its side: the mic button sits just above the (lowered) chat button */
+@media (max-height: 500px) {
+  .vo-toggle { top: auto; bottom: 156px; margin-left: env(safe-area-inset-left); }
+  .vo-panel { top: auto; bottom: 12px; max-height: calc(100vh - 24px); }
+}
+.vo-toggle { margin-left: env(safe-area-inset-left); }

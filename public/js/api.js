@@ -1237,3 +1237,9 @@ export async function setPrivacy(privacy) {
   }
   return request('api/privacy', { method: 'POST', body: { privacy } });
 }
+
+// Voice chat (16+): a short pass to join the voice room. The preview page has no voice server.
+export async function voicePass() {
+  if (await isPreviewMode()) throw new Error('Voice chat works on the live game only, not in this preview.');
+  return request('api/voice/pass', { method: 'POST', body: {} });
+}
