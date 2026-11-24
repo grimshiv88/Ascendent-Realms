@@ -353,6 +353,9 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .hud-bar.hp span { background: linear-gradient(90deg, #8a1f1a, #d2483a); }
 .hud-bar.sp span { background: linear-gradient(90deg, #1f3f8a, #3a7ad2); }
 .hud-bar.fatigue span { background: linear-gradient(90deg, #6a5a1a, #c8a23a); }
+.hud-bar.hunger span { background: linear-gradient(90deg, #6a3a14, #d0823a); }
+.hud-bar.hunger.low { animation: hunger-pulse 1.6s ease-in-out infinite; }
+@keyframes hunger-pulse { 50% { box-shadow: 0 0 0 2px rgba(220, 90, 40, 0.7); } }
 .hud-bar b { position: relative; display: block; padding-left: 6px; font: 600 0.72rem/16px 'Oswald', sans-serif; letter-spacing: 0.06em; color: #fff; text-shadow: 0 1px 2px #000; }
 .hud-buttons { display: flex; flex-direction: column; gap: 6px; }
 .hud-buttons button { font: 0.85rem 'Cinzel', serif; color: var(--ink); background: rgba(8, 6, 3, 0.72); border: 1px solid var(--gold-3); border-radius: 4px; padding: 7px 12px; cursor: pointer; }
@@ -1011,3 +1014,6 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .estate-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 5px 8px; font-size: 0.85rem; background: rgba(255, 255, 255, 0.04); }
 .estate-row.mine { background: rgba(80, 200, 120, 0.14); }
 .estate-row > span:first-child > span { opacity: 0.5; }
+
+/* a hunted animal's body: drag it or cut it up */
+.pop-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }

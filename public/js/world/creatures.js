@@ -6,6 +6,9 @@ import { addOrgans, maim, startDeath, tickDeath, clearDeath } from './deaths.js'
 import { sample, toWorld, PLACES, safeZoneAt } from '../data/world-layout.mjs';
 import { EVOLUTIONS, rollKillExp } from '../data/game-data.mjs';
 import { wildLevelAt, stageForLevel, wardedAt } from '../data/wilds.mjs';
+import { ANIMALS, wildAnimalsAt } from '../data/animals.mjs';
+import { buildAnimal, animateAnimal, lieDown } from './animalbody.js';
+import { CORPSE_SECS } from './deaths.js';
 
 // [name, body to build, level range, aggressive?, speed m/s, drops [item, chance, min, max]]
 export const KINDS = {
@@ -37,6 +40,11 @@ export const BY_REGION = {
   heart: ['slime', 'slime', 'goblin'], warrens: ['goblin', 'hobgoblin', 'hobgoblin', 'slime'], peaks: ['drake'],
   fae: ['wisp', 'wisp', 'slime'], mire: ['lizard', 'lizard', 'serpent'], frost: ['frostslime'], sun: ['sandlizard'],
 };
+// The animals (data/animals.mjs) live among the monsters as kinds named `a_<id>`, so every blow,
+// skill and spell works on them; they walk, flee, graze and fall in their own way below.
+for (const [id, a] of Object.entries(ANIMALS)) {
+  KINDS[`a_${id}`] = { name: a.name, animal: a, animalId: id, levels: [1, 1], aggressive: a.temper === 'fierce', speed: a.speed, drops: [] };
+}
 export const GOBLIN_LINE = ['goblin', 'hobgoblin', 'chieftain', 'goblinlord', 'ogrelord', 'emperor'];
 
 // Goblin land: the closer to the Goblin Warrens, the further evolved the goblins.
@@ -58,6 +66,8 @@ export function kindsAt(x, z, region) {
 }
 
 const MAX_NEAR = 8;           // monsters around you at once
+const MAX_ANIMALS = 12;       // wild animals around you at once
+const SHY_RANGE = 10, SHY_RUN = 20; // shy animals bolt when you come this close (further when you run)
 const SPAWN_MIN = 45, SPAWN_MAX = 110, DESPAWN = 190;
 const NOTICE = 30;            // aggressive monsters notice you this far away by day (night: further)
 const STALK = 55;             // ...and creep towards you from this far
@@ -66,7 +76,7 @@ const AMBUSH_EVERY = [70, 140]; // seconds between ambush attempts while you tra
 const rand = (a, b) => a + Math.random() * (b - a);
 const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
 
-function plate(name, level) {
+function plate(name, level, showLevel = true) {
   const c = document.createElement('canvas');
   c.width = 256; c.height = 64;
   const tex = new THREE.CanvasTexture(c);
@@ -79,7 +89,7 @@ function plate(name, level) {
     g.font = 'bold 22px Cinzel, Georgia, serif';
     g.textAlign = 'center';
     g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.8)';
-    const label = `${name}  Lv ${level}`;
+    const label = showLevel ? `${name}  Lv ${level}` : name;
     g.strokeText(label, 128, 24);
     g.fillStyle = '#f5e6c0'; g.fillText(label, 128, 24);
     g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(28, 38, 200, 14);
@@ -106,7 +116,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   const list = [];
   const tmp = {};
   const feet = (x, z, fromY, h) => (groundAt ? groundAt(x, z, fromY) : h);
-  let spawnTimer = 0;
+  let spawnTimer = 0, animalTimer = 1;
+  const animate = (m, t, speed) => (m.kind.animal ? animateAnimal(m.body, t, speed) : animateCharacter(m.body, t, speed / 1.6));
 
   // A wild monster's level comes from where it is, not from you: weak near towns, villages and
   // settled land, stronger the further into the wilds (see data/wilds.mjs), give or take a tenth
@@ -138,6 +149,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
 
   function make(kindId, level, x, y, z, extra = {}) {
     const kind = KINDS[kindId];
+    if (kind.animal) return makeAnimal(kindId, level, x, y, z, extra);
     const stage = extra.stage ?? kind.body.stage ?? 0;
     const body = buildCharacter({ race: kind.body.race, form: kind.body.form, stage, look: { ...(kind.body.look || {}), size: kind.body.size || 1 } });
     addOrgans(body.userData.rig); // (inside, for a deep cut to spill)
@@ -159,6 +171,49 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     };
     list.push(m);
     return m;
+  }
+
+  // An animal: its own body, and health from its size. Hunters (wolves, bears) are as strong as
+  // the monsters of the land they roam; the rest are just animals.
+  function makeAnimal(kindId, level, x, y, z, extra = {}) {
+    const kind = KINDS[kindId], a = kind.animal;
+    const fierce = a.temper === 'fierce';
+    const body = buildAnimal(a);
+    body.position.set(x, y, z);
+    const h = body.userData.height;
+    const tag = plate(extra.title || a.name, level, fierce);
+    tag.sprite.visible = fierce;
+    scene.add(body, tag.sprite);
+    const maxHp = Math.round(fierce ? (8 + level * 3.5) * (a.hp / 50) : a.hp);
+    const m = {
+      kind, kindId, level, stage: 0, body, tag, x, z, y, heading: Math.random() * 6.28, hp: maxHp, maxHp,
+      atk: Math.round((7 + level * 0.75) * (a.atk || 1)), def: fierce ? 1 + level : 0, speed: a.speed,
+      radius: Math.max(0.12, Math.min(a.len * 0.3, 0.9)), height: h, state: 'wander', timer: 0, attackCd: 0,
+      angry: fierce, hurt: 0, dead: 0, fleeT: 0, ...extra,
+    };
+    list.push(m);
+    return m;
+  }
+  // a few metres of open water near (x, z)? (ducks and geese keep to the shore)
+  function nearWater(x, z) {
+    for (const [dx, dz] of [[25, 0], [-25, 0], [0, 25], [0, -25], [18, 18], [-18, -18]]) { const q = sample(x + dx, z + dz, tmp); if (q.h < q.water) return true; }
+    return false;
+  }
+  function spawnAnimals(p) {
+    for (let tries = 0; tries < 6; tries++) {
+      const at = spot(p.x, p.z, SPAWN_MIN + Math.random() * (SPAWN_MAX - SPAWN_MIN));
+      if (!at) continue;
+      const kinds = wildAnimalsAt(at.region, at.s.forest || 0, nearWater(at.x, at.z));
+      if (!kinds.length) continue;
+      const id = pickOne(kinds), a = ANIMALS[id];
+      const level = a.temper === 'fierce' ? levelFor(at.x, at.z) : 1;
+      const n = Math.round(rand(...(a.herd || [1, 1])));
+      for (let i = 0; i < n; i++) {
+        const q = i ? spot(at.x, at.z, rand(2, 6)) : at;
+        if (q) make(`a_${id}`, level, q.x, q.y, q.z, a.temper === 'fierce' ? { pack: `w${++packs}` } : {});
+      }
+      return;
+    }
   }
 
   // A place on dry land about `d` metres from (px, pz) in direction `a` (or a random one)
@@ -237,12 +292,18 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   function update(dt, t) {
     const p = getPlayer();
     spawnTimer -= dt;
-    const alive = list.filter((m) => !m.dead);
+    const alive = list.filter((m) => !m.dead && !m.kind.animal);
     // night brings more monsters, and every one of them hunts
     const night = isNight();
     if (spawnTimer <= 0 && alive.length < (night ? MAX_NEAR + 4 : MAX_NEAR) && !p.dead) {
       spawnTimer = night ? 1 : 1.5;
       spawn(p);
+    }
+    // the wild animals of the land: herds of deer, rabbits in the grass, wolves in the woods
+    animalTimer -= dt;
+    if (animalTimer <= 0 && !p.dead && !p.underground) {
+      animalTimer = 2;
+      if (list.filter((m) => m.kind.animal && !m.dead && !m.farm).length < MAX_ANIMALS) spawnAnimals(p);
     }
     // ambushes only catch you while you're on the move and away from shelter
     if (p.moving && !p.safe && !p.dead) {
@@ -256,6 +317,16 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       const dx = p.x - m.x, dz = p.z - m.z;
       const dist = Math.hypot(dx, dz);
       if (dist > DESPAWN && !m.keep) { remove(m); continue; }
+      if (m.dead && m.kind.animal) {
+        // a fallen animal rolls onto its side and lies there until it is cut up, taken to the
+        // Butcher, or left to rot (a body being dragged doesn't rot)
+        m.dead += dt;
+        lieDown(m.body, m.dead / 0.7);
+        if (!m.dragged) m.death.left -= dt;
+        m.death.t += dt;
+        if (m.death.left <= 0 || m.death.harvested) remove(m);
+        continue;
+      }
       if (m.dead) {
         // it dies the way the blow says (deaths.js): a body left lying, ash, a crack in the ground…
         m.dead += dt;
@@ -265,12 +336,13 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       }
       // a cut-off hand falling to the ground
       if (m.bits) for (const p of m.bits) { if (p.done) continue; p.vy -= 9.8 * dt; p.obj.position.y += p.vy * dt; p.obj.rotation.x += dt * 4; if (p.obj.position.y < m.y + 0.08) { p.obj.position.y = m.y + 0.08; p.done = true; } }
+      if (m.kind.animal && !m.kind.aggressive) { stepAnimal(m, dt, t, p, dx, dz, dist); continue; }
       let speed = 0;
       const hidden = p.safe && !m.hurtBy; // a torch or a campfire keeps you hidden
       // lurkers wait without moving until you walk into them (or hit one)
       if (m.state === 'lurk') {
         if (!p.dead && (dist < 13 || m.hurtBy)) spring(m.pack);
-        else { animateCharacter(m.body, t, 0); continue; }
+        else { animate(m, t, 0); continue; }
       }
       // by day only angry monsters come for you; at night they all do. They notice you from afar
       // and creep closer before they charge; an ambusher that has sprung tracks you down.
@@ -320,9 +392,50 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       const lunge = m.lunge > 0 ? Math.sin((m.lunge / 0.3) * Math.PI) * 0.4 : 0;
       m.body.position.set(m.x + Math.sin(m.heading) * lunge, m.y + (m.hurt > 0 ? Math.sin(m.hurt * 30) * 0.05 : 0), m.z + Math.cos(m.heading) * lunge);
       m.body.rotation.y = m.heading;
-      animateCharacter(m.body, t, speed / 1.6);
+      animate(m, t, speed);
       m.tag.sprite.position.set(m.x, m.y + m.height + 0.45, m.z);
     }
+  }
+
+  // A grazing animal: wanders and grazes; a shy one bolts when you come close (or run at it),
+  // any of them runs when hurt; one you have fed trots after you for a while; farm animals stay
+  // in their pens.
+  function stepAnimal(m, dt, t, p, dx, dz, dist) {
+    const a = m.kind.animal;
+    let speed = 0;
+    if (m.fedT > 0) m.fedT -= dt;
+    const friendly = m.fedT > 0 || m.farm;
+    if (!friendly && !p.dead && a.temper === 'shy' && dist < (p.moving && p.running ? SHY_RUN : SHY_RANGE)) m.fleeT = Math.max(m.fleeT, 2.5);
+    if (m.fleeT > 0) {
+      m.fleeT -= dt;
+      m.heading = Math.atan2(-dx, -dz) + Math.sin(t * 1.7 + m.x) * 0.3;
+      speed = m.speed * (m.farm ? 0.5 : 1);
+    } else if (m.fedT > 0 && !m.farm && dist > 3 && dist < 30) {
+      // following the one who fed it
+      m.heading = Math.atan2(dx, dz);
+      speed = Math.min(m.speed * 0.5, dist - 2.5);
+    } else {
+      m.timer -= dt;
+      if (m.timer <= 0) { m.timer = 3 + Math.random() * 6; m.walking = Math.random() < 0.4; m.heading += (Math.random() - 0.5) * 2.5; }
+      if (m.walking) speed = Math.min(1.2, m.speed * 0.18);
+      if (m.petT > 0) { m.petT -= dt; speed = 0; m.heading = Math.atan2(dx, dz); }
+    }
+    if (speed > 0) {
+      const nx = m.x + Math.sin(m.heading) * speed * dt, nz = m.z + Math.cos(m.heading) * speed * dt;
+      const s = sample(nx, nz, tmp);
+      const out = m.pen && (Math.abs(nx - m.pen.x) > m.pen.hw || Math.abs(nz - m.pen.z) > m.pen.hd);
+      const blocked = s.h <= s.water + 0.1 || out || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z))
+        || (blockedAt?.(nx, nz, m.radius * 0.6) && !blockedAt(m.x, m.z, m.radius * 0.6));
+      if (!blocked) { m.x = nx; m.z = nz; m.y = feet(nx, nz, m.y, s.h); }
+      else if (m.pen && out) { m.heading = Math.atan2(m.pen.x - m.x, m.pen.z - m.z) + (Math.random() - 0.5); m.walking = true; m.timer = 2; }
+      else m.heading += Math.PI * 0.6;
+    }
+    m.hurt = Math.max(0, m.hurt - dt);
+    m.body.position.set(m.x, m.y + (m.hurt > 0 ? Math.sin(m.hurt * 30) * 0.03 : 0), m.z);
+    m.body.rotation.y = m.heading;
+    animateAnimal(m.body, t, speed);
+    m.tag.sprite.visible = m.hp < m.maxHp;
+    m.tag.sprite.position.set(m.x, m.y + m.height + 0.35, m.z);
   }
 
   // The living monsters in front of (x, z) facing `heading`, within `reach` metres and `arc` radians
@@ -330,7 +443,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   function targets(x, z, heading, reach, arc = 1.0) {
     const out = [];
     for (const m of list) {
-      if (m.dead) continue;
+      if (m.dead || m.farm) continue; // (the farmer's animals are not for hunting)
       const dx = m.x - x, dz = m.z - z;
       const d = Math.hypot(dx, dz) - m.radius;
       if (d > reach) continue;
@@ -355,6 +468,16 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     m.hurtBy = true; // it fights back even near a fire
     if (m.state === 'lurk') spring(m.pack);
     m.tag.draw(m.hp / m.maxHp);
+    if (m.kind.animal) {
+      // a grazing animal runs from the hunter; a wolf or bear turns on them
+      if (!m.kind.aggressive) { m.fleeT = 5; m.fedT = 0; }
+      if (m.hp > 0) return null;
+      m.dead = 0.001; m.dragged = false;
+      m.tag.sprite.visible = false;
+      m.death = { corpse: true, animal: true, t: 0, left: CORPSE_SECS, harvested: false };
+      const a = m.kind.animal;
+      return { exp: Math.max(1, Math.round(a.temper === 'fierce' ? monsterExp(m.level, 0) : a.hp / 12)), coins: 0, drops: [], name: a.name, kind: m.kindId, level: m.level, animal: m.kind.animalId };
+    }
     if (m.hp > 0) { const lost = maim(m, how, dmg, scene); return lost ? { maimed: lost } : null; }
     m.dead = 0.001;
     startDeath(m, how, scene, { strong: strong || dmg >= before * 1.5 || dmg >= m.maxHp * 0.5 });
@@ -368,6 +491,12 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   return {
     update, target, targets, hit,
     calm() { for (const m of list) { m.angry = false; m.state = 'wander'; m.timer = 4; } },
+    // the living grazing animal nearest (x, z) within r metres (to feed or pet)
+    animalNear(x, z, r) {
+      let best = null, bd = r;
+      for (const m of list) { if (m.dead || !m.kind.animal || m.kind.aggressive) continue; const d = Math.hypot(m.x - x, m.z - z) - m.radius; if (d < bd) { bd = d; best = m; } }
+      return best;
+    },
     clear() { for (const m of [...list]) remove(m); },
     // put a monster somewhere on purpose (cave guards, cave dwellers, bosses)
     spawnAt(kindId, level, x, z, extra = {}) {
