@@ -19,7 +19,25 @@ export const CAMPFIRE_SAFE = 9; // metres round a lit campfire where monsters wo
 const BLADES = ['sword', 'dagger', 'axe'];
 const BIRD_FOOD = ['grain', 'lettuce', 'cabbage', 'carrot'];
 
-export function createHusbandry({ scene, colliders, creatures, game, say, floatText, onEvent, onTame, getPos, getHeading, groundAt, siteFires }) {
+export function createHusbandry({ scene, colliders, creatures, game, say, floatText, onEvent, onTame, getPos, getHeading, groundAt, siteFires, getHand = null }) {
+  // the rope you drag a body by: from your hand to its neck, sagging a little in the middle
+  const ropeMat = new THREE.MeshStandardMaterial({ color: '#a8824a', roughness: 0.95 });
+  let rope = null;
+  const ropeA = new THREE.Vector3(), ropeB = new THREE.Vector3(), ropeM = new THREE.Vector3();
+  function drawRope(m) {
+    if (rope) { scene.remove(rope); rope.geometry.dispose(); rope = null; }
+    if (!m) return;
+    const p = getPos();
+    if (getHand) ropeA.copy(getHand()); else ropeA.set(p.x, p.y + 1, p.z);
+    const neck = m.body.userData.beast?.neck;
+    if (neck) { m.body.updateMatrixWorld(true); neck.getWorldPosition(ropeB); } else ropeB.set(m.x, m.y + 0.3, m.z);
+    ropeM.addVectors(ropeA, ropeB).multiplyScalar(0.5);
+    ropeM.y = Math.min(ropeA.y, ropeB.y) - 0.15 - ropeA.distanceTo(ropeB) * 0.06;
+    const curve = new THREE.QuadraticBezierCurve3(ropeA.clone(), ropeM.clone(), ropeB.clone());
+    rope = new THREE.Mesh(new THREE.TubeGeometry(curve, 12, 0.018, 5, false), ropeMat);
+    rope.castShadow = true;
+    scene.add(rope);
+  }
   const farms = allFarms().map((f) => ({ f, built: null }));
   const fires = []; // campfires you lit: { x, z, group, flames, light, left }
   let dragging = null; // the body you are dragging
@@ -229,7 +247,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     }
     // the body you drag slides along behind you
     if (dragging) {
-      if (!canHarvest(dragging) && !dragging.dragged) { dragging = null; return; }
+      if (!canHarvest(dragging) && !dragging.dragged) { dragging = null; drawRope(null); return; }
       const p = getPos(), h = getHeading();
       const back = 0.7 + dragging.kind.animal.len * 0.55;
       const tx = p.x - Math.sin(h) * back, tz = p.z - Math.cos(h) * back;
@@ -238,7 +256,8 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
       dragging.y = groundAt(dragging.x, dragging.z);
       dragging.body.position.set(dragging.x, dragging.y, dragging.z);
       dragging.body.rotation.y = h;
-    }
+      drawRope(dragging);
+    } else if (rope) drawRope(null);
   }
 
   return {
@@ -249,6 +268,6 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     nearCampfire: (x, z) => fires.some((f) => Math.hypot(f.x - x, f.z - z) < CAMPFIRE_SAFE),
     farms: () => farms.map((q) => ({ ...q.f, built: !!q.built })),
     built: () => builtFarms().map((q) => q.built),
-    clear() { dragging = null; offered = null; },
+    clear() { dragging = null; offered = null; drawRope(null); },
   };
 }
