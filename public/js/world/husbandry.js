@@ -333,6 +333,9 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
 
   return {
     updateFarms, tick, interact, tapTargets, lightCampfire, drag: () => drag(), cut: () => cut(), bait: () => setBait(), drop,
+    // (tests) the next beast comes now; bring a coming one to `d` metres from its bait
+    debugBaitNow() { for (const b of baits) b.wait = 0; },
+    debugPullVisitor(d = 4) { for (const b of baits) if (b.visitor) { b.visitor.x = b.x + d; b.visitor.z = b.z; } },
     debugBaits: () => baits.map((b) => ({ x: b.x, z: b.z, draws: b.draws, wait: b.wait, visits: b.visits, visitor: b.visitor ? { id: b.visitor.kind.animalId, x: b.visitor.x, z: b.visitor.z, snared: b.visitor.snared || 0, lure: !!b.visitor.lure } : null })),
     // a big animal is heavy: you walk slower while you drag it
     dragSlow: () => (dragging ? Math.max(0.45, 1 - dragging.kind.animal.len * 0.18) : 1),

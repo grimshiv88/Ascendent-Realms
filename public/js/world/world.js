@@ -2541,6 +2541,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     cutCarcass: () => husbandry.cut(),
     baitCarcass: () => husbandry.bait(),
     debugBaits: () => husbandry.debugBaits(),
+    debugBaitNow: () => husbandry.debugBaitNow(),
+    debugPullVisitor: (d) => husbandry.debugPullVisitor(d),
     lightCampfire: () => (!inside && !depth ? husbandry.lightCampfire() : 'inside'),
     plantSeed: (id) => (!inside && !depth ? crops?.plantSeed(id) : 'inside'),
     callMount: (id) => riding?.toggle(id),
