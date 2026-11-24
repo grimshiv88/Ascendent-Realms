@@ -1,6 +1,6 @@
 // How a monster dies, and what is left of it. Its body doesn't simply vanish: what happens to it
-// fits the blow or the skill that killed it. A blade leaves a cut body (or a head off, or the guts
-// spilled), fire burns it to a heap of ash, a crack in the ground swallows it, a devouring skill
+// fits the blow or the skill that killed it. A weapon leaves the body whole on the ground with the
+// wound where it was hit, fire burns it to a heap of ash, a crack in the ground swallows it, a devouring skill
 // eats it whole, frost freezes it solid till it shatters, and so on (DEATHS below). A body that is
 // left lies where it fell till someone harvests it for materials (E) or it rots away.
 // Lighter blows can take a hand or a forearm off without killing (maim).
@@ -11,7 +11,7 @@ export const CORPSE_SECS = 600; // a body left alone rots away after 10 minutes
 // what each kind of blow does to the body, and whether a body is left to harvest
 // (the kind of blow comes from howOf below)
 export const DEATHS = {
-  slash:  { body: true,  text: 'cut down' },          // a gash; a hard blow takes the head off or spills the guts
+  slash:  { body: true,  text: 'cut down' },          // falls whole, with a gash where the blade landed
   blunt:  { body: true,  text: 'beaten down' },       // crumpled and knocked back
   pierce: { body: true,  text: 'run through' },       // a wound right through
   bleed:  { body: true,  text: 'bled out' },          // a wide pool of blood
@@ -67,7 +67,14 @@ export function howOf({ skill = null, spell = null, element = null, weapon = nul
 // ---------- little pieces left in the world ----------
 const MATS = {};
 const mat = (k, c, extra = {}) => (MATS[k] ||= new THREE.MeshStandardMaterial({ color: c, roughness: 0.8, ...extra }));
-const blood = () => mat('blood', '#3a0404', { roughness: 0.45, polygonOffset: true, polygonOffsetFactor: -2 });
+const blood = () => mat('blood', '#2a0303', { roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -4 });
+// a pool of blood: an uneven blot rather than a perfect disc
+const pool = () => {
+  const g = new THREE.CircleGeometry(0.05, 48), p = g.attributes.position;
+  for (let i = 1; i < p.count; i++) { const a = Math.atan2(p.getY(i), p.getX(i)); const r = 1 + 0.22 * Math.sin(a * 3 + 1) + 0.12 * Math.sin(a * 7); p.setXY(i, p.getX(i) * r, p.getY(i) * r); }
+  g.rotateX(-Math.PI / 2);
+  return new THREE.Mesh(g, blood());
+};
 const flat = (r, m) => { const g = new THREE.CircleGeometry(r, 18); g.rotateX(-Math.PI / 2); return new THREE.Mesh(g, m); };
 
 // The organs inside a humanoid monster's body (hidden in the torso, there to spill from a deep cut)
@@ -130,6 +137,125 @@ export function maim(m, how, dmg, scene) {
   return 'hand';
 }
 
+// ---------- a wound on the body where the blow landed ----------
+const ray = new THREE.Raycaster();
+// Finds the front of the body at a spot on the torso (or the neck or a thigh) by casting a ray at it
+// from the side the blow came from, and sets a wound into the surface there, so it moves with the body.
+function wound(m, style, scene, { strong = false, i = 0 } = {}) {
+  const rig = m.body.userData.rig || {};
+  const H = m.height || 1.6;
+  m.body.updateWorldMatrix(true, true);
+  const meshes = [];
+  // only the trunk takes the wound (not an arm or the head in front of it)
+  const skip = [rig.head, ...(rig.arms || []).map((a) => a.shoulder)].filter(Boolean);
+  const trunk = rig.spine || m.body;
+  trunk.traverse((o) => {
+    if (!o.isMesh || o.userData.wound) return;
+    for (let p = o; p; p = p.parent) { if (!p.visible || skip.includes(p)) return; if (p === m.body) break; }
+    meshes.push(o);
+  });
+  if (!meshes.length) return null;
+  const box = new THREE.Box3().setFromObject(m.body);
+  const h = box.max.y - box.min.y;
+  // where the blade landed: mostly the chest and belly, sometimes the shoulder or the neck
+  const spots = style === 'pierce' || style === 'bleed' ? [[0.62, 0], [0.55, -0.04], [0.5, 0.05], [0.66, 0.04]] : [[0.64, 0.05], [0.58, -0.04], [0.52, 0.02], [0.7, -0.07], [0.6, 0.08]];
+  const [fy, fx] = spots[Math.floor(Math.random() * spots.length)];
+  const y = box.min.y + h * (fy + (i ? (i - 1.5) * 0.06 : 0)) * (0.97 + Math.random() * 0.06);
+  const fwd = new THREE.Vector3(Math.sin(m.heading), 0, Math.cos(m.heading));
+  const side = new THREE.Vector3(fwd.z, 0, -fwd.x);
+  const centre = new THREE.Vector3(m.body.position.x, y, m.body.position.z).addScaledVector(side, (fx + (i ? (i - 1) * 0.05 : 0)) * h);
+  ray.set(centre.clone().addScaledVector(fwd, h), fwd.clone().negate());
+  ray.far = h * 2;
+  // aim at the body itself, not a little joint ball or a strap on it
+  const big = meshes.filter((o) => { o.geometry.boundingSphere || o.geometry.computeBoundingSphere(); return o.geometry.boundingSphere.radius * o.getWorldScale(new THREE.Vector3()).x > 0.07 * h; });
+  const hit = ray.intersectObjects(big.length ? big : meshes, false)[0];
+  if (!hit) return null;
+  // the wound is painted onto the body's own surface around the spot (so it follows every curve)
+  const stab = style === 'pierce' || style === 'bleed';
+  const size = (stab ? 0.17 : style === 'wind' ? 0.15 : strong ? 0.32 : 0.27) * H * Math.min(1.3, rig.bulk || 1);
+  const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  // "down" on the wound is down the body; a slash slants across it
+  let down = new THREE.Vector3(0, -1, 0).addScaledVector(n, n.y);
+  if (down.lengthSq() < 0.01) down.set(0, 0, -1);
+  down.normalize();
+  const slant = stab ? 0 : (Math.random() < 0.5 ? 0.7 : -0.7);
+  const tex = woundTexture(stab ? 'stab' : strong ? 'deep' : 'cut', slant);
+  // painted on every part of the trunk it covers (where the chest meets the belly, say)
+  let made = null;
+  for (const o of (big.length ? big : meshes)) made = decal(o, hit.point, n, down, size, tex) || made;
+  return made;
+}
+// The painted wound pictures, drawn once: a dark opening with raw flesh in it, bruised edges,
+// and blood run down from it (down the picture is down the body)
+const WOUND_TEX = {};
+function woundTexture(kind, slant = 0) {
+  const key = kind + slant;
+  if (WOUND_TEX[key]) return WOUND_TEX[key];
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const stab = kind === 'stab', L = stab ? 34 : kind === 'deep' ? 104 : 92, W = stab ? 30 : kind === 'deep' ? 22 : 15;
+  // blood run down from it
+  g.strokeStyle = 'rgba(70,4,4,0.9)'; g.lineCap = 'round';
+  for (let i = 0; i < (stab ? 3 : 5); i++) {
+    const x = S / 2 + (i - (stab ? 1 : 2)) * (stab ? 9 : 20) + Math.sin(i * 7) * 4, y = S / 2 + (stab ? 6 : 4);
+    g.lineWidth = 4 + (i % 2) * 3;
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.sin(i) * 6, y + 40, x + Math.sin(i * 3) * 4, y + 50 + ((i * 37) % 60));
+    g.stroke();
+    g.beginPath(); g.arc(x + Math.sin(i * 3) * 4, y + 52 + ((i * 37) % 60), g.lineWidth * 0.8, 0, Math.PI * 2); g.fillStyle = 'rgba(70,4,4,0.9)'; g.fill();
+  }
+  g.save(); g.translate(S / 2, S / 2); g.rotate(slant); // the gash slants; the blood still runs straight down
+  const blob = (rx, ry, fill, blur = 0) => { g.filter = blur ? `blur(${blur}px)` : 'none'; g.beginPath(); g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); g.fillStyle = fill; g.fill(); };
+  blob(L * 0.62, W * 1.6, 'rgba(90,10,14,0.55)', 6);   // the bruised, bloody skin round it
+  blob(L * 0.55, W * 0.95, '#3a0404', 1);               // the bloody edge
+  blob(L * 0.5, W * 0.62, '#120000');                   // the dark opening
+  blob(L * 0.38, W * 0.26, '#a8242a', 1);               // raw flesh inside
+  g.restore();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return (WOUND_TEX[key] = t);
+}
+// A patch cut from a mesh's own surface round `point`, with the picture laid on it facing `n`
+// (`down` is the picture's down, turned by `turn`), kept as a child of that mesh so it moves with it.
+function decal(mesh, point, n, down, size, tex, turn = 0) {
+  const geo = mesh.geometry, P = geo.attributes.position, I = geo.index;
+  if (!P || mesh.isSkinnedMesh) return null;
+  mesh.updateWorldMatrix(true, false);
+  const M = mesh.matrixWorld, inv = mesh.matrixWorld.clone().invert();
+  // the picture's axes on the surface
+  const across = new THREE.Vector3().crossVectors(down, n).normalize();
+  const dn = down.clone();
+  if (turn) { across.applyAxisAngle(n, turn); dn.applyAxisAngle(n, turn); }
+  const pos = [], uv = [];
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), fn = new THREE.Vector3(), d = new THREE.Vector3();
+  const R = size * 0.75, nLocal = n.clone().transformDirection(inv), lift = size * 0.012;
+  const tri = I ? I.count / 3 : P.count / 3;
+  for (let f = 0; f < tri; f++) {
+    const ia = I ? I.getX(f * 3) : f * 3, ib = I ? I.getX(f * 3 + 1) : f * 3 + 1, ic = I ? I.getX(f * 3 + 2) : f * 3 + 2;
+    a.fromBufferAttribute(P, ia).applyMatrix4(M); b.fromBufferAttribute(P, ib).applyMatrix4(M); c.fromBufferAttribute(P, ic).applyMatrix4(M);
+    if (a.distanceTo(point) > R && b.distanceTo(point) > R && c.distanceTo(point) > R) continue;
+    fn.subVectors(b, a).cross(d.subVectors(c, a)).normalize();
+    if (Math.abs(fn.dot(n)) < 0.25) continue; // faces turned away from the blow
+    for (const v of [a, b, c]) {
+      d.subVectors(v, point);
+      uv.push(d.dot(across) / size + 0.5, 1 - (d.dot(dn) / size + 0.5));
+      const l = v.clone().applyMatrix4(inv).addScaledVector(nLocal, lift / mesh.getWorldScale(new THREE.Vector3()).x);
+      pos.push(l.x, l.y, l.z);
+    }
+  }
+  if (!pos.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -4, side: THREE.DoubleSide }));
+  m.userData.wound = true;
+  m.renderOrder = 2;
+  mesh.add(m);
+  return m;
+}
+const isUnder = (o, p) => { for (let q = o; q; q = q.parent) if (q === p) return true; return false; };
+
 // ---------- the death itself ----------
 export function startDeath(m, how, scene, { strong = false } = {}) {
   const style = DEATHS[how] ? how : 'blunt';
@@ -139,32 +265,13 @@ export function startDeath(m, how, scene, { strong = false } = {}) {
   const at = (obj, dx = 0, dz = 0, y = 0.02) => { obj.position.set(m.x + dx, m.y + y, m.z + dz); scene.add(obj); D.extra.push(obj); return obj; };
   const H = m.height || 1.6;
   if (['fire', 'frost', 'shock', 'poison', 'dark', 'water', 'light', 'arcane', 'nature'].includes(style)) ownMaterials(m.body);
-  if (style === 'slash' || style === 'wind') {
-    // a hard blow takes the head off, or opens the belly and spills the guts; otherwise a deep gash
-    if (strong && rig.head && Math.random() < 0.5) {
-      const head = detach(rig.head, scene);
-      D.extra.push(head);
-      D.head = { obj: head, vy: 2, vx: (Math.random() - 0.5) * 2, vz: (Math.random() - 0.5) * 2 };
-      const neck = new THREE.Mesh(new THREE.CircleGeometry(0.05 * H, 10), blood());
-      neck.rotation.x = -Math.PI / 2; neck.position.copy(rig.head.position); rig.head.parent.add(neck);
-    } else if (rig.organs && (strong || Math.random() < 0.4)) {
-      rig.organs.visible = true;
-      // the guts spill out onto the ground beside it
-      for (let i = 0; i < 4; i++) {
-        const gut = new THREE.Mesh(new THREE.TorusGeometry(0.05 * H, 0.02 * H, 6, 12, Math.PI * 1.4), mat('gut', '#d08a8a', { roughness: 0.35 }));
-        gut.rotation.set(-Math.PI / 2, 0, i * 1.7);
-        at(gut, Math.sin(m.heading) * (0.3 + i * 0.07) + (i - 1.5) * 0.06, Math.cos(m.heading) * (0.3 + i * 0.07), 0.04);
-      }
-    }
-    if (rig.chest) {
-      const gash = new THREE.Mesh(new THREE.BoxGeometry(0.22 * H, 0.025 * H, 0.02), blood());
-      gash.rotation.z = 0.7; gash.position.set(0, (rig.torsoLen || 0.4) * 0.55, 0.1 * H * (rig.bulk || 1)); rig.spine?.add(gash);
-    }
-    D.pool = at(flat(0.05, blood()));
-    D.poolR = 0.5 * H;
-  } else if (style === 'pierce' || style === 'bleed') {
-    D.pool = at(flat(0.05, blood()));
-    D.poolR = (style === 'bleed' ? 0.75 : 0.45) * H;
+  if (style === 'slash' || style === 'wind' || style === 'pierce' || style === 'bleed') {
+    // a weapon kill leaves the body whole, lying where it fell, with the wound where the blow landed
+    // (a long gash for a blade, cuts for the wind, a deep hole for a stab) and blood pooling under it
+    const count = style === 'wind' ? 3 : 1;
+    for (let i = 0; i < count; i++) wound(m, style, scene, { strong, i });
+    D.pool = at(pool(), -Math.sin(m.heading) * 0.35 * H, -Math.cos(m.heading) * 0.35 * H, 0.04);
+    D.poolR = (style === 'bleed' ? 0.36 : strong ? 0.26 : 0.2) * H;
   } else if (style === 'stone') {
     const spear = new THREE.Mesh(new THREE.ConeGeometry(0.12 * H, 1.6 * H, 6), mat('stone', '#7a7266'));
     spear.rotation.z = 0.35; at(spear, 0, 0, 0.6 * H);
