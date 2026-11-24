@@ -93,6 +93,7 @@ app.post('/api/email/send', requireSession, async (req, res) => {
   const result = await auth.sendVerify(req.account);
   res.status(result.error ? 400 : 200).json(result);
 });
+app.post('/api/birthdate', requireSession, answer((body, acc) => auth.setBirthdate(acc, body)));
 app.post('/api/email/set', requireSession, answer((body, acc) => auth.setEmail(acc, body)));
 app.post('/api/password', requireSession, async (req, res) => {
   const result = await auth.changePassword(req.account, req.body || {}, bearer(req));
@@ -233,7 +234,7 @@ app.post('/api/admin/gates', requireAdmin, async (req, res) => {
   await db.run("INSERT INTO world_state (key, data) VALUES ('city_gates', ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data", JSON.stringify(all));
   res.json({ ok: true, raised: all });
 });
-for (const [route, fn] of [['password', admin.setPassword], ['signout', admin.signOutEverywhere], ['delete', admin.remove]]) {
+for (const [route, fn] of [['password', admin.setPassword], ['birthdate', admin.setBirthdate], ['signout', admin.signOutEverywhere], ['delete', admin.remove]]) {
   app.post(`/api/admin/${route}`, requireAdmin, async (req, res) => {
     const result = await fn(req.body || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);

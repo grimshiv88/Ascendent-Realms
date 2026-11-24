@@ -6,6 +6,7 @@ const db = require('./db');
 const mail = require('./mail');
 const totp = require('./totp');
 const { cleanCountry } = require('../public/js/data/countries.mjs');
+const { checkBirthdate, ageOf } = require('../public/js/data/birthdate.mjs');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
@@ -54,6 +55,9 @@ async function publicAccount(row) {
     needsEmail: !hasEmail(row.email),
     mustVerify: mustVerify(row),
     twofa: row.twofa || null,
+    birthdate: row.birthdate || null,
+    age: ageOf(row.birthdate),
+    needsBirthdate: !row.birthdate,
     mail: mail.ready(),
     character: character ? JSON.parse(character.data) : null,
   };
@@ -94,7 +98,7 @@ async function useCode(row, code, check = null) {
 const ticketRow = (ticket, kind) => db.get('SELECT * FROM auth_codes WHERE ticket = ? AND kind = ?', String(ticket || ''), kind);
 
 // ---------- sign up and sign in ----------
-async function signUp({ email, password, username, country }) {
+async function signUp({ email, password, username, country, birthdate }) {
   email = String(email || '').trim();
   username = String(username || '').trim();
   password = String(password || '');
@@ -103,6 +107,8 @@ async function signUp({ email, password, username, country }) {
   if (!EMAIL_RE.test(email) || email.toLowerCase().endsWith(NO_EMAIL)) return { error: 'Please enter a valid email address.' };
   if (password.length < 8) return { error: 'Your password needs at least 8 characters.' };
   if (!USERNAME_RE.test(username)) return { error: 'Usernames are 3 to 16 letters, numbers or underscores.' };
+  const born = checkBirthdate(birthdate);
+  if (born.error) return born;
   if (await db.get('SELECT 1 FROM accounts WHERE lower(email) = lower(?)', email)) {
     return { error: 'An account with this email already exists. Try signing in.' };
   }
@@ -112,7 +118,7 @@ async function signUp({ email, password, username, country }) {
 
   let row;
   try {
-    ({ rows: [row] } = await db.run('INSERT INTO accounts (email, username, password_hash, country) VALUES (?, ?, ?, ?) RETURNING *', email, username, hashPassword(password), cleanCountry(country)));
+    ({ rows: [row] } = await db.run('INSERT INTO accounts (email, username, password_hash, country, birthdate) VALUES (?, ?, ?, ?, ?) RETURNING *', email, username, hashPassword(password), cleanCountry(country), born.date));
   } catch (e) {
     // someone else took the name in the same moment
     if (e.code === '23505') return { error: 'That username or email was just taken. Please choose another.' };
@@ -236,6 +242,15 @@ async function setEmail(row, { email, password }) {
   return { ok: true, sentTo: sent.sentTo || null, account: await publicAccount(acc) };
 }
 
+// the birth date, for accounts from before it was asked. Once saved, only an admin can change it.
+async function setBirthdate(row, { birthdate }) {
+  if (row.birthdate) return { error: 'Your birth date is already saved. If it is wrong, ask the game\'s owner.' };
+  const born = checkBirthdate(birthdate);
+  if (born.error) return born;
+  const { rows: [acc] } = await db.run('UPDATE accounts SET birthdate = ? WHERE id = ? AND birthdate IS NULL RETURNING *', born.date, row.id);
+  return { ok: true, account: await publicAccount(acc || row) };
+}
+
 // ---------- the password ----------
 // a signed-in player changes it: the old password is needed
 async function changePassword(row, { current, password }, keepToken) {
@@ -312,5 +327,5 @@ async function twofaOff(row, { password }) {
 
 module.exports = {
   shownEmail, hasEmail, mustVerify, hashPassword, signUp, signIn, signInCode, signInByEmail, signOut, accountFromToken, accountRow,
-  sendVerify, verifyEmail, setEmail, changePassword, forgotPassword, resetPassword, twofaEmail, twofaAppStart, twofaAppConfirm, twofaOff,
+  sendVerify, verifyEmail, setEmail, setBirthdate, changePassword, forgotPassword, resetPassword, twofaEmail, twofaAppStart, twofaAppConfirm, twofaOff,
 };

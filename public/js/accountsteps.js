@@ -30,9 +30,21 @@ export function accountSteps({ el, show, enter }) {
   // what comes next after signing in or up
   function next(r) {
     if (r.twofa) return askSignInCode(r);
+    if (r.account.needsBirthdate) return askBirthdate(r);
     if (r.account.needsEmail) return askEmail(r);
     if (r.account.mustVerify) return askVerify(r, r);
     return enter(r);
+  }
+
+  // accounts from before the birth date was asked
+  function askBirthdate(r) {
+    render(`<h2>Your birth date</h2><form novalidate>
+      <p class="hint">Every account needs a birth date now. Others never see it. It keeps age rules fair, like voice chat for players 16 and over. It can't be changed later, so please make sure it's right.</p>
+      <label>Birth date<input name="birthdate" type="date" min="1900-01-01" max="${new Date().toISOString().slice(0, 10)}" required></label>
+      <p class="error" role="alert"></p>
+      <button class="gold-button" type="submit">Save</button>
+      <button class="link-button" type="button" data-logout>Log out</button></form>`,
+    async ({ birthdate }) => next({ ...r, account: (await api.setBirthdate(birthdate)).account }), { '[data-logout]': logOut });
   }
 
   function askSignInCode(t) {

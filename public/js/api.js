@@ -7,6 +7,7 @@ import * as P from './data/citypass.mjs';
 import { setServerNow } from './data/clock.mjs';
 import * as uniqueData from './data/unique.mjs';
 import { moveToNewWorld } from './data/world-layout.mjs';
+import { checkBirthdate, ageOf } from './data/birthdate.mjs';
 
 const TOKEN_KEY = 'ar.token';
 
@@ -157,6 +158,7 @@ const hideEmail = (email) => email.replace(/^(.{1,2})[^@]*(@.*)$/, (m, a, b) => 
 const previewAccount = (a) => ({
   email: realEmail(a), username: a.username, character: a.character, emailVerified: !!a.verified, needsEmail: !realEmail(a),
   mustVerify: !realEmail(a) || (!a.verified && !a.welcomed), twofa: a.twofa || null, mail: true, preview: true,
+  birthdate: a.birthdate || null, age: ageOf(a.birthdate), needsBirthdate: !a.birthdate,
 });
 
 // Authenticator-app codes (TOTP, the same as server/totp.js), for the preview
@@ -199,17 +201,19 @@ const preview = {
     email = email.toLowerCase();
     return this.accounts().some((a) => a !== me && a.email !== me?.email && (a.email.toLowerCase() === email || (a.mail || '').toLowerCase() === email));
   },
-  async signUp({ email, password, username, remember, country }) {
+  async signUp({ email, password, username, remember, country, birthdate }) {
     email = (email || '').trim(); username = username.trim();
     if (!email) throw new Error('Please enter your email. It is needed to confirm your account and to get it back if you forget your password.');
     if (!EMAIL_RE.test(email) || email.toLowerCase().endsWith(NO_EMAIL)) throw new Error('Please enter a valid email address.');
     if (password.length < 8) throw new Error('Your password needs at least 8 characters.');
     if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) throw new Error('Usernames are 3 to 16 letters, numbers or underscores.');
+    const born = checkBirthdate(birthdate);
+    if (born.error) throw new Error(born.error);
     const list = this.accounts();
     if (this.emailTaken(email)) throw new Error('An account with this email already exists. Try signing in.');
     if (list.some((a) => a.username.toLowerCase() === username.toLowerCase())) throw new Error('That username is taken. Please choose another.');
     const digest = await sha256(password);
-    const acc = { email, username, digest, character: null, country: country || null, verified: false };
+    const acc = { email, username, digest, character: null, country: country || null, verified: false, birthdate: born.date };
     list.push(acc);
     this.save(list, acc);
     token.set(`preview:${email}`, remember);
@@ -371,6 +375,20 @@ export async function setEmail(email, password = '') {
     });
   }
   return request('api/email/set', { method: 'POST', body: { email, password } });
+}
+
+// the birth date, for accounts from before it was asked (once saved, only an admin can change it)
+export async function setBirthdate(birthdate) {
+  if (await isPreviewMode()) {
+    const born = checkBirthdate(birthdate);
+    if (born.error) throw new Error(born.error);
+    return updatePreviewAccount((acc) => {
+      if (acc.birthdate) throw new Error('Your birth date is already saved. If it is wrong, ask the game\'s owner.');
+      acc.birthdate = born.date;
+      return { ok: true, account: previewAccount(acc) };
+    });
+  }
+  return request('api/birthdate', { method: 'POST', body: { birthdate } });
 }
 
 // a signed-in player changes the password: the current one is needed

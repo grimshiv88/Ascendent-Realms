@@ -20,6 +20,8 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DE
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS welcomed BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS twofa TEXT;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS totp_secret TEXT;
+-- the player's real birth date (YYYY-MM-DD), for age rules; only the player sees it
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS birthdate TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_email ON accounts (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_username ON accounts (lower(username));
 

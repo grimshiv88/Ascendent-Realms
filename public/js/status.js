@@ -7,6 +7,7 @@ import {
 import { tabsHtml } from './bag.js';
 import { lifeRows, passRows } from './idcard.js';
 import { fillFlags, flagHtml, countryOptions } from './flag.js';
+import { birthdateWords } from './data/birthdate.mjs';
 import { uniqueAbility, uniqueTier, TIER_NAMES, rankProofs, isAppraisal, RANK_UP_MAX, TRIALS_PER_PROOF, WORK_PER_PROOF } from './data/unique.mjs';
 import { ageOf, CEREMONY_AGE, PARENT_JOBS, parentAlive, visitDue } from './data/birth.mjs';
 import { ageYears, livesLeft, LIVES, MARRY_AGE, UNDYING_LEVEL } from './data/life.mjs';
@@ -204,7 +205,8 @@ function accountSettings(a, st) {
       <div class="pw-buttons">${emailOk ? '<button type="submit" class="gold-button small" name="way" value="email">Codes by email</button>' : ''}<button type="submit" class="gold-button small" name="way" value="app">Authenticator app</button></div>
       ${emailOk ? '' : `<p class="bag-hint">${a.mail ? 'Codes by email need a confirmed email.' : 'Codes by email can be used once the game can send emails.'}</p>`}</form>`;
   }
-  return `<h4 class="ctl-group">Email</h4>${email}${change}
+  const born = a.birthdate ? `<p class="bag-hint">Birth date: <b>${esc(birthdateWords(a.birthdate))}</b> (age ${a.age}). Only you can see it. If it is wrong, ask the game's owner.</p>` : '';
+  return `${born}<h4 class="ctl-group">Email</h4>${email}${change}
     <h4 class="ctl-group">2-step sign-in</h4>${twofa}
     ${st.code ? `<p class="preview-code">Preview only, no real email is sent here. Your code is <b>${esc(st.code)}</b></p>` : ''}
     <p class="shop-msg" role="status">${esc(st.msg || '')}</p>`;
