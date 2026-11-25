@@ -2540,6 +2540,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     dragCarcass: () => husbandry.drag(),
     cutCarcass: () => husbandry.cut(),
     baitCarcass: () => husbandry.bait(),
+    stuffCarcass: (how) => husbandry.stuff(how),
     debugBaits: () => husbandry.debugBaits(),
     debugBaitNow: () => husbandry.debugBaitNow(),
     debugPullVisitor: (d) => husbandry.debugPullVisitor(d),

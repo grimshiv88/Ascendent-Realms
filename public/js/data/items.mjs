@@ -6,6 +6,7 @@
 // Weapons: type picks the 3D model and swing; power adds to damage; speed is seconds between swings;
 // chop multiplies damage to trees and bushes; magic weapons use MATK instead of ATK.
 import { SKILLS } from './skills.mjs';
+import { ANIMALS } from './animals.mjs';
 
 export const ITEMS = {
   // gathered
@@ -145,6 +146,7 @@ export const ITEMS = {
   arrow: { name: 'Arrow', icon: '🏹', kind: 'material', price: 1, text: 'A straight wooden shaft with an iron head and feathers. A bow uses one with every shot.' },
   arrow_bundle: { name: 'Bundle of 10 Arrows', icon: '🏹', kind: 'material', price: 10, unpack: ['arrow', 10], text: 'Ten arrows, tied together. They go into your bag as 10 Arrows.' },
   // a trap you set with a hunted animal's body as bait (see world/husbandry.js)
+  taxidermy_kit: { name: 'Taxidermy Kit', icon: '🧰', kind: 'material', price: 12, text: 'Salt, wire, stuffing and glass eyes, to keep a hunted animal as a trophy (E beside the body, then Taxidermy). A head takes 1 kit, a head with paws 2, the full body 3.' },
   bait_trap: { name: 'Hunter\'s Snare Trap', icon: '🪤', kind: 'material', price: 25, text: 'Set it under a hunted animal\'s body (E beside the body). The smell of the meat draws a bigger animal, and the snare holds it fast while you shoot or strike it.' },
   hunting_knife: { name: 'Hunting Knife', icon: '🔪', kind: 'material', price: 15, text: 'For cutting up a hunted animal. (A sword, dagger or axe in your hand works too.)' },
   firewood: { name: 'Firewood', icon: '🔥', kind: 'material', price: 4, text: 'A bundle of dry wood. Light a campfire with it to cook and keep warm (from your bag).' },
@@ -272,6 +274,30 @@ for (const [id, sk] of Object.entries(SKILLS)) {
 // Monster gear, sold only to monster players at the Dark Market: made for claws, tusks, tails and
 // hides. It is cut to fit the monster form, and when its wearer takes humanoid form it reshapes to fit
 // (`human` is what it becomes). It merges only with other monster gear.
+// Trophies: a hunted animal kept by taxidermy (E beside the body, then Taxidermy). Three ways:
+// the head, the head with its paws (or hooves, or feet), or the full body. Each is furniture to
+// keep in a home, and sells for more the bigger, fiercer and rarer the animal was.
+export const TAXIDERMY = {
+  head: { kits: 1, mult: 1, name: (a) => `Mounted ${a.name} Head`, about: 'the head, mounted on a wooden plaque' },
+  paws: { kits: 2, mult: 1.7, name: (a) => `${a.name} Head and ${limbWord(a, true)}`, about: (a) => `the head and the ${limbWord(a)}, mounted together` },
+  full: { kits: 3, mult: 3.2, name: (a) => `Stuffed ${a.name}`, about: 'the whole animal, stuffed and standing on a stand' },
+};
+// what the hands of an animal are called: paws for hunters and rabbits, feet for birds, hooves for the rest
+export function limbWord(a, cap = false) {
+  const w = a.shape === 'bird' ? 'feet' : (a.shape === 'hopper' || a.temper === 'fierce' || a.fang) ? 'paws' : 'hooves';
+  return cap ? w[0].toUpperCase() + w.slice(1) : w;
+}
+export const trophyId = (how, animalId) => `trophy_${how}_${animalId}`;
+for (const [id, a] of Object.entries(ANIMALS)) {
+  if ((a.where || []).includes('farm') && a.where.length === 1) continue; // farm animals are not hunted
+  const base = Math.round((8 + a.len * a.tall * 20) * (a.temper === 'fierce' ? 2 : 1) * (a.rare ? 3 : 1));
+  for (const [how, t] of Object.entries(TAXIDERMY)) {
+    const about = typeof t.about === 'function' ? t.about(a) : t.about;
+    ITEMS[trophyId(how, id)] = { name: t.name(a), icon: how === 'full' ? '🦌' : '🏆', kind: 'furniture', trophy: how, animal: id, price: Math.round(base * t.mult),
+      text: `A ${a.name} kept by taxidermy: ${about}. Something to show off in a home, or to sell.` };
+  }
+}
+
 Object.assign(ITEMS, {
   bone_club: { name: 'Bone Club', human: 'Bone-Studded Club', icon: '🦴', kind: 'weapon', type: 'club', model: 'wooden_club', power: 5, speed: 0.6, chop: 1.5, rank: 0, price: 20, beast: true, text: 'A thighbone as long as an arm.' },
   fang_knife: { name: 'Fang Knife', human: 'Fang Dirk', icon: '🦷', kind: 'weapon', type: 'dagger', model: 'iron_dagger', power: 6, speed: 0.35, chop: 0.6, rank: 0, price: 40, beast: true, text: 'A great fang bound to a grip.' },
@@ -395,7 +421,7 @@ export const SHOP = [
   ['water_flask', 1], ['apple', 1], ['bread', 1], ['herbal_tea', 1], ['herb', 1], ['honey_cake', 3], ['roast_meat', 4], ['stew', 12], ['torch', 1], ['tent', 1], ['hunting_knife', 1], ['firewood', 1], ['sp_potion', 2], ['calm_draught', 2], ['poison_potion', 3], ['potion', 5], ['sp_booster', 5],
   ['swift_potion', 5], ['strength_potion', 6], ['stone_potion', 6], ['fire_oil', 8], ['frost_oil', 8], ['big_potion', 20],
   // weapons
-  ['arrow_bundle', 1], ['bait_trap', 1], ['hunting_bow', 1], ['longbow', 5], ['composite_bow', 12], ['elven_bow', 20],
+  ['arrow_bundle', 1], ['bait_trap', 1], ['taxidermy_kit', 1], ['hunting_bow', 1], ['longbow', 5], ['composite_bow', 12], ['elven_bow', 20],
   ['wooden_club', 1], ['rusty_sword', 1], ['hand_axe', 3], ['iron_dagger', 3], ['oak_staff', 3], ['iron_sword', 5],
   ['iron_spear', 6], ['iron_mace', 8], ['steel_sword', 12], ['war_axe', 15], ['steel_glaive', 16], ['crystal_staff', 20], ['knight_blade', 20], ['dragonbone_sword', 50],
   // armour
@@ -495,7 +521,7 @@ export const forgeOres = (it) => (it.ore ? [it.ore] : FORGE_ORES.slice(oreTier(i
 // more of it, and its specialities unlock 5 levels before the ordinary shop sells them. They also
 // stock things the ordinary shop doesn't (ore, wood, gems, more food).
 export const MARKETS = {
-  central: { name: 'Central Market', text: 'A bit of everything, and plenty of food.', kinds: ['food', 'weapon', 'armour', 'coating'], extra: ['arrow_bundle', 'bait_trap', 'log', 'iron_ore', 'roast_meat', 'stew', 'apple', 'water_flask'] },
+  central: { name: 'Central Market', text: 'A bit of everything, and plenty of food.', kinds: ['food', 'weapon', 'armour', 'coating'], extra: ['arrow_bundle', 'bait_trap', 'taxidermy_kit', 'log', 'iron_ore', 'roast_meat', 'stew', 'apple', 'water_flask'] },
   crossroads: { name: 'Crossroads Armoury', text: 'Weapons of every kind, bows and arrows too.', kinds: ['weapon', 'coating'], extra: ['arrow_bundle', 'iron_ore', 'silver_ore'] },
   riverhold: { name: 'Riverhold Apothecary', text: 'Potions, herbs and food.', kinds: ['food'], extra: ['herb', 'herbal_tea', 'honey_cake', 'stew', 'roast_meat', 'apple', 'water_flask', 'slime_gel', 'fae_dust'] },
   hills: { name: 'Hillfort Outfitters', text: 'Armour and shields.', kinds: ['armour'], extra: ['iron_ore', 'copper_ore', 'silver_ore', 'log'] },
@@ -512,7 +538,7 @@ export const BOT_MARKUP = 1.4, BOT_BUY_SHARE = 0.7;
 const basicGear = (kind) => SHOP.filter(([id]) => ITEMS[id].kind === kind && (ITEMS[id].rank || 0) <= 1 && !ITEMS[id].fashion).map(([id]) => id);
 Object.assign(MARKETS, {
   city_potions: { bot: true, name: 'The Green Vial', text: 'Small potions and remedies, run by the city.', items: ['potion', 'sp_potion', 'calm_draught', 'herb', 'big_potion', 'strength_potion', 'stone_potion', 'swift_potion'] },
-  city_smith: { bot: true, name: 'City Forge', text: 'Basic weapons and tools, run by the city.', items: [...basicGear('weapon'), 'poison_potion', 'fire_oil', 'frost_oil', 'torch', 'tent', 'hunting_knife', 'firewood', 'arrow_bundle', 'bait_trap'] },
+  city_smith: { bot: true, name: 'City Forge', text: 'Basic weapons and tools, run by the city.', items: [...basicGear('weapon'), 'poison_potion', 'fire_oil', 'frost_oil', 'torch', 'tent', 'hunting_knife', 'firewood', 'arrow_bundle', 'bait_trap', 'taxidermy_kit'] },
   city_armoury: { bot: true, name: 'City Armoury', text: 'Plain armour and shields, run by the city.', items: basicGear('armour') },
   city_tailor: { bot: true, name: 'The Silk Thread', text: 'Clothes to wear for looks, not for battle.', items: ['linen_shirt', 'wide_trousers', 'felt_hat', 'sandals', 'embroidered_tunic', 'turban', 'riding_boots', 'silk_robe'] },
   city_food: { bot: true, name: 'The Olive Tree', text: 'Halal meals that heal and give a short boost.', items: ['bread', 'apple', 'lentil_soup', 'falafel_wrap', 'lamb_kebab', 'chicken_rice', 'date_bowl', 'stew'] },
@@ -520,7 +546,7 @@ Object.assign(MARKETS, {
   furniture_common: { bot: true, name: 'Oak & Hearth Furniture', text: 'Good plain furniture for a family home.', items: ['wooden_bed', 'oak_table', 'chair', 'wardrobe', 'wool_rug', 'oil_lamp', 'bookshelf', 'potted_plant'] },
   furniture_noble: { bot: true, name: 'The Gilded Room', text: 'The finest furniture in the realm, for noble houses.', items: ['canopy_bed', 'marble_table', 'velvet_chair', 'chandelier', 'tapestry', 'gilded_mirror', 'grand_wardrobe'] },
   farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields, seeds and tools to grow your own, and horses and donkeys to ride.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain', 'seed_carrot', 'seed_cabbage', 'seed_lettuce', 'seed_turnip', 'seed_potato', 'seed_onion', 'seed_pumpkin', 'seed_wheat', 'hoe', 'watering_can', 'riding_donkey', 'riding_horse'] },
-  butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you. Snare traps and arrows for hunters.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'firewood', 'bait_trap', 'arrow_bundle'] },
+  butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you. Snare traps, arrows and taxidermy kits for hunters.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'firewood', 'bait_trap', 'arrow_bundle', 'taxidermy_kit'] },
   tavern: { bot: true, name: 'Tavern', text: 'Halal food, fresh drinks and rooms to rent. No alcohol is served here.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask', 'herbal_tea', 'lentil_soup', 'bread'] },
 });
 // what a market charges for an item, and pays for one

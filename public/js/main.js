@@ -1503,6 +1503,7 @@ function showCarcass(d) {
         <button type="button" class="gold-button small" data-carcass="drag">Drag it (E)</button>
         <button type="button" class="gold-button small" data-carcass="cut"${d.blade ? '' : ' title="You need a Hunting Knife, or a sword, dagger or axe in your hand"'}>Cut it up (2)${d.blade ? '' : ': needs a blade'}</button>
         ${d.baited ? '' : `<button type="button" class="gold-button small" data-carcass="bait"${d.snare ? '' : ' title="You need a Hunter\'s Snare Trap"'}>Set it as bait (3)${d.snare ? '' : ': needs a Snare Trap'}</button>`}
+        ${d.canStuff && !d.trophy && !d.baited ? `<button type="button" class="gold-button small" data-carcass="stuff">Taxidermy (4)</button>` : ''}
       </div>
       <p class="bag-hint">${d.baited ? 'Your snare is set under it. Stay back and wait for a bigger animal to come for the bait.' : 'As bait, with a Hunter\'s Snare Trap under it, its smell draws a bigger meat-eater (a fox, jackal, lynx, wolf or bear, by the land), and the snare holds it fast.'}</p>
     </div>`, (e, close) => {
@@ -1512,15 +1513,46 @@ function showCarcass(d) {
     carcassAct(act);
   });
   function carcassAct(act) {
-    if (act === 'drag') world?.dragCarcass(); else if (act === 'bait') world?.baitCarcass(); else world?.cutCarcass();
+    if (act === 'drag') world?.dragCarcass(); else if (act === 'bait') world?.baitCarcass(); else if (act === 'stuff') showTaxidermy(d); else world?.cutCarcass();
   }
   function keys(e) {
     if (!document.body.contains(pop)) { window.removeEventListener('keydown', keys, true); return; }
-    const act = e.code === 'KeyE' || e.code === 'Digit1' ? 'drag' : e.code === 'Digit2' ? 'cut' : e.code === 'Digit3' && !d.baited ? 'bait' : null;
+    const act = e.code === 'KeyE' || e.code === 'Digit1' ? 'drag' : e.code === 'Digit2' ? 'cut' : e.code === 'Digit3' && !d.baited ? 'bait' : e.code === 'Digit4' && d.canStuff && !d.trophy && !d.baited ? 'stuff' : null;
     if (!act) return;
     e.preventDefault(); e.stopPropagation();
     pop.remove(); window.removeEventListener('keydown', keys, true);
     carcassAct(act);
+  }
+  setTimeout(() => window.addEventListener('keydown', keys, true), 50);
+}
+// Taxidermy: keep the head, the head and paws (or hooves, or feet), or the whole body (keys 1 to 3)
+function showTaxidermy(d) {
+  world?.releaseMouse?.();
+  const L = d.limbs, opts = [
+    ['head', 'Head only', 1, 'Mounted on a plaque. The body stays, to cut up for meat and hide.'],
+    ['paws', `Head and ${L}`, 2, `Mounted together. The body stays, to cut up (a little less hide).`],
+    ['full', 'Full body', 3, 'The whole animal, stuffed and on a stand. Nothing is left to cut up.'],
+  ];
+  const pop = showItemPop(`<div class="item-pop-box" role="dialog" aria-label="Taxidermy">
+      <button type="button" class="sw-close" data-pop-close aria-label="Close">×</button>
+      <h3>Taxidermy: ${escHtml(d.name)}</h3>
+      <p class="bag-hint">You have ${d.kits} Taxidermy Kit${d.kits === 1 ? '' : 's'}. You also need a blade in hand or a Hunting Knife. The trophy goes in your bag as furniture for a home, or to sell.</p>
+      <div class="pop-actions" style="flex-direction:column;align-items:stretch">
+        ${opts.map(([how, label, kits, about], i) => `<button type="button" class="gold-button small" data-stuff="${how}"${d.kits < kits ? ` title="Needs ${kits} kits"` : ''}>${label} (${i + 1}) · ${kits} kit${kits > 1 ? 's' : ''}</button><p class="bag-hint" style="margin:2px 0 8px">${about}</p>`).join('')}
+      </div>
+    </div>`, (e, close) => {
+    const how = e.target.closest('[data-stuff]')?.dataset.stuff;
+    if (!how) return;
+    close(); window.removeEventListener('keydown', keys, true);
+    world?.stuffCarcass(how);
+  });
+  function keys(e) {
+    if (!document.body.contains(pop)) { window.removeEventListener('keydown', keys, true); return; }
+    const how = { Digit1: 'head', Digit2: 'paws', Digit3: 'full' }[e.code];
+    if (!how) return;
+    e.preventDefault(); e.stopPropagation();
+    pop.remove(); window.removeEventListener('keydown', keys, true);
+    world?.stuffCarcass(how);
   }
   setTimeout(() => window.addEventListener('keydown', keys, true), 50);
 }
