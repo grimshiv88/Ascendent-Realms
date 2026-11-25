@@ -1200,7 +1200,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // the shop door or market stall you're standing at, if any
   function shopNear(x, z) {
     for (const s of sites) {
-      const list = s.built?.shops || (s.built?.market ? [{ ...s.built.market, name: MARKETS[s.built.market.id].name }] : []);
+      const list = s.built?.shops || [...(s.built?.market ? [{ ...s.built.market, name: MARKETS[s.built.market.id].name }] : []), ...(s.built?.kiosk ? [s.built.kiosk] : [])];
       for (const shop of list) if (Math.hypot(shop.x - x, shop.z - z) < 4.5) return shop;
     }
     return null;
@@ -1239,6 +1239,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (npc) { talkTo(npc); return; }
       const shop = shopNear(pos.x, pos.z);
       if (shop?.building) { enterBuilding(shop); return; }
+      if (shop?.id === 'bank_kiosk') { onEvent?.('kiosk', shop.place); return; }
       if (shop) { onEvent?.(shop.id === 'guild' ? 'guild' : 'market', shop.id); return; }
       const door = doorsNear(pos.x, pos.z, 4).sort((a, b) => Math.hypot(a.d.x - pos.x, a.d.z - pos.z) - Math.hypot(b.d.x - pos.x, b.d.z - pos.z))[0];
       if (door && Math.hypot(door.d.x - pos.x, door.d.z - pos.z) < 3.5) { useDoor(door); return; }

@@ -17,7 +17,7 @@ import { renderAssess, renderParents } from './idcard.js';
 import { renderQuests, renderGuild } from './quests.js';
 import { renderLand, renderCave, renderEstate } from './landui.js';
 import { renderBank, renderDerrick, renderOilSpot } from './bankui.js';
-import { depositById, BANK_ID } from './data/economy.mjs';
+import { depositById, BANK_ID, bankPlace } from './data/economy.mjs';
 import { caveById } from './data/depths.mjs';
 import { portalFee, portalKm } from './data/portals.mjs';
 import { openBuilder as openBuilderView } from './builder.js';
@@ -1157,7 +1157,7 @@ function startGame(character) {
       const box = overlay.querySelector('#bank-amount');
       const amount = box && box.value !== '' ? Math.floor(Number(box.value)) : undefined;
       const name = overlay.querySelector('#bank-company')?.value;
-      if (v === 'found') econ(() => api.oilAct({ act: 'found', name }));
+      if (v === 'found') econ(() => api.oilAct({ act: 'found', name, city: ui.bankCity?.id }));
       else econ(() => api.bankAct({ act: v, amount, cur: e.target.closest('[data-cur]')?.dataset.cur, from: e.target.closest('[data-from]')?.dataset.from, city: ui.bankCity?.id }));
       return;
     }
@@ -1404,9 +1404,13 @@ function startGame(character) {
         loadHomes().then(drawPanel);
         openPanel('estate');
       }
-      if (type === 'market' && data === BANK_ID) {
+      // the counter of a city's Bank, or a village's Bank Kiosk: the window opens only there
+      if ((type === 'market' && data === BANK_ID) || type === 'kiosk') {
         const p = world?.outdoors();
-        ui.bankCity = p && placesWithPositions().filter((q) => q.city).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+        const city = type === 'kiosk' ? null : p && placesWithPositions().filter((q) => q.city).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+        ui.bankCity = bankPlace(type === 'kiosk' ? data : city?.id);
+        if (!ui.bankCity) return;
+        if (!ui.bankCity.full && ui.bankTab === 'loan') ui.bankTab = 'safe';
         ui.econMsg = ''; ui.econBad = false; ui.bankTab ||= 'safe';
         loadBank().then(loadOil).then(drawPanel);
         openPanel('bank');

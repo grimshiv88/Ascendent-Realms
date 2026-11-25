@@ -1114,6 +1114,7 @@ export function buildVillage(place) {
   const doors = doorKeeper();
   const pads = [];
   const shops = centre.market ? [{ ...centre.market, name: MARKETS[centre.market.id].name }] : [];
+  if (centre.kiosk) shops.push(centre.kiosk);
   // (kept off the north-south street between the gates: each at least 10 m to the side of it)
   const spots = [[-0.6, 30, 'tavern'], [0.05, 33], [0.7, 30], [2.45, 32], [3.14, 30], [3.83, 33]];
   for (const [a, r, id] of spots) {

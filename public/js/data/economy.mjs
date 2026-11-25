@@ -53,6 +53,19 @@ export const coinsWords = (cur, n) => (cur === 'crown' ? moneyWords(n) : `${n.to
 // ---------- the Bank ----------
 export const BANK_ID = 'bank';
 export const BANK_NAME = 'Bank of the Realm';
+export const KIOSK_ID = 'bank_kiosk';
+export const KIOSK_NAME = 'Bank Kiosk';
+// Where you can bank: the Bank of a great city (everything), or the little kiosk by the waystone of
+// any village or homeland (safekeeping, changing money and selling oil; loans and new Oil Companies
+// only at a city's Bank). You must be standing there: nothing opens from afar.
+export function bankPlace(id) {
+  const p = placesWithPositions().find((q) => q.id === id && !q.cave);
+  if (!p) return null;
+  return { id: p.id, name: p.name, x: p.x, z: p.z, full: !!p.city, cur: p.city ? currencyOfCity(p.id) : currencyOfRegion(p.region) };
+}
+const BANK_REACH = (pl) => (pl.full ? CITY_R + 30 : 90);
+// is this character (as last saved) at that Bank or kiosk?
+export const atBank = (c, pl) => !Number.isFinite(c.location?.x) || Math.hypot(c.location.x - pl.x, c.location.z - pl.z) < BANK_REACH(pl);
 export const LOAN_FEE = 25;              // the one fixed service fee for a loan, in Copper
 export const LOAN_DAYS = 7;              // real days to pay a loan back
 export const LOAN_MIN = 100;
@@ -99,7 +112,9 @@ export function bankAct(c, body, now = Date.now()) {
   const b = freshBank(c);
   collectLate(c, now);
   const n = whole(Number(body?.amount));
-  const city = String(body?.city || 'central');
+  const place = bankPlace(String(body?.city || ''));
+  if (!place) return fail('There is no Bank here.');
+  if (!atBank(c, place)) return fail(`You have to be at the ${place.full ? 'Bank' : 'kiosk'} in ${place.name} to do that. Go there in person.`);
   switch (body?.act) {
     case 'deposit':
       if (!n) return fail('Enter how much to put in.');
@@ -112,6 +127,7 @@ export function bankAct(c, body, now = Date.now()) {
       b.deposit -= n; c.coins += n; note(b, now, `Took out ${moneyWords(n)}`);
       return { ok: true, message: `You take ${moneyWords(n)} out of the Bank.` };
     case 'borrow': {
+      if (!place.full) return fail('Loans are only made at the Bank of a great city, not at a kiosk.');
       if (c.child) return fail('The Bank does not lend to children.');
       if (b.loan) return fail('Pay back the loan you have first.');
       if (!n || n < LOAN_MIN) return fail(`The smallest loan is ${moneyWords(LOAN_MIN)}.`);
@@ -155,7 +171,7 @@ export function bankAct(c, body, now = Date.now()) {
       const o = freshOil(c);
       const k = Math.min(n || o.barrels, o.barrels);
       if (!k) return fail('Your company has no barrels to sell. Collect them at your oil wells first.');
-      const cur = currencyOfCity(city);
+      const cur = place.cur;
       const each = oilPrice(cur, now);
       const got = Math.floor(k * each);
       o.barrels -= k; o.sold += k;
@@ -286,6 +302,7 @@ export function oilAct(c, wells, body, { now = Date.now(), plotOwner = () => nul
     }
     case 'found': { // start an Oil Company (Businessmen only)
       if (c.cls !== 'businessman') return fail('Only a Businessman can start an Oil Company.');
+      { const pl = bankPlace(String(body?.city || '')); if (!pl?.full || !atBank(c, pl)) return fail('An Oil Company is started in person, at the Bank of a great city.'); }
       if (o.company) return fail(`You already run ${o.company}.`);
       const name = cleanName(body?.name);
       if (name.length < 3) return fail('Give your company a name (3 letters or more).');
@@ -322,7 +339,7 @@ export function oilAct(c, wells, body, { now = Date.now(), plotOwner = () => nul
       const spare = Math.max(0, (now - w.last) % BARREL_MS);
       w.out = (w.out || 0) + s.tank; w.tank = 0; w.last = now - spare;
       o.barrels += s.tank;
-      return { ok: true, changed: [w], message: `You fill ${s.tank} barrel${s.tank === 1 ? '' : 's'} of oil. Sell them at any city's Bank.` };
+      return { ok: true, changed: [w], message: `You fill ${s.tank} barrel${s.tank === 1 ? '' : 's'} of oil. Sell them at any Bank or village kiosk.` };
     }
     case 'close': { // take down your derrick (the pool is free for anyone again)
       const i = wells.findIndex((q) => q.id === body?.id && q.owner === c.name);
