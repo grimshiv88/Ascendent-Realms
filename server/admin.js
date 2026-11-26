@@ -230,7 +230,7 @@ async function skillsBoard() {
       ...k,
       uniques: held.filter((x) => (U.UNIQUE_CATEGORY[U.uniqueByName(x.u.name)?.kind || x.u.kind] || 'attack') === k.id)
         .sort((a, b) => U.byRank(a.u, b.u) || b.level - a.level)
-        .map((x) => ({ id: x.id, username: x.username, name: x.name, level: x.level, skill: x.u.name, rank: U.rankOf(x.u), element: x.u.element || '' })),
+        .map((x) => { const u = U.uniqueByName(x.u.name); return { id: x.id, username: x.username, name: x.name, level: x.level, skill: x.u.name, rank: U.rankOf(x.u), element: x.u.element || u?.element || '', kind: u?.kind || x.u.kind || '', fit: u?.fit || x.u.fit || '' }; }),
       skills: Object.values(SKILLS).filter((sk) => skillCategory(sk) === k.id).sort((a, b) => skillPower(b) - skillPower(a)).map((sk) => ({ id: sk.id, name: sk.name, icon: sk.icon, text: sk.text })),
     })),
   };
@@ -334,6 +334,10 @@ function catalogue() {
     spells: Object.values(SPELLS).map((sp) => ({ id: sp.id, name: sp.name, element: sp.element, level: sp.level, rank: spellRank(sp), category: spellCategory(sp), shape: sp.kind, sp: sp.sp, cd: sp.cd, text: spellText(sp) })),
     uniqueRanks: U.UNIQUE_RANKS,
     uniques: [U.APPRAISAL.name, ...U.UNIQUE_SKILLS.map((u) => u.name)],
+    // every Unique Skill as [name, power kind, element, class it suits], for the filtered picker
+    uniqueList: [U.APPRAISAL, ...U.UNIQUE_SKILLS].map((u) => [u.name, u.kind, u.element || '', u.fit || '']),
+    uniqueKinds: U.UNIQUE_KIND_NAMES,
+    uniqueCategory: U.UNIQUE_CATEGORY,
   };
 }
 

@@ -28,14 +28,16 @@ const KINDS = {
   devour: { type: 'strike', icon: '🦷', mult: [1.3, 1.8, 2.4, 3.2, 4.2, 5.5, 24], drain: [0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 1], what: (p) => `one blow for ${p.mult}× damage that heals you by ${Math.round(p.drain * 100)}% of it` },
 };
 export const UNIQUE_KINDS = Object.keys(KINDS);
+// each kind of power in plain words (for lists and filters)
+export const UNIQUE_KIND_NAMES = { strike: 'Blow', sweep: 'Blast around you', bolt: 'Shot', dash: 'Rush', heal: 'Cure', fury: 'War cry (+ATK)', ward: 'Ward (+DEF)', freeze: 'Freeze', devour: 'Life-stealing bite', appraise: 'Appraisal' };
 
 // ---------- ranks ----------
-// Every Unique Skill is born with a rank, from D up to SSS. The higher the rank, the stronger it hits
+// Every Unique Skill is born with a rank, from F up to SSS (the same letters as skills and spells). The higher the rank, the stronger it hits
 // and the sooner it is ready again, and the rarer it is: A comes to about 1 in 100, S to 1 in 1000,
 // and only a handful of people in the whole world can ever hold SS or SSS at once.
-export const UNIQUE_RANKS = ['D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
-export const RANK_POWER = { D: 0.8, C: 0.9, B: 1, A: 1.2, S: 1.45, SS: 1.75, SSS: 2.1 };
-// chance of each top rank (the rest share D, C and B), and how many may hold SS and SSS at once
+export const UNIQUE_RANKS = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
+export const RANK_POWER = { F: 0.65, E: 0.72, D: 0.8, C: 0.9, B: 1, A: 1.2, S: 1.45, SS: 1.75, SSS: 2.1 };
+// chance of each top rank (the rest share F, E, D, C and B), and how many may hold SS and SSS at once
 const TOP_ODDS = [['SSS', 0.00002], ['SS', 0.0001], ['S', 0.001], ['A', 0.01]];
 export const RANK_CAP = { SS: 10, SSS: 3 };
 // `held` counts the ranks already held, e.g. { SS: 2, SSS: 0 }
@@ -46,7 +48,7 @@ export function rollRank(held = {}, rnd = Math.random) {
     r -= p;
   }
   const low = rnd();
-  return low < 0.45 ? 'D' : low < 0.77 ? 'C' : 'B';
+  return low < 0.12 ? 'F' : low < 0.3 ? 'E' : low < 0.55 ? 'D' : low < 0.8 ? 'C' : 'B';
 }
 export const rankOf = (u) => (UNIQUE_RANKS.includes(u?.rank) ? u.rank : 'C');
 

@@ -215,7 +215,7 @@ export function createSkillFx(scene) {
     if (id === 'haggle') { aura(p, h, '#ffd24a'); return coins(p, h); }
     // the wider book of skills: drawn in their element's colours, bigger for higher ranks
     if (sk.el) {
-      const tier = { basic: 0, advanced: 1, expert: 3, master: 5 }[sk.rank] || 0;
+      const tier = { F: 0, E: 0, D: 1, C: 2, B: 3, A: 4, S: 5, SS: 5, SSS: 6 }[sk.rank] || 0;
       if (sk.el === 'Gold' && sk.type === 'bolt' && hit) { const c = mesh(geo.coin, '#ffd24a', 1); return shot(c, from, hit, 28, null, () => { flash(hit, '#ffe070', 0.9 + tier * 0.2); coins(to, 0.5, 5 + tier * 2); }); }
       if (sk.el === 'Gold' && sk.type === 'buff') { aura(p, h, '#ffd24a'); return coins(p, h); }
       return unique({ ...sk, element: sk.el, tier }, p, h, heading, from, to, hit, path);

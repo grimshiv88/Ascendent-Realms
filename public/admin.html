@@ -107,7 +107,7 @@
     .pick .ic { font-size: 1.3rem; text-align: center; }
     .pick small { display: block; color: var(--quiet); font-size: 0.8rem; }
     .rk { display: inline-block; font-size: 0.7rem; padding: 0 6px; border-radius: 3px; border: 1px solid currentColor; margin-left: 4px; }
-    .rk-basic { color: #b8c0c8; } .rk-advanced { color: #7fc8ff; } .rk-expert { color: #c48aff; } .rk-master { color: #ffb347; }
+    .rk-F, .rk-E { color: #b8c0c8; } .rk-D, .rk-C { color: #7fc8ff; } .rk-B, .rk-A { color: #c48aff; } .rk-S { color: #ffb347; } .rk-SS, .rk-SSS { color: #ff6a5a; }
     form.signin { max-width: 360px; display: grid; gap: 10px; }
     [hidden] { display: none !important; }
   </style>
@@ -168,8 +168,8 @@
     </div>
 
     <div data-panel="skills" class="card" hidden>
-      <h2>Skills by kind</h2>
-      <p class="quiet">From defence to attack. Under each kind: every Unique Skill held in the world, from the highest rank to the weakest, then the ordinary skills from the strongest. Click a holder to open their card.</p>
+      <h2>Unique Skills held</h2>
+      <p class="quiet">Every Unique Skill held in the world, from the highest rank to the weakest. Filter by kind, rank, power, element, the class it suits, or a skill or holder's name. Click a holder to open their card.</p>
       <div id="skillboard"></div>
       <h2 style="margin-top:22px">Every skill and spell</h2>
       <p class="quiet">The whole book of ordinary skills and spells. Filter by kind, rank, class, element, reach, or type a name.</p>
@@ -428,6 +428,81 @@ function wirePickers(root) {
   root.addEventListener('change', onField);
 }
 
+// ---------- Unique Skills: the picker that gives one, and the filter over those held ----------
+// There are thousands, so the picker shows the first matches only. Filters: kind (Attack,
+// Defence, ...), the power it is (a blow, a shot, a ward...), element, the class it suits, a name;
+// the list of holders also filters by rank. Ranks belong to a holder, not to the skill itself.
+const U_SHOW = 60;
+const uFilter = (key) => (pickState[key] ||= { cat: 'all', kind: 'all', el: 'all', fit: 'all', rank: 'all', give: 'B', q: '' });
+const uCat = (kind) => catalogue.uniqueCategory?.[kind] || 'attack';
+const kindName = (kind) => catalogue.uniqueKinds?.[kind] || kind;
+const clsName = (id) => catalogue.classes.find((k) => k.id === id)?.name || id || '';
+function uniqueFilters(key, withRank) {
+  const f = uFilter(key);
+  const opt = (v, label, cur) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(label)}</option>`;
+  const els = [...new Set(catalogue.uniqueList.map((u) => u[2]).filter(Boolean))].sort();
+  return `<div class="chips">${[{ id: 'all', name: 'All', icon: '' }, ...catalogue.categories].map((k) => `<button type="button" data-u-cat="${k.id}" class="${f.cat === k.id ? 'on' : ''}">${esc(k.icon || '')} ${esc(k.name)}</button>`).join('')}</div>
+    <div class="filters">
+      ${withRank ? `<select data-u="rank" aria-label="Rank">${opt('all', 'Every rank', f.rank)}${catalogue.uniqueRanks.slice().reverse().map((r) => opt(r, `${r}-Rank`, f.rank)).join('')}</select>` : ''}
+      <select data-u="kind" aria-label="Power">${opt('all', 'Every power', f.kind)}${Object.entries(catalogue.uniqueKinds || {}).map(([k, v]) => opt(k, v, f.kind)).join('')}</select>
+      <select data-u="el" aria-label="Element">${opt('all', 'Every element', f.el)}${els.map((e) => opt(e, e, f.el)).join('')}</select>
+      <select data-u="fit" aria-label="Suits">${opt('all', 'Suits any class', f.fit)}${catalogue.classes.map((k) => opt(k.id, `Suits a ${k.name}`, f.fit)).join('')}</select>
+      <input type="search" data-u="q" placeholder="${withRank ? 'Search skill or holder' : 'Search by name'}" value="${esc(f.q)}" aria-label="Search">
+    </div>`;
+}
+const uMatch = (f, { kind, el, fit, name, rank, who = '' }) => (f.cat === 'all' || uCat(kind) === f.cat) && (f.kind === 'all' || kind === f.kind)
+  && (f.el === 'all' || el === f.el) && (f.fit === 'all' || fit === f.fit) && (f.rank === 'all' || !rank || rank === f.rank)
+  && (!f.q.trim() || `${name} ${who}`.toLowerCase().includes(f.q.trim().toLowerCase()));
+function uniquePickerHtml(mine) {
+  const f = uFilter('ugive');
+  return `<div class="picker" data-upicker="ugive">${uniqueFilters('ugive', false)}
+    <div class="row" style="margin-bottom:8px"><label style="grid-auto-flow:column;align-items:center">Rank to give <select data-u="give">${catalogue.uniqueRanks.slice().reverse().map((r) => `<option${r === (f.give || mine?.rank || 'B') ? ' selected' : ''}>${r}</option>`).join('')}</select></label></div>
+    <div class="pick-list">${uniqueListHtml(mine)}</div></div>`;
+}
+function uniqueListHtml(mine) {
+  const f = uFilter('ugive');
+  const list = catalogue.uniqueList.filter(([name, kind, el, fit]) => name !== mine?.name && uMatch({ ...f, rank: 'all' }, { kind, el, fit, name }));
+  const rows = list.slice(0, U_SHOW).map(([name, kind, el, fit]) => { const k = catalogue.categories.find((x) => x.id === uCat(kind)); return `<div class="pick"><span class="ic">${esc(k?.icon || '✦')}</span>
+    <span><b>${esc(name)}</b> <span class="tag">${esc(k?.name || '')}</span> <span class="tag">${esc(kindName(kind))}</span>${el ? ` <span class="tag">${esc(el)}</span>` : ''}<small>${fit ? `Suits a ${esc(clsName(fit))}` : ''}</small></span>
+    <button type="button" class="primary" data-give-unique="${esc(name)}">Give</button></div>`; }).join('');
+  return `<p class="quiet" style="margin:0 0 4px">${list.length} match${list.length === 1 ? '' : 'es'}${list.length > U_SHOW ? `, showing the first ${U_SHOW}: narrow the filters or type a name` : ''}</p>${rows || '<p class="quiet">Nothing matches.</p>'}`;
+}
+let heldUniques = [];
+function heldHtml() {
+  const f = uFilter('uheld');
+  const order = catalogue.uniqueRanks;
+  const list = heldUniques.filter((u) => uMatch(f, { kind: u.kind, el: u.element, fit: u.fit, name: u.skill, rank: u.rank, who: `${u.name} ${u.username}` }))
+    .sort((a, b) => order.indexOf(b.rank) - order.indexOf(a.rank) || b.level - a.level);
+  return `<p class="quiet" style="margin:0 0 4px">${list.length} of ${heldUniques.length} held</p>
+    <div class="tablewrap"><table><thead><tr><th>Rank</th><th>Unique Skill</th><th>Kind</th><th>Suits</th><th>Held by</th></tr></thead><tbody>
+    ${list.map((u) => { const k = catalogue.categories.find((x) => x.id === uCat(u.kind)); return `<tr><td><span class="tag">${esc(u.rank)}</span></td><td>${esc(u.skill)} <span class="quiet">${esc(u.element)}</span></td><td>${esc(k?.icon || '')} ${esc(k?.name || '')} <span class="quiet">${esc(kindName(u.kind))}</span></td><td>${esc(clsName(u.fit))}</td><td><button type="button" data-look="${u.id}">${esc(u.name)}</button> <span class="quiet">Lv ${u.level}</span></td></tr>`; }).join('') || '<tr><td colspan="5" class="quiet">Nobody holds one that matches.</td></tr>'}
+    </tbody></table></div>`;
+}
+// filter changes redraw only the list under them
+function wireUnique(root) {
+  const redraw = (box) => {
+    if (box.dataset.upicker === 'ugive') box.querySelector('.pick-list').innerHTML = uniqueListHtml({ name: $('pcard').dataset.unique });
+    else box.querySelector('.held-list').innerHTML = heldHtml();
+  };
+  root.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-u-cat]');
+    if (!b) return;
+    const box = b.closest('[data-upicker]');
+    uFilter(box.dataset.upicker).cat = b.dataset.uCat;
+    for (const x of box.querySelectorAll('[data-u-cat]')) x.classList.toggle('on', x === b);
+    redraw(box);
+  });
+  const onField = (e) => {
+    const el = e.target.closest('[data-u]');
+    if (!el) return;
+    const box = el.closest('[data-upicker]');
+    uFilter(box.dataset.upicker)[el.dataset.u] = el.value;
+    if (el.dataset.u !== 'give') redraw(box);
+  };
+  root.addEventListener('input', onField);
+  root.addEventListener('change', onField);
+}
+
 // skills grouped by kind, from defence to attack, the strongest first
 function skillGroups(ids) {
   return catalogue.categories.map((k) => ({ ...k, list: catalogue.skills.filter((sk) => sk.category === k.id && ids.includes(sk.id)).sort((a, b) => b.power - a.power) })).filter((g) => g.list.length);
@@ -528,6 +603,8 @@ function drawCard(p) {
         <button class="primary" type="submit">Change</button>
       </form>
       <p class="quiet">Leave the name empty to keep the skill and only change its rank. The admin can go past the world limits for SS and SSS.</p>
+      <p class="quiet" style="margin:10px 0 0">Or find one with the filters and press Give (it gets the rank chosen here).</p>
+      ${uniquePickerHtml(c.uniqueSkill)}
     </div>
 
     <div class="card" data-need="edit">
@@ -625,9 +702,10 @@ async function change(path, body, done) {
   } catch (err) { say(err.message); }
 }
 $('pcard').addEventListener('click', async (e) => {
-  const b = e.target.closest('button[data-act], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore], button[data-give-skill], button[data-give-spell]');
+  const b = e.target.closest('button[data-act], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore], button[data-give-skill], button[data-give-spell], button[data-give-unique]');
   if (!b) return;
   const name = $('pcard').dataset.name;
+  if (b.dataset.giveUnique) return change('api/admin/edit', { unique: { name: b.dataset.giveUnique, rank: uFilter('ugive').give || 'B' } }, `${name}'s Unique Skill is now ${b.dataset.giveUnique}.`);
   if (b.dataset.giveSkill) return change('api/admin/edit', { addSkill: b.dataset.giveSkill }, `Skill given to ${name}.`);
   if (b.dataset.giveSpell) return change('api/admin/edit', { addSpell: b.dataset.giveSpell }, `Spell given to ${name}.`);
   if (b.dataset.remove) return change('api/admin/edit', { removeItem: { index: Number(b.dataset.remove) } }, 'Taken away.');
@@ -779,14 +857,13 @@ $('announce').addEventListener('submit', async (e) => {
 // ---------- skills ----------
 async function drawSkills() {
   const { categories } = await call('api/admin/skills');
-  $('skillboard').innerHTML = categories.map((k) => `<h3 style="margin-top:14px">${esc(k.icon)} ${esc(k.name)}</h3>
-    <div class="tablewrap"><table><thead><tr><th>Rank</th><th>Unique Skill</th><th>Held by</th></tr></thead><tbody>
-    ${k.uniques.map((u) => `<tr><td><span class="tag">${esc(u.rank)}</span></td><td>${esc(u.skill)} <span class="quiet">${esc(u.element)}</span></td><td><button type="button" data-look="${u.id}">${esc(u.name)}</button> <span class="quiet">Lv ${u.level}</span></td></tr>`).join('') || '<tr><td colspan="3" class="quiet">Nobody holds one of this kind.</td></tr>'}
-    </tbody></table></div>
-    <p class="quiet">${k.skills.length} ordinary skills and ${catalogue.spells.filter((sp) => sp.category === k.id).length} spells of this kind (see the book below).</p>`).join('');
+  heldUniques = categories.flatMap((k) => k.uniques);
+  $('skillboard').innerHTML = `<div class="picker" data-upicker="uheld">${uniqueFilters('uheld', true)}<div class="held-list">${heldHtml()}</div></div>`;
   $('skillbook').innerHTML = `<h3>Skills <span class="quiet">(${catalogue.skills.length})</span></h3>${pickerHtml('book')}<h3 style="margin-top:16px">Spells <span class="quiet">(${catalogue.spells.length})</span></h3>${pickerHtml('spellbook')}`;
 }
 wirePickers($('pcard'));
+wireUnique($('pcard'));
+wireUnique($('skillboard'));
 wirePickers($('skillbook'));
 $('skillboard').addEventListener('click', (e) => { const b = e.target.closest('[data-look]'); if (b) { document.querySelector('[data-tab="players"]').click(); openPlayer(Number(b.dataset.look)); } });
 
