@@ -161,7 +161,14 @@ async function askSignInCode(row, way) {
   if (way === 'app') await db.run("DELETE FROM auth_codes WHERE account_id = ? AND kind = 'signin'", row.id);
   const c = await makeCode(row.id, 'signin', way);
   if (c.error) return c;
-  if (way === 'email') await mail.signInCode(row.email, row.username, c.code);
+  if (way === 'email') {
+    const sent = await mail.signInCode(row.email, row.username, c.code);
+    if (!sent.sent) {
+      // never say a code went out when it didn't: drop it so "send again" isn't held back
+      await db.run('DELETE FROM auth_codes WHERE ticket = ?', c.ticket);
+      return { error: 'The sign-in code email couldn\'t be sent just now. Please try again in a minute.' };
+    }
+  }
   return { twofa: way, ticket: c.ticket, sentTo: way === 'email' ? hideEmail(row.email) : null, canEmail: mail.ready() && hasEmail(row.email) && !!row.email_verified };
 }
 
