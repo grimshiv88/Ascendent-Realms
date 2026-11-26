@@ -316,7 +316,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // raised ground, like a farm's fence on its levelled yard, counts when it is at that height.
   function blockedAt(x, z, r, y) {
     for (const e of colliders.near(x, z, r)) {
-      if (e.r <= 0 || e.step || e.kind === 'chest') continue;
+      if (e.r <= 0 || e.step || e.camOnly || e.kind === 'chest') continue;
       if (e.y !== undefined && (y === undefined || y >= e.y + (e.height || 8) - 0.4 || y + 1.2 < e.y)) continue;
       if (Math.hypot(e.x - x, e.z - z) < e.r + r) return e;
     }
@@ -1860,6 +1860,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const fx = pos.x + Math.sin(heading) * reach * 0.6, fz = pos.z + Math.cos(heading) * reach * 0.6;
     let best = null, bestD = Infinity;
     for (const e of colliders.near(fx, fz, reach * 0.8)) {
+      if (e.camOnly) continue;
       const d = Math.hypot(e.x - pos.x, e.z - pos.z) - e.r;
       if (d < bestD && d < reach) { best = e; bestD = d; }
     }
@@ -2069,6 +2070,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     game.heal(Math.min(n, cap - c.hp));
   }
   const B = WORLD_BOUNDS;
+  // does this solid stand in the camera's way at (px, py, pz)? An awning or roof (camOnly) only
+  // blocks between its underside and its top; everything else from the ground up to its height
+  const camBlocks = (px, py, pz) => (e) => {
+    if (!(e.r > 0)) return false;
+    const base = (e.y ?? groundAt(e.x, e.z)) + (e.lift || 0);
+    if (py - base >= (e.height || 8)) return false;
+    if (e.camOnly) return py > base - 0.2 && Math.hypot(px - e.x, pz - e.z) < e.r;
+    return Math.hypot(px - e.x, pz - e.z) < Math.min(e.r * (e.kind === 'wall' ? 1.2 : 4), 3.5);
+  };
   let swimming = false;
   const tmpS = {};
   const v3 = new THREE.Vector3();
@@ -2486,14 +2496,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (here !== area) { area = here; onArea?.(area, { x: pos.x, z: pos.z }); }
     }
 
-    // Camera follows behind and above, pulled in so trees and cave walls don't block the view
+    // Camera follows behind and above, pulled in so trees, walls, stall awnings and cave walls don't block the view
     const focus = new THREE.Vector3(pos.x, pos.y + bodyH * 0.8 + (riding?.saddle() || 0) * 0.85, pos.z);
     const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     let want = dist;
     // (indoors the walls keep the camera in instead: pulling it in for every chair and table made it shake)
     for (let d = 1; d < (inside ? 0 : dist); d += 0.75) {
       const px = focus.x + dir.x * d, py = focus.y + dir.y * d, pz = focus.z + dir.z * d;
-      const hit = (depth && depth.built.shape(px, pz).d > -0.4) || colliders.near(px, pz, 0.6).some((e) => e.r > 0 && py - (e.y ?? groundAt(e.x, e.z)) < (e.height || 8) && Math.hypot(px - e.x, pz - e.z) < Math.min(e.r * (e.kind === 'wall' ? 1.2 : 4), 3.5));
+      const hit = (depth && depth.built.shape(px, pz).d > -0.4) || colliders.near(px, pz, 0.6).some(camBlocks(px, py, pz));
       if (hit) { want = Math.max(1.2, d - 0.6); break; }
     }
     camDist += (want - camDist) * Math.min(1, dt * (want < camDist ? 14 : 3));
@@ -2785,6 +2795,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugCam(at, look, showSelf = false) { camOverride = at ? [at, look, showSelf] : null; if (!at) avatar.visible = true; },
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
     debugMonsters: () => creatures.list.filter((m) => !m.dead).map((m) => ({ n: m.title || m.kind.name, x: m.x, y: m.y, z: m.z, g: surfaceAt(m.x, m.z), by: m.body.position.y })),
+    debugRoofs: (r = 80) => colliders.near(pos.x, pos.z, r).filter((e) => e.camOnly).map((e) => [e.x, e.z]),
     debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`), villages: game?.villages().map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.length, dead: v.dead.length, built: mobVillages.has(v.id) })) }),
     teleport,
     get atPortal() { return atPortal; },

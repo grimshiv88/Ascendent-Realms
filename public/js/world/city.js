@@ -644,7 +644,7 @@ export function buildCity(place, opts = {}) {
     market.add(sg);
     const c = Math.cos(st.rot), sn = Math.sin(st.rot);
     const local = (lx, lz) => ({ x: st.x + lx * c + lz * sn, z: st.z - lx * sn + lz * c });
-    for (const [lx, lz, r, height] of parts) { const w = local(lx, lz); solid.push({ x: cx + w.x, z: cz + w.z, r, kind: 'wall', height }); }
+    for (const [lx, lz, r, height, lift] of parts) { const w = local(lx, lz); solid.push({ x: cx + w.x, z: cz + w.z, r, kind: 'wall', height, ...(lift ? { lift, camOnly: true } : {}) }); }
     // the seller behind the counter (talk to them to buy), and a shopper or two in front
     const v = local(0, -0.45);
     addNpc(S.guards[(i * 5 + 2) % S.guards.length], v.x, v.z, st.rot, { kind: 'stall', market: st.id, title: MARKETS[st.id].name, name: townName(side, vendorRnd), still: true });
