@@ -585,7 +585,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         const reach = m.radius + p.radius + 0.6;
         if (dist > reach) speed = m.speed * 1.25;
         m.attackCd -= dt;
-        if (dist <= reach + 0.3 && m.attackCd <= 0) {
+        if (dist <= reach + 0.3 && m.attackCd <= 0 && !(m.stun > 0)) {
           m.attackCd = 1.6;
           m.lunge = 0.3;
           onHitPlayer(m);
@@ -602,6 +602,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       }
       // frost slows a monster to half speed for a while
       if (m.slow > 0) { m.slow -= dt; speed *= 0.5; }
+      // a pinned monster (a skill or spell that holds it) can't move or strike until it breaks free
+      if (m.stun > 0) { m.stun -= dt; speed = 0; }
       if (speed > 0) {
         const nx = m.x + Math.sin(m.heading) * speed * dt;
         const nz = m.z + Math.cos(m.heading) * speed * dt;

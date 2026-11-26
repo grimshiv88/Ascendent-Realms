@@ -34,7 +34,7 @@ import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionNam
 import { createPlots } from './plots.js';
 import { gameTime, now as realmNow } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
-import { spellPower, spellName, darkSpells } from '../data/spells.mjs';
+import { spellPower, spellName, darkSpells, SELF_KINDS, DARK_SPELL_POWER } from '../data/spells.mjs';
 import { skyCard } from './skycard.js';
 import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
@@ -1467,6 +1467,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     return dmg;
   }
   // Poison, burn and bleed hurt each second; frost slows; drain heals you
+  // pin a foe in place: it can't move or strike for a while (bosses shake it off in half the time)
+  function pinFoe(m, secs) {
+    m.stun = Math.max(m.stun || 0, m.boss || m.chief ? secs / 2 : secs);
+  }
   function applyEffect(m, id, dmg, power) {
     const fx = EFFECTS[id];
     if (fx.heal) { game.heal(Math.max(1, Math.round(dmg * fx.heal * power))); return; }
@@ -1540,6 +1544,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // (a freeze slows every foe it hits; a devouring blow heals you)
     const skHow = howOf({ skill: sk, weapon: game.weapon() });
     let hitFoe = (m, mult, magic) => damageMonster(m, mult, magic, skHow);
+    if (!sk.unique && (sk.effect || sk.hold || sk.stun || sk.drain)) {
+      // the wider book of skills (data/skills.mjs): burns and poisons, slows, pins, and life drain
+      hitFoe = (m, mult, magic) => {
+        const hp = m.hp;
+        const dmg = damageMonster(m, mult, magic, skHow);
+        if (sk.drain) game.heal(Math.max(1, Math.round(dmg * sk.drain)));
+        if (m.dead || m.hp <= 0) return;
+        if (sk.hold) m.slow = Math.max(m.slow || 0, sk.hold);
+        if (sk.stun) pinFoe(m, sk.stun);
+        if (sk.effect && Math.random() < sk.effect.chance) applyEffect(m, sk.effect.id, Math.max(1, hp - m.hp), 1);
+      };
+    }
     if (sk.unique) {
       const st = game.stats();
       hitFoe = (m, mult) => {
@@ -1608,7 +1624,25 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const at = (m) => new THREE.Vector3(m.x, m.y + m.height * 0.6, m.z);
     const sp = game.chosenSpell();
     const cost = sp ? Math.max(1, Math.round(sp.sp * (c.cls === 'mage' ? 0.9 : 1))) : 0;
-    if (sp && clock.elapsedTime >= (spellReady[sp.id] || 0) && c.sp >= cost) {
+    if (sp && SELF_KINDS.includes(sp.kind) && clock.elapsedTime >= (spellReady[sp.id] || 0) && c.sp >= cost) {
+      // a spell on yourself: heal, guard (+DEF) or empower (+MATK); the Dark Side's are stronger too
+      const boost = darkSpells(c) ? DARK_SPELL_POWER : 1;
+      const pct = Math.round(sp.pct * boost);
+      if (sp.kind === 'heal') {
+        const amt = Math.round(game.stats().hp * pct / 100);
+        game.heal(amt);
+        floatText(`+${amt} HP`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'exp');
+      } else buffs[sp.kind === 'ward' ? 'def' : 'matk'] = { pct, until: clock.elapsedTime + sp.secs };
+      const look = darkSpells(c) ? 'Dark' : sp.element;
+      skillFx.play({ id: sp.id, unique: true, element: look, tier: 1, type: sp.kind === 'heal' ? 'heal' : 'buff' }, { p: pos.clone(), h: bodyH, heading });
+      c.sp = Math.max(0, c.sp - cost);
+      game.touch('sp');
+      spellReady[sp.id] = clock.elapsedTime + sp.cd;
+      skillPose = { move: moveFor(sp.kind === 'heal' ? { type: 'heal' } : { type: 'buff', stat: 'def' }), t: 0, dur: 0.8 };
+      say(spellName(sp, c), 'exp');
+      return;
+    }
+    if (sp && !SELF_KINDS.includes(sp.kind) && clock.elapsedTime >= (spellReady[sp.id] || 0) && c.sp >= cost) {
       let foes = [], to;
       if (sp.kind === 'bolt' || sp.kind === 'burst') {
         const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
@@ -1628,6 +1662,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const hp = m.hp;
         damageMonster(m, spellPower(sp, c), true, howOf({ spell: sp }));
         if (sp.effect && !m.dead && m.hp > 0 && Math.random() < sp.effect.chance) applyEffect(m, sp.effect.id, Math.max(1, hp - m.hp), 1);
+        if (sp.stun && !m.dead && m.hp > 0) pinFoe(m, sp.stun);
       }
       // the Dark Side's spells come out black with shadow (the Dark element's look)
       const look = darkSpells(c) ? 'Dark' : sp.element;
