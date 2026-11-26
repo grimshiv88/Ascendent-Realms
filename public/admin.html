@@ -90,6 +90,18 @@
     th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid #2a2010; vertical-align: top; }
     th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--quiet); font-weight: 500; }
     .tablewrap { overflow-x: auto; }
+    /* skill and spell picker: filter by kind, rank, class, element, reach and name */
+    .picker { margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #100c07; }
+    .picker .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; margin-bottom: 8px; }
+    .picker .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+    .picker .chips button { padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; }
+    .picker .chips button.on { background: var(--gold-2); color: #1a1206; border-color: var(--gold-2); }
+    .pick-list { display: grid; gap: 5px; max-height: 420px; overflow-y: auto; }
+    .pick { display: grid; grid-template-columns: 30px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; background: #0b0906; }
+    .pick .ic { font-size: 1.3rem; text-align: center; }
+    .pick small { display: block; color: var(--quiet); font-size: 0.8rem; }
+    .rk { display: inline-block; font-size: 0.7rem; padding: 0 6px; border-radius: 3px; border: 1px solid currentColor; margin-left: 4px; }
+    .rk-basic { color: #b8c0c8; } .rk-advanced { color: #7fc8ff; } .rk-expert { color: #c48aff; } .rk-master { color: #ffb347; }
     form.signin { max-width: 360px; display: grid; gap: 10px; }
     [hidden] { display: none !important; }
   </style>
@@ -152,6 +164,9 @@
       <h2>Skills by kind</h2>
       <p class="quiet">From defence to attack. Under each kind: every Unique Skill held in the world, from the highest rank to the weakest, then the ordinary skills from the strongest. Click a holder to open their card.</p>
       <div id="skillboard"></div>
+      <h2 style="margin-top:22px">Every skill and spell</h2>
+      <p class="quiet">The whole book of ordinary skills and spells. Filter by kind, rank, class, element, reach, or type a name.</p>
+      <div id="skillbook"></div>
     </div>
 
     <div data-panel="world" hidden>
@@ -281,6 +296,73 @@ async function openPlayer(id) {
   try { drawCard((await call(`api/admin/player?id=${id}`)).player); } catch (err) { say(err.message); }
 }
 
+// ---------- the skill and spell picker ----------
+// Filters for the long lists of skills and spells: kind (Attack, Defence, Support...), rank, class,
+// element, how it reaches its foes, and a name. Each list keeps its own filter while the board is open.
+const pickState = {};
+const ELEMENTS = ['Fire', 'Water', 'Earth', 'Wind', 'Lightning', 'Nature', 'Light', 'Dark'];
+const rankName = (id) => catalogue.ranks?.find((r) => r.id === id)?.name || id;
+const rankTag = (id) => (id ? `<span class="rk rk-${esc(id)}">${esc(rankName(id))}</span>` : '');
+function pickFilter(kind) { return (pickState[kind] ||= { cat: 'all', rank: 'all', cls: 'all', el: 'all', shape: 'all', q: '' }); }
+// kind 'skill' or 'spell' gives to the open player; 'book' and 'spellbook' only show
+function pickerHtml(kind, owned = []) {
+  const f = pickFilter(kind), spells = kind === 'spell' || kind === 'spellbook';
+  const opt = (v, label, cur) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(label)}</option>`;
+  const shapes = spells ? catalogue.spellShapes || {} : catalogue.shapes || {};
+  return `<div class="picker" data-picker="${kind}" data-owned="${esc(owned.join(','))}">
+    <div class="chips">${[{ id: 'all', name: 'All', icon: '' }, ...catalogue.categories.filter((k) => (spells ? catalogue.spells : catalogue.skills).some((x) => x.category === k.id))].map((k) => `<button type="button" data-pick-cat="${k.id}" class="${f.cat === k.id ? 'on' : ''}">${esc(k.icon || '')} ${esc(k.name)}</button>`).join('')}</div>
+    <div class="filters">
+      <select data-pick="rank" aria-label="Rank">${opt('all', 'Every rank', f.rank)}${(catalogue.ranks || []).map((r) => opt(r.id, r.name, f.rank)).join('')}</select>
+      ${spells ? '' : `<select data-pick="cls" aria-label="Class">${opt('all', 'Every class', f.cls)}${opt('any', 'General (any class)', f.cls)}${catalogue.classes.map((k) => opt(k.id, k.name, f.cls)).join('')}</select>`}
+      <select data-pick="el" aria-label="Element">${opt('all', 'Every element', f.el)}${spells ? '' : opt('none', 'No element (weapon)', f.el)}${ELEMENTS.map((e) => opt(e, e, f.el)).join('')}</select>
+      <select data-pick="shape" aria-label="Reach">${opt('all', 'Any reach', f.shape)}${Object.entries(shapes).filter(([k], i, a) => a.findIndex(([, v]) => v === shapes[k]) === i).map(([k, v]) => opt(k, v[0].toUpperCase() + v.slice(1), f.shape)).join('')}</select>
+      <input type="search" data-pick="q" placeholder="Search by name" value="${esc(f.q)}" aria-label="Search by name">
+    </div>
+    <div class="pick-list">${pickListHtml(kind, owned)}</div>
+  </div>`;
+}
+function pickListHtml(kind, owned = []) {
+  const f = pickFilter(kind), spells = kind === 'spell' || kind === 'spellbook', give = kind === 'skill' || kind === 'spell';
+  const q = f.q.trim().toLowerCase();
+  const order = (catalogue.ranks || []).map((r) => r.id);
+  const shapeOf = (x) => (!spells && x.shape === 'buff' ? 'heal' : x.shape); // heals and buffs are both "on yourself"
+  const all = spells ? catalogue.spells : catalogue.skills;
+  const list = all.filter((x) => !owned.includes(x.id)
+      && (f.cat === 'all' || x.category === f.cat) && (f.rank === 'all' || x.rank === f.rank)
+      && (spells || f.cls === 'all' || (f.cls === 'any' ? x.general : x.classes.includes(f.cls)))
+      && (f.el === 'all' || (f.el === 'none' ? !x.element : x.element === f.el))
+      && (f.shape === 'all' || shapeOf(x) === shapeOf({ shape: f.shape }))
+      && (!q || x.name.toLowerCase().includes(q)))
+    .sort((a, b) => order.indexOf(a.rank) - order.indexOf(b.rank) || (spells ? a.level - b.level : a.power - b.power) || a.name.localeCompare(b.name));
+  const kindOf = (id) => catalogue.categories.find((k) => k.id === id);
+  const rows = list.map((x) => { const k = kindOf(x.category); return `<div class="pick"><span class="ic">${esc(spells ? '✨' : x.icon)}</span>
+    <span><b>${esc(x.name)}</b>${rankTag(x.rank)} <span class="tag">${esc(k?.icon || '')} ${esc(k?.name || '')}</span>${x.element ? ` <span class="tag">${esc(x.element)}</span>` : ''}
+      <small>${esc(x.text)} · ${x.sp} SP · ${x.cd}s rest${spells ? ` · from Lv ${x.level}` : x.classes.length ? ` · ${esc(x.classes.map((id) => catalogue.classes.find((k) => k.id === id)?.name || id).join(', '))}${x.general ? ', anyone' : ''}` : ' · anyone'}</small></span>
+    ${give ? `<button type="button" class="primary" data-give-${kind}="${esc(x.id)}">Give</button>` : '<span></span>'}</div>`; }).join('');
+  return `<p class="quiet" style="margin:0 0 4px">${list.length} of ${all.length - owned.length} shown${owned.length ? ` (${owned.length} already known are left out)` : ''}</p>${rows || '<p class="quiet">Nothing matches. Try another kind or rank.</p>'}`;
+}
+// filters change in place: only the list is drawn again
+function wirePickers(root) {
+  const redraw = (box) => { box.querySelector('.pick-list').innerHTML = pickListHtml(box.dataset.picker, box.dataset.owned ? box.dataset.owned.split(',') : []); };
+  root.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pick-cat]');
+    if (!b) return;
+    const box = b.closest('[data-picker]');
+    pickFilter(box.dataset.picker).cat = b.dataset.pickCat;
+    for (const x of box.querySelectorAll('[data-pick-cat]')) x.classList.toggle('on', x === b);
+    redraw(box);
+  });
+  const onField = (e) => {
+    const el = e.target.closest('[data-pick]');
+    if (!el) return;
+    const box = el.closest('[data-picker]');
+    pickFilter(box.dataset.picker)[el.dataset.pick] = el.value;
+    redraw(box);
+  };
+  root.addEventListener('input', onField);
+  root.addEventListener('change', onField);
+}
+
 // skills grouped by kind, from defence to attack, the strongest first
 function skillGroups(ids) {
   return catalogue.categories.map((k) => ({ ...k, list: catalogue.skills.filter((sk) => sk.category === k.id && ids.includes(sk.id)).sort((a, b) => b.power - a.power) })).filter((g) => g.list.length);
@@ -368,17 +450,11 @@ function drawCard(p) {
 
     <div class="card">
       <h3>Skills</h3>
-      ${skillGroups(c.skills).map((g) => `<p class="quiet" style="margin:8px 0 4px">${g.icon} ${esc(g.name)}</p><div class="bag">${g.list.map((sk) => `<div class="slot"><span>${esc(sk.icon)}</span><span class="nm">${esc(sk.name)}</span><button type="button" data-unskill="${sk.id}" title="Take away">✕</button></div>`).join('')}</div>`).join('') || '<p class="quiet">No skills yet.</p>'}
-      <form data-form="skill" class="row" style="margin-top:10px">
-        <select name="skill" aria-label="Skill to give"><option value="">Give a skill...</option>${catalogue.categories.map((k) => `<optgroup label="${esc(k.name)}">${catalogue.skills.filter((sk) => sk.category === k.id && !c.skills.includes(sk.id)).sort((a, b) => b.power - a.power).map((sk) => `<option value="${sk.id}">${esc(sk.icon)} ${esc(sk.name)}</option>`).join('')}</optgroup>`).join('')}</select>
-        <button class="primary" type="submit">Give</button>
-      </form>
+      ${skillGroups(c.skills).map((g) => `<p class="quiet" style="margin:8px 0 4px">${g.icon} ${esc(g.name)}</p><div class="bag">${g.list.map((sk) => `<div class="slot"><span>${esc(sk.icon)}</span><span class="nm">${esc(sk.name)}</span>${rankTag(sk.rank)}<button type="button" data-unskill="${sk.id}" title="Take away">✕</button></div>`).join('')}</div>`).join('') || '<p class="quiet">No skills yet.</p>'}
+      ${pickerHtml('skill', c.skills)}
       <h3 style="margin-top:14px">Spells</h3>
-      <div class="bag">${c.spells.map((id) => { const sp = catalogue.spells.find((x) => x.id === id); return `<div class="slot"><span>✨</span><span class="nm">${esc(sp?.name || id)} <span class="quiet">${esc(sp?.element || '')}</span></span><button type="button" data-unspell="${esc(id)}" title="Take away">✕</button></div>`; }).join('') || '<p class="quiet">No spells. Mages and the Dark Side learn them.</p>'}</div>
-      <form data-form="spell" class="row" style="margin-top:10px">
-        <select name="spell" aria-label="Spell to give"><option value="">Give a spell...</option>${catalogue.spells.filter((sp) => !c.spells.includes(sp.id)).map((sp) => `<option value="${sp.id}">${esc(sp.name)} (${esc(sp.element)}, from Lv ${sp.level})</option>`).join('')}</select>
-        <button class="primary" type="submit">Give</button>
-      </form>
+      <div class="bag">${c.spells.map((id) => { const sp = catalogue.spells.find((x) => x.id === id); return `<div class="slot"><span>✨</span><span class="nm">${esc(sp?.name || id)} <span class="quiet">${esc(sp?.element || '')}</span></span>${sp ? rankTag(sp.rank) : ''}<button type="button" data-unspell="${esc(id)}" title="Take away">✕</button></div>`; }).join('') || '<p class="quiet">No spells. Mages and the Dark Side learn them.</p>'}</div>
+      ${pickerHtml('spell', c.spells)}
       <h3 style="margin-top:14px">Unique Skill</h3>
       <p>${c.uniqueSkill ? `${esc(c.uniqueSkill.name)} <span class="tag">${esc(c.uniqueSkill.rank)}</span> <span class="quiet">${esc(c.uniqueSkill.element || '')}</span>` : 'None'}</p>
       <form data-form="unique" class="row">
@@ -482,9 +558,11 @@ async function change(path, body, done) {
   } catch (err) { say(err.message); }
 }
 $('pcard').addEventListener('click', async (e) => {
-  const b = e.target.closest('button[data-act], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore]');
+  const b = e.target.closest('button[data-act], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore], button[data-give-skill], button[data-give-spell]');
   if (!b) return;
   const name = $('pcard').dataset.name;
+  if (b.dataset.giveSkill) return change('api/admin/edit', { addSkill: b.dataset.giveSkill }, `Skill given to ${name}.`);
+  if (b.dataset.giveSpell) return change('api/admin/edit', { addSpell: b.dataset.giveSpell }, `Spell given to ${name}.`);
   if (b.dataset.remove) return change('api/admin/edit', { removeItem: { index: Number(b.dataset.remove) } }, 'Taken away.');
   if (b.dataset.unskill) return change('api/admin/edit', { removeSkill: b.dataset.unskill }, 'Skill taken away.');
   if (b.dataset.unspell) return change('api/admin/edit', { removeSpell: b.dataset.unspell }, 'Spell taken away.');
@@ -628,8 +706,11 @@ async function drawSkills() {
     <div class="tablewrap"><table><thead><tr><th>Rank</th><th>Unique Skill</th><th>Held by</th></tr></thead><tbody>
     ${k.uniques.map((u) => `<tr><td><span class="tag">${esc(u.rank)}</span></td><td>${esc(u.skill)} <span class="quiet">${esc(u.element)}</span></td><td><button type="button" data-look="${u.id}">${esc(u.name)}</button> <span class="quiet">Lv ${u.level}</span></td></tr>`).join('') || '<tr><td colspan="3" class="quiet">Nobody holds one of this kind.</td></tr>'}
     </tbody></table></div>
-    <p class="quiet">Skills: ${k.skills.map((sk) => `${esc(sk.icon)} ${esc(sk.name)}`).join(' · ') || 'none'}</p>`).join('');
+    <p class="quiet">${k.skills.length} ordinary skills and ${catalogue.spells.filter((sp) => sp.category === k.id).length} spells of this kind (see the book below).</p>`).join('');
+  $('skillbook').innerHTML = `<h3>Skills <span class="quiet">(${catalogue.skills.length})</span></h3>${pickerHtml('book')}<h3 style="margin-top:16px">Spells <span class="quiet">(${catalogue.spells.length})</span></h3>${pickerHtml('spellbook')}`;
 }
+wirePickers($('pcard'));
+wirePickers($('skillbook'));
 $('skillboard').addEventListener('click', (e) => { const b = e.target.closest('[data-look]'); if (b) { document.querySelector('[data-tab="players"]').click(); openPlayer(Number(b.dataset.look)); } });
 
 // ---------- health numbers and sect leaders (World tab) ----------

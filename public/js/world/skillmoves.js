@@ -235,7 +235,8 @@ export const MOVES = {
   } },
 };
 
-// which move a skill uses: by its own name first, then (Unique Skills and anything new) by its kind
+// which move a skill uses: by its own name first, then the move the skill names (`move` in
+// data/skills.mjs; never 'spin', which is Whirlwind's alone), then (Unique Skills) by its kind
 const BY_ID = {
   ground_slam: 'stomp', whirlwind: 'spin', frost_nova: 'nova', harvest_swing: 'scythe',
   power_strike: 'overhead', hammer_blow: 'hammer', backstab: 'thrust', shield_bash: 'bash',
@@ -247,6 +248,6 @@ const BY_ID = {
 const BY_KIND = { strike: 'overhead', devour: 'bite', sweep: 'scythe', freeze: 'nova', bolt: 'lance', dash: 'charge', heal: 'mend', fury: 'roar', ward: 'brace' };
 const BY_TYPE = { strike: 'overhead', sweep: 'scythe', bolt: 'cast', dash: 'charge', heal: 'mend', buff: 'roar' };
 export function moveFor(sk) {
-  const name = BY_ID[sk.id] || (sk.unique && BY_KIND[sk.kind]) || (sk.type === 'buff' && sk.stat === 'def' ? 'brace' : BY_TYPE[sk.type]) || 'cast';
+  const name = BY_ID[sk.id] || (sk.move && MOVES[sk.move] && sk.move !== 'spin' ? sk.move : null) || (sk.unique && BY_KIND[sk.kind]) || (sk.type === 'buff' && sk.stat === 'def' ? 'brace' : BY_TYPE[sk.type]) || 'cast';
   return { name, ...MOVES[name] };
 }
