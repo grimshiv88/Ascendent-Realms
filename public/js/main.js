@@ -26,7 +26,8 @@ import { PLOT, REACH, inReach, plotPrice } from './data/land.mjs';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
-import { fillIcons } from './characters/icons.js';
+import { fillIcons, warmIcons } from './characters/icons.js';
+import { warmWorldMap } from './world/mapdraw.js';
 import { SPELLS } from './data/spells.mjs';
 import { renderIdCard } from './idcard.js';
 import { renderRooms } from './roomsui.js';
@@ -640,25 +641,66 @@ function startGame(character) {
     overlay.classList.remove('hidden');
   };
   // A death: it costs one of your 3 lives and you wake at the nearest shrine, or, with none left
-  // (or of old age below level 250), it is final (see data/life.mjs)
+  // (or of old age below level 250), it is final (see data/life.mjs).
+  // The screen turns grey at once with the news and the lives left; the heavy work of moving you
+  // to the shrine (building its town and land) happens only after that has been drawn, behind a
+  // dark screen, so the moment of death never freezes the game. Then you stand up again by yourself.
   function died(by, cause) {
     const out = game.die(cause);
     if (!out.rise) { fallen(by); return; }
-    const where = world?.riseAtShrine();
+    if (!overlay.classList.contains('hidden')) closePanel();
     world?.releaseMouse();
-    overlay.dataset.panel = 'risen';
-    const what = cause === 'age' ? 'Your body gave out to old age' : `You were defeated by ${cause === 'monster' ? 'a ' : ''}${esc(by)}`;
-    overlay.innerHTML = `
-      <div class="status-window welcome-window fallen-window" role="dialog" aria-label="You have fallen">
-        <h2>You have fallen</h2>
-        <p>${what}.</p>
-        ${out.free ? `<p>But you are past level ${UNDYING_LEVEL}: death cannot hold you. ${out.renewed ? `The shrine renews you, and you wake at the age of ${RENEW_AGE}.` : 'No life is lost.'}</p>`
-          : `<p>The shrine's light gathers you back. <b>${out.livesLeft} ${out.livesLeft === 1 ? 'life' : 'lives'} left.</b> ${out.livesLeft === 1 ? 'The next death will be your last.' : ''}</p>`}
-        <p>You wake at the shrine of ${esc(where || 'the nearest town')}.</p>
-        <button type="button" class="gold-button" data-close>Rise</button>
+    const what = cause === 'age' ? 'Your body gave out to old age.'
+      : cause === 'fall' ? 'You fell from too high.'
+      : cause === 'drown' ? 'You drowned.'
+      : `You were killed by ${cause === 'monster' && !/^the /i.test(by) ? 'a ' : ''}${esc(by)}.`;
+    const lives = out.free
+      ? (out.renewed ? `Past level ${UNDYING_LEVEL}, death cannot hold you: the shrine renews you at the age of ${RENEW_AGE}.` : `Past level ${UNDYING_LEVEL}, death cannot hold you. <b>No life lost.</b>`)
+      : `<b class="death-lives">${out.livesLeft} ${out.livesLeft === 1 ? 'life' : 'lives'} left</b>${out.livesLeft === 1 ? '<br><small>The next death will be your last.</small>' : ''}`;
+    showDeathScreen(what, lives);
+  }
+  const DEATH_GREY_MS = 3000; // how long the grey screen shows before you are carried to the shrine
+  const DEATH_LOAD_MS = 2500; // the most time spent building the shrine's land before you stand up
+  let deathScreen = null;
+  function showDeathScreen(what, lives) {
+    deathScreen?.remove();
+    const el = deathScreen = document.createElement('div');
+    el.id = 'death-screen';
+    el.setAttribute('role', 'alert');
+    el.innerHTML = `
+      <div class="death-box">
+        <h2>You died</h2>
+        <p>${what}</p>
+        <p>${lives}</p>
+        <p class="death-wait">Respawning in <span data-count>${Math.ceil(DEATH_GREY_MS / 1000)}</span>…</p>
       </div>`;
-    overlay.classList.remove('hidden');
-    drawHud();
+    document.body.append(el);
+    document.body.classList.add('player-dead');
+    const count = el.querySelector('[data-count]');
+    const wait = el.querySelector('.death-wait');
+    const t0 = performance.now();
+    const tick = setInterval(() => { count.textContent = Math.max(1, Math.ceil((DEATH_GREY_MS - (performance.now() - t0)) / 1000)); }, 250);
+    setTimeout(() => {
+      clearInterval(tick);
+      el.classList.add('dark'); // fade to a dark screen, then do the heavy work behind it
+      wait.textContent = 'Waking at the shrine…';
+      setTimeout(() => requestAnimationFrame(() => {
+        const where = world?.riseAtShrine();
+        wait.textContent = `Waking at the shrine of ${where || 'the nearest town'}…`;
+        drawHud();
+        const s0 = performance.now();
+        const build = () => {
+          if (deathScreen !== el) return;
+          const left = world?.catchUpLand(24) || 0;
+          if (left > 0 && performance.now() - s0 < DEATH_LOAD_MS) { requestAnimationFrame(build); return; }
+          world?.stand();
+          document.body.classList.remove('player-dead');
+          el.classList.add('gone');
+          setTimeout(() => { el.remove(); if (deathScreen === el) deathScreen = null; }, 700);
+        };
+        requestAnimationFrame(build);
+      }), 450);
+    }, DEATH_GREY_MS);
   }
   // Death is final: the character is gone. Only the Unique Skill passes on to the next one.
   async function fallen(by) {
@@ -1282,6 +1324,8 @@ function startGame(character) {
   const safeStart = closedBySelf && settings.graphics !== 'low';
   if (safeStart) setTimeout(() => showArea('The game closed last time, so it is on Battery saver for now (Settings to change it)'), 4000);
 
+  // painted now, behind the loading clouds, so the first look at the map or the bag doesn't stall
+  try { warmWorldMap(); warmIcons([...(character.inventory || []).map((e) => e.id), ...Object.values(character.equipped || {}).map((e) => e?.id).filter(Boolean)]); } catch { /* only a head start */ }
   world = startWorld($('world'), character, {
     game,
     view: { camera: settings.camera, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },

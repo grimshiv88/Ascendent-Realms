@@ -831,12 +831,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const best = spots.reduce((a, b) => (Math.hypot(b.x - pos.x, b.z - pos.z) < Math.hypot(a.x - pos.x, a.z - pos.z) ? b : a));
     pos.set(best.x + 3, 0, best.z + 3);
     updateSites(pos.x, pos.z);
-    land.update(pos.x, pos.z, Infinity);
+    // only the ground under your feet now; the rest of the land catches up while the death
+    // screen is still up (see catchUpLand), so dying no longer freezes the game
+    land.update(pos.x, pos.z, 25);
     pos.y = groundAt(pos.x, pos.z);
     velY = 0; fallFrom = pos.y; airborne = false;
     creatures.removeWhere((m) => Math.hypot(m.x - pos.x, m.z - pos.z) < 60 && !m.keep);
-    dead = false;
-    snapCam = true;
+    snapCam = true; // (you stay down, still, until stand() as the death screen lifts)
     saveNow();
     return best.name;
   }
@@ -2469,6 +2470,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugFarms: () => husbandry.farms(),
     debugAnimals: () => creatures.list.filter((m) => m.kind.animal).map((m) => ({ id: m.kind.animalId, x: m.x, z: m.z, dead: !!m.dead, farm: m.farm || null, hp: m.hp, death: m.death ? { t: m.death.t, left: m.death.left } : null, vis: m.body.visible })),
     debugHitAnimal(id, dmg = 15) { const m = creatures.list.filter((q) => q.kind.animalId === id && !q.dead).sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0]; if (!m) return null; finishHit(m, creatures.hit(m, dmg, 'slash')); return { hp: m.hp, dead: !!m.dead }; },
+    debugBodies: () => creatures.list.filter((m) => m.death && !m.death.animal).map((m) => ({ t: m.death.t, left: Math.round(m.death.left), gone: m.death.gone || 0 })),
+    debugAgeMonsterBodies(ms) { for (const m of creatures.list) if (m.death && !m.death.animal) m.death.at -= ms; },
     debugAgeBodies() { for (const m of creatures.list) if (m.death?.animal) m.death.t = Math.max(m.death.t, 2); },
     debugAt: () => ({ x: pos.x, z: pos.z, dragging: husbandry.dragging?.kind.animalId || null }),
     // the great beasts' lairs, and a jump to one of them (kind: fire_dragon, spirit_king, ...)
@@ -2525,6 +2528,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setCeremonies,
     atShrine,
     riseAtShrine,
+    // build a little more of the land around you (`ms` of work); returns how many pieces are left
+    catchUpLand: (ms = 12) => (depth || inside ? 0 : land.update(pos.x, pos.z, ms)),
+    // hold still while the death screen is up (no input, monsters leave you be)
+    get dead() { return dead; },
+    stand() { dead = false; },
     oldAge,
     trainingAt,
     // Redraw your gear after equipping or taking something off
@@ -2549,6 +2557,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       finishHit(m, creatures.hit(m, m.hp * (strong ? 3 : 1), how, strong));
       return { x: m.x, y: m.y, z: m.z };
     },
+    debugDie(name = 'Goblin') { defeated({ kind: { name } }); },
     debugDeaths: () => creatures.list.filter((m) => m.death).map((m) => m.death.t),
     debugLeave() { if (inside) leaveBuilding(); },
     debugCounter() { const c = inside?.built?.counter; if (!c) return false; pos.set(c.x, c.y, c.z); useIndoors(); return true; },
