@@ -3,6 +3,7 @@
 // False routes (see data/depths.mjs) look the same as the true way and end in rock. Hard caves add
 // chasms to jump, traps in the floor and secret rooms behind cracked walls.
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 import { caveLayout, THEMES, pickOre, pickVein, caveOres, strongCave, ORICHALCUM_CHANCE, CHASM_DEPTH, TRAPS } from '../data/depths.mjs';
 import { ITEMS } from '../data/items.mjs';
 
@@ -122,7 +123,7 @@ export function buildDepths(cave) {
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.3, 24), new THREE.MeshBasicMaterial({ color: '#ffe6a0', transparent: true, opacity: 0.6 }));
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(exit.x, L.entry.y + 0.08, exit.z);
-  const daylight = new THREE.PointLight('#ffe8b0', 6, 10, 1.6);
+  const daylight = new GlowLight('#ffe8b0', 6, 10, 1.6);
   daylight.position.set(exit.x, L.entry.y + 4, exit.z);
   g.add(shaft, ring, daylight);
   // you arrive a few steps from the shaft, facing into the cave
@@ -203,7 +204,7 @@ export function buildDepths(cave) {
     lid.add(lidMesh);
     lid.position.set(0, 0.7, 0);
     for (const s of [-0.5, 0.5]) { const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.74, 0.84), iron); band.position.set(s, 0.36, 0); chestG.add(band); }
-    const glow = new THREE.PointLight('#ffd76a', 0, 6, 1.5);
+    const glow = new GlowLight('#ffd76a', 0, 6, 1.5);
     glow.position.y = 1.2;
     chestG.add(box, lid, glow);
     chestG.position.set(x, sampleAt(x, z, tmp).h, z);

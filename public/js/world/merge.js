@@ -40,17 +40,20 @@ export function mergeStill(group, { cell = 0 } = {}) {
       tmp.copy(geo.boundingSphere.center);
       key = `${Math.floor(tmp.x / cell)},${Math.floor(tmp.z / cell)}`;
     }
-    const k = `${m.material.uuid}|${key}|${det ? 1 : 0}`;
-    if (!buckets.has(k)) buckets.set(k, { mat: m.material, det, geos: [] });
-    buckets.get(k).geos.push(geo);
+    const look = sharedLook(m.material);
+    const k = `${look.mat.uuid}|${key}|${det ? 1 : 0}`;
+    if (!buckets.has(k)) buckets.set(k, { mat: look.mat, det, geos: [], tints: look.tint ? [] : null });
+    const b = buckets.get(k);
+    b.geos.push(geo);
+    b.tints?.push(look.tint);
     m.parent.remove(m);
   }
   // empty groups left behind
   const empty = [];
   group.traverse((o) => { if (o !== group && !o.isMesh && !o.children.length && !o.userData.keep) empty.push(o); });
   for (const o of empty) o.parent?.remove(o);
-  for (const { mat, det, geos } of buckets.values()) {
-    const mesh = new THREE.Mesh(join(geos, !!mat.map), mat);
+  for (const { mat, det, geos, tints } of buckets.values()) {
+    const mesh = new THREE.Mesh(join(geos, !!mat.map, tints), mat);
     mesh.castShadow = !det; mesh.receiveShadow = true;
     if (det) mesh.userData.detailFar = true;
     group.add(mesh);
@@ -98,23 +101,41 @@ function toFlat(g) {
   return out;
 }
 
-function join(geos, withUv) {
+// Houses come in many colours of the same few materials (plaster, timber, tiles, stone...). One
+// mesh per colour per square of ground made a city about a thousand draw calls, so plain colours
+// share one white material each and the colour goes on the corners of the shapes (vertex colours).
+// Glowing, see-through or changing materials keep their own.
+const shared = new Map();
+function sharedLook(m) {
+  if (!m.isMeshStandardMaterial || m.vertexColors || m.transparent || m.userData.own || (m.emissive && m.emissive.getHex() !== 0)) return { mat: m, tint: null };
+  const key = [m.type, m.map?.uuid, m.normalMap?.uuid, m.roughnessMap?.uuid, m.roughness, m.metalness, m.side, m.flatShading, m.alphaTest,
+    m.polygonOffset, m.polygonOffsetFactor, m.polygonOffsetUnits, m.depthWrite].join('|');
+  let s = shared.get(key);
+  if (!s) { s = m.clone(); s.color.set(0xffffff); s.vertexColors = true; shared.set(key, s); }
+  return { mat: s, tint: m.color };
+}
+
+function join(geos, withUv, tints = null) {
   let n = 0;
   for (const g of geos) n += g.attributes.position.count;
   const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
   const uv = withUv ? new Float32Array(n * 2) : null;
+  const col = tints ? new Float32Array(n * 3) : null;
   let at = 0;
-  for (const g of geos) {
+  geos.forEach((g, i) => {
+    const c = g.attributes.position.count;
     pos.set(g.attributes.position.array, at * 3);
     if (g.attributes.normal) nor.set(g.attributes.normal.array, at * 3);
     if (uv && g.attributes.uv) uv.set(g.attributes.uv.array, at * 2);
-    at += g.attributes.position.count;
+    if (col) { const t = tints[i]; for (let v = at; v < at + c; v++) { col[v * 3] = t.r; col[v * 3 + 1] = t.g; col[v * 3 + 2] = t.b; } }
+    at += c;
     g.dispose();
-  }
+  });
   const merged = new THREE.BufferGeometry();
   merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   merged.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   if (uv) merged.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  if (col) merged.setAttribute('color', new THREE.BufferAttribute(col, 3));
   merged.computeBoundingSphere();
   return merged;
 }

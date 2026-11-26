@@ -3,6 +3,7 @@
 // barn with hay bales, the farmer's Farm Stand, the Halal Butcher's shed and a cooking fire.
 // The animals themselves are spawned by world.js (creatures), penned in by `pens`.
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 import { LAYOUT, farmToWorld, farmBox } from '../data/farms.mjs';
 import { textTexture } from './spawn.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
@@ -233,7 +234,7 @@ function barn(g, solid, toW) {
   // a lantern hanging from the ceiling, lit at night (see update)
   const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.2), new THREE.MeshStandardMaterial({ color: '#ffd890', emissive: '#ffb040', emissiveIntensity: 0 }));
   lamp.position.set(0, H - 0.6, 0); b.add(lamp);
-  const glow = new THREE.PointLight('#ffc070', 0, 12, 1.6); glow.position.set(0, H - 0.9, 0); b.add(glow);
+  const glow = new GlowLight('#ffc070', 0, 12, 1.6); glow.position.set(0, H - 0.9, 0); b.add(glow);
   // solid: the walls (not the doorway), the stall walls and the mangers
   const w = (lx, lz) => toW(B.x + lx, B.z + lz);
   const put = (lx, lz, r = 0.3, h = H) => { const p = w(lx, lz); solid.push({ x: p.x, z: p.z, r, kind: 'wall', height: h }); };
@@ -274,11 +275,14 @@ function pen(g, solid, toW, P, coop = false) {
 // a market stall: counter, posts, striped awning, crates of goods, and a sign
 // A sign board with the words on both faces, each the right way round (a single two-sided face
 // shows the words mirrored from behind)
+// (one material for each wording: a city's many stalls of the same kind then merge into one mesh)
+const signMats = new Map();
 function twoFacedSign(text, w, h) {
-  const tex = textTexture(text, { board: true });
+  if (!signMats.has(text)) signMats.set(text, new THREE.MeshBasicMaterial({ map: textTexture(text, { board: true }), transparent: true }));
+  const signMat = signMats.get(text);
   const g = new THREE.Group();
   for (const side of [1, -1]) {
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), signMat);
     face.position.z = side * 0.03;
     if (side < 0) face.rotation.y = Math.PI;
     g.add(face);
@@ -355,7 +359,7 @@ function fire(g, toW) {
   const flames = [];
   const fm = new THREE.MeshStandardMaterial({ color: '#ffb347', emissive: '#ff7a1a', emissiveIntensity: 3, transparent: true, opacity: 0.9 });
   for (let i = 0; i < 3; i++) { const fl = new THREE.Mesh(new THREE.ConeGeometry(0.22 - i * 0.05, 0.8 - i * 0.15, 8), fm); fl.position.set((i - 1) * 0.1, 0.5, (i % 2) * 0.08); f.add(fl); flames.push(fl); }
-  const light = new THREE.PointLight('#ff9a3c', 14, 14, 1.8); light.position.y = 0.9; f.add(light);
+  const light = new GlowLight('#ff9a3c', 14, 14, 1.8); light.position.y = 0.9; f.add(light);
   return { flames, light, at: toW(F.x, F.z) };
 }
 

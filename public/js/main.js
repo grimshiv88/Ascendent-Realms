@@ -1306,6 +1306,7 @@ function startGame(character) {
     if ((v = t('data-view')) != null) { settings.view = v; saveSettings(); world?.setView(v); drawPanel(); return; }
     if ((v = t('data-graphics')) != null) { settings.graphics = v; saveSettings(); settings.graphicsNow = world?.setGraphics(v); drawPanel(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
+    if ((v = t('data-cam-follow')) != null) { settings.camFollow = v; saveSettings(); world?.setCameraFollow(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if ((v = t('data-party-invites')) != null) {
       const before = character.partyInvites;
@@ -1413,7 +1414,7 @@ function startGame(character) {
   try { warmWorldMap(); warmIcons([...(character.inventory || []).map((e) => e.id), ...Object.values(character.equipped || {}).map((e) => e?.id).filter(Boolean)]); } catch { /* only a head start */ }
   world = startWorld($('world'), character, {
     game,
-    view: { camera: settings.camera, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
+    view: { camera: settings.camera, camFollow: settings.camFollow, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
     onView(v) { settings.view = v; saveSettings(); showArea(v === 'first' ? 'First person view' : 'Third person view'); if (overlay.dataset.panel === 'settings' && !overlay.classList.contains('hidden')) drawPanel(); },
     onArea: (name) => showArea(name),
     onPlot(info) {

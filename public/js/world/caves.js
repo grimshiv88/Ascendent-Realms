@@ -1,6 +1,7 @@
 // Caves: a rocky dome you can walk into through one opening, lit by glowing crystals.
 // At the back a shaft leads down into the cave's depths (see depths.js).
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 
 const R = 14;        // inner radius in metres
 const OPENING = 1.0; // width of the entrance, radians
@@ -80,7 +81,7 @@ export function buildCave(place) {
     g.add(c);
     lumps.push([c.position.x, c.position.z, 0.55]);
   }
-  const glow = new THREE.PointLight('#6ac0ff', 30, 26, 1.5);
+  const glow = new GlowLight('#6ac0ff', 30, 26, 1.5);
   glow.position.set(3, 4, 0);
   g.add(glow);
 

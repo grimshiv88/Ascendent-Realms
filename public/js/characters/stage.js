@@ -1,5 +1,6 @@
 // A lit showcase scene for viewing characters (gallery and character creation).
 import * as THREE from 'three';
+import { lightPool } from '../world/lightpool.js';
 
 export function makeStage(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -12,6 +13,7 @@ export function makeStage(canvas) {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 200);
+  lightPool(scene, camera, 2); // (a fairy's glow: see world/lightpool.js)
 
   scene.add(new THREE.HemisphereLight('#fff1d6', '#2a2016', 1.1));
   const key = new THREE.DirectionalLight('#ffe2b0', 2.4);

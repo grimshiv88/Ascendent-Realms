@@ -12,21 +12,22 @@ export function isMobile() {
 
 // crowdFar: townsfolk, guards and monsters further than this (metres) aren't drawn or animated;
 // detailFar: a city's small details (window frames, rails) further than this aren't drawn.
+// lights: how many lamps, fires and glows near you shine at once (see lightpool.js).
 // land: [tile distance, grid detail] rings. The nearest two must stay 64: the land you walk on,
 // and the land around it where villages, huts and monsters stand, which would float over (or sink
 // into) a coarser grid
 export const QUALITY = {
   low: {
     name: 'Battery saver', pixelRatio: 1, shadows: false, shadowSize: 1024, fps: 30,
-    lods: [[2, 64], [3, 16], [5, 8], [6, 8]], veg: 2, grass: 1, grassDensity: 0.4, nearTrees: 60, fog: 0.00042, crowdFar: 45, detailFar: 50,
+    lods: [[2, 64], [3, 16], [5, 8], [6, 8]], veg: 2, grass: 1, grassDensity: 0.4, nearTrees: 60, fog: 0.00042, crowdFar: 45, detailFar: 50, lights: 4,
   },
   medium: {
     name: 'Balanced', pixelRatio: 1.25, shadows: true, shadowSize: 1024, fps: 60,
-    lods: [[2, 64], [4, 32], [7, 16], [11, 8]], veg: 3, grass: 1, grassDensity: 0.75, nearTrees: 110, fog: 0.00024, crowdFar: 75, detailFar: 90,
+    lods: [[2, 64], [4, 32], [7, 16], [11, 8]], veg: 3, grass: 1, grassDensity: 0.75, nearTrees: 110, fog: 0.00024, crowdFar: 75, detailFar: 90, lights: 6,
   },
   high: {
     name: 'Far view', pixelRatio: 1.5, shadows: true, shadowSize: 2048, fps: 0,
-    lods: [[2, 64], [5, 32], [9, 16], [15, 8]], veg: 5, grass: 2, grassDensity: 1, nearTrees: 170, fog: 0.00015, crowdFar: 100, detailFar: 120,
+    lods: [[2, 64], [5, 32], [9, 16], [15, 8]], veg: 5, grass: 2, grassDensity: 1, nearTrees: 170, fog: 0.00015, crowdFar: 100, detailFar: 120, lights: 8,
   },
 };
 

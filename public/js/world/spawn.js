@@ -1,6 +1,7 @@
 // A waystone shrine: a ring of standing stones around a glowing crystal, with a campfire and signpost.
 // The spawn point in the Central City is one; every village and homeland has its own.
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 import { heightAt, SAFE_R } from '../data/world-layout.mjs';
 import { MARKETS } from '../data/items.mjs';
 import { KIOSK_ID, KIOSK_NAME } from '../data/economy.mjs';
@@ -68,7 +69,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
   crystal.position.y = 2.6;
   crystal.castShadow = true;
   g.add(crystal);
-  const crystalLight = new THREE.PointLight('#ffc860', 25, 22, 1.6);
+  const crystalLight = new GlowLight('#ffc860', 25, 22, 1.6);
   crystalLight.position.y = 2.6;
   g.add(crystalLight);
 
@@ -98,7 +99,7 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
     fire.add(f);
     flames.push(f);
   }
-  const fireLight = new THREE.PointLight('#ff9a3c', 18, 16, 1.8);
+  const fireLight = new GlowLight('#ff9a3c', 18, 16, 1.8);
   fireLight.position.y = 1;
   fire.add(fireLight);
   // logs to sit on

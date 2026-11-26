@@ -3,6 +3,7 @@
 // the building: the Main Guild Hall has a counter, tables and chairs, and stairs up to meeting
 // rooms; a smithy has its anvil and forge; the potion shop its shelves of bottles; and so on.
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 import { DEPTHS_X } from '../data/world-layout.mjs';
 import { MEETING_ROOMS, CASTLE_ROOMS } from '../data/interiors.mjs';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
@@ -113,7 +114,7 @@ export function buildInterior(shop) {
     for (let x = x0 + 2; x < x1; x += 3) box(0.3, 0.35, z1 - z0, darkWood, x, y - 0.35, (z0 + z1) / 2);
   }
   function lamp(x, y, z, power = 18) {
-    const l = new THREE.PointLight('#ffc878', power, 18, 1.4);
+    const l = new GlowLight('#ffc878', power, 18, 1.4);
     l.position.set(x, y, z);
     g.add(l);
     lights.push(l);
@@ -224,7 +225,7 @@ export function buildInterior(shop) {
     const fire = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.7, 8), mat('#ff8a2a', { emissive: '#ff6a10', emissiveIntensity: 2.5 }));
     fire.position.set(x, 0.55, z - 0.35);
     g.add(fire);
-    const l = new THREE.PointLight('#ff8a40', 14, 10, 1.6);
+    const l = new GlowLight('#ff8a40', 14, 10, 1.6);
     l.position.set(x, 1, z - 1);
     g.add(l);
     lights.push(l);
@@ -288,7 +289,7 @@ export function buildInterior(shop) {
     hand.rotation.x = -Math.PI / 2 - 0.35; hand.position.set(-10, 1.1, 15.15);
     g.add(hand);
     block(-10, 15.2, 0.5, 0, 1.2);
-    const glow = new THREE.PointLight('#7fd0ff', 8, 6, 1.6);
+    const glow = new GlowLight('#7fd0ff', 8, 6, 1.6);
     glow.position.set(-10, 1.8, 15);
     g.add(glow); lights.push(glow);
     spots.push({ x: OX - 10, z: OZ + 15.2, y: 0, event: 'assess', r: 1.7, spin: null });

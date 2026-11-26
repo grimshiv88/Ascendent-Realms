@@ -255,6 +255,11 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
         <button type="button" class="setting-opt" data-mouse="locked" aria-pressed="${settings.mouse !== 'free'}"><b>Connected</b><span>Click the game and the mouse is captured: moving it turns the camera, clicking attacks. Esc lets it go.</span></button>
         <button type="button" class="setting-opt" data-mouse="free" aria-pressed="${settings.mouse === 'free'}"><b>Free Move</b><span>The mouse stays free, so you can click the chat and windows while you walk. Drag on the game to turn the camera.</span></button>
       </div>
+      <h4 class="ctl-group">Camera follows you (Free Move, and touch screens)</h4>
+      <div class="setting-opts">
+        <button type="button" class="setting-opt" data-cam-follow="on" aria-pressed="${settings.camFollow !== 'off'}"><b>Follows</b><span>As you walk, the camera swings round behind your character, so it looks where you are going. Drag to look around: it comes back behind you a moment after you let go.</span></button>
+        <button type="button" class="setting-opt" data-cam-follow="off" aria-pressed="${settings.camFollow === 'off'}"><b>Stays put</b><span>The camera stays where you point it until you drag it round yourself.</span></button>
+      </div>
       <h3 class="bag-sub">Controls</h3>
       <p class="bag-hint">Click an action, then press the key you want for it. If another action had that key, they swap. The arrow keys always move you and Esc always opens the options.</p>
       <p class="shop-msg" role="status">${esc(keys.message || '')}</p>
