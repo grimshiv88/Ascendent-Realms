@@ -43,7 +43,7 @@ import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
 import { ageOf, isChild, parentAlive, ceremonyDue, CEREMONY_SHOW_MS } from '../data/birth.mjs';
 import { mayEnter, cityPass, PASS_NAME } from '../data/citypass.mjs';
-import { rampAt, RAMP_WALL, INNER_R } from '../data/citylevels.mjs';
+import { rampAt, RAMP_WALL, INNER_R, tierAt } from '../data/citylevels.mjs';
 const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine after a new card goes up
 import { money } from '../data/money.mjs';
 import { howOf, canHarvest, harvest } from './deaths.js';
@@ -1821,6 +1821,38 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       onEvent?.('citygate', { tier: G.tier, name: G.name, city: city.place.name, cityId: city.place.id });
     }
   }
+  // Beyond the gates: nobody stands on a ring their pass doesn't open, however they got there
+  // (flying over a terrace wall, slipping past a gate in a slow frame, a portal or a load that sets
+  // them down on Castle Hill). Flying up to a ring you may not enter stops you at its edge; finding
+  // yourself inside one, the guards walk you down to the checkpoint by the south gate. An admin
+  // with any of their powers switched on may go anywhere.
+  const ring = { ok: null, okAt: 0, last: null, warned: -99 };
+  function keepToPass(t) {
+    const city = builtCities().find((s) => s.built.innerGates && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < INNER_R);
+    if (!city || dead) { ring.last = null; return; }
+    const { x: cx, z: cz } = city.built.centre;
+    const T = tierAt(Math.hypot(pos.x - cx, pos.z - cz)).id;
+    if (Object.values(powers).some(Boolean) || T === 'dump') { ring.last = { x: pos.x, z: pos.z, city }; return; }
+    if (ring.ok?.T !== T || ring.ok.city !== city || t - ring.okAt > 2) {
+      const homes = passPerks.homes.filter((h) => h.city === city.place.id).map((h) => h.tier);
+      ring.ok = { T, city, may: mayEnter(character, T, { perks: { homes, crowned: passPerks.crowned }, city: city.place.id, ceremony: ceremonyDue(character) }).ok };
+      ring.okAt = t;
+    }
+    if (ring.ok.may) { ring.last = { x: pos.x, z: pos.z, city }; return; }
+    const name = PASS_NAME[T];
+    if (ring.last?.city === city && Math.hypot(ring.last.x - pos.x, ring.last.z - pos.z) < 30) {
+      // stopped at the edge, where you were a moment ago
+      pos.x = ring.last.x; pos.z = ring.last.z;
+      speedNow = 0; autoWalk = false;
+      if (t - ring.warned > 4) { ring.warned = t; say(`A guard shouts from the wall: "Halt! The ${name} is not for you without a pass. Come up through the gate."`, 'hurt'); }
+      return;
+    }
+    // already inside a ring you may not be on: walked down to the checkpoint in the Dump
+    const c = city.built.checkpoint;
+    if (c) { pos.set(c.x, groundAt(c.x, c.z, Infinity), c.z); velY = 0; speedNow = 0; autoWalk = false; snapCam = true; }
+    ring.last = null;
+    if (t - ring.warned > 4) { ring.warned = t; say(`Guards found you in the ${name} without a pass and walked you down to the gate checkpoint`, 'hurt'); }
+  }
   function passGate() {
     if (gate.leaving) {
       gate.leaving = false;
@@ -2445,6 +2477,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!depth && !inside) {
       checkGates(t);
       checkInnerGates(t);
+      keepToPass(t);
       // walk into a townsperson and they talk to you
       const n = npcNear(pos.x, pos.z, bodyR + 0.55);
       if (n && n !== touched) { touched = n; talkTo(n); }
