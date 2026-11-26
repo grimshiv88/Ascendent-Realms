@@ -11,7 +11,7 @@ import { buildAnimal, animateAnimal, lieDown } from './animalbody.js';
 import { CORPSE_SECS, animalWounds, tickAnimalBlood } from './deaths.js';
 import { TAMEABLE } from '../data/mounts.mjs';
 import { BEASTS, BEAST_RETURNS, lairsNear } from '../data/beasts.mjs';
-import { buildBeast, animateBeast, makeBreath, buildLavaLake } from './beasts.js';
+import { buildBeast, animateBeast, makeBreath, buildLavaLake, buildStarThrone, makeStarfall, makeNova } from './beasts.js';
 
 // [name, body to build, level range, aggressive?, speed m/s, drops [item, chance, min, max]]
 export const KINDS = {
@@ -231,7 +231,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const tag = plate(b.name, level);
     scene.add(body, tag.sprite);
     const spirit = b.shape === 'spirit';
-    const maxHp = Math.round((8 + level * 3.5) * (b.boss ? 6 : b.hpMul || 1));
+    const maxHp = Math.round((8 + level * 3.5) * (b.king ? b.hpMul : b.boss ? 6 : b.hpMul || 1)); // (the King of the Wild Dragons is as strong as the Monster Kings)
     const m = {
       kind, kindId, level, stage: 5, body, tag, x, z, y, heading: Math.random() * 6.28, hp: maxHp, maxHp,
       atk: Math.round((7 + level * 0.75) * (b.boss ? 2 : 1.5)), def: 1 + level, speed: b.fly,
@@ -248,9 +248,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   function updateLava(p) {
     for (const [id, g] of lavaLakes) if (Math.hypot(g.position.x - p.x, g.position.z - p.z) > 3000) { scene.remove(g); lavaLakes.delete(id); }
     for (const L of lairsNear(p.x, p.z, 2500)) {
-      if (L.kind !== 'fire_dragon' || lavaLakes.has(L.id)) continue;
-      const g = buildLavaLake(170);
-      g.position.set(L.x, sample(L.x + 170, L.z, tmp).h - 6, L.z);
+      if (lavaLakes.has(L.id)) continue;
+      let g;
+      if (L.kind === 'fire_dragon') { g = buildLavaLake(170); g.position.set(L.x, sample(L.x + 170, L.z, tmp).h - 6, L.z); }
+      else if (L.kind === 'dragon_king') { g = buildStarThrone(40); g.position.set(L.x, groundH(L.x, L.z), L.z); } // (the Star Throne)
+      else continue;
       scene.add(g); lavaLakes.set(L.id, g);
     }
   }
@@ -270,7 +272,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   function breathe(m, p, secs) {
     endBreath(m);
     const b = m.kind.beast;
-    m.breath = makeBreath(b.breath, b.shape === 'wyvern' ? 13 : b.shape === 'spirit' ? 30 : 19, b.shape === 'spirit' ? 1.2 : 3);
+    m.breath = makeBreath(b.breath, b.king ? 30 : b.shape === 'wyvern' ? 13 : b.shape === 'spirit' ? 30 : 19, b.king ? 5 : b.shape === 'spirit' ? 1.2 : 3);
     m.breathT = secs; m.breathHit = 0.4;
     scene.add(m.breath);
   }
@@ -291,7 +293,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     // it scorches (or freezes) you if you are still in its path
     if (m.breathHit > 0) {
       m.breathHit -= dt;
-      const reach = m.kind.beast.shape === 'spirit' ? 32 : m.kind.beast.shape === 'wyvern' ? 15 : 21;
+      const reach = m.kind.beast.king ? 33 : m.kind.beast.shape === 'spirit' ? 32 : m.kind.beast.shape === 'wyvern' ? 15 : 21;
       if (m.breathHit <= 0 && !p.dead && Math.hypot(p.x - mouthAt.x, p.z - mouthAt.z) < reach) onHitPlayer(m, m.kind.beast.breath);
     }
   }
@@ -318,12 +320,29 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const L = m.home;
     const fromLair = Math.hypot(p.x - L.x, p.z - L.z);
     const sees = !p.dead && !p.underground && fromLair < b.range;
-    if (!sees) { if (m.mode !== 'circle') { m.mode = 'circle'; m.angry = false; } }
+    // (the King of the Wild Dragons never strikes first: he only fights once you have struck him)
+    const calmKing = b.king && !m.angry;
+    if (calmKing) m.mode = 'circle';
+    else if (!sees) { if (m.mode !== 'circle') { m.mode = 'circle'; m.angry = false; m.hover = null; endNova(m); } }
     else if (m.mode === 'circle' && (m.angry || dist < b.notice || fromLair < b.circle * 0.8)) { m.mode = 'dive'; m.modeT = 0; m.angry = true; onBeast?.(m, 'notice'); } // (close to it, or into the lair it circles)
     m.modeT += dt;
     m.attackCd -= dt; m.breathCd -= dt;
     let tx = p.x, tz = p.z, wantAir = b.cruise, speed = b.fly, rate = 1.4;
-    if (m.mode === 'circle') {
+    if (calmKing && sees && fromLair < b.notice && !m.hover) {
+      // he comes down from the sky to look at you, and hangs in the air a little way off
+      const d = Math.max(1, dist);
+      m.hover = { x: p.x - (dx / d) * 32, z: p.z - (dz / d) * 32 };
+      if (!m.greeted) { m.greeted = true; onBeast?.(m, 'greet'); }
+    }
+    if (calmKing && (!sees || fromLair > b.notice * 1.5)) m.hover = null;
+    if (m.nova) {
+      // gathering the Supernova: he holds still in the air while the starlight swells round him
+      tx = p.x; tz = p.z; speed = 0; wantAir = 14; rate = 2;
+    } else if (calmKing && m.hover) {
+      const hd = Math.hypot(m.hover.x - m.x, m.hover.z - m.z);
+      if (hd > 5) { tx = m.hover.x; tz = m.hover.z; speed = Math.min(b.fly * 0.6, hd * 0.5 + 2); rate = 1.8; wantAir = hd > 70 ? 30 : 6; }
+      else { speed = 0; rate = 1.2; wantAir = 6; } // (facing you)
+    } else if (m.mode === 'circle') {
       m.orbit += (dt * b.fly * 0.45) / b.circle;
       tx = L.x + Math.cos(m.orbit) * b.circle; tz = L.z + Math.sin(m.orbit) * b.circle;
       speed = b.fly * 0.45;
@@ -334,7 +353,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       speed = dist > 25 ? b.fly : Math.max(0, Math.min(b.fly * 0.5, dist - close));
       rate = dist < 30 ? 3 : 1.6;
       const facing = Math.abs(Math.atan2(Math.sin(Math.atan2(dx, dz) - m.heading), Math.cos(Math.atan2(dx, dz) - m.heading)));
-      if (b.breath && dist > 6 && dist < (b.shape === 'wyvern' ? 13 : 18) && m.breathCd <= 0 && facing < 0.5) { breathe(m, p, 1.6); m.breathCd = 6 + Math.random() * 3; }
+      if (b.breath && dist > (b.king ? 10 : 6) && dist < (b.king ? 28 : b.shape === 'wyvern' ? 13 : 18) && m.breathCd <= 0 && facing < 0.5) { breathe(m, p, 1.6); m.breathCd = 6 + Math.random() * 3; }
       if (dist < close + 1.5 && m.air < 7 && m.attackCd <= 0 && !p.dead) { m.attackCd = 2; m.lunge = 0.3; onHitPlayer(m); }
       if (m.modeT > 14) { m.mode = 'climb'; m.modeT = 0; }
     } else {
@@ -343,6 +362,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       wantAir = b.cruise * 0.7;
       if (m.modeT > 4) { m.mode = 'dive'; m.modeT = 0; }
     }
+    if (b.king && m.angry && sees) kingPowers(m, dt, t, p, dist);
     const turn = turnTo(m, Math.atan2(tx - m.x, tz - m.z), rate, dt);
     m.x += Math.sin(m.heading) * speed * dt; m.z += Math.cos(m.heading) * speed * dt;
     const before = m.air;
@@ -354,9 +374,55 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const lunge = m.lunge > 0 ? Math.sin((m.lunge / 0.3) * Math.PI) * 1.2 : 0;
     m.body.position.set(m.x + Math.sin(m.heading) * lunge, m.y - lunge * 0.5, m.z + Math.cos(m.heading) * lunge);
     m.body.rotation.y = m.heading;
-    animateBeast(m.body, t, { air: m.air, speed, open: m.breathT > 0 || m.lunge > 0, pitch: Math.max(-0.4, Math.min(0.4, -(m.air - before) / dt * 0.04)), bank: Math.max(-0.5, Math.min(0.5, -turn * 0.6)) });
+    animateBeast(m.body, t, { glow: m.nova ? Math.min(1, m.nova.k) : 0, air: m.air, speed, open: m.breathT > 0 || m.lunge > 0 || !!m.nova, pitch: Math.max(-0.4, Math.min(0.4, -(m.air - before) / dt * 0.04)), bank: Math.max(-0.5, Math.min(0.5, -turn * 0.6)) });
     stepBreath(m, dt, t, p, dist);
     m.tag.sprite.position.set(m.x, m.y + m.height + 1, m.z);
+  }
+
+  // The powers of the stars (the King of the Wild Dragons, once you have struck him):
+  //   - Starfall: stars fall round you; a ring of light shows where each will strike
+  //   - Supernova (below a third of his health): he gathers the light of the stars, then it bursts
+  const falls = [];
+  function kingPowers(m, dt, t, p, dist) {
+    m.starCd = (m.starCd ?? 5) - dt; m.novaCd = (m.novaCd || 0) - dt;
+    if (m.starCd <= 0 && dist < 140 && !m.nova) {
+      m.starCd = 9 + Math.random() * 4;
+      for (let i = 0; i < 6; i++) {
+        const a = Math.random() * 6.28, r = i === 0 ? 0 : 5 + Math.random() * 10;
+        const x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
+        const g = makeStarfall(4.5); g.position.set(x, groundH(x, z), z); scene.add(g);
+        falls.push({ g, x, z, m, t: -i * 0.25, T: 1.8 });
+      }
+      onBeast?.(m, 'starfall');
+    }
+    if (!m.nova && m.novaCd <= 0 && m.hp < m.maxHp * 0.35) {
+      m.nova = { k: 0, g: makeNova(45) }; scene.add(m.nova.g);
+      endBreath(m);
+      onBeast?.(m, 'nova');
+    }
+    if (m.nova) {
+      const was = m.nova.k;
+      m.nova.k += dt / (m.nova.k < 1 ? 3.5 : 0.8);
+      m.nova.g.position.set(m.x, m.y + m.height * 0.5, m.z);
+      m.nova.g.userData.tick(m.nova.k, t);
+      if (was < 1 && m.nova.k >= 1 && !p.dead && Math.hypot(p.x - m.x, p.z - m.z) < 45) onHitPlayer(m, 'nova');
+      if (m.nova.k >= 2) endNova(m);
+    }
+  }
+  function endNova(m) {
+    if (!m.nova) return;
+    scene.remove(m.nova.g); m.nova.g.userData.dispose(); m.nova = null; m.novaCd = 35;
+  }
+  function stepFalls(dt, t, p) {
+    for (const f of [...falls]) {
+      const was = f.t / f.T;
+      f.t += dt;
+      const k = f.t / f.T;
+      f.g.visible = k > 0;
+      if (k > 0) f.g.userData.tick(k, t);
+      if (was < 1 && k >= 1 && !p.dead && Math.hypot(p.x - f.x, p.z - f.z) < 4.5) onHitPlayer(f.m, 'star');
+      if (k > 1.4) { scene.remove(f.g); f.g.userData.dispose(); falls.splice(falls.indexOf(f), 1); }
+    }
   }
 
   // The Spirit King rests under the lake; he rises when you come near, and only fights you if you
@@ -497,6 +563,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
 
   function remove(m) {
     if (m.breath) endBreath(m);
+    if (m.nova) endNova(m);
     clearDeath(m);
     scene.remove(m.body, m.tag.sprite);
     m.tag.sprite.material.map.dispose();
@@ -525,6 +592,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     beastTimer -= dt;
     if (beastTimer <= 0 && !p.underground) { beastTimer = 3; spawnBeasts(p); }
     for (const g of lavaLakes.values()) g.userData.tick(t);
+    if (falls.length) stepFalls(dt, t, p);
     // ambushes only catch you while you're on the move and away from shelter
     if (p.moving && !p.safe && !p.dead) {
       ambushTimer -= dt;
@@ -762,15 +830,17 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       return { exp: Math.max(1, Math.round(a.temper === 'fierce' ? monsterExp(m.level, 0) : a.hp / 12)), coins: 0, drops: [], name: a.name, kind: m.kindId, level: m.level, animal: m.kind.animalId };
     }
     if (m.kind.beast) {
+      if (m.kind.beast.king && !m.angry) { m.angry = true; m.hover = null; onBeast?.(m, 'wrath'); }
       if (m.mode === 'circle') { m.mode = 'dive'; m.modeT = 0; }
       if (m.hp > 0) return null;
       m.dead = 0.001;
-      endBreath(m);
-      if (m.lair) slain.set(m.lair.id, nowT + BEAST_RETURNS);
+      endBreath(m); endNova(m);
+      if (m.lair) slain.set(m.lair.id, nowT + (m.kind.beast.returns || BEAST_RETURNS));
       const drops = [];
       for (const [id, chance, min, max] of m.kind.drops) if (Math.random() < chance) drops.push([id, min + Math.floor(Math.random() * (max - min + 1))]);
       onBeast?.(m, 'slain');
-      return { exp: monsterExp(m.level, 5) * (m.boss ? 5 : 2), coins: (1 + m.level + Math.floor(Math.random() * (m.level / 2 + 2))) * (m.boss ? 10 : 3), drops, name: m.kind.name, kind: m.kindId, level: m.level };
+      const king = m.kind.beast.king;
+      return { exp: monsterExp(m.level, 5) * (king ? 15 : m.boss ? 5 : 2), coins: (1 + m.level + Math.floor(Math.random() * (m.level / 2 + 2))) * (king ? 40 : m.boss ? 10 : 3), drops, name: m.kind.name, kind: m.kindId, level: m.level };
     }
     if (m.hp > 0) { const lost = maim(m, how, dmg, scene); return lost ? { maimed: lost } : null; }
     m.dead = 0.001;
@@ -791,7 +861,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       for (const m of list) { if (m.dead || !m.kind.animal || m.kind.aggressive) continue; const d = Math.hypot(m.x - x, m.z - z) - m.radius; if (d < bd) { bd = d; best = m; } }
       return best;
     },
-    clear() { for (const m of [...list]) remove(m); for (const g of lavaLakes.values()) scene.remove(g); lavaLakes.clear(); },
+    clear() { for (const m of [...list]) remove(m); for (const g of lavaLakes.values()) scene.remove(g); lavaLakes.clear(); for (const f of falls) scene.remove(f.g); falls.length = 0; },
     // put a monster somewhere on purpose (cave guards, cave dwellers, bosses)
     spawnAt(kindId, level, x, z, extra = {}) {
       const s = sample(x, z, tmp);

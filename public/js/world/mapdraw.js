@@ -253,11 +253,11 @@ function paint(ctx, W, H) {
     const p = toMap(L.x, L.z), b = BEASTS[L.kind];
     const big = b.boss;
     ctx.font = `${big ? 18 : 11}px sans-serif`;
-    ctx.fillText(b.shape === 'spirit' ? '👑' : '🐉', p.x, p.y);
+    ctx.fillText(b.king ? '🌌' : b.shape === 'spirit' ? '👑' : '🐉', p.x, p.y);
     if (big) {
       ctx.font = 'italic 700 11px Cinzel, Georgia, serif';
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(245,235,205,0.85)'; ctx.strokeText(b.name, p.x, p.y + 15);
-      ctx.fillStyle = '#7a1a10'; ctx.fillText(b.name, p.x, p.y + 15);
+      ctx.fillStyle = b.king ? '#4a1a8a' : '#7a1a10'; ctx.fillText(b.name, p.x, p.y + 15);
     }
   }
 

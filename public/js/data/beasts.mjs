@@ -45,6 +45,15 @@ export const BEASTS = {
     fly: 21, cruise: 40, circle: 170, notice: 80, range: 300,
     drops: [['wyvern_fang', 0.9, 1, 2], ['gold_ore', 0.4, 1, 2], ['big_potion', 0.4, 1, 1]],
   },
+  // The King of the Wild Dragons: as strong as the Monster Kings (level 1000), with the powers of the
+  // stars. He holds the highest peak of the Dragon Peaks and, like the Kings, never strikes first.
+  dragon_king: {
+    name: 'Astrazhar', title: 'King of the Wild Dragons', shape: 'dragon', cosmic: true, len: 30, levels: [1000, 1000], boss: true, king: true,
+    breath: 'cosmic', peaceful: true, hpMul: 12, returns: 24 * 3600,
+    colors: { scales: '#1c1440', belly: '#5a4a9a', wing: '#3a1470', horn: '#f0e8ff', eye: '#d8a0ff', spine: '#0c0820' },
+    fly: 26, cruise: 55, circle: 200, notice: 260, range: 600,
+    drops: [['star_scale', 1, 4, 8], ['cosmic_heart', 1, 1, 1], ['dragon_heart', 1, 1, 2], ['orichalcum', 1, 2, 5], ['big_potion', 1, 3, 6]],
+  },
   spirit_king: {
     name: 'Spirit King', shape: 'spirit', len: 3, height: 14, levels: [499, 499], boss: true, breath: 'water', peaceful: true,
     colors: { body: '#5ad0e8', glow: '#a8f4ff', crown: '#f0e0a0', pearl: '#ffffff' },
@@ -105,8 +114,11 @@ const GROUPS = [
       // (well away from the volcanoes, which are the dragons')
       const avoid = VOLCANOES.map(([px, py]) => toWorld(px, py));
       const far = (p) => avoid.every((v) => Math.hypot(v.x - p.x, v.z - p.z) > 7000);
-      return [...peaks('Ashen Spires', 4, 9000, { minH: 900 }), ...peaks('Emberwild', 3, 9000, { minH: 900 }), ...peaks('Cinder Steppe', 2, 9000, { minH: 900 })]
-        .filter(far).map((p, i) => ({ id: `firepeak${i}`, kind: 'fire_wyvern', x: p.x, z: p.z }));
+      // (the very highest of them all is the Star Throne of Astrazhar, the King of the Wild Dragons)
+      const all = [...peaks('Ashen Spires', 4, 9000, { minH: 900 }), ...peaks('Emberwild', 3, 9000, { minH: 900 }), ...peaks('Cinder Steppe', 2, 9000, { minH: 900 })].filter(far);
+      const top = all.reduce((a, b) => (b.top > a.top ? b : a));
+      return [{ id: 'starthrone', kind: 'dragon_king', x: top.x, z: top.z, top: top.top },
+        ...all.filter((p) => p !== top).map((p, i) => ({ id: `firepeak${i}`, kind: 'fire_wyvern', x: p.x, z: p.z }))];
     },
   },
   {

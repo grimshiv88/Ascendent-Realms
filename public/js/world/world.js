@@ -678,16 +678,22 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const name = m.kind.name;
       if (what === 'notice') say(`The ${name} has seen you! ${m.kind.beast.breath ? 'Keep out of its breath' : 'It dives at you'}`, 'hurt');
       else if (what === 'rise') say('The still water of the lake begins to glow…', 'note');
-      else if (what === 'greet') say('The Spirit King rises from the lake: "Walk in peace, traveller. Raise your hand against me and the lake itself will answer."', 'note');
+      else if (what === 'greet' && !m.kind.beast.king) say('The Spirit King rises from the lake: "Walk in peace, traveller. Raise your hand against me and the lake itself will answer."', 'note');
+      else if (what === 'greet' && m.kind.beast.king) say(`${name}, ${m.kind.beast.title}, comes down from the stars to look at you: "Small one. I have watched your world turn since before your cities were stone. Go in peace, or strike, and learn what the sky can do."`, 'note');
+      else if (what === 'wrath') say(`${name} roars, and the sky darkens: "So be it!"`, 'hurt');
+      else if (what === 'starfall') say('Stars fall from the sky! Get out of the rings of light!', 'hurt');
+      else if (what === 'nova') say(`${name} gathers the light of the stars… get far away before it bursts!`, 'hurt');
+      else if (what === 'slain' && m.kind.beast.king) say(`${name}, ${m.kind.beast.title}, falls from the sky! His Star Throne will stand empty for a day.`, 'exp');
       else if (what === 'slain') say(m.kind.beast.shape === 'spirit' ? 'The Spirit King sinks back into the lake. One day he will rise again' : `The ${name} crashes to the ground!`, 'exp');
     },
     // `breath`: fire, frost, storm or water from a great beast (half again as strong as a bite)
     onHitPlayer(m, breath = null) {
       if (!game || dead) return;
       const s = game.stats();
-      const dmg = Math.round(monsterHit(m.atk, m.level, s.def * buffed('def')) * (breath ? 1.5 : 1));
+      // (the King of the Wild Dragons: his breath of the void, falling stars, and the Supernova)
+      const dmg = Math.round(monsterHit(m.atk, m.level, s.def * buffed('def')) * (breath ? ({ cosmic: 1.6, star: 1.2, nova: 2.5 }[breath] ?? 1.5) : 1));
       lastHurt = clock.elapsedTime;
-      floatText(breath ? `${{ fire: '🔥', frost: '❄️', storm: '⚡', water: '🌊' }[breath] || ''} -${dmg}` : `-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
+      floatText(breath ? `${{ fire: '🔥', frost: '❄️', storm: '⚡', water: '🌊', cosmic: '🌌', star: '☄️', nova: '💥' }[breath] || ''} -${dmg}` : `-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
       if (game.damage(dmg)) defeated(m);
     },
   });

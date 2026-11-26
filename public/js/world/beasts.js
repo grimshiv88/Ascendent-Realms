@@ -144,8 +144,35 @@ function buildDragon(def) {
     }
   }
 
+  // the King of the Wild Dragons: scales full of stars, wings like a nebula, a crown and a halo of stars
+  let cosmic = null;
+  if (def.cosmic) {
+    wingM.emissive = new THREE.Color('#7a2ad0'); wingM.emissiveIntensity = 0.55;
+    scales.emissive = new THREE.Color('#2a1a60'); scales.emissiveIntensity = 0.35;
+    const starM = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+    const starG = new THREE.SphereGeometry(L * 0.0035, 5, 4);
+    const sprinkle = (parent, n, at) => { for (let i = 0; i < n; i++) mesh(starG, starM, parent, ...at()).castShadow = false; };
+    // (on the body's skin, and over each wing)
+    sprinkle(beast, 70, () => { const a = Math.random() * 6.28, b = Math.random() * 2 - 1, r = Math.sqrt(1 - b * b); return [Math.cos(a) * r * bw * 1.01, Math.sin(a) * r * bh * 1.01, b * bl]; });
+    for (const w of wings) {
+      const inner = w.g.children[0];
+      sprinkle(inner, 60, () => { const x = 0.05 + Math.random() * 0.75, b = Math.random() * 0.55 * (1 - x * 0.4); return [x * S, 0.02, -b * S]; });
+    }
+    // a crown of pale starlight horns
+    const crownM = new THREE.MeshStandardMaterial({ color: '#fff4d0', emissive: '#e8c8ff', emissiveIntensity: 1.4, metalness: 0.6, roughness: 0.3 });
+    const ring = mesh(new THREE.TorusGeometry(hs * 0.55, hs * 0.07, 6, 18), crownM, head, 0, hs * 0.75, hs * 0.1); ring.rotation.x = Math.PI / 2 - 0.2;
+    for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; const c = mesh(new THREE.ConeGeometry(hs * 0.08, hs * (i % 2 ? 0.45 : 0.75), 5), crownM, head, Math.cos(a) * hs * 0.55, hs * 1.05, hs * 0.1 + Math.sin(a) * hs * 0.55); c.rotation.x = -0.2; }
+    // the halo: stars that circle above his back, and a light that colours the land below him
+    const halo = new THREE.Group(); halo.position.set(0, bh * 2.2, 0); beast.add(halo);
+    const orbM = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#c8a0ff', emissiveIntensity: 3 });
+    const orbs = [];
+    for (let i = 0; i < 9; i++) { const o = mesh(new THREE.SphereGeometry(L * 0.012, 8, 6), orbM, halo); o.castShadow = false; orbs.push(o); }
+    const light = new THREE.PointLight('#a060ff', 60, L * 4, 1.4); light.position.y = bh * 1.5; beast.add(light);
+    cosmic = { halo, orbs, light, r: bw * 2.2, wingM };
+  }
+
   root.traverse((o) => { if (o.isMesh) o.receiveShadow = false; });
-  root.userData.beast = { shape: def.shape, beast, body, neck, neckBase, head, jaw, mouth, tail, wings, legs, y0, L };
+  root.userData.beast = { shape: def.shape, beast, body, neck, neckBase, head, jaw, mouth, tail, wings, legs, y0, L, cosmic };
   root.userData.height = y0 + bh + L * 0.12;
   return root;
 }
@@ -213,7 +240,13 @@ export function animateBeast(root, t, o = {}) {
     if (o.dead) { const k = Math.min(1, o.dead / 3); B.beast.position.y = -k * B.H; B.light.intensity *= 1 - k; }
     return;
   }
-  const { beast, neck, head, jaw, tail, wings, legs, y0, shape } = B;
+  const { beast, neck, head, jaw, tail, wings, legs, y0, shape, cosmic } = B;
+  if (cosmic) {
+    cosmic.halo.visible = !o.dead;
+    cosmic.orbs.forEach((orb, i) => { const a = t * 0.7 + (i / cosmic.orbs.length) * Math.PI * 2; orb.position.set(Math.cos(a) * cosmic.r, Math.sin(t * 1.3 + i * 2) * cosmic.r * 0.15, Math.sin(a) * cosmic.r); });
+    cosmic.light.intensity = o.dead ? Math.max(0, 60 - o.dead * 20) : 50 + Math.sin(t * 1.7) * 12 + (o.glow || 0) * 300;
+    cosmic.wingM.emissiveIntensity = 0.45 + Math.sin(t * 0.8) * 0.15 + (o.glow || 0) * 2;
+  }
   if (o.dead) {
     // fallen on its side, wings spread on the ground
     const k = Math.min(1, o.dead / 1.2);
@@ -252,7 +285,7 @@ export function animateBeast(root, t, o = {}) {
 // A breath (fire, frost, storm or water) from a beast's mouth: a cone of light pointing along +z,
 // `len` metres long. Point it with lookAt.
 const BREATH = {
-  fire: ['#ffb030', '#ff5a10'], frost: ['#e8fbff', '#6ad0ff'], storm: ['#f4f8ff', '#7ab8ff'], water: ['#e0fcff', '#40c0e8'],
+  fire: ['#ffb030', '#ff5a10'], frost: ['#e8fbff', '#6ad0ff'], storm: ['#f4f8ff', '#7ab8ff'], water: ['#e0fcff', '#40c0e8'], cosmic: ['#fff0ff', '#9a40ff'],
 };
 export function makeBreath(kind, len = 16, width = 3) {
   const [c1, c2] = BREATH[kind] || BREATH.fire;
@@ -298,4 +331,67 @@ export function buildLavaLake(r) {
     light.intensity = 380 + Math.sin(t * 1.3) * 60;
   };
   return g;
+}
+
+// The Star Throne: the King of the Wild Dragons' peak. Rune stones float in a ring round the top and
+// a pillar of starlight rises into the sky (seen from far away).
+export function buildStarThrone(r = 40) {
+  const g = new THREE.Group();
+  const stoneM = new THREE.MeshStandardMaterial({ color: '#2a2440', roughness: 0.8 });
+  const runeM = new THREE.MeshBasicMaterial({ color: '#c8a0ff' });
+  const stones = [];
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    const s = new THREE.Group(); s.position.set(Math.cos(a) * r, 6, Math.sin(a) * r); s.rotation.y = -a; g.add(s);
+    mesh(new THREE.BoxGeometry(2.2, 6, 1.2), stoneM, s);
+    for (let k = 0; k < 3; k++) { const m = mesh(new THREE.PlaneGeometry(1, 0.5), runeM, s, 0, -1.5 + k * 1.5, 0.61); m.castShadow = false; m.rotation.z = k * 0.6; }
+    stones.push(s);
+  }
+  const beamM = new THREE.MeshBasicMaterial({ color: '#b080ff', transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(3, 6, 900, 16, 1, true), beamM); beam.position.y = 450; g.add(beam);
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.6, 900, 10, 1, true), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending })); core.position.y = 450; g.add(core);
+  const light = new THREE.PointLight('#a070ff', 80, 140, 1.2); light.position.y = 10; g.add(light);
+  g.userData.tick = (t) => {
+    stones.forEach((s, i) => { s.position.y = 6 + Math.sin(t * 0.6 + i) * 1.2; s.rotation.x = Math.sin(t * 0.4 + i) * 0.1; });
+    g.rotation.y = t * 0.05;
+    beamM.opacity = 0.18 + Math.sin(t * 1.3) * 0.05;
+  };
+  return g;
+}
+
+// Starfall: a falling star (a burning rock and its trail) and the ring of light on the ground where it
+// will strike. `land(t)` from 0 (just called) to 1 (it strikes).
+export function makeStarfall(radius = 4.5) {
+  const g = new THREE.Group();
+  const ringM = new THREE.MeshBasicMaterial({ color: '#c080ff', transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.85, radius, 32), ringM); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.3; g.add(ring);
+  const rock = new THREE.Group(); g.add(rock);
+  const rockM = new THREE.MeshStandardMaterial({ color: '#fff0ff', emissive: '#c080ff', emissiveIntensity: 3 });
+  rock.add(new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 0), rockM));
+  const trailGeo = new THREE.ConeGeometry(1.1, 14, 10, 1, true); trailGeo.translate(0, 7, 0);
+  const trailM = new THREE.MeshBasicMaterial({ color: '#a060ff', transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending });
+  rock.add(new THREE.Mesh(trailGeo, trailM));
+  const flashM = new THREE.MeshBasicMaterial({ color: '#f0d8ff', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 10), flashM); flash.visible = false; g.add(flash);
+  g.userData.tick = (k, t) => {
+    ringM.opacity = 0.35 + Math.sin(t * 14) * 0.25;
+    rock.visible = k < 1; rock.position.set(-(1 - k) * 30, (1 - k) * 90, 0); rock.rotation.z = 0.32;
+    if (k >= 1) { const e = Math.min(1, (k - 1) * 3); flash.visible = true; flash.scale.setScalar(0.4 + e); flashM.opacity = 0.8 * (1 - e); ring.visible = false; }
+  };
+  g.userData.dispose = () => g.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+  return g;
+}
+
+// The Supernova: a ball of starlight that swells round the King while he gathers it, then bursts.
+// `k` from 0 to 1 while it gathers, then 1 to 2 as it bursts outwards.
+export function makeNova(radius = 45) {
+  const m = new THREE.MeshBasicMaterial({ color: '#e8c8ff', transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const s = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), m);
+  const light = new THREE.PointLight('#c090ff', 0, radius * 3, 1.2); s.add(light);
+  s.userData.tick = (k, t) => {
+    if (k < 1) { s.scale.setScalar(4 + k * 8 + Math.sin(t * 20) * 0.5); m.opacity = 0.2 + k * 0.4; light.intensity = 100 + k * 400; }
+    else { const e = Math.min(1, k - 1); s.scale.setScalar(12 + e * radius); m.opacity = 0.7 * (1 - e); light.intensity = 900 * (1 - e); }
+  };
+  s.userData.dispose = () => { s.geometry.dispose(); m.dispose(); };
+  return s;
 }

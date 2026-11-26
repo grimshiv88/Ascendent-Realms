@@ -51,6 +51,8 @@ export const ITEMS = {
   dragon_scale: { name: 'Dragon Scale', icon: '🐉', kind: 'material', price: 900, text: 'A scale from a dragon or a wyvern, harder than steel. Smiths pay well for it.' },
   dragon_heart: { name: 'Dragon Heart', icon: '❤️‍🔥', kind: 'material', price: 6000, text: 'The still-warm heart stone of a slain dragon. Very rare.' },
   wyvern_fang: { name: 'Wyvern Fang', icon: '🦷', kind: 'material', price: 350, text: 'A long, curved fang from a wyvern.' },
+  star_scale: { name: 'Star Scale', icon: '✨', kind: 'material', price: 4000, text: 'A scale of Astrazhar, King of the Wild Dragons. Tiny stars still drift inside it.' },
+  cosmic_heart: { name: 'Cosmic Heart', icon: '🌌', kind: 'material', price: 25000, text: 'The heart of the King of the Wild Dragons: a whole night sky turning inside a stone. There is only ever one at a time.' },
   spirit_pearl: { name: 'Spirit Pearl', icon: '🫧', kind: 'material', price: 9000, text: 'The glowing heart of the Spirit King of the great lake. There is only ever one at a time.' },
   // mined in the depths; rank shows how rare each one is
   copper_ore: { name: 'Copper Ore', icon: '🟠', kind: 'material', rank: 1, price: 3, text: 'Soft reddish ore, common in shallow caves. Minted into Copper coins, or forged into cheap copper gear.' },
