@@ -99,6 +99,13 @@
     /* skill and spell picker: filter by kind, rank, class, element, reach and name */
     .picker { margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #100c07; }
     .picker .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; margin-bottom: 8px; }
+    details.fold { border-top: 1px solid rgba(255,255,255,0.08); padding: 4px 0; }
+    details.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+    details.fold > summary::-webkit-details-marker { display: none; }
+    details.fold > summary::before { content: '▸'; color: var(--gold-2); font-size: 1.1rem; width: 1em; transition: transform 0.15s; }
+    details.fold[open] > summary::before { transform: rotate(90deg); }
+    details.fold > summary > h2, details.fold > summary > h3 { margin: 0; }
+    details.fold > summary .quiet { font-weight: normal; }
     .picker .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
     .picker .chips button { padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; }
     .picker .chips button.on { background: var(--gold-2); color: #1a1206; border-color: var(--gold-2); }
@@ -168,12 +175,13 @@
     </div>
 
     <div data-panel="skills" class="card" hidden>
-      <h2>Unique Skills held</h2>
+      <p class="quiet">Press the arrow beside a list to open it.</p>
+      <details class="fold" data-fold="tab-uniques"><summary><h2>Unique Skills held</h2></summary>
       <p class="quiet">Every Unique Skill held in the world, from the highest rank to the weakest. Filter by kind, rank, power, element, the class it suits, or a skill or holder's name. Click a holder to open their card.</p>
-      <div id="skillboard"></div>
-      <h2 style="margin-top:22px">Every skill and spell</h2>
+      <div id="skillboard"></div></details>
+      <details class="fold" data-fold="tab-book"><summary><h2>Every skill and spell</h2></summary>
       <p class="quiet">The whole book of ordinary skills and spells. Filter by kind, rank, class, element, reach, or type a name.</p>
-      <div id="skillbook"></div>
+      <div id="skillbook"></div></details>
     </div>
 
     <div data-panel="world" hidden>
@@ -366,6 +374,10 @@ async function openPlayer(id) {
 // Filters for the long lists of skills and spells: kind (Attack, Defence, Support...), rank, class,
 // element, how it reaches its foes, and a name. Each list keeps its own filter while the board is open.
 const pickState = {};
+// Sections that open with an arrow (closed at first); which ones are open is kept while the board is open
+const openFolds = new Set();
+const fold = (key, title, body) => `<details class="fold" data-fold="${key}"${openFolds.has(key) ? ' open' : ''}><summary><h3>${title}</h3></summary>${body}</details>`;
+document.addEventListener('toggle', (e) => { const d = e.target; if (d.dataset?.fold) { if (d.open) openFolds.add(d.dataset.fold); else openFolds.delete(d.dataset.fold); } }, true);
 const ELEMENTS = ['Fire', 'Water', 'Earth', 'Wind', 'Lightning', 'Nature', 'Light', 'Dark'];
 const rankName = (id) => catalogue.ranks?.find((r) => r.id === id)?.name || id;
 const rankTag = (id) => (id ? `<span class="rk rk-${esc(id)}">${esc(rankName(id))}</span>` : '');
@@ -616,13 +628,13 @@ function drawCard(p) {
     </div>
 
     <div class="card" data-need="edit">
-      <h3>Skills</h3>
+      ${fold('card-skills', `Skills <span class="quiet">(${c.skills.length})</span>`, `
       ${skillGroups(c.skills).map((g) => `<p class="quiet" style="margin:8px 0 4px">${g.icon} ${esc(g.name)}</p><div class="bag">${g.list.map((sk) => `<div class="slot"><span>${esc(sk.icon)}</span><span class="nm">${esc(sk.name)}</span>${rankTag(sk.rank)}<button type="button" data-unskill="${sk.id}" title="Take away">✕</button></div>`).join('')}</div>`).join('') || '<p class="quiet">No skills yet.</p>'}
-      ${pickerHtml('skill', c.skills)}
-      <h3 style="margin-top:14px">Spells</h3>
+      ${pickerHtml('skill', c.skills)}`)}
+      ${fold('card-spells', `Spells <span class="quiet">(${c.spells.length})</span>`, `
       <div class="bag">${c.spells.map((id) => { const sp = catalogue.spells.find((x) => x.id === id); return `<div class="slot"><span>✨</span><span class="nm">${esc(sp?.name || id)} <span class="quiet">${esc(sp?.element || '')}</span></span>${sp ? rankTag(sp.rank) : ''}<button type="button" data-unspell="${esc(id)}" title="Take away">✕</button></div>`; }).join('') || '<p class="quiet">No spells. Mages and the Dark Side learn them.</p>'}</div>
-      ${pickerHtml('spell', c.spells)}
-      <h3 style="margin-top:14px">Unique Skill</h3>
+      ${pickerHtml('spell', c.spells)}`)}
+      ${fold('card-unique', `Unique Skill <span class="quiet">${c.uniqueSkill ? `(${esc(c.uniqueSkill.name)}, ${esc(c.uniqueSkill.rank)})` : '(none)'}</span>`, `
       <p>${c.uniqueSkill ? `${esc(c.uniqueSkill.name)} <span class="tag">${esc(c.uniqueSkill.rank)}</span> <span class="quiet">${esc(c.uniqueSkill.element || '')}</span>` : 'None'}</p>
       <form data-form="unique" class="row">
         <input name="uname" list="uniques" placeholder="Unique Skill (type to search ${catalogue.uniques.length})">
@@ -631,7 +643,7 @@ function drawCard(p) {
       </form>
       <p class="quiet">Leave the name empty to keep the skill and only change its rank. The admin can go past the world limits for SS and SSS.</p>
       <p class="quiet" style="margin:10px 0 0">Or find one with the filters and press Give. A Unique Skill has no rank of its own: it gets one (F to SSS) when someone receives it, so the same skill can be F for one player and S for another. Here it gets the Rank to give you pick; the rank filter shows which skills are free or held, and at what rank.</p>
-      ${uniquePickerHtml(c.uniqueSkill)}
+      ${uniquePickerHtml(c.uniqueSkill)}`)}
     </div>
 
     <div class="card" data-need="edit">
@@ -886,7 +898,7 @@ async function drawSkills() {
   const { categories } = await call('api/admin/skills');
   heldUniques = categories.flatMap((k) => k.uniques); heldLoaded = true;
   $('skillboard').innerHTML = `<div class="picker" data-upicker="uheld">${uniqueFilters('uheld', true)}<div class="held-list">${heldHtml()}</div></div>`;
-  $('skillbook').innerHTML = `<h3>Skills <span class="quiet">(${catalogue.skills.length})</span></h3>${pickerHtml('book')}<h3 style="margin-top:16px">Spells <span class="quiet">(${catalogue.spells.length})</span></h3>${pickerHtml('spellbook')}`;
+  $('skillbook').innerHTML = fold('book-skills', `Skills <span class="quiet">(${catalogue.skills.length})</span>`, pickerHtml('book')) + fold('book-spells', `Spells <span class="quiet">(${catalogue.spells.length})</span>`, pickerHtml('spellbook'));
 }
 wirePickers($('pcard'));
 wireUnique($('pcard'));
