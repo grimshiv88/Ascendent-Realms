@@ -4,12 +4,13 @@
 import * as api from './api.js';
 import { cleanText, MAX_MESSAGE } from './data/social.mjs';
 import { RACES, CLASSES } from './data/game-data.mjs';
+import { codeFor, keyName } from './data/controls.mjs';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const POLL_MS = 3000;
 const KEEP = 150; // messages kept per tab
 
-export function createSocial(host, { onError } = {}) {
+export function createSocial(host, { onError, onDone } = {}) {
   host.insertAdjacentHTML('beforeend', `
     <div id="social-top">
       <div class="so-search">
@@ -25,7 +26,7 @@ export function createSocial(host, { onError } = {}) {
       <div class="so-tabs" role="tablist"></div>
       <div class="so-log" aria-live="polite"></div>
       <form class="so-form">
-        <input type="text" placeholder="Press Enter to chat…" aria-label="Chat message" maxlength="${MAX_MESSAGE}" autocomplete="off">
+        <input type="text" placeholder="Press ${esc(keyName(codeFor('chat')))} to chat…" aria-label="Chat message" maxlength="${MAX_MESSAGE}" autocomplete="off">
         <button type="submit">Send</button>
       </form>
     </div>`);
@@ -97,7 +98,7 @@ export function createSocial(host, { onError } = {}) {
       ? list.map((m) => `<p class="${m.mine ? 'me' : ''}"><time>${time(m.at)}</time> <b data-player="${esc(m.from)}">${esc(m.from)}</b> ${esc(cleanText(m.text))}</p>`).join('')
       : `<p class="so-empty">${active === 'general' ? 'Say hello to everyone in the realm.' : roomTabs.has(active) ? 'Only the people in it can read this chat.' : `Your private chat with ${esc(active)}.`}</p>`;
     log.scrollTop = log.scrollHeight;
-    input.placeholder = active === 'general' ? 'Press Enter to chat…' : `Message ${active}…`;
+    input.placeholder = active === 'general' ? `Press ${keyName(codeFor('chat'))} to chat…` : `Message ${active}…`;
   }
   function openTab(ch) {
     if (!tabs.has(ch)) tabs.set(ch, []);
@@ -156,15 +157,16 @@ export function createSocial(host, { onError } = {}) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if (!text) { input.blur(); return; }
+    if (!text) { input.blur(); onDone?.(); return; }
     input.value = '';
+    input.blur(); onDone?.(); // sent: back to the game (the mouse turns the camera again)
     try {
       const r = await api.chatSend(text, active === 'general' ? null : active, lastId);
       take(r.messages || []);
       takeLists(r);
     } catch (err) { say(err.message); input.value = text; }
   });
-  input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); input.blur(); } });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); input.blur(); onDone?.(); } });
   tabsEl.addEventListener('click', (e) => {
     const close = e.target.closest('[data-close-tab]')?.dataset.closeTab;
     if (close) { tabs.delete(close); unread.delete(close); if (active === close) active = 'friends'; drawTabs(); drawLog(); return; }
@@ -325,6 +327,7 @@ export function createSocial(host, { onError } = {}) {
   return {
     // Enter in the world starts typing
     focusChat() { setOpen(true); if (active === 'friends') openTab('general'); input.focus(); },
+    get typing() { return document.activeElement === input; },
     // open a meeting room's private chat
     openRoom(label) { setOpen(true); openTab(label); },
     refresh: () => poll(true),

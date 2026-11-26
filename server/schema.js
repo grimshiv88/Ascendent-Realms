@@ -30,6 +30,8 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS muted_until BIGINT NOT NULL DEFAUL
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS admin_perms TEXT;
 -- voice chat: passed a real age check (an ID check service, for later; the birth date is used until then)
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS voice_verified BOOLEAN NOT NULL DEFAULT false;
+-- the player's keys (Settings → Controls): JSON { action: [main key, second key] }, so they follow the account
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS keybinds TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_email ON accounts (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_username ON accounts (lower(username));
 
