@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
 import { ITEMS } from '../data/items.mjs';
-import { bodySig } from '../data/presence.mjs';
+import { bodySig, GONE_MS } from '../data/presence.mjs';
 
 const WALK = 3.4; // (the walking speed the leg swing is timed to, as in world.js)
 
@@ -62,7 +62,7 @@ export function createOthers(scene) {
         if (o && o.sig !== sig) { drop(p.id); o = null; }
         if (!o) {
           let body;
-          try { body = makeBody(p.body, p.name); } catch { continue; } // a race this game doesn't know yet
+          try { body = makeBody(p.body, p.name); } catch (e) { console.warn('could not draw player', p.name, e); continue; } // a race this game doesn't know yet
           scene.add(body);
           o = { body, sig, name: p.name, x: p.x, y: p.y, z: p.z, heading: p.heading };
           seen.set(p.id, o);
@@ -70,13 +70,16 @@ export function createOthers(scene) {
         // a big jump (a portal, a fast mount): there at once rather than sliding across the land
         if (Math.hypot(p.x - o.x, p.z - o.z) > 30) { o.x = p.x; o.y = p.y; o.z = p.z; }
         o.to = { x: p.x, y: p.y, z: p.z, heading: p.heading };
-        o.speed = p.speed; o.pose = p.pose;
+        o.speed = p.speed; o.pose = p.pose; o.heard = Date.now();
       }
       for (const id of [...seen.keys()]) if (!now.has(id)) drop(id);
     },
     // every frame: glide towards the reported spot and move the legs
     tick(dt, t) {
       const k = Math.min(1, dt * 6);
+      // nothing new about them for a while (your connection dropped): not left standing there frozen
+      const stale = Date.now() - GONE_MS * 1.5;
+      for (const [id, o] of seen) if (o.heard < stale) drop(id);
       for (const o of seen.values()) {
         if (o.to) {
           o.x += (o.to.x - o.x) * k; o.y += (o.to.y - o.y) * k; o.z += (o.to.z - o.z) * k;

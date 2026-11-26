@@ -1606,7 +1606,7 @@ function startGame(character) {
           if (r.preview) return; // the preview page has nobody else in it
           world.showOthers(r.players || []);
           if (r.players?.length) wait = P.POLL_MS;
-        } catch { sentSig = ''; } finally { busy = false; }
+        } catch (e) { sentSig = ''; console.warn('presence', e); } finally { busy = false; }
       }
       setTimeout(tick, wait);
     };
