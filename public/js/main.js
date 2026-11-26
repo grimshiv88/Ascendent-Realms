@@ -40,7 +40,7 @@ import { uniqueAbility, uniqueTier } from './data/unique.mjs';
 import { challengeBar } from './data/kings.mjs';
 import { renderCult } from './cultui.js';
 import { GATES_R } from './data/cults.mjs';
-import { gameTime as realmTime } from './data/clock.mjs';
+import { gameTime as realmTime, DAY_TEXT } from './data/clock.mjs';
 import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
 import { createVoice } from './voice.js';
@@ -1049,14 +1049,14 @@ function startGame(character) {
     }
     if ((v = t('data-room')) != null) {
       const r = v === 'rent' ? game.rentRoom() : game.sleepInRoom();
-      ui.shopMsg = { ok: v === 'rent' ? 'The room is yours for a day of the realm (one real hour).' : 'You sleep in your room and wake fully rested.', coins: 'Not enough coins.', have: 'You already have a room.', none: 'Rent a room first.' }[r];
+      ui.shopMsg = { ok: v === 'rent' ? `The room is yours for a day of the realm (${DAY_TEXT}).` : 'You sleep in your room and wake fully rested.', coins: 'Not enough coins.', have: 'You already have a room.', none: 'Rent a room first.' }[r];
       if (v === 'sleep' && r === 'ok') { world?.say('Fully rested', 'exp'); drawHud(); }
       drawPanel(); return;
     }
     const board = t('data-board') || 'quests';
     if ((v = t('data-quest-accept')) != null) {
       const r = game.questAccept(Number(v), board);
-      ui.questMsg = { ok: board === 'guild' ? 'Guild request accepted.' : 'Quest accepted.', limit: 'You have taken on 3 quests today. Come back tomorrow (a day of the realm is one real hour).', one: 'You can hold only one guild request at a time.', card: 'You need a Hunter\'s Guild Card first. Ask for one at the counter.', rank: 'That request is above your card\'s rank.', pick: '' }[r];
+      ui.questMsg = { ok: board === 'guild' ? 'Guild request accepted.' : 'Quest accepted.', limit: `You have taken on 3 quests today. Come back tomorrow (a day of the realm is ${DAY_TEXT}).`, one: 'You can hold only one guild request at a time.', card: 'You need a Hunter\'s Guild Card first. Ask for one at the counter.', rank: 'That request is above your card\'s rank.', pick: '' }[r];
       drawPanel(); return;
     }
     if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here(), board); ui.questMsg = 'Given up. A new one is posted every 20 minutes.'; drawPanel(); return; }

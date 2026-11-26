@@ -206,8 +206,9 @@ function cityGate(fixed, R, T, line, stoneMat, capMat, cx, cz) {
 }
 
 // how far a city's small details (window frames, rails) are drawn: less on phones (quality.js)
-let DETAIL_FAR = 90;
-export function setCityDetail(m) { DETAIL_FAR = m || 90; }
+let DETAIL_FAR = 90, CELL_FAR = Infinity;
+// (cellFar: whole patches of the city further than this aren't drawn: quality.js)
+export function setCityDetail(m, cellFar) { DETAIL_FAR = m || 90; CELL_FAR = cellFar || Infinity; }
 const detailFar = () => DETAIL_FAR;
 
 export function buildCity(place, opts = {}) {
@@ -716,7 +717,7 @@ export function buildCity(place, opts = {}) {
   let detailAt = -1;
   const update = (t, you, blocked) => {
     centre.update?.(t);
-    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z, detailFar()); doors.lod(you, detailFar() + 20); for (const sg of saleSigns.values()) sg.lod(you, detailFar()); }
+    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z, detailFar(), CELL_FAR); showDetail(market, you.x, you.z, detailFar(), CELL_FAR); doors.lod(you, detailFar() + 20); for (const sg of saleSigns.values()) sg.lod(you, detailFar()); }
     doors.update(you, t);
     for (const b of guards) if (isShown(b)) animateCharacter(b, t, 0);
     walkFolk(t, you, blocked);

@@ -118,7 +118,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     smooth.reset();
     renderer.setPixelRatio(sharpness());
     setCrowdFar(q.crowdFar);
-    setCityDetail(q.detailFar);
+    setCityDetail(q.detailFar, q.cityFar);
     sun.castShadow = q.shadows;
     glowLights.setSize(q.lights);
     if (sun.shadow.mapSize.x !== q.shadowSize) { sun.shadow.mapSize.set(q.shadowSize, q.shadowSize); sun.shadow.map?.dispose(); sun.shadow.map = null; }
@@ -495,10 +495,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // arms and weapon still there). Scrolling all the way in goes to first person, scrolling out comes back.
   let viewMode = view?.view === 'first' ? 'first' : 'third';
   const firstNow = () => viewMode === 'first' && !dead && !sleeping;
-  const pitchLo = () => (firstNow() ? -1.35 : -0.15), pitchHi = () => (firstNow() ? 1.35 : 1.2);
+  // (in third person you can tilt below level too: the camera drops to the ground behind you and
+  // looks up, to see the sky or a dragon overhead)
+  const pitchLo = () => (firstNow() ? -1.35 : -0.95), pitchHi = () => (firstNow() ? 1.35 : 1.2);
   function setView(mode, tell) {
     viewMode = mode === 'first' ? 'first' : 'third';
-    if (viewMode === 'third') { pitch = THREE.MathUtils.clamp(pitch, 0.1, 1.2); dist = Math.max(dist, 3); camDist = Math.min(camDist, 1.2); }
+    if (viewMode === 'third') { pitch = THREE.MathUtils.clamp(pitch, pitchLo(), 1.2); dist = Math.max(dist, 3); camDist = Math.min(camDist, 1.2); }
     if (tell) onView?.(viewMode);
   }
 
@@ -517,7 +519,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const say = (text, kind = 'note') => floatText(text, pos.clone().add(new THREE.Vector3(0, bodyH + 0.4, 0)), kind);
 
   // ---------- day and night ----------
-  // One real hour is a day. The sun crosses the sky; at night a dim moon lights the land.
+  // A day of the realm is DAY_MINUTES real minutes (data/clock.mjs). The sun crosses the sky; at night a dim moon lights the land.
   let night = false, daylight = 1;
   const SUN_COLOR = new THREE.Color('#fff0d0'), MOON_COLOR = new THREE.Color('#7f98d8');
   const lightDir = new THREE.Vector3();
@@ -2498,7 +2500,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
     // Camera follows behind and above, pulled in so trees, walls, stall awnings and cave walls don't block the view
     const focus = new THREE.Vector3(pos.x, pos.y + bodyH * 0.8 + (riding?.saddle() || 0) * 0.85, pos.z);
-    const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+    // (tilted below level in third person, the camera stays behind you at full distance and sinks
+    // towards the ground instead, then looks up: see below)
+    const up = eyes ? 0 : Math.max(0, -pitch);
+    const pp = eyes ? pitch : Math.max(0, pitch);
+    const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pp), Math.sin(pp), Math.cos(yaw) * Math.cos(pp));
     let want = dist;
     // (indoors the walls keep the camera in instead: pulling it in for every chair and table made it shake)
     for (let d = 1; d < (inside ? 0 : dist); d += 0.75) {
@@ -2509,6 +2515,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     camDist += (want - camDist) * Math.min(1, dt * (want < camDist ? 14 : 3));
     if (snapCam) camDist = want;
     const cam = focus.clone().addScaledVector(dir, camDist);
+    if (up > 0) cam.y -= (cam.y - heightAt(cam.x, cam.z) - 0.5) * Math.min(1, up / 0.45);
     cam.y = Math.max(cam.y, heightAt(cam.x, cam.z) + 0.5, water + 0.3);
     // (the roof over the camera, or over you where the camera is in the rock: the rock's nearest
     // chamber can be a deeper one, whose roof would drag the camera far below you)
@@ -2533,7 +2540,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     } else {
       // after going through a door (or a portal), the camera jumps with you instead of flying across
       if (snapCam) camera.position.copy(cam); else camera.position.lerp(cam, Math.min(1, dt * 10));
-      camera.lookAt(focus);
+      // looking up, the view aims above your head, so you sink to the bottom of the screen and the
+      // sky fills the rest
+      if (up > 0) {
+        // tilt up by as much as you asked (all the way up, you sink out of the bottom of the screen and
+        // see only sky, like a person looking straight up)
+        const flat = Math.max(0.5, Math.hypot(focus.x - camera.position.x, focus.z - camera.position.z));
+        const toHead = Math.atan2(focus.y + bodyH * 0.25 - camera.position.y, flat);
+        const a = Math.max(up * 1.45, toHead);
+        camera.lookAt(focus.x, camera.position.y + Math.tan(a) * flat, focus.z);
+      } else camera.lookAt(focus);
     }
     snapCam = false;
 

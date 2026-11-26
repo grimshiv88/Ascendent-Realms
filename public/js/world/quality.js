@@ -11,23 +11,25 @@ export function isMobile() {
 }
 
 // crowdFar: townsfolk, guards and monsters further than this (metres) aren't drawn or animated;
-// detailFar: a city's small details (window frames, rails) further than this aren't drawn.
+// detailFar: a city's small details (window frames, rails) further than this aren't drawn;
+// cityFar: whole patches of a city (120 m squares) further than this aren't drawn.
 // lights: how many lamps, fires and glows near you shine at once (see lightpool.js).
-// land: [tile distance, grid detail] rings. The nearest two must stay 64: the land you walk on,
+// land: [tile distance, grid detail] rings (a tile is 256 m; trimmed 2026-11-26 so the world draws
+// less far and lags less: the fog thickens to match, so the edge is never seen). The nearest two must stay 64: the land you walk on,
 // and the land around it where villages, huts and monsters stand, which would float over (or sink
 // into) a coarser grid
 export const QUALITY = {
   low: {
     name: 'Battery saver', pixelRatio: 1, shadows: false, shadowSize: 1024, fps: 30,
-    lods: [[2, 64], [3, 16], [5, 8], [6, 8]], veg: 2, grass: 1, grassDensity: 0.4, nearTrees: 60, fog: 0.00042, crowdFar: 45, detailFar: 50, lights: 4,
+    lods: [[2, 64], [3, 16], [4, 8]], veg: 1, grass: 1, grassDensity: 0.4, nearTrees: 50, fog: 0.0006, crowdFar: 45, detailFar: 50, cityFar: 300, lights: 4,
   },
   medium: {
     name: 'Balanced', pixelRatio: 1.25, shadows: true, shadowSize: 1024, fps: 60,
-    lods: [[2, 64], [4, 32], [7, 16], [11, 8]], veg: 3, grass: 1, grassDensity: 0.75, nearTrees: 110, fog: 0.00024, crowdFar: 75, detailFar: 90, lights: 6,
+    lods: [[2, 64], [3, 32], [5, 16], [8, 8]], veg: 2, grass: 1, grassDensity: 0.75, nearTrees: 90, fog: 0.00034, crowdFar: 75, detailFar: 90, cityFar: 450, lights: 6,
   },
   high: {
     name: 'Far view', pixelRatio: 1.5, shadows: true, shadowSize: 2048, fps: 0,
-    lods: [[2, 64], [5, 32], [9, 16], [15, 8]], veg: 5, grass: 2, grassDensity: 1, nearTrees: 170, fog: 0.00015, crowdFar: 100, detailFar: 120, lights: 8,
+    lods: [[2, 64], [4, 32], [7, 16], [11, 8]], veg: 3, grass: 2, grassDensity: 1, nearTrees: 140, fog: 0.00022, crowdFar: 100, detailFar: 120, cityFar: 650, lights: 8,
   },
 };
 
