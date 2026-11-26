@@ -29,7 +29,7 @@ import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { updateCrowd, setCrowdFar } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
-import { allLairs } from '../data/beasts.mjs';
+import { allLairs, BEASTS } from '../data/beasts.mjs';
 import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime, now as realmNow } from '../data/clock.mjs';
@@ -2639,6 +2639,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     },
     // on a flying mount: the phone's dive button (held) and whether you are in the air
     flyDown(on) { flyDown = !!on; },
+    // an admin's Dragon radar: every dragon and wyvern lair, and where the beast is now if it is near
+    radar() {
+      const out = [];
+      for (const L of allLairs()) {
+        const b = BEASTS[L.kind];
+        if (b.shape === 'spirit') continue;
+        const m = creatures.list.find((q) => q.lair === L && !q.dead);
+        const x = m ? m.x : L.x, z = m ? m.z : L.z;
+        out.push({ id: L.id, name: b.name, king: !!b.king, boss: !!b.boss, wyvern: b.shape === 'wyvern', x, z, dist: Math.hypot(x - pos.x, z - pos.z),
+          seen: !!m, air: m ? Math.round(m.air || 0) : 0, hp: m ? Math.round(100 * m.hp / m.maxHp) : null, backIn: creatures.slainIn(L.id) });
+      }
+      return { x: pos.x, z: pos.z, yaw, beasts: out.sort((a, b) => a.dist - b.dist) };
+    },
     get flying() { return !!riding?.flying; },
     get flyer() { return !!riding?.flyer(); },
     position: () => ({ x: pos.x, z: pos.z, heading }),
