@@ -6,7 +6,11 @@
 // Lighter blows can take a hand or a forearm off without killing (maim).
 import * as THREE from 'three';
 
-export const CORPSE_SECS = 600; // a body left alone rots away after 10 minutes
+export const CORPSE_SECS = 600; // an animal's body left alone rots away after 10 minutes
+// a monster's body dissolves after 3 minutes of real time (by the clock, so it holds even while
+// the game is slow, paused or in the background)
+export const MONSTER_CORPSE_MS = 3 * 60 * 1000;
+const DISSOLVE_SECS = 3; // how long the dissolving itself takes
 
 // what each kind of blow does to the body, and whether a body is left to harvest
 // (the kind of blow comes from howOf below)
@@ -260,7 +264,7 @@ const isUnder = (o, p) => { for (let q = o; q; q = q.parent) if (q === p) return
 export function startDeath(m, how, scene, { strong = false } = {}) {
   const style = DEATHS[how] ? how : 'blunt';
   const rig = m.body.userData.rig || {};
-  const D = m.death = { style, t: 0, corpse: DEATHS[style].body, scene, extra: [], left: CORPSE_SECS, harvested: false };
+  const D = m.death = { style, t: 0, corpse: DEATHS[style].body, scene, extra: [], left: MONSTER_CORPSE_MS / 1000, at: Date.now(), harvested: false };
   m.body.rotation.order = 'YXZ';
   const at = (obj, dx = 0, dz = 0, y = 0.02) => { obj.position.set(m.x + dx, m.y + y, m.z + dz); scene.add(obj); D.extra.push(obj); return obj; };
   const H = m.height || 1.6;
@@ -383,15 +387,85 @@ export function tickDeath(m, dt) {
   }
   // a slime goes flat into a puddle of gel instead of falling over
   if (b.userData.rig?.core) { b.rotation.x = 0; b.scale.set(1 + k(0, 0.6) * 0.6, Math.max(0.15, 1 - k(0, 0.6) * 0.85), 1 + k(0, 0.6) * 0.6); b.position.y = m.y; }
-  // a body that's left lies there till it is harvested or rots away (sinking into the ground)
-  D.left -= dt;
+  // a body that's left lies there till it is harvested or, 3 real minutes on, dissolves away
+  // (fading out as it sinks into the ground)
+  D.left = Math.min(D.left - dt, (MONSTER_CORPSE_MS - (Date.now() - (D.at || Date.now()))) / 1000);
   if (D.harvested || D.left < 0) {
     D.gone = (D.gone || 0) + dt;
-    b.position.y -= dt * 0.4;
-    for (const o of D.extra) o.position.y -= dt * 0.4;
-    return D.gone > 3;
+    b.position.y -= dt * 0.15;
+    for (const o of D.extra) o.position.y -= dt * 0.15;
+    dissolve([b, ...D.extra], Math.min(1, D.gone / DISSOLVE_SECS));
+    return D.gone > DISSOLVE_SECS;
   }
   return false;
+}
+// Fade these objects out (k from 0 to 1). Their materials are shared with the living, so each
+// gets its own copy the first time.
+function dissolve(objs, k) {
+  for (const root of objs) {
+    root.traverse((o) => {
+      if (!o.material) return;
+      if (!o.userData.fading) {
+        const own = (mt) => { const c = mt.clone(); c.userData.op = mt.opacity ?? 1; c.transparent = true; c.depthWrite = false; return c; };
+        o.material = Array.isArray(o.material) ? o.material.map(own) : own(o.material);
+        o.userData.fading = true;
+      }
+      for (const mt of Array.isArray(o.material) ? o.material : [o.material]) mt.opacity = (mt.userData.op ?? 1) * (1 - k);
+    });
+  }
+}
+
+// ---------- an animal's wounds ----------
+// A hunted animal shows where it was hurt: cuts (or stab holes from arrows and spears) on the
+// flank that faces up once it has rolled onto its side, more of them the more blows it took,
+// and blood pooling under it.
+export function animalWounds(m, how, scene) {
+  const p = m.body.userData.beast;
+  if (!p?.body) return;
+  const stab = how === 'pierce' || how === 'bleed';
+  const hits = Math.max(1, Math.min(4, m.hitCount || 1));
+  m.body.updateWorldMatrix(true, true);
+  const meshes = [];
+  p.body.traverse((o) => { if (o.isMesh && !o.userData.wound) meshes.push(o); });
+  if (!meshes.length) return;
+  const box = new THREE.Box3();
+  for (const o of meshes) box.expandByObject(o);
+  const size = box.getSize(new THREE.Vector3());
+  const L = Math.max(size.x, size.z), H = size.y;
+  const fwd = new THREE.Vector3(Math.sin(m.heading), 0, Math.cos(m.heading));
+  const flank = new THREE.Vector3(fwd.z, 0, -fwd.x); // the animal's +x side: the one left facing up
+  const mid = box.getCenter(new THREE.Vector3());
+  for (let i = 0; i < hits; i++) {
+    const along = (hits === 1 ? 0 : (i / (hits - 1) - 0.5) * 0.5 + (Math.random() - 0.5) * 0.08) * L;
+    const at = mid.clone().addScaledVector(fwd, along);
+    at.y += (Math.random() - 0.35) * H * 0.25;
+    ray.set(at.clone().addScaledVector(flank, L), flank.clone().negate());
+    ray.far = L * 2;
+    const hit = ray.intersectObjects(meshes, false)[0];
+    if (!hit) continue;
+    const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+    // "down" on the picture runs down the animal's side (towards its belly)
+    let down = new THREE.Vector3(0, -1, 0).addScaledVector(n, n.y);
+    if (down.lengthSq() < 0.01) down.copy(fwd);
+    down.normalize();
+    const slant = stab ? 0 : (Math.random() < 0.5 ? 0.8 : -0.8);
+    const tex = woundTexture(stab ? 'stab' : i === 0 && hits > 2 ? 'deep' : 'cut', slant);
+    const r = (stab ? 0.36 : 0.62) * Math.min(L * 0.5, H * 1.1);
+    decal(hit.object, hit.point, n, down, Math.max(0.06, r), tex);
+  }
+  // blood under it, on the ground beside the flank
+  const D = m.death;
+  const puddle = pool();
+  puddle.position.set(m.x - flank.x * size.y * 0.5, m.y + 0.04, m.z - flank.z * size.y * 0.5);
+  scene.add(puddle);
+  D.extra = [puddle];
+  D.pool = puddle;
+  D.poolR = Math.max(0.15, Math.min(1.4, L * 0.32 * (0.7 + hits * 0.15)));
+}
+// the blood under a fallen animal spreads over the first few seconds
+export function tickAnimalBlood(m) {
+  const D = m.death;
+  if (D?.pool) D.pool.scale.setScalar(Math.max(0.05, D.poolR * Math.min(1, Math.max(0, (D.t - 0.3) / 3))) / 0.05);
 }
 
 // a body that can still be harvested (E beside it)

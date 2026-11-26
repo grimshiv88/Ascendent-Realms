@@ -108,6 +108,38 @@ function axeHead(z, size, m, { double = false, beard = 0.4 } = {}) {
   return g;
 }
 
+// A bow: its two limbs along z (the grip at the fist), bending forward (+y here, away from the
+// archer once it is held up), a taut string behind. `recurve` flicks the tips forward again.
+function bow(len, bend, limb, wood, { recurve = 0, tips = null, string = '#e8e0c8', wrap = metal('leather') } = {}) {
+  const g = new THREE.Group();
+  const half = len / 2;
+  const pts = [];
+  for (let i = 0; i <= 16; i++) {
+    const k = i / 16 * 2 - 1; // -1 .. 1 along the bow
+    const a = Math.abs(k);
+    pts.push(new THREE.Vector3(0, bend * (1 - a * a) - bend + recurve * Math.max(0, a - 0.75) * 4 * (a - 0.75) * 4 * 0.5, k * half));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  // thicker at the grip, thinner to the tips
+  const geo = new THREE.TubeGeometry(curve, 32, limb, 7, false);
+  const p = geo.attributes.position, centre = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    const z = p.getZ(i), t = Math.min(1, Math.abs(z) / half);
+    const c = curve.getPoint(Math.min(1, Math.max(0, z / len + 0.5)), centre);
+    const sc = 1.25 - t * 0.6;
+    p.setXYZ(i, c.x + (p.getX(i) - c.x) * sc, c.y + (p.getY(i) - c.y) * sc * 0.75, z);
+  }
+  geo.computeVertexNormals();
+  g.add(mesh(geo, wood));
+  g.add(mesh(new THREE.CylinderGeometry(limb * 1.45, limb * 1.45, 0.11, 8), wrap, (o) => { o.rotation.x = Math.PI / 2; }));
+  // the string, tip to tip, straight and taut
+  const ends = [pts[0], pts[16]];
+  const sLen = ends[0].distanceTo(ends[1]);
+  g.add(mesh(new THREE.CylinderGeometry(0.0025, 0.0025, sLen, 4), mat(`string|${string}`, null, { color: string, roughness: 0.9 }), (o) => { o.rotation.x = Math.PI / 2; o.position.set(0, ends[0].y, 0); }));
+  if (tips) for (const e of ends) g.add(mesh(new THREE.ConeGeometry(limb * 0.9, 0.05, 6), tips, (o) => { o.position.copy(e); o.rotation.x = e.z > 0 ? Math.PI / 2 : -Math.PI / 2; }));
+  return g;
+}
+
 // A weapon model in the hand's space: the grip at the fist, the business end pointing forward (+z).
 export function weaponModel(item, plus = 0) {
   const own = item.id || item.entry?.id;
@@ -195,6 +227,22 @@ function shapeWeapon(item, own, plus) {
       g.add(mesh(new THREE.OctahedronGeometry(0.11, 0), glow('#8a6aff', 2.2), (o) => { o.position.z = 1.0; o.scale.set(0.7, 0.7, 1.4); }));
       break;
     }
+    case 'hunting_bow':
+      g.add(bow(1.15, 0.13, 0.014, metal('wood')));
+      break;
+    case 'longbow':
+      g.add(bow(1.6, 0.15, 0.016, metal('darkwood'), { tips: metal('bone') }));
+      break;
+    case 'composite_bow':
+      g.add(bow(1.05, 0.1, 0.017, metal('bone'), { recurve: 0.06, tips: metal('dark'), wrap: metal('cloth') }));
+      break;
+    case 'elven_bow':
+      g.add(bow(1.4, 0.12, 0.014, mat('elfwood', null, { color: '#e8e2cf', roughness: 0.35 }), { recurve: 0.07, tips: metal('steel', plus), wrap: metal('gold'), string: '#cfe8ff' }));
+      g.add(mesh(new THREE.OctahedronGeometry(0.018, 0), glow('#7ad0ff', 1.4), (o) => { o.position.y = 0.025; }));
+      break;
+    case 'sinew_bow':
+      g.add(bow(1.1, 0.14, 0.017, metal('bone'), { string: '#8a5a3a' }));
+      break;
     case 'oak_staff':
     default: {
       if (item.type === 'staff' || id === 'oak_staff') {
@@ -241,6 +289,9 @@ export function wearGear(character, worn) {
     const type = worn.weapon.type || ITEMS[worn.weapon.id || worn.weapon.entry?.id]?.type;
     w.userData.weapon = type || 'blade';
     w.rotation.x = type === 'spear' || type === 'staff' ? -0.85 : 1.2;
+    // a bow is gripped across the fist: carried level at your side, and upright, string towards
+    // you, when the arm comes up to shoot
+    if (type === 'bow') { w.rotation.set(0.2, 0, Math.PI); w.position.y = -H * 0.03; }
     // a sword or dagger is held as a fighter holds it: edge up and down (not lying flat), the point
     // raised a little in front, ready to cut
     if (type === 'sword' || type === 'dagger') w.rotation.set(0.7, 0, Math.PI / 2);

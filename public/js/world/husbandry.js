@@ -5,10 +5,13 @@
 //   - cooking: E by a fire (a waystone's, a farm's, or a campfire you light from Firewood) cooks
 //     all the raw meat you carry
 //   - feeding (a vegetable, hay or grain from your bag) and petting the grazing animals
+//   - bait: a hunted body with a Hunter's Snare Trap set under it draws a bigger meat-eater, and
+//     the snare holds it fast for a while (creatures.js lureMove)
 import * as THREE from 'three';
 import { allFarms } from '../data/farms.mjs';
-import { FARM_HERD } from '../data/animals.mjs';
-import { ITEMS } from '../data/items.mjs';
+import { FARM_HERD, ANIMALS, baitDraws } from '../data/animals.mjs';
+import { sample } from '../data/world-layout.mjs';
+import { ITEMS, TAXIDERMY, trophyId, limbWord } from '../data/items.mjs';
 import { buildFarm } from './farms.js';
 import { canHarvest } from './deaths.js';
 import { TAMEABLE, TAME_FEEDS } from '../data/mounts.mjs';
@@ -20,6 +23,10 @@ const CAMPFIRE_SECS = 6 * 60, CAMPFIRES_MAX = 3;
 export const CAMPFIRE_SAFE = 9; // metres round a lit campfire where monsters won't find you at night
 const BLADES = ['sword', 'dagger', 'axe'];
 const BIRD_FOOD = ['grain', 'lettuce', 'cabbage', 'carrot'];
+// bait: how long a body set as bait lasts, how long before the first beast comes (and between
+// them), how many come to one bait, and how near you must stay for them to come
+const BAIT_SECS = 6 * 60, BAIT_FIRST = [12, 30], BAIT_NEXT = [45, 90], BAIT_VISITS = 2, BAIT_NEAR = 160;
+const rand = (a, b) => a + Math.random() * (b - a);
 
 export function createHusbandry({ scene, colliders, creatures, game, say, floatText, onEvent, onTame, getPos, getHeading, groundAt, siteFires, getHand = null, isNight = () => false }) {
   // the rope you drag a body by: from your hand to its neck, sagging a little in the middle
@@ -146,7 +153,9 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
   function offer(m) {
     offered = m;
     const a = m.kind.animal;
-    onEvent?.('carcass', { name: a.name, meat: !!a.meat, blade: hasBlade(), size: a.len });
+    onEvent?.('carcass', { name: a.name, meat: !!a.meat, blade: hasBlade(), size: a.len, snare: game.has('bait_trap'), baited: !!m.bait,
+      trophy: m.trophy || null, kits: game.count ? game.count('taxidermy_kit') : (game.has('taxidermy_kit') ? 1 : 0), limbs: limbWord(a),
+      canStuff: !!ITEMS[trophyId('head', m.kind.animalId)] });
   }
   function drag(m = offered) {
     if (!m || !canHarvest(m)) return;
@@ -161,12 +170,14 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     dragging = null;
   }
   // what a body gives: [[item, n]]
-  function partsOf(a, cooked) {
+  // (a body whose head went for a trophy has no fangs left; one whose paws went too has less hide)
+  function partsOf(a, cooked, trophy = null) {
     const out = [];
     if (a.meat) out.push([cooked ? `cooked_${a.meat}` : `raw_${a.meat}`, a.cuts || 1]);
-    if (a.hide) out.push(['animal_hide', a.hide]);
-    if (a.fang) out.push(['animal_fang', a.fang]);
-    if (a.shape === 'bird') out.push(['feather', 2]);
+    const hide = (a.hide || 0) - (trophy === 'paws' ? 1 : 0);
+    if (hide > 0) out.push(['animal_hide', hide]);
+    if (a.fang && !trophy) out.push(['animal_fang', a.fang]);
+    if (a.shape === 'bird') out.push(['feather', trophy === 'paws' ? 1 : 2]);
     return out;
   }
   function cut(m = offered) {
@@ -175,7 +186,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     const a = m.kind.animal;
     if (m === dragging) dragging = null;
     m.death.harvested = true; offered = null;
-    const got = partsOf(a, false);
+    const got = partsOf(a, false, m.trophy);
     for (const [id, n] of got) game.addItem(id, n);
     say(got.length ? `You cut up the ${a.name}: ${got.map(([id, n]) => `${n} ${ITEMS[id].name}`).join(', ')}${a.meat ? '. Cook the meat by a fire (E)' : ''}` : `There is nothing on the ${a.name} worth keeping`, 'exp');
     if (!a.meat) say(`${a.name} meat is not halal, so it is not eaten`, 'note');
@@ -186,12 +197,104 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     if (fee && !game.pay(fee)) { say(`The butcher asks ${fee} Copper to prepare it`, 'hurt'); return; }
     dragging = null;
     m.death.harvested = true;
-    const got = partsOf(a, true);
+    const got = partsOf(a, true, m.trophy);
     for (const [id, k] of got) game.addItem(id, k);
     floatText(fee ? `-${fee} Copper` : 'Thank you', new THREE.Vector3(n.x, groundAt(n.x, n.z) + 2.2, n.z), 'note');
     say(a.meat
       ? `The butcher prepares your ${a.name} the halal way and cooks it: ${got.map(([id, k]) => `${k} ${ITEMS[id].name}`).join(', ')}`
       : `The butcher takes the ${a.name}'s hide${a.fang ? ' and fangs' : ''} for you. Its meat is not halal, so he buries the rest`, 'exp');
+  }
+
+  // ---------- taxidermy: keep the head, the head and paws, or the full body as a trophy ----------
+  function stuff(how, m = offered) {
+    if (!m || !canHarvest(m)) return 'gone';
+    const a = m.kind.animal, t = TAXIDERMY[how], id = trophyId(how, m.kind.animalId);
+    if (!t || !ITEMS[id]) { say(`A farm animal can't be kept as a trophy`, 'note'); return 'no'; }
+    if (m.trophy) { say(`The ${a.name}'s ${m.trophy === 'head' ? 'head has' : `head and ${limbWord(a)} have`} already been taken`, 'note'); return 'done'; }
+    if (m.bait) { say(`Your snare is set under the ${a.name}. Let the bait do its work first`, 'note'); return 'bait'; }
+    if (!hasBlade()) { say('You need a blade for taxidermy: a Hunting Knife, or a sword, dagger or axe in your hand', 'hurt'); return 'blade'; }
+    const have = game.count ? game.count('taxidermy_kit') : (game.has('taxidermy_kit') ? 1 : 0);
+    if (have < t.kits) { say(`You need ${t.kits} Taxidermy Kit${t.kits > 1 ? 's' : ''} for that (you have ${have}). Butchers, markets and the shop sell them`, 'hurt'); return 'kits'; }
+    if (!game.addItem(id, 1)) { say('Your bag is full', 'hurt'); return 'full'; }
+    for (let i = 0; i < t.kits; i++) game.giveAway('taxidermy_kit');
+    offered = null;
+    const rig = m.body.userData.beast;
+    if (how === 'full') {
+      if (m === dragging) { dragging.dragged = false; dragging = null; }
+      m.death.harvested = true; // (the whole body goes into the trophy)
+      m.body.visible = false;
+      say(`You skin, salt and stuff the whole ${a.name}: ${ITEMS[id].name} is in your bag`, 'exp');
+    } else {
+      m.trophy = how;
+      if (rig?.head) rig.head.visible = false;
+      if (how === 'paws') for (const l of rig?.legs || []) if (l.knee) l.knee.visible = false;
+      say(`You take the ${a.name}'s head${how === 'paws' ? ` and ${limbWord(a)}` : ''} and mount ${how === 'paws' ? 'them' : 'it'}: ${ITEMS[id].name} is in your bag. The rest of the body can still be cut up${a.meat ? ' for meat' : ''}`, 'exp');
+    }
+    game.touch?.('bag');
+    return 'ok';
+  }
+
+  // ---------- bait and snares ----------
+  const baits = []; // { m: the body, x, z, snare, wait, visits, visitor }
+  const snareMat = new THREE.MeshStandardMaterial({ color: '#b08a52', roughness: 0.95 });
+  const stakeMat = new THREE.MeshStandardMaterial({ color: '#5a3e24', roughness: 1 });
+  function snareMesh(r) {
+    const g = new THREE.Group();
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(r, 0.02, 5, 28), snareMat);
+    loop.rotation.x = Math.PI / 2; loop.position.y = 0.04;
+    g.add(loop);
+    // a bent sapling stake, and the cord running from it to the noose
+    const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.8, 6), stakeMat);
+    stake.position.set(r + 0.45, 0.35, 0); stake.rotation.z = 0.25;
+    const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.75, 4), snareMat);
+    cord.position.set(r + 0.12, 0.35, 0); cord.rotation.z = 1.0;
+    g.add(stake, cord);
+    g.traverse((o) => { o.castShadow = true; });
+    return g;
+  }
+  function setBait(m = offered) {
+    if (!m || !canHarvest(m)) return;
+    const a = m.kind.animal;
+    if (m.bait) { say(`A snare is already set under the ${a.name}`, 'note'); return; }
+    if (!game.has('bait_trap')) { say('You need a Hunter\'s Snare Trap to set it as bait (from a Halal Butcher, a market or the shop)', 'hurt'); return; }
+    const draws = baitDraws(sample(m.x, m.z, {}).region, a.len);
+    if (!draws.length) { say('Nothing in this land hunts by the smell of meat', 'note'); return; }
+    if (m === dragging) { dragging.dragged = false; dragging = null; }
+    game.giveAway('bait_trap');
+    offered = null;
+    m.bait = true;
+    m.death.left = Math.max(m.death.left, BAIT_SECS); // (bait lasts longer than a body left lying)
+    const snare = snareMesh(Math.max(0.45, a.len * 0.6));
+    snare.position.set(m.x, groundAt(m.x, m.z), m.z);
+    scene.add(snare);
+    baits.push({ m, x: m.x, z: m.z, snare, draws, wait: rand(...BAIT_FIRST), visits: 0, visitor: null });
+    say(`You set the snare under the ${a.name}. Now step well back (15 m or more) and wait: the smell will draw something bigger`, 'note');
+  }
+  function clearBait(b, why = null) {
+    scene.remove(b.snare);
+    if (b.visitor && !b.visitor.snared) b.visitor.lure = null;
+    baits.splice(baits.indexOf(b), 1);
+    if (why) say(why, 'note');
+  }
+  function tickBaits(dt) {
+    const c = creatures(), p = getPos();
+    for (const b of [...baits]) {
+      const m = b.m;
+      if (!c.list.includes(m) || m.death?.harvested || m.dragged) { clearBait(b); continue; }
+      if (m.death.left <= 1) { clearBait(b, 'Your bait has rotted away'); continue; }
+      const v = b.visitor;
+      if (v && (v.dead || !c.list.includes(v) || (!v.lure && !(v.snared > 0)))) b.visitor = null;
+      if (b.visitor || b.visits >= BAIT_VISITS) continue;
+      if (Math.hypot(p.x - b.x, p.z - b.z) > BAIT_NEAR) continue;
+      b.wait -= dt;
+      if (b.wait > 0) continue;
+      b.wait = rand(...BAIT_NEXT);
+      const id = b.draws[Math.floor(Math.random() * b.draws.length)];
+      const got = c.lureAnimal(id, b.x, b.z, true);
+      if (!got) continue;
+      b.visitor = got; b.visits += 1;
+      say(`Something has caught the scent of your bait: a ${ANIMALS[id].name} is coming`, 'note');
+    }
   }
 
   // ---------- grazing animals: feed and pet ----------
@@ -264,6 +367,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
   function tick(dt, t) {
     const night = isNight();
     for (const q of builtFarms()) { stable(q, night); q.built.update(t, getPos(), night); }
+    tickBaits(dt);
     for (const f of [...fires]) {
       f.left -= dt;
       f.flames.forEach((fl, i) => { fl.scale.y = 0.85 + Math.sin(t * 9 + i * 2) * 0.15; });
@@ -286,13 +390,17 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
   }
 
   return {
-    updateFarms, tick, interact, tapTargets, lightCampfire, drag: () => drag(), cut: () => cut(), drop,
+    updateFarms, tick, interact, tapTargets, lightCampfire, drag: () => drag(), cut: () => cut(), bait: () => setBait(), stuff: (how) => stuff(how), drop,
+    // (tests) the next beast comes now; bring a coming one to `d` metres from its bait
+    debugBaitNow() { for (const b of baits) b.wait = 0; },
+    debugPullVisitor(d = 4) { for (const b of baits) if (b.visitor) { b.visitor.x = b.x + d; b.visitor.z = b.z; } },
+    debugBaits: () => baits.map((b) => ({ x: b.x, z: b.z, draws: b.draws, wait: b.wait, visits: b.visits, visitor: b.visitor ? { id: b.visitor.kind.animalId, x: b.visitor.x, z: b.visitor.z, snared: b.visitor.snared || 0, lure: !!b.visitor.lure } : null })),
     // a big animal is heavy: you walk slower while you drag it
     dragSlow: () => (dragging ? Math.max(0.45, 1 - dragging.kind.animal.len * 0.18) : 1),
     get dragging() { return dragging; },
     nearCampfire: (x, z) => fires.some((f) => Math.hypot(f.x - x, f.z - z) < CAMPFIRE_SAFE),
     farms: () => farms.map((q) => ({ ...q.f, built: !!q.built })),
     built: () => builtFarms().map((q) => q.built),
-    clear() { dragging = null; offered = null; drawRope(null); },
+    clear() { dragging = null; offered = null; drawRope(null); for (const b of [...baits]) clearBait(b); },
   };
 }

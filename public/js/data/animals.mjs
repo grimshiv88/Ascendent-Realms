@@ -42,6 +42,10 @@ export const ANIMALS = {
   // wild beasts that bite: their hides and fangs sell, their meat is never eaten
   fox: { name: 'Red Fox', shape: 'quad', len: 0.75, tall: 0.4, legs: 0.5, temper: 'shy', speed: 9, hp: 14, meat: null, hide: 1, fang: 1,
     coat: '#c8642a', belly: '#f0e8dc', dark: '#2a1a12', ears: 'fox', tail: 'brush', snout: 1.3, neck: 0.3, girth: 0.75, where: ['heart', 'fae', 'frost'], woods: true, herd: [1, 1] },
+  jackal: { name: 'Golden Jackal', shape: 'quad', len: 0.9, tall: 0.45, legs: 0.52, temper: 'shy', speed: 9, hp: 18, meat: null, hide: 1, fang: 1,
+    coat: '#b8904a', belly: '#e8dcc0', dark: '#3a2a1a', ears: 'fox', tail: 'brush', snout: 1.25, neck: 0.3, girth: 0.75, where: ['sun', 'mire', 'warrens'], herd: [1, 2] },
+  lynx: { name: 'Mountain Lynx', shape: 'quad', len: 1.05, tall: 0.62, legs: 0.56, temper: 'fierce', speed: 9, hp: 40, atk: 1.0, meat: null, hide: 2, fang: 1,
+    coat: '#a88a64', belly: '#ece0cc', dark: '#2a2018', ears: 'fox', tail: 'stub', snout: 0.8, neck: 0.3, girth: 0.85, where: ['peaks', 'frost', 'sun', 'fae'], herd: [1, 1] },
   wolf: { name: 'Grey Wolf', shape: 'quad', len: 1.3, tall: 0.8, legs: 0.55, temper: 'fierce', speed: 9, hp: 45, atk: 1.1, meat: null, hide: 2, fang: 2,
     coat: '#7a7470', belly: '#c8c2b8', dark: '#2a2826', ears: 'fox', tail: 'brush', snout: 1.2, neck: 0.35, girth: 0.9, where: ['heart', 'frost', 'warrens', 'peaks'], woods: true, herd: [2, 4], night: true },
   bear: { name: 'Brown Bear', shape: 'quad', len: 2.2, tall: 1.2, legs: 0.42, temper: 'fierce', speed: 8, hp: 160, atk: 1.6, meat: null, hide: 4, fang: 2,
@@ -62,6 +66,15 @@ export const ANIMALS = {
   turkey: { name: 'Turkey', shape: 'bird', len: 0.9, tall: 0.8, temper: 'calm', speed: 3, hp: 10, meat: 'poultry', cuts: 2, hide: 0, farm: true,
     coat: '#3a2e26', belly: '#4a3a2e', dark: '#c8a08a', head: '#a8c0d8', beak: '#c8b8a0', fan: true, comb: true, where: ['farm'] },
 };
+
+// What a hunter's bait draws in: the meat-eaters of the land (their meat is never eaten, but their
+// hides and fangs sell). A body draws one bigger than itself if the land has one, so the bigger the
+// bait, the bigger the beast that comes for it.
+export function baitDraws(region, size) {
+  const hunters = Object.entries(ANIMALS).filter(([, a]) => !a.farm && !a.meat && a.fang && a.where.includes(region));
+  const bigger = hunters.filter(([, a]) => a.len > size);
+  return (bigger.length ? bigger : hunters).map(([id]) => id);
+}
 
 // What the animals eat. Any of these in your bag can be fed to a grazing animal (or a bird);
 // hunters and predators won't take them.

@@ -236,7 +236,7 @@ export function fillIcons(root) {
   const imgs = [...root.querySelectorAll('img[data-icon]:not([src])')];
   const step = () => {
     const t0 = performance.now();
-    while (imgs.length && performance.now() - t0 < 12) {
+    while (imgs.length && performance.now() - t0 < 8) {
       const img = imgs.shift();
       const url = itemIcon(img.dataset.icon, Number(img.dataset.plus || 0));
       if (url) { img.src = url; img.nextElementSibling?.classList.add('hidden'); }
@@ -244,7 +244,23 @@ export function fillIcons(root) {
     }
     if (imgs.length) requestAnimationFrame(step);
   };
-  step();
+  // pictures already made go in at once; a new one waits a frame, so the window opens first
+  const made = (img) => cache.has(`${img.dataset.icon}|${Number(img.dataset.plus || 0) >= 5 ? 5 : 0}`);
+  if (imgs.length && imgs.every(made)) step();
+  else if (imgs.length) requestAnimationFrame(step);
+}
+
+// Make the pictures of these items ahead of time, one at a time while the game is idle, so the
+// first look in the bag or the shop doesn't stall (the first picture also sets up the studio)
+export function warmIcons(ids) {
+  const todo = [...new Set(ids)].filter((id) => ITEMS[id] && !cache.has(`${id}|0`));
+  if (todo.length) itemIcon(todo.shift(), 0); // the first now (call this while a loading screen is up)
+  const idle = window.requestIdleCallback || ((f) => setTimeout(() => f({ timeRemaining: () => 8 }), 200));
+  const next = (dl) => {
+    while (todo.length && dl.timeRemaining() > 4) itemIcon(todo.shift(), 0);
+    if (todo.length) idle(next, { timeout: 3000 });
+  };
+  idle(next, { timeout: 3000 });
 }
 
 // A photo of a character for their ID card: head and shoulders, in their gear

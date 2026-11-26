@@ -16,8 +16,10 @@ import { playWork } from './workscene.js';
 import { renderAssess, renderParents } from './idcard.js';
 import { renderQuests, renderGuild } from './quests.js';
 import { renderLand, renderCave, renderEstate } from './landui.js';
+import { renderBank, renderDerrick, renderOilSpot } from './bankui.js';
+import { depositById, BANK_ID, bankPlace } from './data/economy.mjs';
 import { caveById } from './data/depths.mjs';
-import { portalFee, portalKm } from './data/portals.mjs';
+import { portalFee, portalKm, portalLevel } from './data/portals.mjs';
 import { openBuilder as openBuilderView } from './builder.js';
 import { loadSculpts } from './characters/sculpt.js';
 
@@ -26,7 +28,8 @@ import { PLOT, REACH, inReach, plotPrice } from './data/land.mjs';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
-import { fillIcons } from './characters/icons.js';
+import { fillIcons, warmIcons } from './characters/icons.js';
+import { warmWorldMap } from './world/mapdraw.js';
 import { SPELLS } from './data/spells.mjs';
 import { renderIdCard } from './idcard.js';
 import { renderRooms } from './roomsui.js';
@@ -481,6 +484,48 @@ function startGame(character) {
   function setLands(list) { ui.myPlots = list.filter((p) => p.mine); ui.otherPlots = list.filter((p) => !p.mine); world.setLands(list); }
   const loadHomes = () => api.homeList().then((r) => { ui.homes = r.homes || []; world?.setHomes(ui.homes); }).catch(() => {});
   const loadCaves = () => api.caveList().then((r) => { ui.caves = r.caves || []; }).catch(() => {});
+  // the Bank and oil (see bankui.js and data/economy.mjs)
+  const takeWells = (list) => { ui.wells = list || []; world?.setWells(ui.wells); if (ui.well) ui.well = ui.wells.find((w) => w.id === ui.well.id) || ui.well; };
+  const loadOil = () => api.oilInfo().then((r) => { takeWells(r.wells); ui.bankInfo = { ...(ui.bankInfo || {}), oil: r.oil }; }).catch(() => {});
+  const loadBank = () => api.bankInfo().then((r) => { game.setCoins(r.coins); ui.bankInfo = { bank: r.bank, oil: r.oil }; }).catch((e) => { ui.econMsg = e.message; ui.econBad = true; });
+  // one thing done at the Bank or with oil: the server sees your latest coins, bag and spot first
+  async function econ(run) {
+    ui.econBusy = true; drawPanel();
+    try {
+      await game.saveNow();
+      if (world) await api.saveLocation(world.here()).catch(() => {});
+      const r = await run();
+      if (r.coins != null) game.setCoins(r.coins);
+      if (r.bank) ui.bankInfo = { ...(ui.bankInfo || {}), bank: r.bank };
+      if (r.oil) ui.bankInfo = { ...(ui.bankInfo || {}), oil: r.oil };
+      if (r.wells) takeWells(r.wells);
+      ui.econMsg = r.message || ''; ui.econBad = false;
+      return r;
+    } catch (err) { ui.econMsg = err.message; ui.econBad = true; return null; }
+    finally { ui.econBusy = false; drawPanel(); }
+  }
+  // dig a test pit with a Shovel, just in front of you
+  let digging = false;
+  function digPit() {
+    if (digging) return;
+    const spot = world?.digSpot();
+    if (!spot || spot.error) { showArea(spot?.error || 'You can\'t dig here.'); return; }
+    digging = true;
+    showArea('You dig a test pit...');
+    setTimeout(async () => {
+      try {
+        await game.saveNow();
+        await api.saveLocation(world.here()).catch(() => {});
+        const r = await api.oilAct({ act: 'dig', x: spot.x, z: spot.z });
+        world?.digPit(spot.x, spot.z);
+        if (r.oil) ui.bankInfo = { ...(ui.bankInfo || {}), oil: r.oil };
+        if (r.wells) takeWells(r.wells);
+        showArea(r.message);
+        if (r.found) { ui.oilSpot = depositById(r.found); ui.econMsg = r.message; ui.econBad = false; openPanel('oilspot'); }
+      } catch (err) { showArea(err.message); }
+      digging = false;
+    }, 2500);
+  }
   function toggleLand() {
     const on = !world.landMode;
     world.setLandMode(on);
@@ -601,7 +646,7 @@ function startGame(character) {
     else if (name === 'options') renderOptions(overlay);
     else if (name === 'welcome') renderWelcome(overlay, character.name, !(character.level === 1 && !character.exp));
     else if (name === 'portal' && world?.atPortal) {
-      ui.trip = { from: world.atPortal, to: null, onPick: showTrip };
+      ui.trip = { from: world.atPortal, to: null, onPick: showTrip, level: character.level };
       renderMap(overlay, () => world?.position(), [], { plots: ui.myPlots || [], caves: [] }, null, ui.trip);
     }
     else if (name === 'rankings') renderRankings(overlay, ui.top, character.name, ui.courts || []);
@@ -611,6 +656,9 @@ function startGame(character) {
       const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
       renderCave(overlay, ui.atCave, game, { owner: own?.owner, mine: own?.mine, message: ui.caveMsg || '', busy: ui.caveBusy });
     }
+    else if (name === 'bank' && ui.bankCity) renderBank(overlay, game, { city: ui.bankCity, info: ui.bankInfo, tab: ui.bankTab, message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy, wells: ui.wells || [] });
+    else if (name === 'derrick' && ui.well) renderDerrick(overlay, ui.well, { message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
+    else if (name === 'oilspot' && ui.oilSpot) renderOilSpot(overlay, game, ui.oilSpot, { info: ui.bankInfo, well: (ui.wells || []).find((w) => w.id === ui.oilSpot.id), message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
     else if (name === 'estate' && ui.estateCity) renderEstate(overlay, game, { city: ui.estateCity, homes: ui.homes || [], ring: ui.estateRing, message: ui.estateMsg || '', busy: ui.estateBusy });
     else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy, basket: ui.basket.map((p) => ({ ...p, price: plotPrice(p.ix, p.iz) })) });
     else overlay.innerHTML = HELP_HTML;
@@ -640,25 +688,66 @@ function startGame(character) {
     overlay.classList.remove('hidden');
   };
   // A death: it costs one of your 3 lives and you wake at the nearest shrine, or, with none left
-  // (or of old age below level 250), it is final (see data/life.mjs)
+  // (or of old age below level 250), it is final (see data/life.mjs).
+  // The screen turns grey at once with the news and the lives left; the heavy work of moving you
+  // to the shrine (building its town and land) happens only after that has been drawn, behind a
+  // dark screen, so the moment of death never freezes the game. Then you stand up again by yourself.
   function died(by, cause) {
     const out = game.die(cause);
     if (!out.rise) { fallen(by); return; }
-    const where = world?.riseAtShrine();
+    if (!overlay.classList.contains('hidden')) closePanel();
     world?.releaseMouse();
-    overlay.dataset.panel = 'risen';
-    const what = cause === 'age' ? 'Your body gave out to old age' : `You were defeated by ${cause === 'monster' ? 'a ' : ''}${esc(by)}`;
-    overlay.innerHTML = `
-      <div class="status-window welcome-window fallen-window" role="dialog" aria-label="You have fallen">
-        <h2>You have fallen</h2>
-        <p>${what}.</p>
-        ${out.free ? `<p>But you are past level ${UNDYING_LEVEL}: death cannot hold you. ${out.renewed ? `The shrine renews you, and you wake at the age of ${RENEW_AGE}.` : 'No life is lost.'}</p>`
-          : `<p>The shrine's light gathers you back. <b>${out.livesLeft} ${out.livesLeft === 1 ? 'life' : 'lives'} left.</b> ${out.livesLeft === 1 ? 'The next death will be your last.' : ''}</p>`}
-        <p>You wake at the shrine of ${esc(where || 'the nearest town')}.</p>
-        <button type="button" class="gold-button" data-close>Rise</button>
+    const what = cause === 'age' ? 'Your body gave out to old age.'
+      : cause === 'fall' ? 'You fell from too high.'
+      : cause === 'drown' ? 'You drowned.'
+      : `You were killed by ${cause === 'monster' && !/^the /i.test(by) ? 'a ' : ''}${esc(by)}.`;
+    const lives = out.free
+      ? (out.renewed ? `Past level ${UNDYING_LEVEL}, death cannot hold you: the shrine renews you at the age of ${RENEW_AGE}.` : `Past level ${UNDYING_LEVEL}, death cannot hold you. <b>No life lost.</b>`)
+      : `<b class="death-lives">${out.livesLeft} ${out.livesLeft === 1 ? 'life' : 'lives'} left</b>${out.livesLeft === 1 ? '<br><small>The next death will be your last.</small>' : ''}`;
+    showDeathScreen(what, lives);
+  }
+  const DEATH_GREY_MS = 3000; // how long the grey screen shows before you are carried to the shrine
+  const DEATH_LOAD_MS = 2500; // the most time spent building the shrine's land before you stand up
+  let deathScreen = null;
+  function showDeathScreen(what, lives) {
+    deathScreen?.remove();
+    const el = deathScreen = document.createElement('div');
+    el.id = 'death-screen';
+    el.setAttribute('role', 'alert');
+    el.innerHTML = `
+      <div class="death-box">
+        <h2>You died</h2>
+        <p>${what}</p>
+        <p>${lives}</p>
+        <p class="death-wait">Respawning in <span data-count>${Math.ceil(DEATH_GREY_MS / 1000)}</span>…</p>
       </div>`;
-    overlay.classList.remove('hidden');
-    drawHud();
+    document.body.append(el);
+    document.body.classList.add('player-dead');
+    const count = el.querySelector('[data-count]');
+    const wait = el.querySelector('.death-wait');
+    const t0 = performance.now();
+    const tick = setInterval(() => { count.textContent = Math.max(1, Math.ceil((DEATH_GREY_MS - (performance.now() - t0)) / 1000)); }, 250);
+    setTimeout(() => {
+      clearInterval(tick);
+      el.classList.add('dark'); // fade to a dark screen, then do the heavy work behind it
+      wait.textContent = 'Waking at the shrine…';
+      setTimeout(() => requestAnimationFrame(() => {
+        const where = world?.riseAtShrine();
+        wait.textContent = `Waking at the shrine of ${where || 'the nearest town'}…`;
+        drawHud();
+        const s0 = performance.now();
+        const build = () => {
+          if (deathScreen !== el) return;
+          const left = world?.catchUpLand(24) || 0;
+          if (left > 0 && performance.now() - s0 < DEATH_LOAD_MS) { requestAnimationFrame(build); return; }
+          world?.stand();
+          document.body.classList.remove('player-dead');
+          el.classList.add('gone');
+          setTimeout(() => { el.remove(); if (deathScreen === el) deathScreen = null; }, 700);
+        };
+        requestAnimationFrame(build);
+      }), 450);
+    }, DEATH_GREY_MS);
   }
   // Death is final: the character is gone. Only the Unique Skill passes on to the next one.
   async function fallen(by) {
@@ -829,8 +918,15 @@ function startGame(character) {
   function showTrip(to, message = '') {
     const box = overlay.querySelector('.portal-pick');
     if (!box) return;
+    const lv = portalLevel(to);
+    // a portal only opens to land whose monsters are your level or lower
+    if (lv > character.level) {
+      box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away</p>
+        <p class="error">🔒 Monsters there are up to level ${lv}. The portal won't send you until you are level ${lv}.</p>`;
+      return;
+    }
     const fee = portalFee(ui.trip.from, to);
-    box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away</p>
+    box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away · monsters up to Lv ${lv}</p>
       <p>Fee: <b>${money(fee)}</b> <small>(you have ${money(character.coins)})</small></p>
       ${message ? `<p class="error">${message}</p>` : ''}
       <button type="button" class="gold-button" data-portal-go="${to.id}">Pay ${money(fee)} and travel</button>`;
@@ -924,7 +1020,7 @@ function startGame(character) {
         world.teleport(to.x, to.z);
         showArea(`The portal hums and you step out at ${to.name}.`);
         drawHud();
-      } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : 'That portal is across the sea.');
+      } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : r === 'level' ? 'The monsters there are stronger than you.' : 'That portal is across the sea.');
       return;
     }
     if (t('data-treat') != null) {
@@ -1104,6 +1200,21 @@ function startGame(character) {
     if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }
     if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
     if (t('data-hold-torch') != null) { closePanel(); world?.holdTorch(); return; }
+    if (t('data-dig') != null) { closePanel(); digPit(); return; }
+    if ((v = t('data-bank-tab')) != null) { ui.bankTab = v; ui.econMsg = ''; drawPanel(); return; }
+    if ((v = t('data-bank')) != null) {
+      const box = overlay.querySelector('#bank-amount');
+      const amount = box && box.value !== '' ? Math.floor(Number(box.value)) : undefined;
+      const name = overlay.querySelector('#bank-company')?.value;
+      if (v === 'found') econ(() => api.oilAct({ act: 'found', name, city: ui.bankCity?.id }));
+      else econ(() => api.bankAct({ act: v, amount, cur: e.target.closest('[data-cur]')?.dataset.cur, from: e.target.closest('[data-from]')?.dataset.from, city: ui.bankCity?.id }));
+      return;
+    }
+    if ((v = t('data-oil')) != null) {
+      if (v === 'drill' && ui.oilSpot) econ(() => api.oilAct({ act: 'drill', x: ui.oilSpot.x, z: ui.oilSpot.z })).then((r) => { if (r?.ok) { ui.well = (ui.wells || []).find((w) => w.id === ui.oilSpot.id); if (ui.well) { overlay.dataset.panel = 'derrick'; drawPanel(); } } });
+      else if (ui.well) econ(() => api.oilAct({ act: v, id: ui.well.id })).then((r) => { if (r?.ok && v === 'close') { ui.well = null; closePanel(); showArea(r.message); } });
+      return;
+    }
     if ((v = t('data-estate-ring')) != null) { ui.estateRing = v; ui.estateMsg = ''; drawPanel(); return; }
     if ((v = t('data-home-buy')) != null && ui.estateCity) {
       ui.estateBusy = true; drawPanel();
@@ -1282,6 +1393,8 @@ function startGame(character) {
   const safeStart = closedBySelf && settings.graphics !== 'low';
   if (safeStart) setTimeout(() => showArea('The game closed last time, so it is on Battery saver for now (Settings to change it)'), 4000);
 
+  // painted now, behind the loading clouds, so the first look at the map or the bag doesn't stall
+  try { warmWorldMap(); warmIcons([...(character.inventory || []).map((e) => e.id), ...Object.values(character.equipped || {}).map((e) => e?.id).filter(Boolean)]); } catch { /* only a head start */ }
   world = startWorld($('world'), character, {
     game,
     view: { camera: settings.camera, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
@@ -1342,6 +1455,20 @@ function startGame(character) {
         loadHomes().then(drawPanel);
         openPanel('estate');
       }
+      // the counter of a city's Bank, or a village's Bank Kiosk: the window opens only there
+      if ((type === 'market' && data === BANK_ID) || type === 'kiosk') {
+        const p = world?.outdoors();
+        const city = type === 'kiosk' ? null : p && placesWithPositions().filter((q) => q.city).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+        ui.bankCity = bankPlace(type === 'kiosk' ? data : city?.id);
+        if (!ui.bankCity) return;
+        if (!ui.bankCity.full && ui.bankTab === 'loan') ui.bankTab = 'safe';
+        ui.econMsg = ''; ui.econBad = false; ui.bankTab ||= 'safe';
+        loadBank().then(loadOil).then(drawPanel);
+        openPanel('bank');
+        return;
+      }
+      if (type === 'derrick') { ui.well = data; ui.econMsg = ''; ui.econBad = false; openPanel('derrick'); loadOil().then(drawPanel); return; }
+      if (type === 'oil-spot') { ui.oilSpot = data; ui.econMsg = ''; ui.econBad = false; openPanel('oilspot'); loadOil().then(drawPanel); return; }
       else if (type === 'market') { ui.market = data; openPanel('market'); }
       if (type === 'indoors') {
         $('minimap').classList.add('hidden');
@@ -1443,6 +1570,8 @@ function startGame(character) {
   api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
   loadCaves();
   loadHomes();
+  loadOil();
+  setInterval(loadOil, 120000); // derricks' tanks fill, and others put new ones up
   api.kingsList().then((r) => { takeCourts(r.courts); world.setCourts(r.courts); }).catch(() => {});
   setInterval(() => api.kingsList().then((r) => takeCourts(r.courts)).catch(() => {}), 60000);
   loadCult(); // a cult's offer, a mission, or news that you were stripped
@@ -1501,7 +1630,8 @@ function startGame(character) {
 // The region name fades in at the top of the screen when you enter a new area
 let areaTimer = null;
 // The pop-up an item opens (see bag.js itemInfoHtml). `onClick(e, close)` handles its buttons.
-// A hunted animal's body: drag it to a Butcher, or cut it up here (keys: E or 1 drags, 2 cuts)
+// A hunted animal's body: drag it to a Butcher, cut it up here, or set it as bait over a snare
+// (keys: E or 1 drags, 2 cuts, 3 baits)
 function showCarcass(d) {
   world?.releaseMouse?.();
   const pop = showItemPop(`<div class="item-pop-box" role="dialog" aria-label="Hunted animal">
@@ -1511,20 +1641,57 @@ function showCarcass(d) {
       <div class="pop-actions">
         <button type="button" class="gold-button small" data-carcass="drag">Drag it (E)</button>
         <button type="button" class="gold-button small" data-carcass="cut"${d.blade ? '' : ' title="You need a Hunting Knife, or a sword, dagger or axe in your hand"'}>Cut it up (2)${d.blade ? '' : ': needs a blade'}</button>
+        ${d.baited ? '' : `<button type="button" class="gold-button small" data-carcass="bait"${d.snare ? '' : ' title="You need a Hunter\'s Snare Trap"'}>Set it as bait (3)${d.snare ? '' : ': needs a Snare Trap'}</button>`}
+        ${d.canStuff && !d.trophy && !d.baited ? `<button type="button" class="gold-button small" data-carcass="stuff">Taxidermy (4)</button>` : ''}
       </div>
+      <p class="bag-hint">${d.baited ? 'Your snare is set under it. Stay back and wait for a bigger animal to come for the bait.' : 'As bait, with a Hunter\'s Snare Trap under it, its smell draws a bigger meat-eater (a fox, jackal, lynx, wolf or bear, by the land), and the snare holds it fast.'}</p>
     </div>`, (e, close) => {
     const act = e.target.closest('[data-carcass]')?.dataset.carcass;
     if (!act) return;
     close(); window.removeEventListener('keydown', keys, true);
-    if (act === 'drag') world?.dragCarcass(); else world?.cutCarcass();
+    carcassAct(act);
   });
+  function carcassAct(act) {
+    if (act === 'drag') world?.dragCarcass(); else if (act === 'bait') world?.baitCarcass(); else if (act === 'stuff') showTaxidermy(d); else world?.cutCarcass();
+  }
   function keys(e) {
     if (!document.body.contains(pop)) { window.removeEventListener('keydown', keys, true); return; }
-    const act = e.code === 'KeyE' || e.code === 'Digit1' ? 'drag' : e.code === 'Digit2' ? 'cut' : null;
+    const act = e.code === 'KeyE' || e.code === 'Digit1' ? 'drag' : e.code === 'Digit2' ? 'cut' : e.code === 'Digit3' && !d.baited ? 'bait' : e.code === 'Digit4' && d.canStuff && !d.trophy && !d.baited ? 'stuff' : null;
     if (!act) return;
     e.preventDefault(); e.stopPropagation();
     pop.remove(); window.removeEventListener('keydown', keys, true);
-    if (act === 'drag') world?.dragCarcass(); else world?.cutCarcass();
+    carcassAct(act);
+  }
+  setTimeout(() => window.addEventListener('keydown', keys, true), 50);
+}
+// Taxidermy: keep the head, the head and paws (or hooves, or feet), or the whole body (keys 1 to 3)
+function showTaxidermy(d) {
+  world?.releaseMouse?.();
+  const L = d.limbs, opts = [
+    ['head', 'Head only', 1, 'Mounted on a plaque. The body stays, to cut up for meat and hide.'],
+    ['paws', `Head and ${L}`, 2, `Mounted together. The body stays, to cut up (a little less hide).`],
+    ['full', 'Full body', 3, 'The whole animal, stuffed and on a stand. Nothing is left to cut up.'],
+  ];
+  const pop = showItemPop(`<div class="item-pop-box" role="dialog" aria-label="Taxidermy">
+      <button type="button" class="sw-close" data-pop-close aria-label="Close">×</button>
+      <h3>Taxidermy: ${escHtml(d.name)}</h3>
+      <p class="bag-hint">You have ${d.kits} Taxidermy Kit${d.kits === 1 ? '' : 's'}. You also need a blade in hand or a Hunting Knife. The trophy goes in your bag as furniture for a home, or to sell.</p>
+      <div class="pop-actions" style="flex-direction:column;align-items:stretch">
+        ${opts.map(([how, label, kits, about], i) => `<button type="button" class="gold-button small" data-stuff="${how}"${d.kits < kits ? ` title="Needs ${kits} kits"` : ''}>${label} (${i + 1}) · ${kits} kit${kits > 1 ? 's' : ''}</button><p class="bag-hint" style="margin:2px 0 8px">${about}</p>`).join('')}
+      </div>
+    </div>`, (e, close) => {
+    const how = e.target.closest('[data-stuff]')?.dataset.stuff;
+    if (!how) return;
+    close(); window.removeEventListener('keydown', keys, true);
+    world?.stuffCarcass(how);
+  });
+  function keys(e) {
+    if (!document.body.contains(pop)) { window.removeEventListener('keydown', keys, true); return; }
+    const how = { Digit1: 'head', Digit2: 'paws', Digit3: 'full' }[e.code];
+    if (!how) return;
+    e.preventDefault(); e.stopPropagation();
+    pop.remove(); window.removeEventListener('keydown', keys, true);
+    world?.stuffCarcass(how);
   }
   setTimeout(() => window.addEventListener('keydown', keys, true), 50);
 }

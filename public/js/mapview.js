@@ -3,7 +3,7 @@
 import { drawWorldMap } from './world/mapdraw.js';
 import { createTerrainPainter } from './world/terrainmap.js';
 import { toMap, toWorld, METRES_PER_PX, placesWithPositions, PLOT } from './data/world-layout.mjs';
-import { allPortals, portalsFrom } from './data/portals.mjs';
+import { allPortals, portalsFrom, portalLevel } from './data/portals.mjs';
 import { allCastles } from './data/kings.mjs';
 import { CITY_R } from './data/world-layout.mjs';
 import { drawCityPlan } from './world/cityplan.js';
@@ -66,6 +66,10 @@ const distText = (m) => (m >= 1000 ? `${m / 1000} km` : `${m} m`);
 export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: [] }, pick = null, travel = null) {
   const portals = allPortals();
   const reachable = travel ? portalsFrom(travel.from) : [];
+  // on a portal's map: how strong the monsters are round each one (a portal won't send you where
+  // they are stronger than you)
+  const lvOf = new Map(reachable.map((p) => [p, portalLevel(p)]));
+  const locked = (p) => travel && (lvOf.get(p) ?? 0) > (travel.level ?? Infinity);
   if (travel) {
     // open on the whole continent
     const pts = [travel.from, ...reachable].map((q) => toMap(q.x, q.z));
@@ -80,7 +84,7 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
     <div class="status-window map-window" role="dialog" aria-label="${travel ? 'Portal' : 'World map'}">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       <h2>${travel ? `${esc(travel.from.name)}: where to?` : 'World Map'}</h2>
-      ${travel ? `<div class="portal-pick" aria-live="polite"><p>Tap a glowing portal on this continent to see the fee. Portals can't cross the sea to another continent.</p></div>` : ''}
+      ${travel ? `<div class="portal-pick" aria-live="polite"><p>Tap a glowing portal on this continent to see the fee. Portals can't cross the sea, and only open where the monsters are your level or lower (red ones show the level you need).</p></div>` : ''}
       <div class="map-frame">
         <canvas width="${W}" height="${H}" aria-label="World map with your position"></canvas>
         <div class="map-zoom">
@@ -228,13 +232,14 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
       if (x < -60 || y < -30 || x > W + 60 || y > H + 30) continue;
       const open = !travel || reachable.includes(pt), here = travel && pt === travel.from, chosen = travel && pt === travel.to;
       if (travel && !open && !here) { ctx.globalAlpha = 0.25; }
-      ctx.strokeStyle = chosen ? '#fff' : here ? '#ffd76a' : '#b98cff'; ctx.lineWidth = chosen || here ? 3.5 : 2.5;
-      ctx.fillStyle = 'rgba(60, 20, 120, 0.6)';
+      const shut = open && !here && locked(pt);
+      ctx.strokeStyle = chosen ? '#fff' : here ? '#ffd76a' : shut ? '#d0605a' : '#b98cff'; ctx.lineWidth = chosen || here ? 3.5 : 2.5;
+      ctx.fillStyle = shut ? 'rgba(90, 20, 20, 0.6)' : 'rgba(60, 20, 120, 0.6)';
       ctx.beginPath(); ctx.arc(x, y, travel ? 7 : 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       if ((travel && (open || here)) || view.zoom >= 4) {
-        const label = here ? 'You are here' : pt.name.replace(/ Portal$/, '');
+        const label = here ? 'You are here' : shut ? `🔒 Lv ${lvOf.get(pt)}` : pt.name.replace(/ Portal$/, '');
         ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(label, x, y - 11);
-        ctx.fillStyle = chosen ? '#fff' : here ? '#ffd76a' : '#e2d2ff'; ctx.fillText(label, x, y - 11);
+        ctx.fillStyle = chosen ? '#fff' : here ? '#ffd76a' : shut ? '#ffb0a8' : '#e2d2ff'; ctx.fillText(label, x, y - 11);
       }
       ctx.globalAlpha = 1;
     }

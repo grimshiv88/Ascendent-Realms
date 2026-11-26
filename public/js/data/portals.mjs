@@ -2,6 +2,7 @@
 // same continent for a fee. No portal reaches across the sea to another continent.
 // Shared by the game and the server, so both agree where portals stand and what a trip costs.
 import { REGIONS, PLACES, toWorld, sample } from './world-layout.mjs';
+import { wildLevelAt } from './wilds.mjs';
 
 // how close you need to stand to use one (metres)
 export const PORTAL_REACH = 5;
@@ -60,8 +61,23 @@ export function allPortals() {
   return list;
 }
 export const portalById = (id) => allPortals().find((p) => p.id === id) || null;
-// the portals you can reach from this one: the others on the same continent
+// the portals on the same continent as this one (each still needs your level: see portalOpen)
 export const portalsFrom = (from) => allPortals().filter((p) => p.region === from.region && p.id !== from.id);
+
+// How strong the monsters round a portal are: the strongest wild monster level at its stone or
+// anywhere within 150 m of it (where you step out). A portal only takes you where the monsters are your level or lower,
+// so nobody is sent somewhere they can't survive. (Players' settled land calms the wilds, so a
+// portal can open to lower levels as the land round it is built on.)
+export const PORTAL_AREA = 150;
+export function portalLevel(p) {
+  let lv = wildLevelAt(p.x, p.z);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    lv = Math.max(lv, wildLevelAt(p.x + Math.cos(a) * PORTAL_AREA, p.z + Math.sin(a) * PORTAL_AREA));
+  }
+  return lv;
+}
+export const portalOpen = (p, level) => portalLevel(p) <= level;
 export const nearestPortal = (x, z, reach = PORTAL_REACH) => allPortals().find((p) => Math.hypot(p.x - x, p.z - z) <= reach) || null;
 
 // The fee grows with how far you go: 10 Copper plus 1.5 Copper a kilometre

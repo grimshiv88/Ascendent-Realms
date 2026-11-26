@@ -59,6 +59,8 @@ const MARKET_ROW = [
   ['city_smith', 9, 8, 5], ['city_armoury', 9, 8, 5.5], ['furniture_common', 11, 8, 6],
 ];
 export const ESTATE_ID = 'real_estate';
+// the Bank of each great city (see data/economy.mjs)
+export const BANK_ID = 'bank';
 // the house prices at the Real Estate office, by ring (in Copper)
 export const HOUSE_PRICE = { dump: 1500, common: 8000, noble: 60000 };
 export const ACADEMY_W = 10, ACADEMY_D = 9;
@@ -115,10 +117,11 @@ export function cityPlan() {
     shops.push(onRing(MR, ea, w, d, 1, { id: ESTATE_ID, h: 6.5, tier: 'common' }));
     take(MR, ea, w);
   }
-  // lots for the shops of Businessmen, after the city's own shops
+  // lots for the shops of Businessmen, after the city's own shops; the last one holds the city's Bank
   for (let k = 0; k < 4; k++) {
     a -= 7 / MR;
-    lots.push({ x: Math.sin(a) * MR, z: Math.cos(a) * MR, a, size: 12, tier: 'common' });
+    if (k === 3) shops.push(onRing(MR, a, 12, 9, 1, { id: BANK_ID, h: 7, tier: 'common' }));
+    else lots.push({ x: Math.sin(a) * MR, z: Math.cos(a) * MR, a, size: 12, tier: 'common' });
     take(MR, a, 13);
     a -= 8.5 / MR;
   }

@@ -8,7 +8,7 @@ import { EVOLUTIONS, rollKillExp } from '../data/game-data.mjs';
 import { wildLevelAt, stageForLevel, wardedAt } from '../data/wilds.mjs';
 import { ANIMALS, wildAnimalsAt } from '../data/animals.mjs';
 import { buildAnimal, animateAnimal, lieDown } from './animalbody.js';
-import { CORPSE_SECS } from './deaths.js';
+import { CORPSE_SECS, animalWounds, tickAnimalBlood } from './deaths.js';
 import { TAMEABLE } from '../data/mounts.mjs';
 import { BEASTS, BEAST_RETURNS, lairsNear } from '../data/beasts.mjs';
 import { buildBeast, animateBeast, makeBreath, buildLavaLake } from './beasts.js';
@@ -119,7 +119,7 @@ export function monsterHit(atk, level, def) {
 export const monsterExp = (level, stage = 0) => rollKillExp(level, stage);
 
 // `groundAt(x, z, fromY)` is where feet rest (the drawn ground, and built floors); monsters walk on it as players do
-export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null, blockedAt = null, pushOut = null, onCrash = null, onBeast = null }) {
+export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null, blockedAt = null, pushOut = null, onCrash = null, onBeast = null, onSnare = null }) {
 
   // Is something solid (a wall, fence, tree, rock) in the way of `m` stepping to (nx, nz)? Checks
   // its body and its nose, so long animals don't push their heads into walls. Gives back what it hit.
@@ -545,6 +545,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         lieDown(m.body, m.dead / 0.7);
         if (!m.dragged) m.death.left -= dt;
         m.death.t += dt;
+        tickAnimalBlood(m);
         if (m.death.left <= 0 || m.death.harvested) remove(m);
         continue;
       }
@@ -570,7 +571,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       const sense = m.hunting ? 140 : m.state === 'chase' ? 40 : night ? NOTICE + 10 : NOTICE;
       const chase = (m.angry || night) && !p.dead && !hidden && dist < sense;
       const stalk = !chase && m.angry && !p.dead && !hidden && dist < STALK;
-      if (stalk) {
+      const baited = m.kind.animal ? lureMove(m, dt, p, dist, dx, dz) : -1;
+      if (baited >= 0) {
+        m.state = 'wander';
+        speed = baited;
+      } else if (stalk) {
         m.state = 'stalk';
         m.heading = Math.atan2(dx, dz);
         speed = m.speed * 0.5;
@@ -625,6 +630,39 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     }
   }
 
+  // ---------- bait and snares (see husbandry.js) ----------
+  // An animal drawn to a hunter's bait walks to it, unless it is hurt or you come too close (a
+  // hunter waits back out of sight). At the bait the snare catches it: it can't get away for a
+  // while (a wolf or bear still bites if you come within reach), then it tears free.
+  const SNARE_HOLD = 30;
+  function lureMove(m, dt, p, dist, dx, dz) {
+    if (m.snared > 0) {
+      m.snared -= dt;
+      m.heading = Math.atan2(dx, dz) + Math.sin(nowT * 6 + m.x) * 0.5; // tugging at the snare
+      if (Math.sin(nowT * 2.3 + m.z) > 0.7) m.hurt = Math.max(m.hurt, 0.12); // ...and jerking against it
+      if (m.kind.aggressive && !p.dead) {
+        const reach = m.radius + p.radius + 0.6;
+        m.attackCd -= dt;
+        if (dist <= reach + 0.3 && m.attackCd <= 0) { m.attackCd = 1.6; m.lunge = 0.3; onHitPlayer(m); }
+      }
+      if (m.snared <= 0) {
+        m.snared = 0; m.lure = null;
+        if (m.kind.aggressive) { m.angry = true; m.hunting = true; } else m.fleeT = 8;
+        onSnare?.(m, 'free');
+      }
+      return 0;
+    }
+    if (!m.lure) return -1;
+    if (m.hurtBy || (!p.dead && dist < (m.kind.aggressive ? 9 : SHY_RANGE))) { m.lure = null; return -1; }
+    const lx = m.lure.x - m.x, lz = m.lure.z - m.z, ld = Math.hypot(lx, lz);
+    if (ld < 1.2) {
+      if (m.lure.snare) { m.snared = SNARE_HOLD; onSnare?.(m, 'caught'); } else m.lure = null;
+      return 0;
+    }
+    m.heading = Math.atan2(lx, lz);
+    return Math.min(m.speed * 0.55, ld);
+  }
+
   // A grazing animal: wanders and grazes; a shy one bolts when you come close (or run at it),
   // any of them runs when hurt; one you have fed trots after you for a while; farm animals stay
   // in their pens.
@@ -635,8 +673,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const friendly = m.fedT > 0 || m.farm;
     // a wild horse or camel is curious: stand still with food in your bag and it comes to you
     const lured = !friendly && p.lure && TAMEABLE[m.kind.animalId] && !p.dead && m.fleeT <= 0 && dist < 28;
-    if (!friendly && !lured && !p.dead && a.temper === 'shy' && dist < (p.moving && p.running ? SHY_RUN : SHY_RANGE)) m.fleeT = Math.max(m.fleeT, 2.5);
-    if (m.fleeT > 0) {
+    const baited = lureMove(m, dt, p, dist, dx, dz);
+    if (baited < 0 && !friendly && !lured && !p.dead && a.temper === 'shy' && dist < (p.moving && p.running ? SHY_RUN : SHY_RANGE)) m.fleeT = Math.max(m.fleeT, 2.5);
+    if (baited >= 0) {
+      speed = baited;
+    } else if (m.fleeT > 0) {
       m.fleeT -= dt;
       m.heading = Math.atan2(-dx, -dz) + Math.sin(t * 1.7 + m.x) * 0.3;
       speed = m.speed * (m.farm ? 0.5 : 1);
@@ -711,10 +752,12 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     if (m.kind.animal) {
       // a grazing animal runs from the hunter; a wolf or bear turns on them
       if (!m.kind.aggressive) { m.fleeT = 5; m.fedT = 0; }
+      m.hitCount = (m.hitCount || 0) + 1;
       if (m.hp > 0) return null;
       m.dead = 0.001; m.dragged = false;
       m.tag.sprite.visible = false;
       m.death = { corpse: true, animal: true, t: 0, left: CORPSE_SECS, harvested: false };
+      try { animalWounds(m, how, scene); } catch { /* the wounds are only for show */ }
       const a = m.kind.animal;
       return { exp: Math.max(1, Math.round(a.temper === 'fierce' ? monsterExp(m.level, 0) : a.hp / 12)), coins: 0, drops: [], name: a.name, kind: m.kindId, level: m.level, animal: m.kind.animalId };
     }
@@ -755,6 +798,16 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       const m = make(kindId, Math.max(1, level), x, feet(x, z, s.h, s.h), z, extra);
       if (extra.boss) { m.body.scale.multiplyScalar(1.45); m.height *= 1.45; m.radius *= 1.45; }
       return m;
+    },
+    // an animal drawn to bait at (x, z): it comes from 50 to 75 m away (`snare`: a trap waits there)
+    lureAnimal(id, x, z, snare = true) {
+      const a = ANIMALS[id];
+      for (let i = 0; i < 10; i++) {
+        const at = spot(x, z, rand(50, 75));
+        if (!at || isInsideCave?.(at.x, at.z)) continue;
+        return make(`a_${id}`, a.temper === 'fierce' ? levelFor(at.x, at.z) : 1, at.x, at.y, at.z, { lure: { x, z, snare } });
+      }
+      return null;
     },
     // where the great beasts are, and one put in front of you (for testing)
     beastNear: (x, z, r) => list.find((m) => m.kind.beast && !m.dead && Math.hypot(m.x - x, m.z - z) < r) || null,

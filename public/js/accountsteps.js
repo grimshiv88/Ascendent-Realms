@@ -80,7 +80,7 @@ export function accountSteps({ el, show, enter }) {
   function askVerify(sent, r, message = '') {
     const email = r.account.email;
     render(`<h2>Confirm your email</h2><form novalidate>
-      <p class="hint">Type the code from the email we sent to <b>${esc(email)}</b>, or click the button in that email. Check your spam folder too. The code works for 24 hours.</p>
+      <p class="hint">Type the code from the email we sent to <b>${esc(email)}</b>, or click the button in that email. Check your spam folder too. The code works for 5 minutes. If it runs out, press Send the email again.</p>
       ${previewNote(sent)}${message ? `<p class="hint"><b>${esc(message)}</b></p>` : ''}${codeInput()}
       <p class="error" role="alert"></p>
       <button class="gold-button" type="submit">Confirm</button>

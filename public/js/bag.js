@@ -126,6 +126,7 @@ export function renderBag(el, game, selected) {
     if (isGear(sel)) actions.push(`<button type="button" class="gold-button small" data-equip="${keyOf(e)}">${game.isEquipped(e) ? 'Take off' : 'Equip'}</button>`);
     if (e.id === 'torch') actions.push(`<button type="button" class="gold-button small" data-hold-torch>Hold / put out</button>`, `<button type="button" class="gold-button small" data-torch>Place here (T)</button>`);
     if (e.id === 'tent') actions.push(`<button type="button" class="gold-button small" data-tent>Pitch here (P)</button>`);
+    if (e.id === 'shovel') actions.push(`<button type="button" class="gold-button small" data-dig>Dig a test pit here (for oil)</button>`);
     if (e.id === 'firewood') actions.push(`<button type="button" class="gold-button small" data-campfire>Light a campfire here</button>`);
     if (sel.kind === 'seed') actions.push(`<button type="button" class="gold-button small" data-plant="${e.id}">Plant in the bed beside you</button>`);
     if (sel.kind === 'mount') actions.push(`<button type="button" class="gold-button small" data-mount="${e.id}">Call it to you (H)</button>`);
