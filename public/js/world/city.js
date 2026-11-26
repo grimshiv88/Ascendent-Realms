@@ -83,6 +83,15 @@ function doorKeeper() {
     place(d) { d.hinge.updateWorldMatrix(true, false); d.hinge.localToWorld(v.set((d.hinge.userData.w || 1.3) / 2, 1, 0)); d.x = v.x; d.y = v.y; d.z = v.z; },
     // the doors near (x, z), to click or tap
     near(x, z, r) { const out = []; for (const d of doors) { if (d.x === null) this.place(d); if (Math.abs(d.x - x) < r && Math.abs(d.z - z) < r) out.push(d); } return out; },
+    // doors further than `far` aren't drawn (like the window frames): each door is a piece of its
+    // own, and a city's hundreds of doors were a thousand draw calls. Far off, a doorway is a few dots.
+    lod(you, far) {
+      for (const d of doors) {
+        if (d.x === null) this.place(d);
+        const show = Math.hypot(you.x - d.x, you.z - d.z) < far;
+        if (d.hinge.visible !== show) d.hinge.visible = show;
+      }
+    },
     // click a door: it swings open and stays open a while (click again to shut it)
     toggle(d, t) { if (d.open > 0.6) { d.held = 0; d.keepShut = true; } else { d.held = t + 8; d.keepShut = false; } },
     update(you, t = 0) {
@@ -437,7 +446,7 @@ export function buildCity(place, opts = {}) {
     putHome(h, 'sale');
     const out = h.d / 2 + 2.2, side = (h.doorX > 0 ? -1 : 1) * Math.max(h.w / 2 - 1.1, Math.abs(h.doorX) + 1.9); // (beside the door, never in front of it)
     const sx = h.x + h.fx * out + h.fz * side, sz = h.z + h.fz * out - h.fx * side;
-    saleSigns.set(h.id, houseSign(g, sx, ringRel(h.tier), sz, h.rot, solid, cx, cz));
+    saleSigns.set(h.id, houseSign(g, fixed, sx, ringRel(h.tier), sz, h.rot, solid, cx, cz));
   }
   // the junk piled up in the Dump
   for (const j of plan.junk) junkPile(fixed, j, ringRel('dump'), solid, cx, cz);
@@ -623,12 +632,16 @@ export function buildCity(place, opts = {}) {
     stall_scrap: [['#a89a80', '#6a5a4a'], ['#7a5a3a', '#5a5a5a', '#8a6a4a', '#6a4a3a']],
   };
   const vendorRnd = seeded(`${place.id}:market`);
+  // the stalls and the Dump's dirt patches never move: merged at the end like the houses (unmerged,
+  // the market stalls alone were thousands of draw calls, and the game lagged in the city)
+  const market = new THREE.Group();
+  g.add(market);
   plan.stalls.forEach((st, i) => {
     const [colors, goods] = STALL_LOOK[st.id] || STALL_LOOK.stall_greens;
     const { group: sg, solid: parts } = marketStall(MARKETS[st.id].name, colors, goods);
     const y = ringRel(st.tier);
     sg.position.set(st.x, y, st.z); sg.rotation.y = st.rot;
-    fixed.add(sg);
+    market.add(sg);
     const c = Math.cos(st.rot), sn = Math.sin(st.rot);
     const local = (lx, lz) => ({ x: st.x + lx * c + lz * sn, z: st.z - lx * sn + lz * c });
     for (const [lx, lz, r, height] of parts) { const w = local(lx, lz); solid.push({ x: cx + w.x, z: cz + w.z, r, kind: 'wall', height }); }
@@ -646,9 +659,9 @@ export function buildCity(place, opts = {}) {
   plan.yards.forEach((Y) => {
     const y = ringRel(Y.tier);
     const patch = new THREE.Mesh(new THREE.CircleGeometry(3.2, 16), dirtMat);
-    patch.rotation.x = -Math.PI / 2; patch.position.set(Y.x, y + 0.03, Y.z); fixed.add(patch);
+    patch.rotation.x = -Math.PI / 2; patch.position.set(Y.x, y + 0.03, Y.z); market.add(patch);
     const ball = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), ballMats[Y.seed % 3]);
-    ball.position.set(Y.x + 0.8, y + 0.16, Y.z - 0.5); ball.castShadow = true; g.add(ball);
+    ball.position.set(Y.x + 0.8, y + 0.16, Y.z - 0.5); ball.castShadow = true; market.add(ball);
     for (let k = 0; k < Y.kids; k++) {
       const a = (k / Y.kids) * Math.PI * 2 + Y.seed;
       const x = Y.x + Math.cos(a) * 1.8, z = Y.z + Math.sin(a) * 1.8;
@@ -683,6 +696,7 @@ export function buildCity(place, opts = {}) {
     solid.push({ x: cx + I.x, z: cz + I.z, r: 0.5, kind: 'wall', height: 0.5 });
     npcs.push({ kind: 'idler', name: townName(side, vendorRnd), pose: I.pose, x: cx + I.x, z: cz + I.z });
   });
+  mergeStill(market, { cell: 120 });
   // ---------- the checkpoint: the waystone in the Dump where you rise again after a death ----------
   {
     const C = plan.checkpoint, y = ringRel(C.tier);
@@ -702,7 +716,7 @@ export function buildCity(place, opts = {}) {
   let detailAt = -1;
   const update = (t, you, blocked) => {
     centre.update?.(t);
-    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z, detailFar()); }
+    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z, detailFar()); doors.lod(you, detailFar() + 20); for (const sg of saleSigns.values()) sg.lod(you, detailFar()); }
     doors.update(you, t);
     for (const b of guards) if (isShown(b)) animateCharacter(b, t, 0);
     walkFolk(t, you, blocked);
@@ -904,11 +918,12 @@ function garden(fixed, h, y, solid, cx, cz) {
 
 // The board in front of a house for sale: "For sale" and its price, or, once bought, whose it is.
 // Returns { set(owner, house) }.
-function houseSign(g, x, y, z, rot, solid, cx, cz) {
-  const sp = new THREE.Group();
-  sp.position.set(x, y, z);
-  sp.rotation.y = rot;
-  g.add(sp);
+// The posts and board go in `fixed` (merged with the houses); only the two painted faces stay
+// pieces of their own, and they are drawn only near (see lod).
+function houseSign(g, fixed, x, y, z, rot, solid, cx, cz) {
+  const sp = new THREE.Group(), words = new THREE.Group();
+  for (const o of [sp, words]) { o.position.set(x, y, z); o.rotation.y = rot; }
+  fixed.add(sp); g.add(words);
   // two posts at the ends, the board hung between them, so nothing ever covers the words
   const W = 2.3, BH = 0.7, Y = 1.55;
   for (const px of [-W / 2 - 0.08, W / 2 + 0.08]) {
@@ -927,11 +942,13 @@ function houseSign(g, x, y, z, rot, solid, cx, cz) {
   const faces = [1, -1].map((side) => {
     const f = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.06, BH - 0.06), new THREE.MeshBasicMaterial());
     f.position.set(0, Y, side * 0.04); f.rotation.y = side > 0 ? 0 : Math.PI;
-    sp.add(f);
+    words.add(f);
     return f;
   });
   let shown = undefined;
   return {
+    // the words can only be read close up: further than `far` they aren't drawn
+    lod(you, far) { const show = Math.hypot(you.x - cx - x, you.z - cz - z) < far; if (words.visible !== show) words.visible = show; },
     set(owner, house) {
       const text = owner ? `Home of ${owner}` : `For sale · ${moneyWords(house.price)}`;
       if (text === shown) return;

@@ -1,5 +1,6 @@
 // The playable world: the whole map as streamed 3D land, your character, monsters, and a third-person camera.
 import * as THREE from 'three';
+import { GlowLight, lightPool } from './lightpool.js';
 import { createLand } from './land.js';
 import { pickQuality, createSmoothness, isMobile } from './quality.js';
 import { setLeanDetail } from './merge.js';
@@ -89,6 +90,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(HORIZON, quality.fog);
   const camera = new THREE.PerspectiveCamera(60, 1, 0.2, 40000);
+  // the lamps, fires and glows near you share a few real lights (see lightpool.js)
+  const glowLights = lightPool(scene, camera, quality.lights);
 
   // Light: warm afternoon sun, sky fill, and a sun shadow that follows the player
   const sunDir = new THREE.Vector3(60, 90, 40).normalize();
@@ -116,6 +119,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setCrowdFar(q.crowdFar);
     setCityDetail(q.detailFar);
     sun.castShadow = q.shadows;
+    glowLights.setSize(q.lights);
     if (sun.shadow.mapSize.x !== q.shadowSize) { sun.shadow.mapSize.set(q.shadowSize, q.shadowSize); sun.shadow.map?.dispose(); sun.shadow.map = null; }
     if (!depth && !inside) scene.fog.density = q.fog;
     land.setQuality(q);
@@ -479,6 +483,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let camDist = dist;
   // 'free': you turn the camera yourself and move relative to it. 'follow': it stays behind your body.
   let cameraMode = view?.camera === 'follow' ? 'follow' : 'free';
+  // Free camera while the mouse isn't captured (Free Move mouse, or a touch screen): as you walk,
+  // the camera swings round behind you on its own, unless the player turned that off in Settings
+  let camFollow = view?.camFollow !== 'off';
+  let lookEnded = -10; // when you last let go after dragging the camera round
   // 'third': the camera is behind you. 'first': you see through your character's eyes (head hidden,
   // arms and weapon still there). Scrolling all the way in goes to first person, scrolling out comes back.
   let viewMode = view?.view === 'first' ? 'first' : 'third';
@@ -529,7 +537,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (inside) applyIndoor();
   }
   // a soft glow around you at night, so you can still see your feet
-  const lantern = new THREE.PointLight('#ffcf8a', 0, 14, 1.6);
+  const lantern = new GlowLight('#ffcf8a', 0, 14, 1.6);
   scene.add(lantern);
 
   // Torches you place light the area and keep monsters away at night
@@ -552,7 +560,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
   // only the nearest few torches get a real light, to keep the frame rate up
-  const torchLamps = [0, 1, 2, 3].map(() => { const l = new THREE.PointLight('#ff9a3a', 0, 16, 1.5); scene.add(l); return l; });
+  const torchLamps = [0, 1, 2, 3].map(() => { const l = new GlowLight('#ff9a3a', 0, 16, 1.5); scene.add(l); return l; });
   function lightTorches(t) {
     const near = torchLights.map((tl) => ({ tl, d: Math.hypot(tl.x - pos.x, tl.z - pos.z) })).sort((a, b) => a.d - b.d);
     torchLamps.forEach((l, i) => {
@@ -880,7 +888,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const flame = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.22, 8), torchFlame);
     flame.position.y = 0.52;
     // the light itself rides just above your shoulder, so it lights you as well as the way ahead
-    const light = new THREE.PointLight('#ffa040', 0, 24, 1.3);
+    const light = new GlowLight('#ffa040', 0, 24, 1.3);
     g.add(stick, flame);
     g.visible = false;
     return { g, flame, light };
@@ -2009,6 +2017,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       } else if (tap && talkAt(e.clientX, e.clientY)) { /* clicked a townsperson: they talk */
       } else if (tap && look.mouse && clickDoor(e.clientX, e.clientY)) { /* clicked a house door: it swings open or shut */
       } else if (tap && look.mouse) attack();
+      if (!tap) lookEnded = clock.elapsedTime;
       look = null;
     }
   };
@@ -2199,6 +2208,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       let diff = want - heading;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       if (!fp) heading += diff * Math.min(1, dt * TURN);
+      // the mouse is free (not captured): the camera comes round behind you while you walk, so it
+      // looks where you go. Never while you drag it, nor for a moment after; never while you walk
+      // towards the camera (it would spin round and round)
+      if (camFollow && !fp && !locked() && !look && t - lookEnded > 0.8 && turnLeft <= 0) {
+        const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
+        if (Math.abs(back) < 2) { const turn = back * Math.min(1, dt * 2.2) * Math.min(1, amount); yaw += turn; backYaw += turn; }
+      }
       // move the way you want to go, even while still turning to face it
       target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
     }
@@ -2827,6 +2843,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     get graphics() { return quality.key; },
     debug: { scene, renderer, camera }, // (tests: what is drawn, and how much)
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
+    setCameraFollow(on) { camFollow = on !== 'off' && on !== false; },
     setView(mode) { setView(mode); },
     // order a drink in the tavern: `served` runs when the waiter brings it to you (wherever you are inside)
     tavernOrder(served) { if (inside?.built.order) inside.built.order(() => ({ x: pos.x, z: pos.z }), served); },

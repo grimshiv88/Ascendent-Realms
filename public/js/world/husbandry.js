@@ -8,6 +8,7 @@
 //   - bait: a hunted body with a Hunter's Snare Trap set under it draws a bigger meat-eater, and
 //     the snare holds it fast for a while (creatures.js lureMove)
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 import { allFarms } from '../data/farms.mjs';
 import { FARM_HERD, ANIMALS, baitDraws } from '../data/animals.mjs';
 import { sample } from '../data/world-layout.mjs';
@@ -126,7 +127,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     for (let i = 0; i < 4; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.9, 6), log); l.rotation.set(Math.PI / 2 - 0.5, (i / 4) * Math.PI * 2, 0); l.position.y = 0.2; group.add(l); }
     const fm = new THREE.MeshStandardMaterial({ color: '#ffb347', emissive: '#ff7a1a', emissiveIntensity: 3, transparent: true, opacity: 0.9 });
     const flames = [0, 1, 2].map((i) => { const f = new THREE.Mesh(new THREE.ConeGeometry(0.2 - i * 0.04, 0.7 - i * 0.12, 8), fm); f.position.set((i - 1) * 0.09, 0.45, (i % 2) * 0.07); group.add(f); return f; });
-    const light = new THREE.PointLight('#ff9a3c', 12, 13, 1.8); light.position.y = 0.8; group.add(light);
+    const light = new GlowLight('#ff9a3c', 12, 13, 1.8); light.position.y = 0.8; group.add(light);
     scene.add(group);
     fires.push({ x, z, group, flames, light, left: CAMPFIRE_SECS });
     say('You light a campfire. Press E beside it to cook raw meat', 'note');

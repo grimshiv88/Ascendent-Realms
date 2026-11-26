@@ -1,5 +1,6 @@
 // A portal stone: a ring of standing stones around a swirling disc of light, raised on a round dais
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 import { heightAt } from '../data/world-layout.mjs';
 import { ITEMS } from '../data/items.mjs';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
@@ -69,7 +70,7 @@ export function buildPortal(p) {
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 2.2, 7, 24, 1, true), new THREE.MeshBasicMaterial({ color: '#9a6bff', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
   beam.position.y = 3.9;
   group.add(beam);
-  const light = new THREE.PointLight('#a77bff', 6, 14, 1.6);
+  const light = new GlowLight('#a77bff', 6, 14, 1.6);
   light.position.y = 2.2;
   group.add(light);
 
@@ -99,7 +100,7 @@ export function buildPortal(p) {
     l.position.set(lx, 2.6, lz);
     group.add(l);
   }
-  const inLight = new THREE.PointLight('#e0d0ff', 5, 16, 1.4);
+  const inLight = new GlowLight('#e0d0ff', 5, 16, 1.4);
   inLight.position.set(0, 4.5, 0);
   group.add(inLight);
   // two guards outside the door, of the land's own people

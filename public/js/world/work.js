@@ -12,6 +12,7 @@
 //   sew    - a tailor sews a cloth and folds it onto the pile
 //   polish - an armourer polishes a helmet until it shines
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 import { animateCharacter } from '../characters/model.js';
 import { weaponModel } from '../characters/gear.js';
 
@@ -163,7 +164,7 @@ function smithStation(K, group, opts) {
   flame.position.set(FX, 1.18, -0.4);
   group.add(flame);
   box(1.1, 1.6, 0.5, stone, FX, 1.7, -0.7); // the hood and chimney
-  const fire = new THREE.PointLight('#ff8a40', 10, 7, 1.6);
+  const fire = new GlowLight('#ff8a40', 10, 7, 1.6);
   fire.position.set(FX, 1.5, 0.2);
   group.add(fire);
   // the anvil in the middle, on its stump

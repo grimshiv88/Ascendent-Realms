@@ -2,6 +2,7 @@
 // sharpened stakes, a fire in the middle and the village chest beside it, locked until every
 // monster of the village is beaten.
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 import { surfaceAt } from '../data/world-layout.mjs';
 import { textTexture } from './spawn.js';
 import { villageName, sizeOf } from '../data/mobvillages.mjs';
@@ -86,7 +87,7 @@ export function buildMobVillage(v) {
   logs.position.y = at(0, 0) + 0.15;
   const flame = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.3, 7), new THREE.MeshBasicMaterial({ color: '#ff9a3a', transparent: true, opacity: 0.85 }));
   flame.position.y = at(0, 0) + 0.9;
-  const fireLight = new THREE.PointLight('#ff9a3a', 2, 18, 1.5);
+  const fireLight = new GlowLight('#ff9a3a', 2, 18, 1.5);
   fireLight.position.y = at(0, 0) + 1.5;
   g.add(logs, flame, fireLight);
   solid.push({ x: v.x, z: v.z, r: 1, kind: 'fire' });
@@ -113,7 +114,7 @@ export function buildMobVillage(v) {
   lid.add(lidMesh);
   lid.position.set(0, 0.7, 0);
   for (const s of [-0.5, 0.5]) { const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.74, 0.84), gold); band.position.set(s, 0.36, 0); chestG.add(band); }
-  const glow = new THREE.PointLight('#ffd76a', 0, 6, 1.5);
+  const glow = new GlowLight('#ffd76a', 0, 6, 1.5);
   glow.position.y = 1.2;
   chestG.add(box, lid, glow);
   chestG.position.set(cx, at(cx, cz), cz);

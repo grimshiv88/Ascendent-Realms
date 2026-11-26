@@ -3,6 +3,7 @@
 // body that keeps the monster's look). `stage` 0–5 is the evolution stage: each one makes the
 // body clearly bigger and adds new parts. `growth` 0–1 is the small growth between evolutions.
 import * as THREE from 'three';
+import { GlowLight } from '../world/lightpool.js';
 import { childSize } from '../data/birth.mjs';
 import { APPEARANCE } from '../data/game-data.mjs';
 import { hasSculpt, sculptedRig } from './sculpt.js';
@@ -841,7 +842,7 @@ const BUILDERS = {
         rig.wings.push(w);
       }
     }
-    const light = new THREE.PointLight(m.eye.color, form === 'humanoid' ? 0.6 : 0.3, H * 6);
+    const light = new GlowLight(m.eye.color, form === 'humanoid' ? 0.6 : 0.3, H * 6);
     light.position.y = H * 0.6;
     rig.root.add(light);
     rig.hovers = true;

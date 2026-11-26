@@ -2,6 +2,7 @@
 // wyverns whose wings are their front legs, and the Spirit King of the lake, a crowned giant of
 // living water. Built from simple shapes, in metres, standing on the ground at y = 0.
 import * as THREE from 'three';
+import { GlowLight } from './lightpool.js';
 
 const mats = new Map();
 function mat(color, o = {}) {
@@ -167,7 +168,7 @@ function buildDragon(def) {
     const orbM = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#c8a0ff', emissiveIntensity: 3 });
     const orbs = [];
     for (let i = 0; i < 9; i++) { const o = mesh(new THREE.SphereGeometry(L * 0.012, 8, 6), orbM, halo); o.castShadow = false; orbs.push(o); }
-    const light = new THREE.PointLight('#a060ff', 60, L * 4, 1.4); light.position.y = bh * 1.5; beast.add(light);
+    const light = new GlowLight('#a060ff', 60, L * 4, 1.4); light.position.y = bh * 1.5; beast.add(light);
     cosmic = { halo, orbs, light, r: bw * 2.2, wingM };
   }
 
@@ -216,7 +217,7 @@ function buildSpirit(def) {
     const r = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 40), new THREE.MeshBasicMaterial({ color: C.glow, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }));
     r.rotation.x = -Math.PI / 2; r.position.y = 0.05; root.add(r); rings.push(r);
   }
-  const light = new THREE.PointLight(C.glow, 30, 45, 1.6); light.position.y = H * 0.6; root.add(light);
+  const light = new GlowLight(C.glow, 30, 45, 1.6); light.position.y = H * 0.6; root.add(light);
   const mouth = new THREE.Object3D(); arms[1].hand.add(mouth);
   root.userData.beast = { shape: 'spirit', beast, head, arms, orbs, rings, light, mouth, H };
   root.userData.height = H;
@@ -305,7 +306,7 @@ export function makeBreath(kind, len = 16, width = 3) {
     return m;
   };
   const outer = cone(width, len, c2, 0.55), inner = cone(width * 0.45, len * 0.85, c1, 0.8);
-  const light = new THREE.PointLight(c2, 40, len * 2.2, 1.5); light.position.z = len * 0.4; g.add(light);
+  const light = new GlowLight(c2, 40, len * 2.2, 1.5); light.position.z = len * 0.4; g.add(light);
   g.userData.tick = (t) => {
     outer.scale.set(1 + Math.sin(t * 40) * 0.08, 1 + Math.cos(t * 37) * 0.08, 1);
     inner.rotation.z = t * 9;
@@ -331,7 +332,7 @@ export function buildLavaLake(r) {
     c.userData.o = { a, d, s: (Math.random() - 0.5) * 0.02 };
     g.add(c); crusts.push(c);
   }
-  const light = new THREE.PointLight('#ff5a1a', 400, r * 4, 1.2); light.position.y = r * 0.3; g.add(light);
+  const light = new GlowLight('#ff5a1a', 400, r * 4, 1.2); light.position.y = r * 0.3; g.add(light);
   g.userData.tick = (t) => {
     lava.emissiveIntensity = 2 + Math.sin(t * 0.9) * 0.4;
     for (const c of crusts) { const o = c.userData.o; const a = o.a + t * o.s; c.position.x = Math.cos(a) * o.d; c.position.z = Math.sin(a) * o.d; }
@@ -357,7 +358,7 @@ export function buildStarThrone(r = 40) {
   const beamM = new THREE.MeshBasicMaterial({ color: '#b080ff', transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(3, 6, 900, 16, 1, true), beamM); beam.position.y = 450; g.add(beam);
   const core = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.6, 900, 10, 1, true), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending })); core.position.y = 450; g.add(core);
-  const light = new THREE.PointLight('#a070ff', 80, 140, 1.2); light.position.y = 10; g.add(light);
+  const light = new GlowLight('#a070ff', 80, 140, 1.2); light.position.y = 10; g.add(light);
   g.userData.tick = (t) => {
     stones.forEach((s, i) => { s.position.y = 6 + Math.sin(t * 0.6 + i) * 1.2; s.rotation.x = Math.sin(t * 0.4 + i) * 0.1; });
     g.rotation.y = t * 0.05;
@@ -394,7 +395,7 @@ export function makeStarfall(radius = 4.5) {
 export function makeNova(radius = 45) {
   const m = new THREE.MeshBasicMaterial({ color: '#e8c8ff', transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
   const s = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), m);
-  const light = new THREE.PointLight('#c090ff', 0, radius * 3, 1.2); s.add(light);
+  const light = new GlowLight('#c090ff', 0, radius * 3, 1.2); s.add(light);
   s.userData.tick = (k, t) => {
     if (k < 1) { s.scale.setScalar(4 + k * 8 + Math.sin(t * 20) * 0.5); m.opacity = 0.2 + k * 0.4; light.intensity = 100 + k * 400; }
     else { const e = Math.min(1, k - 1); s.scale.setScalar(12 + e * radius); m.opacity = 0.7 * (1 - e); light.intensity = 900 * (1 - e); }

@@ -308,6 +308,7 @@ export function sculptedRig(race, H, colors, mats, stage = 0) {
   root.add(mesh);
   root.updateMatrixWorld(true);
   mesh.bind(new THREE.Skeleton(bones));
+  keepSharp(mesh);
 
   // eyes: a white with a coloured iris and a dark pupil looking ahead, glossy so they catch the light
   // (only evolved forms glow, through the shared eye material's glow)
@@ -343,4 +344,26 @@ export function sculptedRig(race, H, colors, mats, stage = 0) {
   // the arms already rest a little out from the body (armRest), so the animation doesn't push them further
   const tail = tails.length ? { userData: { parts: tails } } : null;
   return { root, H, wingBones: wings, tail, bulk: 1.4, muscle: 0.5, muscleParts: [], hips, spine, neck, head, headR: J.headR * H, chest, arms, legs, torsoLen: tl, sculpt: mesh, sculpted: true, shirt: true, armRest: 0.12, backZ: H * 0.2, padScale: 1.7 };
+}
+
+// Inside buildings (and in caves) you are more than a thousand kilometres from the middle of the
+// world. The graphics card works the body's bones out in plain floats, and that far out a float
+// can only step about 12 cm at a time, so the skin tore into jagged spikes. Here each bone is
+// worked out relative to the body on the computer first (in full precision), so the graphics card
+// only ever sees small numbers.
+const meshInv = new THREE.Matrix4(), boneRel = new THREE.Matrix4();
+function keepSharp(mesh) {
+  const sk = mesh.skeleton;
+  sk.update = function () {
+    meshInv.copy(mesh.matrixWorld).invert();
+    for (let i = 0; i < this.bones.length; i++) {
+      const bone = this.bones[i];
+      boneRel.multiplyMatrices(bone ? bone.matrixWorld : mesh.matrixWorld, this.boneInverses[i]).premultiply(meshInv);
+      boneRel.toArray(this.boneMatrices, i * 16);
+    }
+    if (this.boneTexture) this.boneTexture.needsUpdate = true;
+  };
+  const update = mesh.updateMatrixWorld.bind(mesh);
+  // (the bones are already relative to the body, so nothing more is taken off in the shader)
+  mesh.updateMatrixWorld = (force) => { update(force); mesh.bindMatrixInverse.identity(); };
 }
