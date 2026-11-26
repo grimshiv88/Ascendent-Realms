@@ -9,7 +9,7 @@ import { wildLevelAt, stageForLevel, wardedAt } from '../data/wilds.mjs';
 import { ANIMALS, wildAnimalsAt } from '../data/animals.mjs';
 import { buildAnimal, animateAnimal, lieDown } from './animalbody.js';
 import { CORPSE_SECS, animalWounds, tickAnimalBlood } from './deaths.js';
-import { TAMEABLE } from '../data/mounts.mjs';
+import { TAMEABLE, BEAST_TAME } from '../data/mounts.mjs';
 import { BEASTS, BEAST_RETURNS, lairsNear } from '../data/beasts.mjs';
 import { buildBeast, animateBeast, makeBreath, buildLavaLake, buildStarThrone, makeStarfall, makeNova } from './beasts.js';
 
@@ -294,7 +294,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     if (m.breathHit > 0) {
       m.breathHit -= dt;
       const reach = m.kind.beast.king ? 33 : m.kind.beast.shape === 'spirit' ? 32 : m.kind.beast.shape === 'wyvern' ? 15 : 21;
-      if (m.breathHit <= 0 && !p.dead && Math.hypot(p.x - mouthAt.x, p.z - mouthAt.z) < reach) onHitPlayer(m, m.kind.beast.breath);
+      if (m.breathHit <= 0 && !p.dead && Math.hypot(p.x - mouthAt.x, p.z - mouthAt.z) < reach && Math.abs((p.y ?? mouthAt.y) + 1 - mouthAt.y) < reach * 0.7) onHitPlayer(m, m.kind.beast.breath);
     }
   }
   const turnTo = (m, want, rate, dt) => {
@@ -319,6 +319,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     }
     const L = m.home;
     const fromLair = Math.hypot(p.x - L.x, p.z - L.z);
+    const pAir = p.flying ? Math.max(0, (p.y ?? 0) - groundH(p.x, p.z)) : 0; // (how high you fly)
     const sees = !p.dead && !p.underground && fromLair < b.range;
     // (the King of the Wild Dragons never strikes first: he only fights once you have struck him)
     const calmKing = b.king && !m.angry;
@@ -349,13 +350,37 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     } else if (m.mode === 'dive') {
       // down at you: it breathes from a little way off, then claws and bites from just above
       const close = m.radius + p.radius + 2.5;
-      wantAir = dist > 45 ? Math.min(b.cruise, 14 + dist * 0.35) : dist > 18 ? 9 : 3.5;
+      wantAir = (dist > 45 ? Math.min(b.cruise, 14 + dist * 0.35) : dist > 18 ? 9 : 3.5) + pAir; // (up to you, if you are flying too)
       speed = dist > 25 ? b.fly : Math.max(0, Math.min(b.fly * 0.5, dist - close));
       rate = dist < 30 ? 3 : 1.6;
       const facing = Math.abs(Math.atan2(Math.sin(Math.atan2(dx, dz) - m.heading), Math.cos(Math.atan2(dx, dz) - m.heading)));
       if (b.breath && dist > (b.king ? 10 : 6) && dist < (b.king ? 28 : b.shape === 'wyvern' ? 13 : 18) && m.breathCd <= 0 && facing < 0.5) { breathe(m, p, 1.6); m.breathCd = 6 + Math.random() * 3; }
-      if (dist < close + 1.5 && m.air < 7 && m.attackCd <= 0 && !p.dead) { m.attackCd = 2; m.lunge = 0.3; onHitPlayer(m); }
-      if (m.modeT > 14) { m.mode = 'climb'; m.modeT = 0; }
+      if (dist < close + 1.5 && Math.abs(m.y - (p.y ?? m.y)) < 7 && m.attackCd <= 0 && !p.dead) { m.attackCd = 2; m.lunge = 0.3; onHitPlayer(m); }
+      // after a pass or two it may come down and fight you on the ground (not the King, and not if you fly)
+      if (m.modeT > 14) { m.mode = !b.king && !p.flying && Math.random() < 0.55 ? 'land' : 'climb'; m.modeT = 0; }
+    } else if (m.mode === 'land') {
+      // down beside you, wings wide, then onto its feet
+      const close = m.radius + p.radius + 4;
+      wantAir = dist < 40 ? 0 : 8;
+      speed = dist > close ? Math.min(b.fly * 0.5, dist - close + 2) : 0;
+      rate = 2.2;
+      if (m.air < 0.4) { m.mode = 'ground'; m.modeT = 0; onBeast?.(m, 'land'); }
+      if (m.modeT > 12 || p.flying) { m.mode = 'climb'; m.modeT = 0; }
+    } else if (m.mode === 'ground') {
+      // on its feet: it stalks you, bites and claws, breathes, and sweeps its tail at anyone behind it
+      const close = m.radius + p.radius + 1.5;
+      wantAir = 0; rate = 2;
+      speed = dist > close ? Math.min(b.fly * 0.22, dist - close) : 0;
+      const facing = Math.abs(Math.atan2(Math.sin(Math.atan2(dx, dz) - m.heading), Math.cos(Math.atan2(dx, dz) - m.heading)));
+      m.tailCd = (m.tailCd || 0) - dt;
+      if (facing > 2.2 && dist < b.len * 0.65 && m.tailCd <= 0 && !p.dead) { m.tailCd = 3.5; m.swipe = 0.6; onHitPlayer(m, 'tail'); }
+      else if (b.breath && dist > 5 && dist < (b.shape === 'wyvern' ? 12 : 16) && m.breathCd <= 0 && facing < 0.5) { breathe(m, p, 1.4); m.breathCd = 6 + Math.random() * 3; }
+      else if (dist < close + 1.8 && facing < 0.8 && m.attackCd <= 0 && !p.dead) { m.attackCd = 1.7; m.lunge = 0.3; onHitPlayer(m); }
+      if (m.modeT > 16 + Math.random() * 6 || p.flying || dist > 80) { m.mode = 'climb'; m.modeT = 0; } // (back into the sky)
+    } else if (m.mode === 'downed') {
+      // worn out: it sinks to the ground and lies there panting (now it can be tamed)
+      speed = 0; wantAir = 0; rate = 0.3;
+      if (m.modeT > 45) { m.mode = 'climb'; m.modeT = 0; m.hp = Math.max(m.hp, Math.round(m.maxHp * 0.3)); onBeast?.(m, 'recover'); }
     } else {
       // up and away for a moment, then round for another pass
       tx = m.x + Math.sin(m.heading) * 50; tz = m.z + Math.cos(m.heading) * 50;
@@ -363,18 +388,20 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       if (m.modeT > 4) { m.mode = 'dive'; m.modeT = 0; }
     }
     if (b.king && m.angry && sees) kingPowers(m, dt, t, p, dist);
+    const onFoot = m.mode === 'ground' || m.mode === 'downed' || (m.mode === 'land' && m.air < 3);
     const turn = turnTo(m, Math.atan2(tx - m.x, tz - m.z), rate, dt);
     m.x += Math.sin(m.heading) * speed * dt; m.z += Math.cos(m.heading) * speed * dt;
     const before = m.air;
     m.air += Math.max(-12 * dt, Math.min(9 * dt, wantAir - m.air));
-    m.air = Math.max(2.5, m.air);
+    m.air = Math.max(onFoot ? 0 : 2.5, m.air);
     m.y = groundH(m.x, m.z) + m.air;
     m.hurt = Math.max(0, m.hurt - dt);
     m.lunge = Math.max(0, (m.lunge || 0) - dt);
+    m.swipe = Math.max(0, (m.swipe || 0) - dt);
     const lunge = m.lunge > 0 ? Math.sin((m.lunge / 0.3) * Math.PI) * 1.2 : 0;
     m.body.position.set(m.x + Math.sin(m.heading) * lunge, m.y - lunge * 0.5, m.z + Math.cos(m.heading) * lunge);
     m.body.rotation.y = m.heading;
-    animateBeast(m.body, t, { glow: m.nova ? Math.min(1, m.nova.k) : 0, air: m.air, speed, open: m.breathT > 0 || m.lunge > 0 || !!m.nova, pitch: Math.max(-0.4, Math.min(0.4, -(m.air - before) / dt * 0.04)), bank: Math.max(-0.5, Math.min(0.5, -turn * 0.6)) });
+    animateBeast(m.body, t, { tired: m.mode === 'downed', swipe: m.swipe > 0 ? Math.sin((m.swipe / 0.6) * Math.PI) : 0, glow: m.nova ? Math.min(1, m.nova.k) : 0, air: m.air, speed, open: m.breathT > 0 || m.lunge > 0 || !!m.nova, pitch: Math.max(-0.4, Math.min(0.4, -(m.air - before) / dt * 0.04)), bank: Math.max(-0.5, Math.min(0.5, -turn * 0.6)) });
     stepBreath(m, dt, t, p, dist);
     m.tag.sprite.position.set(m.x, m.y + m.height + 1, m.z);
   }
@@ -832,6 +859,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     if (m.kind.beast) {
       if (m.kind.beast.king && !m.angry) { m.angry = true; m.hover = null; onBeast?.(m, 'wrath'); }
       if (m.mode === 'circle') { m.mode = 'dive'; m.modeT = 0; }
+      // a dragon or wyvern beaten below 15% of its health lands, worn out, and can be tamed
+      if (m.hp > 0 && BEAST_TAME[m.kind.beastId] && !m.downedOnce && m.hp < m.maxHp * 0.15) { m.downedOnce = true; m.mode = 'downed'; m.modeT = 0; endBreath(m); onBeast?.(m, 'downed'); }
       if (m.hp > 0) return null;
       m.dead = 0.001;
       endBreath(m); endNova(m);
@@ -880,6 +909,13 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       return null;
     },
     // where the great beasts are, and one put in front of you (for testing)
+    // a worn-out dragon or wyvern lying within r metres (to tame), and taming it (see world.js)
+    downedNear: (x, z, r) => list.find((m) => m.kind.beast && !m.dead && m.mode === 'downed' && m.air < 1 && Math.hypot(m.x - x, m.z - z) - m.radius < r) || null,
+    tame(m, ok) {
+      if (ok) { if (m.lair) slain.set(m.lair.id, nowT + BEAST_RETURNS); remove(m); return true; }
+      m.mode = 'climb'; m.modeT = 0; m.angry = true; m.hp = Math.max(m.hp, Math.round(m.maxHp * 0.3)); onBeast?.(m, 'shake');
+      return false;
+    },
     beastNear: (x, z, r) => list.find((m) => m.kind.beast && !m.dead && Math.hypot(m.x - x, m.z - z) < r) || null,
     removeWhere(fn) { for (const m of [...list]) if (fn(m)) remove(m); },
     get list() { return list; },

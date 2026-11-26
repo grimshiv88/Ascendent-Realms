@@ -49,6 +49,7 @@ import { createHusbandry } from './husbandry.js';
 import { createOil } from './oil.js';
 import { createCrops } from './crops.js';
 import { createRiding, poseRide } from './riding.js';
+import { BEAST_TAME } from '../data/mounts.mjs';
 import { RIDE_FATIGUE } from '../data/mounts.mjs';
 import { allFarms } from '../data/farms.mjs';
 import { HUNGER_DRAIN, HUNGRY, STARVE_HIT, STARVE_FLOOR } from '../data/hunger.mjs';
@@ -281,7 +282,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       for (const it of doorsNear(pos.x, pos.z, 14)) list.push([it.d.x, it.d.y, it.d.z, 6, () => useDoor(it)]);
     }
     if (!inside) for (const m of creatures?.list || []) if (canHarvest(m) && !m.kind.animal && Math.hypot(m.x - pos.x, m.z - pos.z) < 12) list.push([m.x, m.y + 0.3, m.z, 2.6, () => harvestBody(m)]);
-    if (!inside && !depth) { husbandry?.tapTargets(list); crops?.tapTargets(list); const mt = riding?.mount(); if (mt && !mt.riding) list.push([mt.x, g(mt.x, mt.z) + 1.3, mt.z, 3.2, () => riding.toggle(mt.item)]); }
+    if (!inside && !depth) { husbandry?.tapTargets(list); crops?.tapTargets(list); const mt = riding?.mount(); if (mt && !mt.riding) list.push([mt.x, g(mt.x, mt.z) + 1.3, mt.z, 3.2, () => riding.toggle(mt.item)]); const worn = creatures?.downedNear(pos.x, pos.z, 40); if (worn && !riding?.riding) list.push([worn.x, worn.y + 2, worn.z, worn.radius + 2, () => (Math.hypot(worn.x - pos.x, worn.z - pos.z) - worn.radius < 4 ? tameBeast(worn) : say('Walk up to it to tame it', 'note'))]); }
     for (const e of colliders.near(pos.x, pos.z, 12)) if (e.kind === 'chest') list.push([e.x, (e.y ?? g(e.x, e.z)) + 0.6, e.z, e.r + 1.6, () => openChest(e)]);
     const r = canvas.getBoundingClientRect();
     let best = null, bd = 70;
@@ -647,7 +648,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let lastHurt = -99;
   const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
-    getPlayer: () => ({ x: pos.x, z: pos.z, y: pos.y, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
+    getPlayer: () => ({ x: pos.x, z: pos.z, y: pos.y, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, flying: !!riding?.flying, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
     isNight: () => night,
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
@@ -680,6 +681,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else if (what === 'rise') say('The still water of the lake begins to glow…', 'note');
       else if (what === 'greet' && !m.kind.beast.king) say('The Spirit King rises from the lake: "Walk in peace, traveller. Raise your hand against me and the lake itself will answer."', 'note');
       else if (what === 'greet' && m.kind.beast.king) say(`${name}, ${m.kind.beast.title}, comes down from the stars to look at you: "Small one. I have watched your world turn since before your cities were stone. Go in peace, or strike, and learn what the sky can do."`, 'note');
+      else if (what === 'land') say(`The ${name} lands with a crash and comes at you on foot! Watch its tail`, 'hurt');
+      else if (what === 'downed') say(`The ${name} sinks to the ground, worn out! Use a Dragon Bridle on it now (E beside it) to tame it, or finish it off`, 'exp');
+      else if (what === 'recover') say(`The ${name} gets its breath back and takes to the sky again!`, 'hurt');
+      else if (what === 'shake') {} // (said in tameBeast)
       else if (what === 'wrath') say(`${name} roars, and the sky darkens: "So be it!"`, 'hurt');
       else if (what === 'starfall') say('Stars fall from the sky! Get out of the rings of light!', 'hurt');
       else if (what === 'nova') say(`${name} gathers the light of the stars… get far away before it bursts!`, 'hurt');
@@ -691,9 +696,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (!game || dead) return;
       const s = game.stats();
       // (the King of the Wild Dragons: his breath of the void, falling stars, and the Supernova)
-      const dmg = Math.round(monsterHit(m.atk, m.level, s.def * buffed('def')) * (breath ? ({ cosmic: 1.6, star: 1.2, nova: 2.5 }[breath] ?? 1.5) : 1));
+      const dmg = Math.round(monsterHit(m.atk, m.level, s.def * buffed('def')) * (breath ? ({ cosmic: 1.6, star: 1.2, nova: 2.5, tail: 1.3 }[breath] ?? 1.5) : 1));
       lastHurt = clock.elapsedTime;
-      floatText(breath ? `${{ fire: '🔥', frost: '❄️', storm: '⚡', water: '🌊', cosmic: '🌌', star: '☄️', nova: '💥' }[breath] || ''} -${dmg}` : `-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
+      floatText(breath ? `${{ fire: '🔥', frost: '❄️', storm: '⚡', water: '🌊', cosmic: '🌌', star: '☄️', nova: '💥', tail: '💢' }[breath] || ''} -${dmg}` : `-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
       if (game.damage(dmg)) defeated(m);
     },
   });
@@ -1228,6 +1233,22 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const [id, n] of got) game.addItem(id, n);
     say(`You cut up the body: ${got.map(([id, n]) => `${n} ${ITEMS[id].name}`).join(', ')}`, 'exp');
   }
+  // Taming a worn-out dragon or wyvern with a Dragon Bridle (see creatures.js and data/mounts.mjs)
+  function tameBeast(m) {
+    const id = m.kind.beastId, name = m.kind.name.toLowerCase();
+    const need = Math.ceil(m.level / 2);
+    if (!game.has('dragon_bridle')) { say(`The ${name} is worn out. Use a Dragon Bridle on it now to tame it (the Shop or a Farm Stand sell them, from level 195)`, 'note'); return; }
+    if (game.character.level < need) { say(`The ${name} is too strong for you to tame. You need to be level ${need} or more`, 'note'); return; }
+    game.removeItem('dragon_bridle', 1);
+    const ok = Math.random() < BEAST_TAME[id];
+    if (creatures.tame(m, ok)) {
+      const item = `tamed_${id}`;
+      game.addItem(item, 1);
+      riding?.adopt(item, m.x, m.z, m.heading);
+      say(`You throw the bridle over the ${name}'s head and hold on… it bows its head to you. It is yours! Press H or E beside it to climb on`, 'exp');
+      onEvent?.('tamed', { id });
+    } else say(`The ${name} throws off the bridle and tears it apart! It takes to the sky again…`, 'hurt');
+  }
   function interact() {
     if (!game || dead) return;
     const chest = colliders.near(pos.x, pos.z, 3).find((e) => e.kind === 'chest' && Math.hypot(e.x - pos.x, e.z - pos.z) - e.r < 1.6);
@@ -1242,6 +1263,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
       if (crops?.interactFirst()) return;
       if (husbandry.interact()) return;
+      const worn = !riding?.riding && creatures.downedNear(pos.x, pos.z, 4);
+      if (worn) { tameBeast(worn); return; }
       if (riding?.interact()) return;
       if (crops?.interact()) return;
       const body = corpseNear(pos.x, pos.z, 2.4);
@@ -1843,6 +1866,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const up = (e) => keys.delete(e.code);
   const held = (action) => keys.has(codeFor(action));
   let jumpQueued = false; // the jump button on touch screens
+  let climbFor = 0, flyDown = false; // (flying on a dragon or wyvern)
   // Let go of every key and the touch stick when the game stops hearing the keyboard (another window
   // or tab): a key let go meanwhile never sends its keyup, and you'd keep walking. Opening a window
   // in the game doesn't: keep holding a movement key and you keep moving, let go and you stop.
@@ -2185,7 +2209,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const floatAt = water - bodyH * 0.7;
     swimming = ground < floatAt;
     if (swimming) ground = floatAt;
-    if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = riding?.jump() ?? (game?.injurySpeed() < 1 ? 1.6 : 4.2); airborne = true; fallFrom = pos.y; }
+    if (riding?.flyer()) {
+      // on a dragon or wyvern: Space climbs (and takes off), Shift dives, and it lands on the ground
+      // (over water it hovers just above the waves instead)
+      if (jumpQueued) climbFor = 0.7; // (a tap of the jump button on a phone climbs for a moment)
+      climbFor = Math.max(0, climbFor - dt);
+      const g0 = Math.max(groundAt(pos.x, pos.z), water + 2.5);
+      pos.y = riding.fly(dt, held('jump') || climbFor > 0, held('run') || flyDown, g0, pos.y);
+      if (riding.flying) swimming = false;
+      ground = pos.y; velY = 0; airborne = false; fallFrom = pos.y;
+    }
+    else if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = riding?.jump() ?? (game?.injurySpeed() < 1 ? 1.6 : 4.2); airborne = true; fallFrom = pos.y; }
     jumpQueued = false;
     // walking down a slope keeps your feet on it; only a real drop (a cliff, a ledge) is a fall
     const drop = pos.y - ground;
@@ -2550,6 +2584,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   return {
     rebuildAvatar,
     jump() { jumpQueued = true; },
+    // on a flying mount: the phone's dive button (held) and whether you are in the air
+    flyDown(on) { flyDown = !!on; },
+    get flying() { return !!riding?.flying; },
+    get flyer() { return !!riding?.flyer(); },
     position: () => ({ x: pos.x, z: pos.z, heading }),
     // where you are out in the world (the door you came in by, while indoors)
     outdoors: () => (inside ? { x: inside.back.x, z: inside.back.z } : { x: pos.x, z: pos.z }),
@@ -2613,6 +2651,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugGoLair(kind, back = 150) { const l = allLairs().find((q) => q.kind === kind || q.id === kind); if (!l) return null; const x = l.x + back, z = l.z; this.debugTeleport(x, z); return { x, z }; },
     debugBeast() { const m = creatures.list.find((q) => q.kind.beast); return m ? { name: m.kind.name, x: Math.round(m.x), z: Math.round(m.z), y: Math.round(m.y), air: Math.round(m.air || 0), mode: m.mode, hp: m.hp, maxHp: m.maxHp, risen: m.risen, dead: m.dead, dist: Math.round(Math.hypot(m.x - pos.x, m.z - pos.z)) } : null; },
     debugBeastClose(d = 25, air = 10) { const m = creatures.list.find((q) => q.kind.beast && !q.dead); if (!m) return null; m.x = pos.x + d; m.z = pos.z; m.air = air; m.heading = -Math.PI / 2; if (m.kind.beast.shape !== 'spirit') { m.mode = 'dive'; m.angry = true; } return true; },
+    debugBeastMode(mode) { const m = creatures.list.find((q) => q.kind.beast && !q.dead); if (!m) return null; m.mode = mode; m.modeT = 0; m.angry = true; return true; },
+    debugInteract() { interact(); },
+    debugRide() { return { mount: riding?.mount(), flying: !!riding?.flying, flyer: !!riding?.flyer(), y: pos.y, ground: groundAt(pos.x, pos.z) }; },
     debugHitBeast(dmg) { const m = creatures.list.find((q) => q.kind.beast && !q.dead); if (!m) return null; const r = creatures.hit(m, dmg, 'slash'); finishHit(m, r); return r ? { exp: r.exp, drops: r.drops } : { hp: m.hp }; },
     debugSpawnAnimal(id, dx = 0, dz = 6) { return creatures.spawnAt(`a_${id}`, 1, pos.x + dx, pos.z + dz, { keep: true }); },
     debugTeleport(x, z) { pos.set(x, groundAt(x, z, 1e4), z); snapCam = true; updateSites(x, z); husbandry.updateFarms(x, z); land.update(x, z, Infinity); },

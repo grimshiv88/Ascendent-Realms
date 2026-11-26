@@ -270,7 +270,7 @@ export function animateBeast(root, t, o = {}) {
   beast.rotation.x = flying ? (o.pitch || 0) : 0;
   beast.rotation.z = flying ? (o.bank || 0) : 0;
   // the tail sways, the neck snakes a little
-  tail.forEach((g, i) => { g.rotation.y = Math.sin(t * 1.4 - i * 0.55) * 0.09; });
+  tail.forEach((g, i) => { g.rotation.y = Math.sin(t * 1.4 - i * 0.55) * 0.09 + (o.swipe || 0) * 0.32; }); // (swipe: a sweep of the tail)
   neck.forEach((g, i) => { g.rotation.y = Math.sin(t * 0.9 - i * 0.4) * 0.04; });
   head.rotation.x = 0.25 + (o.open ? -0.15 : 0);
   jaw.rotation.x = o.open ? 0.55 + Math.sin(t * 30) * 0.04 : 0.04;
@@ -280,6 +280,13 @@ export function animateBeast(root, t, o = {}) {
     if (flying) { l.hip.rotation.x = l.front ? 0.9 : 1.1; l.knee.rotation.x = l.front ? -1.2 : 0.6; }
     else { const s = (o.speed || 0) > 0.3 ? step * 0.45 * l.side * (l.front ? 1 : -1) : 0; l.hip.rotation.x = s; l.knee.rotation.x = l.front ? 0.2 : -0.3; }
   }
+  if (o.tired && !flying) {
+    // worn out: down on its belly, head low, breathing hard
+    beast.position.y = y0 * 0.55 + Math.sin(t * 3) * y0 * 0.02;
+    for (const l of legs) { l.hip.rotation.x = l.front ? -0.9 : 0.9; l.knee.rotation.x = l.front ? 1.5 : -1.5; }
+    neck.forEach((g, i) => { g.rotation.x = i < 2 ? 0.1 : 0.25; });
+    head.rotation.x = 0.5;
+  } else neck.forEach((g, i) => { g.rotation.x = i < 2 ? -0.32 : 0.12; });
 }
 
 // A breath (fire, frost, storm or water) from a beast's mouth: a cone of light pointing along +z,

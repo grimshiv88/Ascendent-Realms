@@ -39,7 +39,7 @@ function describeGear(it, plus = 0) {
   }
   if (it.kind === 'furniture') return '🏠 Furniture for a home';
   if (it.kind === 'seed') return '🌱 Plants one bed (E by an empty bed)';
-  if (it.kind === 'mount') return `🐎 Yours to ride · ${MOUNTS[it.mount]?.about || ''}`;
+  if (it.kind === 'mount') return `${MOUNTS[it.mount]?.beast ? '🐉 Yours to fly' : '🐎 Yours to ride'} · ${MOUNTS[it.mount]?.about || ''}`;
   if (it.kind === 'stone') return `💠 Skill Stone · set it into Rare or better gear`;
   if (it.kind === 'coating') return `${EFFECTS[it.coat].icon} Coats a weapon for ${it.hits} hits (Blacksmith)`;
   if (it.kind === 'armour') return `${rankTag(it, plus)} ${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
