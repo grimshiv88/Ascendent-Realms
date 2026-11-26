@@ -327,7 +327,6 @@ export function createSocial(host, { onError, onDone } = {}) {
   return {
     // Enter in the world starts typing
     focusChat() { setOpen(true); if (active === 'friends') openTab('general'); input.focus(); },
-    get typing() { return document.activeElement === input; },
     // open a meeting room's private chat
     openRoom(label) { setOpen(true); openTab(label); },
     refresh: () => poll(true),

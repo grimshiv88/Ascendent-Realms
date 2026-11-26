@@ -837,7 +837,8 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
   .ctl-tab { width: 64px; }
   .ctl-table .ctl-row { flex-wrap: wrap; }
   .ctl-name { flex-basis: 100%; }
-  .ctl-slot .sk-key { min-width: 0; width: 38vw; }
+  .ctl-slot { flex: 1; }
+  .ctl-slot .sk-key { min-width: 0; width: 100%; }
 }
 
 /* what an item is (and so what it merges with) */
