@@ -112,7 +112,9 @@ export const SELF_KINDS = ['heal', 'ward', 'empower'];
 // A spell's rank comes from the level it can first be learned at: Basic (1 to 19), Advanced (20 to
 // 59), Expert (60 to 149) and Master (150 and up). Its kind (the same kinds as skills) comes from
 // what it does: heal = Healing, ward = Defence, empower = Support, a pin = Control, else Attack.
-export const spellRank = (sp) => (sp.level >= 150 ? 'master' : sp.level >= 60 ? 'expert' : sp.level >= 20 ? 'advanced' : 'basic');
+// a spell's rank, F to SSS, from the level it is learned at
+const SPELL_RANK_FROM = [['SSS', 200], ['SS', 120], ['S', 90], ['A', 60], ['B', 40], ['C', 20], ['D', 10], ['E', 5]];
+export const spellRank = (sp) => SPELL_RANK_FROM.find(([, lv]) => sp.level >= lv)?.[0] || 'F';
 export function spellCategory(sp) {
   if (sp.kind === 'heal') return 'healing';
   if (sp.kind === 'ward') return 'defence';

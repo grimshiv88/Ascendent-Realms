@@ -2,7 +2,8 @@
 // type: strike (one foe in front), sweep (every foe around you), bolt (a foe further away, in front),
 // dash (charge forward and hit what you reach), heal (restore part of your HP), buff (raise ATK or DEF
 // for a while). mult multiplies your ATK (or MATK when magic).
-// rank: how rare and strong a skill is. Basic skills come easily; Advanced, Expert and Master skills
+// rank: how rare and strong a skill is, written as a band (basic, advanced, expert, master) that is
+// turned into letter ranks F to SSS further down. Basic skills come easily; Advanced, Expert and Master skills
 // are harder to get and only come once you have climbed far enough (see SKILL_RANKS).
 // cls: the classes that are offered it first ('any' = a general skill everyone is offered often).
 // The newer skills also carry: el (the element their effect is drawn in; 'Steel' for plain weapon
@@ -162,13 +163,20 @@ for (const [id, s] of Object.entries(SKILLS)) {
 }
 
 // ---------- ranks ----------
-// Basic skills come easily from the first upgrade. Advanced, Expert and Master skills are rarer and
-// only come once you reach their level (an admin can give any skill at any level).
+// Skills and spells are ranked like everything else in the realm, from F (the lowest) up to SSS.
+// F skills come easily from the first upgrade; each higher rank is rarer and only comes once you
+// reach its level (an admin can give any skill at any level).
+export const LETTER_RANKS = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
 export const SKILL_RANKS = [
-  { id: 'basic', name: 'Basic', from: 1, weight: 6 },
-  { id: 'advanced', name: 'Advanced', from: 100, weight: 3 },
-  { id: 'expert', name: 'Expert', from: 250, weight: 1.4 },
-  { id: 'master', name: 'Master', from: 500, weight: 0.5 },
+  { id: 'F', name: 'F-Rank', from: 1, weight: 6 },
+  { id: 'E', name: 'E-Rank', from: 25, weight: 5 },
+  { id: 'D', name: 'D-Rank', from: 100, weight: 3 },
+  { id: 'C', name: 'C-Rank', from: 175, weight: 2.4 },
+  { id: 'B', name: 'B-Rank', from: 250, weight: 1.4 },
+  { id: 'A', name: 'A-Rank', from: 375, weight: 1 },
+  { id: 'S', name: 'S-Rank', from: 500, weight: 0.5 },
+  { id: 'SS', name: 'SS-Rank', from: 750, weight: 0.3 },
+  { id: 'SSS', name: 'SSS-Rank', from: 1000, weight: 0.15 },
 ];
 export const rankInfo = (id) => SKILL_RANKS.find((r) => r.id === id) || SKILL_RANKS[0];
 export const rankIndex = (id) => Math.max(0, SKILL_RANKS.findIndex((r) => r.id === id));
@@ -247,6 +255,13 @@ export function skillCategory(s) {
 export const SKILL_SHAPES = { strike: 'One foe in front', sweep: 'All round you', bolt: 'At range', dash: 'Rush', heal: 'On yourself', buff: 'On yourself' };
 // how strong a skill is, to rank skills of one kind
 export const skillPower = (s) => (s.mult || 0) * (s.radius ? 1.3 : 1) + (s.pct || 0) / 20 + (s.sp || 0) / 50 + (s.stun || 0) * 0.3 + (s.hold || 0) * 0.1;
+// Each skill above is written in one of four bands; a band's skills are spread over its letter
+// ranks by cost (the stronger ones cost more SP), so every rank from F to SSS has its own skills.
+const BAND_LETTERS = { basic: ['F', 'E'], advanced: ['D', 'C'], expert: ['B', 'A'], master: ['S', 'SS', 'SSS'] };
+for (const [band, letters] of Object.entries(BAND_LETTERS)) {
+  const list = Object.values(SKILLS).filter((s) => s.rank === band).sort((a, b) => a.sp - b.sp || skillPower(a) - skillPower(b) || a.id.localeCompare(b.id));
+  list.forEach((s, i) => { s.rank = letters[Math.min(letters.length - 1, Math.floor((i * letters.length) / list.length))]; });
+}
 // skill ids grouped by kind (defence first, attack last), strongest first in each:
 // [{ id, name, icon, skills: [ids] }]
 export function byCategory(ids) {
