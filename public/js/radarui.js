@@ -92,8 +92,8 @@ export function createRadar(host, { read, onOpen }) {
         </div>
       </div>
     </div>`);
-  const box = host.querySelector('.rd:last-of-type');
-  const big = host.querySelector('.rd-big:last-of-type');
+  const last = (sel) => [...host.querySelectorAll(sel)].pop();
+  const box = last('.rd'), big = last('.rd-big');
   const canvas = box.querySelector('canvas'), ctx = canvas.getContext('2d');
   const rangeEl = box.querySelector('.rd-range'), list = box.querySelector('.rd-list');
   const bigCanvas = big.querySelector('canvas'), bctx = bigCanvas.getContext('2d');
@@ -114,7 +114,7 @@ export function createRadar(host, { read, onOpen }) {
     const size = Math.round(bigCanvas.clientWidth * (window.devicePixelRatio || 1));
     if (size && bigCanvas.width !== size) { bigCanvas.width = size; bigCanvas.height = size; }
     drawDisc(bctx, bigCanvas.width, r, { span: view.span, ox: view.ox, oz: view.oz, big: true });
-    bigRange.textContent = `edge ${far(view.span)}${view.ox || view.oz ? ' · looking around' : ''}`;
+    bigRange.textContent = `edge ${far(view.span)}${Math.hypot(view.ox, view.oz) > view.span * 0.05 ? ' · looking around (◎ to come back)' : ''}`;
     bigList.innerHTML = r.beasts.slice(0, 25).map((b) => row(b, r)).join('');
   }
   function draw() {
