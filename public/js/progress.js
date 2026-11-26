@@ -59,6 +59,7 @@ function giveSpell(c) {
 }
 
 export function createProgress(c, { save, onChange, onEvent }) {
+  let noDeath = false; // an admin's Can't die power is on
   // the admins' health and healing numbers, sent with the character (see TUNING)
   if (c.tuning) { setTuning(c.tuning); delete c.tuning; }
   c.inventory ||= [];
@@ -673,10 +674,13 @@ export function createProgress(c, { save, onChange, onEvent }) {
     },
     // Returns true if this hit defeated you
     damage(n) {
+      // an admin who can't die (data/staff.mjs) is never brought below 1 HP
+      if (noDeath) { c.hp = Math.max(Math.min(c.hp, 1), c.hp - n); changed('hp'); return false; }
       c.hp = Math.max(0, c.hp - n);
       changed('hp');
       return c.hp <= 0;
     },
+    setNoDeath(v) { noDeath = !!v; },
     respawn() {
       c.hp = stats().hp;
       c.sp = stats().sp;

@@ -63,7 +63,8 @@ const distText = (m) => (m >= 1000 ? `${m / 1000} km` : `${m} m`);
 // `pick(x, z)`, when given (the land grid is open), is called when you tap a spot to buy land there;
 // `travel`, when given ({ from, to, onPick }), turns the map into a portal's: tap a portal on this
 // continent to choose it
-export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: [] }, pick = null, travel = null) {
+// `warp(x, z)`, when given (an admin's Teleport power is on), is called when you tap any spot.
+export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: [] }, pick = null, travel = null, warp = null) {
   const portals = allPortals();
   const reachable = travel ? portalsFrom(travel.from) : [];
   // on a portal's map: how strong the monsters are round each one (a portal won't send you where
@@ -95,7 +96,7 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
         </div>
         ${pick ? '<div class="map-basket" role="status" hidden></div>' : ''}
       </div>
-      <p class="map-note">${travel ? '' : 'Purple rings are portals. '}Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pick ? '<b>Land grid is open: zoom in and tap squares to choose them, then press Buy. The dashed square is how far you can buy (1 km across, around you).</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
+      <p class="map-note">${warp && !pick && !travel ? '<b>Teleport is on: tap anywhere to go there.</b> ' : ''}${travel ? '' : 'Purple rings are portals. '}Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pick ? '<b>Land grid is open: zoom in and tap squares to choose them, then press Buy. The dashed square is how far you can buy (1 km across, around you).</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
     </div>`;
   // the painted map, drawn once at twice the size so it stays sharp when zoomed a little
   const full = document.createElement('canvas');
@@ -325,6 +326,14 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
         const w = toWorld(view.cx + (x - W / 2) / view.zoom, view.cy + (y - H / 2) / view.zoom);
         if ((PLOT / METRES_PER_PX) * view.zoom >= 8) pick(w.x, w.z);
         else zoomAt(4, x, y); // too small to tap a square: zoom in on it first
+      }
+    }
+    // an admin's Teleport power: a tap anywhere goes there
+    if (warp && !pick && !travel && tap && e.type === 'pointerup' && touches.size === 1) {
+      const [x, y] = pointer(e);
+      if (Math.hypot(x - tap[0], y - tap[1]) < 6) {
+        const w = toWorld(view.cx + (x - W / 2) / view.zoom, view.cy + (y - H / 2) / view.zoom);
+        warp(w.x, w.z);
       }
     }
     tap = null;

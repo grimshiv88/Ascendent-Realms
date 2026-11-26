@@ -645,6 +645,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   // ---------- monsters ----------
   let dead = false;
+  // the powers an admin turned on (see data/staff.mjs): { fly, nodeath, speed }
+  let powers = {};
   let lastHurt = -99;
   const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
@@ -839,6 +841,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // A death: main.js decides whether you rise at a shrine or it is the end (see data/life.mjs)
   function defeated(m, cause = 'monster') {
     if (dead) return;
+    // an admin who can't die: brought back to their feet instead
+    if (powers.nodeath) { game?.heal(1); if (cause === 'drown' || cause === 'fall') say('Death passes you by.', 'note'); return; }
     dead = true;
     onEvent?.('defeated', { by: m.kind.name, cause });
   }
@@ -2176,7 +2180,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (Math.abs(fz) > 0.05) {
         const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
         move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
-        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1);
+        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
       }
       if (!look) {
         const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
@@ -2196,7 +2200,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       if (!fp) heading += diff * Math.min(1, dt * TURN);
       // move the way you want to go, even while still turning to face it
-      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1);
+      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
@@ -2244,6 +2248,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const floatAt = water - bodyH * 0.7;
     swimming = ground < floatAt;
     if (swimming) ground = floatAt;
+    // an admin's Fly power (outdoors, on foot): Jump goes up, Fly down goes down, and you hang in the air
+    const flying = powers.fly && !dead && !inside && !depth && !riding?.riding;
     if (riding?.flyer()) {
       // on a dragon or wyvern: Space climbs (and takes off), Shift dives, and it lands on the ground
       // (over water it hovers just above the waves instead)
@@ -2254,12 +2260,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (riding.flying) swimming = false;
       ground = pos.y; velY = 0; airborne = false; fallFrom = pos.y;
     }
+    else if (flying) {
+      const climb = (running ? 18 : 7) * dt;
+      if (held('jump') || jumpQueued) pos.y += climb;
+      if (held('flydown') || flyDown) pos.y -= climb;
+      pos.y = Math.min(Math.max(pos.y, ground), ground + 600);
+      velY = 0; airborne = pos.y > ground + 0.05; fallFrom = pos.y;
+    }
     else if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = riding?.jump() ?? (game?.injurySpeed() < 1 ? 1.6 : 4.2); airborne = true; fallFrom = pos.y; }
     jumpQueued = false;
     // walking down a slope keeps your feet on it; only a real drop (a cliff, a ledge) is a fall
     const drop = pos.y - ground;
     // stepping up (a stair, a log, a bridge) lifts you over a moment instead of in one jump
-    if (!airborne && drop < 0.35 + speedNow * dt * 2.2) { pos.y = drop < -0.05 && drop > -0.85 ? pos.y + Math.min(-drop, dt * 5) : ground; velY = 0; } else {
+    if (flying) { /* held in the air above */ } else if (!airborne && drop < 0.35 + speedNow * dt * 2.2) { pos.y = drop < -0.05 && drop > -0.85 ? pos.y + Math.min(-drop, dt * 5) : ground; velY = 0; } else {
       if (!airborne && drop > 0) { airborne = true; fallFrom = pos.y; }
       velY -= 9.81 * dt;
       pos.y += velY * dt;
@@ -2619,6 +2632,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   return {
     rebuildAvatar,
     jump() { jumpQueued = true; },
+    // an admin's powers turned on or off; landing after flying never hurts
+    setPowers(p) {
+      if (powers.fly && !p.fly) fallFrom = -Infinity;
+      powers = { ...p };
+    },
     // on a flying mount: the phone's dive button (held) and whether you are in the air
     flyDown(on) { flyDown = !!on; },
     get flying() { return !!riding?.flying; },

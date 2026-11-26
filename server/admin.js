@@ -1,19 +1,21 @@
 // The admin board: the game owner can see every account and character, set a new password for a
 // player who forgot theirs, sign an account out everywhere, or delete it.
-// Admins are the accounts whose emails are listed in the ADMIN_EMAILS setting (comma-separated).
+// The owner is the accounts whose emails are listed in the ADMIN_EMAILS setting (comma-separated);
+// the owner can give other accounts admin access with chosen permissions (see server/staff.js).
 // Passwords are stored hashed, so nobody (admins included) can read them; they can only be replaced.
 const db = require('./db');
 const mail = require('./mail');
 const { checkBirthdate, ageOf } = require('../public/js/data/birthdate.mjs');
 const { hashPassword, shownEmail } = require('./auth');
 
-const adminEmails = () => (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
-// (once emails can be sent, only after the admin has confirmed the email, so nobody else can sign up with it)
-const isAdmin = (account) => !!account && adminEmails().includes(String(account.email).toLowerCase()) && (!!account.email_verified || !mail.ready());
+const staff = require('./staff');
+const ST = require('../public/js/data/staff.mjs');
+const adminEmails = staff.ownerEmails;
+const isAdmin = staff.isOwner;
 
 async function accounts() {
   const rows = await db.all(`
-    SELECT a.id, a.email, a.username, a.created_at, a.birthdate, c.data, c.updated_at,
+    SELECT a.id, a.email, a.username, a.created_at, a.birthdate, a.admin_perms, c.data, c.updated_at,
       (SELECT COUNT(*)::int FROM sessions s WHERE s.account_id = a.id) AS sessions,
       (SELECT COUNT(*)::int FROM lands l WHERE l.account_id = a.id) AS plots
     FROM accounts a LEFT JOIN characters c ON c.account_id = a.id
@@ -23,7 +25,7 @@ async function accounts() {
       const c = r.data ? JSON.parse(r.data) : null;
       return {
         id: r.id, email: shownEmail(r.email), username: r.username, birthdate: r.birthdate || null, age: ageOf(r.birthdate), createdAt: r.created_at, lastPlayed: r.updated_at,
-        signedIn: r.sessions > 0, plots: r.plots, admin: adminEmails().includes(r.email.toLowerCase()),
+        signedIn: r.sessions > 0, plots: r.plots, admin: adminEmails().includes(r.email.toLowerCase()), staff: !!staff.staffOf(r),
         character: c && { name: c.name, race: c.race, cls: c.cls, form: c.form, level: c.level, coins: c.coins, exp: c.exp },
       };
     }),
@@ -106,7 +108,7 @@ async function stats() {
 
 // One player's full card: the account and everything about the character
 async function player({ id }) {
-  const a = await db.get(`SELECT a.id, a.username, a.email, a.created_at, a.last_seen, a.banned_until, a.ban_reason, a.muted_until, a.country, a.birthdate,
+  const a = await db.get(`SELECT a.id, a.username, a.email, a.email_verified, a.created_at, a.last_seen, a.banned_until, a.ban_reason, a.muted_until, a.country, a.birthdate, a.admin_perms,
       c.data, c.updated_at,
       (SELECT COUNT(*)::int FROM lands l WHERE l.account_id = a.id) AS plots,
       (SELECT COUNT(*)::int FROM cave_owners v WHERE v.account_id = a.id) AS caves,
@@ -121,6 +123,7 @@ async function player({ id }) {
       online: now - (a.last_seen || 0) < S.ONLINE_MS,
       banned: a.banned_until === -1 || a.banned_until > now ? { until: a.banned_until, reason: a.ban_reason || '' } : null,
       muted: a.muted_until > now ? { until: a.muted_until } : null,
+      owner: staff.isOwner(a), staff: staff.staffOf(a),
       owns: { plots: a.plots, caves: a.caves, homes: a.homes },
       character: c && {
         name: c.name, race: c.race, cls: c.cls, form: c.form, level: c.level, exp: c.exp, coins: c.coins, hp: c.hp, sp: c.sp,
@@ -433,6 +436,9 @@ async function ban(body, me) {
   }
   const days = body.forever ? -1 : int(body.days, 1, 3650);
   if (days === null) return { error: 'Choose how many days, or forever.' };
+  // an admin the owner made can ban only for as many days as the owner allowed them, and never forever
+  const mine = staff.access(me);
+  if (!mine?.owner && (days === -1 || days > (mine?.banDays || 0))) return { error: `You can ban for ${mine?.banDays || 0} day(s) at most. Only the owner can ban for longer or forever.` };
   const reason = short(body.reason, 200);
   if (!reason) return { error: 'Write the reason. The player will see it.' };
   const until = days === -1 ? -1 : Date.now() + days * 86400000;
@@ -570,7 +576,32 @@ async function adminLog() {
   return { log: rows.map((r) => ({ at: r.at, admin: r.admin, action: r.action, target: r.target, detail: r.detail })) };
 }
 
+// ---------- admin access for other accounts (the owner alone gives it) ----------
+// What the signed-in admin may do, so the board shows only that
+async function me(q, acc) {
+  const a = staff.access(acc);
+  return { username: acc.username, owner: a.owner, perms: a.perms, banDays: a.banDays, boardPerms: ST.BOARD_PERMS, gamePowers: ST.GAME_POWERS, banDaysDefault: ST.BAN_DAYS_DEFAULT };
+}
+// Every account the owner gave admin access to
+async function staffList() {
+  const rows = await db.all("SELECT id, username, email, email_verified, admin_perms FROM accounts WHERE admin_perms IS NOT NULL AND admin_perms <> '' ORDER BY lower(username)");
+  return { staff: rows.map((r) => ({ id: r.id, username: r.username, ...staff.staffOf(r) })).filter((r) => r.perms) };
+}
+// Give an account admin access with the ticked permissions, change them, or take it away (no perms)
+async function setStaff(body, me) {
+  const acc = await db.get('SELECT id, username, email, email_verified, admin_perms FROM accounts WHERE id = ?', int(body.id, 1, 2e9) || 0);
+  if (!acc) return { error: 'No such account.' };
+  if (staff.isOwner(acc)) return { error: 'This is an owner account: it can do everything already.' };
+  const s = ST.cleanStaff(body);
+  const before = staff.staffOf(acc);
+  await db.run('UPDATE accounts SET admin_perms = ? WHERE id = ?', s.perms.length ? JSON.stringify(s) : null, acc.id);
+  await log(me, s.perms.length ? (before ? 'change admin access' : 'give admin access') : 'take admin access', acc.username,
+    s.perms.length ? `${s.perms.join(', ')}${s.perms.includes('ban') ? ` (bans up to ${s.banDays} day(s))` : ''}` : '');
+  return { ok: true, ...(await player({ id: acc.id })) };
+}
+
 module.exports = {
+  me, staffList, setStaff,
   pastLives, editPastLife, restoreLife, appointLeader, tuning, setTuning, skillsBoard, leaders: async () => ({ leaders: await cults.leaders() }),
   isAdmin, accounts, setPassword, setBirthdate, signOutEverywhere, remove, log,
   stats, player, catalogue, edit, move, ban, mute, chat, deleteMessage, reports, closeReport, announce, announcement, world, take, resetKing, adminLog, skipChildhood, report,

@@ -44,6 +44,8 @@ import { gameTime as realmTime } from './data/clock.mjs';
 import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
 import { createVoice } from './voice.js';
+import { createPowers } from './powersui.js';
+import { POWER_IDS } from './data/staff.mjs';
 
 // Nothing in the game can be selected, copied or right-clicked, except the boxes you type in
 const typing = (e) => e.target.closest?.('input, textarea, select, [contenteditable="true"]');
@@ -639,6 +641,9 @@ function startGame(character) {
         if (info.why) ui.landMsg = info.why;
         else if (info.owned && !info.owned.mine) ui.landMsg = `Owned by ${info.owned.owner}.`;
         updateMapBasket();
+      } : null, null, ui.adminPowers?.on('teleport') ? (x, z) => {
+        // an admin's Teleport power: tap the map to go there
+        if (world?.teleport(x, z - 5)) { closePanel(); showArea('Teleported.'); } else showArea('You can\'t teleport from in here.');
       } : null);
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '', country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
@@ -1577,6 +1582,18 @@ function startGame(character) {
   social = createSocial($('game'));
   // Voice chat (16+): a mic button under the chat button; voices fade with distance
   createVoice($('game'), { position: () => world?.position() });
+  // An admin's powers (fly, can't die, run fast, teleport), given by the owner on the Admin Board.
+  // The private preview page belongs to the owner, so there every power is there to switch on.
+  api.isPreviewMode().then((preview) => {
+    ui.adminPowers = createPowers($('game'), preview ? POWER_IDS : myAccount?.powers || [], {
+      apply(p, down) {
+        world?.setPowers(p);
+        game.setNoDeath(p.nodeath);
+        if (down !== undefined) world?.flyDown(down);
+      },
+      say: (text) => world?.say(text, 'note'),
+    });
+  }).catch(() => {});
   // Everyone's land: posts on owned plots, and levelled ground
   api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
   loadCaves();

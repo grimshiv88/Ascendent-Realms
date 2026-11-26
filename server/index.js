@@ -230,33 +230,49 @@ for (const [route, fn] of [['friends/request', social.request], ['friends/respon
   });
 }
 
-// The admin board (admin.html): only for accounts listed in ADMIN_EMAILS
-async function requireAdmin(req, res, next) {
+// The admin board (admin.html): the owner (the accounts listed in ADMIN_EMAILS) can do everything;
+// an account the owner gave admin access to can make only the requests its permissions allow
+// (see public/js/data/staff.mjs). Checked here, on the server, for every request.
+const staff = require('./staff');
+const ST = require('../public/js/data/staff.mjs');
+const adminGate = (method, route) => async (req, res, next) => {
   req.account = await auth.accountRow(bearer(req));
   if (!req.account) return res.status(401).json({ error: 'Please sign in.' });
-  if (!admin.isAdmin(req.account)) return res.status(403).json({ error: 'This account is not an admin.' });
+  if (auth.banned(req.account)) return res.status(403).json({ error: auth.banned(req.account) });
+  const a = staff.access(req.account);
+  if (!staff.canBoard(a)) return res.status(403).json({ error: 'This account is not an admin.' });
+  if (a.owner) return next();
+  const key = `${method} ${route}`;
+  const body = req.body || {};
+  if (!ST.allowed(a.perms, key, body)) return res.status(403).json({ error: 'Only the owner can do that (or give you permission for it).' });
+  // an admin the owner made can't use their powers on the owner, on another admin, or on themselves
+  if (ST.ON_A_PLAYER.includes(key)) {
+    const target = await db.get('SELECT id, email, email_verified, admin_perms FROM accounts WHERE id = ?', Number(body.id) || 0);
+    if (target && (staff.isOwner(target) || staff.staffOf(target))) return res.status(403).json({ error: 'Only the owner can do that to an admin.' });
+  }
   next();
-}
-app.get('/api/admin/accounts', requireAdmin, async (req, res) => res.json(await admin.accounts()));
-app.post('/api/admin/gates', requireAdmin, async (req, res) => {
+};
+app.get('/api/admin/accounts', adminGate('GET', 'accounts'), async (req, res) => res.json(await admin.accounts()));
+app.post('/api/admin/gates', adminGate('POST', 'gates'), async (req, res) => {
   const { city, raised } = req.body || {};
   if (!['central', 'emberfall', 'ashgrave', 'lumenhollow', 'mirehaven'].includes(city)) return res.status(400).json({ error: 'No such city.' });
   const all = await cityGates();
   if (raised) all[city] = true; else delete all[city];
   await db.run("INSERT INTO world_state (key, data) VALUES ('city_gates', ?) ON CONFLICT(key) DO UPDATE SET data = excluded.data", JSON.stringify(all));
+  await admin.log(req.account, raised ? 'raise bridges' : 'lower bridges', city);
   res.json({ ok: true, raised: all });
 });
 for (const [route, fn] of [['password', admin.setPassword], ['birthdate', admin.setBirthdate], ['signout', admin.signOutEverywhere], ['delete', admin.remove],
   ['edit', admin.edit], ['move', admin.move], ['ban', admin.ban], ['mute', admin.mute], ['chat/delete', admin.deleteMessage], ['reports/close', admin.closeReport],
   ['announce', admin.announce], ['take', admin.take], ['kings/reset', admin.resetKing], ['skip/childhood', admin.skipChildhood],
-  ['life/edit', admin.editPastLife], ['life/restore', admin.restoreLife], ['sects', admin.appointLeader], ['tuning', admin.setTuning]]) {
-  app.post(`/api/admin/${route}`, requireAdmin, async (req, res) => {
+  ['life/edit', admin.editPastLife], ['life/restore', admin.restoreLife], ['sects', admin.appointLeader], ['tuning', admin.setTuning], ['staff', admin.setStaff]]) {
+  app.post(`/api/admin/${route}`, adminGate('POST', route), async (req, res) => {
     const result = await fn(req.body || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);
   });
 }
-for (const [route, fn] of [['stats', admin.stats], ['player', admin.player], ['catalogue', admin.catalogue], ['chat', admin.chat], ['reports', admin.reports], ['world', admin.world], ['log', admin.adminLog], ['tuning', admin.tuning], ['skills', admin.skillsBoard], ['sects', admin.leaders]]) {
-  app.get(`/api/admin/${route}`, requireAdmin, async (req, res) => {
+for (const [route, fn] of [['stats', admin.stats], ['player', admin.player], ['catalogue', admin.catalogue], ['chat', admin.chat], ['reports', admin.reports], ['world', admin.world], ['log', admin.adminLog], ['tuning', admin.tuning], ['skills', admin.skillsBoard], ['sects', admin.leaders], ['me', admin.me], ['staff', admin.staffList]]) {
+  app.get(`/api/admin/${route}`, adminGate('GET', route), async (req, res) => {
     const result = await fn(req.query || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);
   });
