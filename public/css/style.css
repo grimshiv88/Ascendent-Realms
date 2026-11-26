@@ -371,8 +371,9 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
   padding: 26px 30px 22px;
   background: #000;
   border: 2px solid #f2b51e;
+  /* the second gold line runs just outside the border, so words scrolling inside never cross it */
   outline: 1px solid #f2b51e;
-  outline-offset: -8px;
+  outline-offset: 4px;
   color: #f2b51e;
   font-family: 'Oswald', 'Arial Narrow', sans-serif;
   text-transform: uppercase;

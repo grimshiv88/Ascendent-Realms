@@ -47,6 +47,10 @@ const MARKET_RUNS = [
   ['common', 'west', 158, 176, ['stall_grill', 'stall_bread', 'stall_drinks', 'stall_greens', 'stall_herbs', 'stall_cloth', 'stall_bread', 'stall_tools']],
   ['dump', 'south', 212, 239, ['stall_soup', 'stall_scrap', 'stall_greens', 'stall_bread', 'stall_drinks', 'stall_scrap', 'stall_tools', 'stall_soup', 'stall_greens', 'stall_cloth']],
 ];
+// Market Street: the Common Quarter's outer ring road, either side of the south road (where
+// everyone comes in), lined with stalls on its outer side, their fronts to the street and the
+// town houses' doors across it. [ring road radius, how far it runs each way (metres), stall ids]
+const MARKET_STREET = { r: 179.5, w: 5, reach: 66, gap: 4.3, ids: ['stall_bread', 'stall_greens', 'stall_sweets', 'stall_grill', 'stall_drinks', 'stall_cloth', 'stall_roast', 'stall_herbs', 'stall_tools', 'stall_greens', 'stall_bread', 'stall_drinks'] };
 export const STALL_LAT = ROAD_HALF + 2.1; // a stall's middle, this far from the road's middle
 // The spot where you rise again after a death in a great city: a waystone checkpoint in the Dump
 // beside the south road, just inside the inner south gate, far below the castle
@@ -237,6 +241,19 @@ export function cityPlan() {
       stalls.push({ id, x, z, rot: Math.atan2(fx, fz), fx, fz, tier: tierId, road, along, lat });
     });
   }
+  // Market Street, curving away either side of the south road
+  {
+    const { r: rr, w, reach, gap, ids } = MARKET_STREET, r = rr + w / 2 + 2.1;
+    let n = 0;
+    for (const dir of [-1, 1]) {
+      for (let d = gap / 2; d <= reach; d += gap) {
+        const a = ROAD_ANGLES.south + dir * (d / r);
+        if (!clearOfRoads(r, a, 3.8, 2.6)) continue;
+        const fx = -Math.sin(a), fz = -Math.cos(a);
+        stalls.push({ id: ids[n++ % ids.length], x: Math.sin(a) * r, z: Math.cos(a) * r, rot: Math.atan2(fx, fz), fx, fz, tier: 'common', road: 'market_street', a, r });
+      }
+    }
+  }
   // the checkpoint where you rise again
   const cp = (() => { const ra = ROAD_ANGLES[CHECKPOINT.road], { along, lat } = CHECKPOINT; const sd = -Math.sign(lat), fx = Math.cos(ra) * sd, fz = -Math.sin(ra) * sd; return { x: Math.sin(ra) * along + Math.cos(ra) * lat, z: Math.cos(ra) * along - Math.sin(ra) * lat, a: ra, fx, fz, rot: Math.atan2(fx, fz), tier: 'dump' }; })();
 
@@ -263,7 +280,7 @@ export function cityPlan() {
   { const rnd = seeded('dumpout-sale'); for (const b of extra) addHome(b, rnd); }
   const family = homes.filter((h) => !h.sale).map((h, i) => ({ ...h, i, h: h.floors * 3.1 }));
   const sale = homes.filter((h) => h.sale).map((h, i) => ({ ...h, i, h: h.floors * 3.1, id: `${h.tier}${i}`, price: HOUSE_PRICE[h.tier] })).filter((h) => !h.gone);
-  PLAN = { family, sale, shops, academies, lots, junk, playground, stalls, yards, idlers, checkpoint: cp };
+  PLAN = { family, sale, shops, academies, lots, junk, playground, stalls, marketStreet: MARKET_STREET, yards, idlers, checkpoint: cp };
   return PLAN;
 }
 // the height of a ring above the city's foot

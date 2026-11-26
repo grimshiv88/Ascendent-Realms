@@ -277,7 +277,7 @@ function pen(g, solid, toW, P, coop = false) {
 // shows the words mirrored from behind)
 // (one material for each wording: a city's many stalls of the same kind then merge into one mesh)
 const signMats = new Map();
-function twoFacedSign(text, w, h) {
+export function twoFacedSign(text, w, h) {
   if (!signMats.has(text)) signMats.set(text, new THREE.MeshBasicMaterial({ map: textTexture(text, { board: true }), transparent: true }));
   const signMat = signMats.get(text);
   const g = new THREE.Group();
