@@ -4,7 +4,7 @@
 // and it waits there for you (even after you log out). You get off by yourself to go indoors or
 // underground, to sit, to sleep, or when you fall.
 // A tamed dragon or wyvern flies: Space climbs (it takes off from the ground), Shift dives down, and
-// it lands when it touches the ground. You can only get off once it has landed.
+// it lands when you dive onto the ground (rising land under it just lifts it). You can only get off once it has landed.
 import * as THREE from 'three';
 import { ANIMALS } from '../data/animals.mjs';
 import { MOUNTS, MOUNT_ITEMS } from '../data/mounts.mjs';
@@ -198,10 +198,13 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     if (!riding || !horse.beast) return y;
     if (up && !flying) { flying = true; say(`Your ${horse.a.name.toLowerCase()} spreads its wings and leaps into the sky!`, 'exp'); }
     if (!flying) return ground;
-    const want = up ? 16 : down ? -22 : 0;
+    const want = up ? 18 : down ? -22 : 0;
     horse.vy = (horse.vy || 0) + (want - (horse.vy || 0)) * Math.min(1, dt * 3);
     let ny = Math.min(ground + 600, y + horse.vy * dt);
-    if (ny <= ground + 0.05) { ny = ground; if (!up) { flying = false; horse.vy = 0; say('You land', 'note'); } }
+    // it only lands when you dive down onto the ground; rising land (a slope, a crater's rim) just
+    // lifts it up, so it keeps flying over the mountains
+    if (down && ny <= ground + 0.4) { ny = ground; flying = false; horse.vy = 0; say('You land', 'note'); }
+    else if (ny < ground + 2) { ny = Math.min(ground + 2, Math.max(ny, ground) + dt * 30); if (horse.vy < 0) horse.vy = 0; }
     return ny;
   }
 

@@ -51,6 +51,7 @@ import { createHusbandry } from './husbandry.js';
 import { createOil } from './oil.js';
 import { createCrops } from './crops.js';
 import { createRiding, poseRide } from './riding.js';
+import { createHatchery } from './hatchery.js';
 import { BEAST_TAME } from '../data/mounts.mjs';
 import { RIDE_FATIGUE } from '../data/mounts.mjs';
 import { allFarms } from '../data/farms.mjs';
@@ -287,7 +288,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       for (const it of doorsNear(pos.x, pos.z, 14)) list.push([it.d.x, it.d.y, it.d.z, 6, () => useDoor(it)]);
     }
     if (!inside) for (const m of creatures?.list || []) if (canHarvest(m) && !m.kind.animal && Math.hypot(m.x - pos.x, m.z - pos.z) < 12) list.push([m.x, m.y + 0.3, m.z, 2.6, () => harvestBody(m)]);
-    if (!inside && !depth) { husbandry?.tapTargets(list); crops?.tapTargets(list); const mt = riding?.mount(); if (mt && !mt.riding) list.push([mt.x, g(mt.x, mt.z) + 1.3, mt.z, 3.2, () => riding.toggle(mt.item)]); const worn = creatures?.downedNear(pos.x, pos.z, 40); if (worn && !riding?.riding) list.push([worn.x, worn.y + 2, worn.z, worn.radius + 2, () => (Math.hypot(worn.x - pos.x, worn.z - pos.z) - worn.radius < 4 ? tameBeast(worn) : say('Walk up to it to tame it', 'note'))]); }
+    if (!inside && !depth) { husbandry?.tapTargets(list); crops?.tapTargets(list); const mt = riding?.mount(); if (mt && !mt.riding) list.push([mt.x, g(mt.x, mt.z) + 1.3, mt.z, 3.2, () => riding.toggle(mt.item)]); hatchery?.tapTargets(list); const worn = creatures?.downedNear(pos.x, pos.z, 40); if (worn && !riding?.riding) list.push([worn.x, worn.y + 2, worn.z, worn.radius + 2, () => (Math.hypot(worn.x - pos.x, worn.z - pos.z) - worn.radius < 4 ? tameBeast(worn) : say('Walk up to it to tame it', 'note'))]); }
     for (const e of colliders.near(pos.x, pos.z, 12)) if (e.kind === 'chest') list.push([e.x, (e.y ?? g(e.x, e.z)) + 0.6, e.z, e.r + 1.6, () => openChest(e)]);
     const r = canvas.getBoundingClientRect();
     let best = null, bd = 70;
@@ -425,7 +426,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const FALL_SAFE = 4; // metres you can drop without getting hurt
   let creatures = null; // made below; caves built before then get their guards later
   let husbandry = null; // hunting, cooking and the farms (made below, with the creatures)
-  let crops = null, riding = null; // growing your own, and your horse (made with husbandry)
+  let crops = null, riding = null, hatchery = null; // growing your own, and your horse (made with husbandry)
   let oil = null; // oil seeps, the Oil Companies' derricks and your test pits (see oil.js)
   let myFarmPlots = []; // your own plots set to Farm, where you can dig beds
   let runningNow = false; // (the run key held, for the animals to notice)
@@ -752,6 +753,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       canRide: () => (inside ? 'Your mount waits outside' : depth ? 'Mounts can\'t go underground' : dead ? 'You can\'t ride now' : null),
     });
     riding.restore();
+    // dragon eggs: the nests at the lairs, hatching, and the hatchling that follows you (see hatchery.js)
+    hatchery = createHatchery({
+      scene, game, say, onEvent,
+      getPos: () => pos, getPlayer: () => ({ heading, flying: !!riding?.flying }),
+      landAt: (x, z, full) => (full ? sample(x, z, {}) : groundAt(x, z, 1e4)),
+      fireNear: (x, z, r) => husbandry.fireNear(x, z, r),
+      angerParent: (lairId) => creatures.angerLair(lairId),
+      canPlace: () => (inside ? 'Set it down outdoors' : depth ? 'Not down here: eggs need the open air' : riding?.flying ? 'Land first' : null),
+      onGrown: (item, x, z, h) => riding?.adopt(item, x, z, h),
+    });
   }
   husbandry.updateFarms(pos.x, pos.z);
 
@@ -1283,6 +1294,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
       if (crops?.interactFirst()) return;
       if (husbandry.interact()) return;
+      if (!riding?.riding && hatchery?.interact()) return;
       const worn = !riding?.riding && creatures.downedNear(pos.x, pos.z, 4);
       if (worn) { tameBeast(worn); return; }
       if (riding?.interact()) return;
@@ -2231,8 +2243,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const px = pos.x, pz = pos.z;
       pos.x += move.x * speedNow * dt;
       pos.z += move.z * speedNow * dt;
-      pushOffFolk(pos, bodyR);
-      colliders.push(pos, bodyR);
+      // (flying a dragon or wyvern: over the trees, rocks and roofs, not through them)
+      const aloft = riding?.flying;
+      if (!aloft) pushOffFolk(pos, bodyR);
+      colliders.push(pos, bodyR, aloft ? (x, z) => sample(x, z, tmpS).h : null);
       if (depth) {
         // the cave walls: slide along them instead of walking in
         const open = (x, z) => depth.built.shape(x, z).d < -bodyR * 0.6;
@@ -2279,8 +2293,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // (over water it hovers just above the waves instead)
       if (jumpQueued) climbFor = 0.7; // (a tap of the jump button on a phone climbs for a moment)
       climbFor = Math.max(0, climbFor - dt);
-      const g0 = Math.max(groundAt(pos.x, pos.z), water + 2.5);
-      pos.y = riding.fly(dt, held('jump') || climbFor > 0, held('run') || flyDown, g0, pos.y);
+      const land0 = groundAt(pos.x, pos.z), g0 = Math.max(land0, water + 2.5);
+      pos.y = riding.fly(dt, held('jump') || climbFor > 0, (held('run') || flyDown) && g0 === land0, g0, pos.y); // (no landing on water)
       if (riding.flying) swimming = false;
       ground = pos.y; velY = 0; airborne = false; fallFrom = pos.y;
     }
@@ -2546,7 +2560,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
     for (const q of mobVillages.values()) q.built.update(t, pos, creatures.list);
-    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); }
+    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); hatchery?.tick(dt, t); }
     walkBuild?.update();
     sky.follow(camera);
 
@@ -2730,6 +2744,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     digPit: (x, z) => oil?.pit(x, z, heading),
     plantSeed: (id) => (!inside && !depth ? crops?.plantSeed(id) : 'inside'),
     callMount: (id) => riding?.toggle(id),
+    placeEgg: (id) => hatchery?.placeEgg(id),
+    debugHatchery: () => hatchery?.debug(),
+    debugWarmEggs: (secs) => hatchery?.debugWarm(secs),
+    debugGrowPet: (secs) => hatchery?.debugGrow(secs),
     riding: () => !!riding?.riding,
     debugCrops: () => crops?.beds(),
     // make every bed `mins` minutes older (for tests)
@@ -2756,6 +2774,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugRide() { return { mount: riding?.mount(), flying: !!riding?.flying, flyer: !!riding?.flyer(), y: pos.y, ground: groundAt(pos.x, pos.z) }; },
     debugHitBeast(dmg) { const m = creatures.list.find((q) => q.kind.beast && !q.dead); if (!m) return null; const r = creatures.hit(m, dmg, 'slash'); finishHit(m, r); return r ? { exp: r.exp, drops: r.drops } : { hp: m.hp }; },
     debugSpawnAnimal(id, dx = 0, dz = 6) { return creatures.spawnAt(`a_${id}`, 1, pos.x + dx, pos.z + dz, { keep: true }); },
+    debugFace(h) { heading = h; yaw = h + Math.PI; snapCam = true; },
     debugTeleport(x, z) { pos.set(x, groundAt(x, z, 1e4), z); snapCam = true; updateSites(x, z); husbandry.updateFarms(x, z); land.update(x, z, Infinity); },
     debugTalkParent() { for (const c of builtCities()) { const n = c.built.npcs.find((q) => q.kind === 'parent' && q.mine); if (n) { pos.set(n.x + 1, pos.y, n.z); talkTo(n); return true; } } return false; },
     // for testing: what a frame draws, grouped by what it is

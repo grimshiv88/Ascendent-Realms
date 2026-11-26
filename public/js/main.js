@@ -1267,6 +1267,7 @@ function startGame(character) {
     if (t('data-campfire') != null) { closePanel(); world?.lightCampfire(); return; }
     if ((v = t('data-plant')) != null) { closePanel(); world?.plantSeed(v); return; }
     if ((v = t('data-mount')) != null) { closePanel(); world?.callMount(v); return; }
+    if ((v = t('data-egg')) != null) { closePanel(); world?.placeEgg(v); return; }
     if ((v = t('data-cult')) != null) {
       const btn = e.target.closest('[data-cult]');
       const body = { action: v };

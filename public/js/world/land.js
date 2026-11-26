@@ -312,7 +312,8 @@ export function makeColliderGrid() {
       }
       return out;
     },
-    push(pos, radius) {
+    // `groundOf(x, z)` (while flying): things that stand on the ground only stop you below their top
+    push(pos, radius, groundOf = null) {
       const cx = Math.floor(pos.x / cell), cz = Math.floor(pos.z / cell);
       for (let dx = -1; dx <= 1; dx++) {
         for (let dz = -1; dz <= 1; dz++) {
@@ -322,6 +323,7 @@ export function makeColliderGrid() {
             const min = t.r + radius;
             // something built on an upper storey only stops you on that storey (you walk under or over it)
             if (t.y !== undefined && pos.y !== undefined && (pos.y >= t.y + (t.height || 8) - 0.4 || pos.y + 1.7 < t.y)) continue;
+            if (groundOf && t.y === undefined && pos.y >= groundOf(t.x, t.z) + (t.height || 8) - 0.4) continue;
             // low things you can climb onto (a log, a step) don't stop you: you walk up onto them
             if (t.step && pos.y !== undefined && t.y + t.height <= pos.y + 0.8) continue;
             if (t.r > 0 && d < min && d > 1e-4) {

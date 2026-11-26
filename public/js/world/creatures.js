@@ -920,6 +920,14 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       m.mode = 'climb'; m.modeT = 0; m.angry = true; m.hp = Math.max(m.hp, Math.round(m.maxHp * 0.3)); onBeast?.(m, 'shake');
       return false;
     },
+    // someone took an egg from this lair's nest: its beast (if it is about) comes for them
+    angerLair(lairId) {
+      const m = list.find((q) => q.kind.beast && !q.dead && q.lair?.id === lairId);
+      if (!m) return null;
+      m.angry = true; m.hover = null;
+      if (m.mode === 'circle' || m.mode === 'downed') { m.mode = 'dive'; m.modeT = 0; }
+      return m;
+    },
     beastNear: (x, z, r) => list.find((m) => m.kind.beast && !m.dead && Math.hypot(m.x - x, m.z - z) < r) || null,
     removeWhere(fn) { for (const m of [...list]) if (fn(m)) remove(m); },
     get list() { return list; },
