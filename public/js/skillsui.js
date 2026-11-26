@@ -1,7 +1,7 @@
 // The Skills window (K): put your skills on keys, keep spare ones in storage.
 // Also the skill bar at the bottom of the screen, which works by key on desktop and by tap on touch.
-import { SKILLS, SKILL_BAR, UPGRADE_EVERY, keyLabel, SKILL_CATEGORIES, skillCategory, byCategory } from './data/skills.mjs';
-import { SPELLS, KIND_TEXT, spellName, darkSpells } from './data/spells.mjs';
+import { SKILLS, SKILL_BAR, UPGRADE_EVERY, keyLabel, SKILL_CATEGORIES, skillCategory, byCategory, SKILL_RANKS, rankInfo } from './data/skills.mjs';
+import { SPELLS, spellName, darkSpells, spellRank, spellCategory, spellText } from './data/spells.mjs';
 import { DARK_SPELL_EVERY } from './data/cults.mjs';
 import { keyName, codeFor } from './data/controls.mjs';
 import { uniqueAbility, nextTierLevel, TIER_NAMES, UNBOUND_LEVEL } from './data/unique.mjs';
@@ -11,6 +11,63 @@ const what = (sk) => `${esc(sk.text)} <span class="sk-cost">${sk.sp} SP · ${sk.
 // the kind of a skill, from defence to attack (data/skills.mjs SKILL_CATEGORIES)
 const kindTag = (sk) => { const k = SKILL_CATEGORIES.find((x) => x.id === skillCategory(sk)); return k ? ` <em class="forged-tag">${k.icon} ${esc(k.name)}</em>` : ''; };
 
+const rankTag = (r) => ` <em class="sk-rank sk-rank-${esc(r)}">${esc(rankInfo(r).name)}</em>`;
+
+// ---------- the filter ----------
+// Above your stored skills and spells: show only one kind (Attack, Defence, Support...), one rank,
+// one element, or what matches a word you type. It stays as you left it while the game is open.
+const filt = { cat: 'all', rank: 'all', el: 'all', q: '' };
+// the data-* a row carries so the filter can find it
+const rowTags = (cat, rank, el, name) => `data-fcat="${esc(cat)}" data-frank="${esc(rank)}" data-fel="${esc(el || '')}" data-fname="${esc(name.toLowerCase())}"`;
+function filterHtml(elements) {
+  const chip = (id, label) => `<button type="button" class="sk-chip${filt.cat === id ? ' on' : ''}" data-skf-cat="${id}">${label}</button>`;
+  return `<div class="sk-filter" role="search">
+    <div class="sk-chips">${chip('all', 'All')}${SKILL_CATEGORIES.map((k) => chip(k.id, `${k.icon} ${esc(k.name)}`)).join('')}</div>
+    <div class="sk-filter-row">
+      <select data-skf-rank aria-label="Rank"><option value="all">Every rank</option>${SKILL_RANKS.map((r) => `<option value="${r.id}"${filt.rank === r.id ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>
+      ${elements.length ? `<select data-skf-el aria-label="Element"><option value="all">Every element</option>${elements.map((e) => `<option${filt.el === e ? ' selected' : ''}>${esc(e)}</option>`).join('')}</select>` : ''}
+      <input type="search" data-skf-q placeholder="Search by name" value="${esc(filt.q)}" aria-label="Search by name">
+    </div>
+    <p class="bag-hint sk-filter-none" hidden>Nothing matches. Try another kind or rank.</p>
+  </div>`;
+}
+// show only the rows that match, and hide a heading with nothing under it
+function applyFilter(el) {
+  const q = filt.q.trim().toLowerCase();
+  let shown = 0, rows = 0;
+  for (const r of el.querySelectorAll('[data-fcat]')) {
+    rows++;
+    const ok = (filt.cat === 'all' || r.dataset.fcat === filt.cat) && (filt.rank === 'all' || r.dataset.frank === filt.rank)
+      && (filt.el === 'all' || r.dataset.fel === filt.el) && (!q || r.dataset.fname.includes(q));
+    r.hidden = !ok;
+    if (ok) shown++;
+  }
+  for (const h of el.querySelectorAll('.sk-kind')) {
+    let n = h.nextElementSibling, any = false;
+    while (n && !n.classList.contains('sk-kind') && n.dataset.fcat) { if (!n.hidden) any = true; n = n.nextElementSibling; }
+    h.hidden = !any;
+  }
+  const none = el.querySelector('.sk-filter-none');
+  if (none) none.hidden = !rows || shown > 0;
+  for (const b of el.querySelectorAll('[data-skf-cat]')) b.classList.toggle('on', b.dataset.skfCat === filt.cat);
+}
+function wireFilter(el) {
+  const box = el.querySelector('.sk-filter');
+  if (!box) return;
+  box.addEventListener('click', (e) => { const b = e.target.closest('[data-skf-cat]'); if (b) { e.stopPropagation(); filt.cat = b.dataset.skfCat; applyFilter(el); } });
+  box.addEventListener('change', (e) => {
+    if (e.target.matches('[data-skf-rank]')) filt.rank = e.target.value;
+    if (e.target.matches('[data-skf-el]')) filt.el = e.target.value;
+    applyFilter(el);
+  });
+  const q = box.querySelector('[data-skf-q]');
+  q.addEventListener('input', () => { filt.q = q.value; applyFilter(el); });
+  // typing a name mustn't move you or open other windows
+  q.addEventListener('keydown', (e) => e.stopPropagation());
+  q.addEventListener('keyup', (e) => e.stopPropagation());
+  applyFilter(el);
+}
+
 // `binding` is the skill waiting for a key press; `message` is shown at the top
 export function renderSkills(el, game, { binding = null, message = '' } = {}) {
   const c = game.character;
@@ -18,13 +75,13 @@ export function renderSkills(el, game, { binding = null, message = '' } = {}) {
   const stored = known.filter((id) => !c.skillBar.some((b) => b.id === id));
   const tag = (id) => (fromGear.includes(id) ? ' <em class="forged-tag">gear</em>' : !known.includes(id) ? ' <em class="forged-tag">gear not worn</em>' : '');
   const bar = c.skillBar.length ? c.skillBar.map((b) => { const sk = SKILLS[b.id]; return `
-    <div class="sk-row"><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}${tag(b.id)}${kindTag(sk)}</b><small>${what(sk)}</small></span>
+    <div class="sk-row"><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}${tag(b.id)}${kindTag(sk)}${rankTag(sk.rank)}</b><small>${what(sk)}</small></span>
       <button type="button" class="sk-key${binding === b.id ? ' waiting' : ''}" data-bind="${b.id}" title="Change the key">${binding === b.id ? 'Press a key…' : b.key ? `Key ${esc(keyLabel(b.key))}` : 'Set a key'}</button>
       <button type="button" class="link-button" data-store="${b.id}">Store</button></div>`; }).join('')
     : '<p class="bag-hint">No skills ready yet. Your first comes at level ${UPGRADE_EVERY}.</p>';
   // stored skills, sorted by kind from defence to attack, the strongest first in each
   const kept = stored.length ? byCategory(stored).map((k) => `<p class="bag-hint sk-kind">${k.icon} <b>${esc(k.name)}</b></p>` + k.skills.map((id) => { const sk = SKILLS[id]; return `
-    <div class="sk-row"><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}${tag(id)}</b><small>${what(sk)}</small></span>
+    <div class="sk-row" ${rowTags(k.id, sk.rank, sk.el === 'Steel' || sk.el === 'Gold' ? '' : sk.el, sk.name)}><span class="sk-icon">${sk.icon}</span><span class="sk-name"><b>${esc(sk.name)}${tag(id)}${rankTag(sk.rank)}</b><small>${what(sk)}</small></span>
       <button type="button" class="gold-button small" data-ready="${id}" ${c.skillBar.length >= SKILL_BAR ? 'disabled title="Store a ready skill first"' : ''}>Get ready</button></div>`; }).join('')).join('')
     : '<p class="bag-hint">Skills you aren\'t using wait here. Nothing stored.</p>';
   el.innerHTML = `
@@ -38,9 +95,11 @@ export function renderSkills(el, game, { binding = null, message = '' } = {}) {
       <h3 class="bag-sub">Ready <small>(${c.skillBar.length} of ${SKILL_BAR})</small></h3>
       ${bar}
       <h3 class="bag-sub">Stored</h3>
+      ${stored.length + c.spells.length > 1 ? filterHtml([...new Set(c.spells.map((id) => SPELLS[id]?.element).filter(Boolean))]) : ''}
       ${kept}
       ${spellsHtml(game)}
     </div>`;
+  wireFilter(el);
 }
 
 // Your Unique Skill: how much of it is let out so far
@@ -69,8 +128,9 @@ function spellsHtml(game) {
     const btn = !st ? '' : on
       ? `<button type="button" class="link-button" data-unspell="${id}">Detach</button>`
       : `<button type="button" class="gold-button small" data-spell="${id}" ${st.spells.length >= st.slots ? 'disabled title="Your staff is full: detach one first"' : ''}>Attach</button>`;
-    return `<div class="sk-row"><span class="sk-icon">${dark ? '🌑' : '✨'}</span><span class="sk-name"><b>${esc(spellName(sp, c))}${chosen?.id === id ? ' · chosen' : ''}</b>
-      <small>${esc(sp.element)}${dark ? ' (dark)' : ''} · ${esc(KIND_TEXT[sp.kind])} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span></small></span>${btn}</div>`;
+    const k = SKILL_CATEGORIES.find((x) => x.id === spellCategory(sp));
+    return `<div class="sk-row" ${rowTags(k.id, spellRank(sp), sp.element, spellName(sp, c))}><span class="sk-icon">${dark ? '🌑' : '✨'}</span><span class="sk-name"><b>${esc(spellName(sp, c))}${chosen?.id === id ? ' · chosen' : ''} <em class="forged-tag">${k.icon} ${esc(k.name)}</em>${rankTag(spellRank(sp))}</b>
+      <small>${esc(sp.element)}${dark ? ' (dark)' : ''} · ${esc(spellText(sp))} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span></small></span>${btn}</div>`;
   }).join('');
 }
 
@@ -112,7 +172,7 @@ export function renderPower(el, game, power, { binding = null, message = '', mor
   if (power.kind === 'skill') {
     const sk = SKILLS[power.id];
     const b = c.skillBar.find((x) => x.id === power.id);
-    icon = sk.icon; name = sk.name; kind = 'New skill';
+    icon = sk.icon; name = sk.name; kind = `New ${rankInfo(sk.rank).name} skill`;
     does = what(sk);
     if (b) {
       where = b.key ? `It is ready on key <kbd>${esc(keyLabel(b.key))}</kbd>${matchMedia('(pointer: coarse)').matches ? ' and as a button at the bottom of the screen' : ''}.` : 'It is on your skill bar, but has no key yet.';
@@ -127,8 +187,8 @@ export function renderPower(el, game, power, { binding = null, message = '', mor
     const sp = SPELLS[power.id];
     const st = game.staff();
     const on = st?.spells.includes(power.id);
-    name = spellName(sp, c); kind = 'New spell';
-    does = `${esc(sp.element)} · ${esc(KIND_TEXT[sp.kind])} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span>`;
+    name = spellName(sp, c); kind = `New ${rankInfo(spellRank(sp)).name} spell`;
+    does = `${esc(sp.element)} · ${esc(spellText(sp))} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span>`;
     where = on ? `It is attached to your staff. The attack key casts the chosen spell; ${esc(keyName(codeFor('spell')))} changes spell.` : st ? 'It is not on your staff yet.' : 'Hold a staff to cast it: attach it in Skills (K).';
     if (st && !on) buttons = `<button type="button" class="gold-button small" data-spell="${power.id}" ${st.spells.length >= st.slots ? 'disabled' : ''}>Attach it to your staff</button>`;
     else if (on) buttons = `<button type="button" class="gold-button small" data-unspell="${power.id}">Detach it</button>`;

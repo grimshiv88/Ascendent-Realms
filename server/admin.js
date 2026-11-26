@@ -76,8 +76,8 @@ const B = require('../public/js/data/birth.mjs');
 const { ITEMS } = require('../public/js/data/items.mjs');
 const { PLACES, toWorld } = require('../public/js/data/world-layout.mjs');
 const G = require('../public/js/data/game-data.mjs');
-const { SKILLS, SKILL_CATEGORIES, skillCategory, skillPower } = require('../public/js/data/skills.mjs');
-const { SPELLS } = require('../public/js/data/spells.mjs');
+const { SKILLS, SKILL_CATEGORIES, SKILL_RANKS, skillCategory, skillPower, skillClasses, SKILL_SHAPES } = require('../public/js/data/skills.mjs');
+const { SPELLS, spellRank, spellCategory, spellText, KIND_TEXT } = require('../public/js/data/spells.mjs');
 const U = require('../public/js/data/unique.mjs');
 const P = require('../public/js/data/citypass.mjs');
 const cults = require('./cults');
@@ -326,8 +326,12 @@ function catalogue() {
     classes: Object.entries(G.CLASSES).filter(([id]) => id !== 'child').map(([id, k]) => ({ id, name: k.name })),
     rings: P.PASS_ORDER.map((id) => ({ id, name: P.PASS_NAME[id] })),
     categories: SKILL_CATEGORIES,
-    skills: Object.values(SKILLS).map((sk) => ({ id: sk.id, name: sk.name, icon: sk.icon, category: skillCategory(sk), power: skillPower(sk) })),
-    spells: Object.values(SPELLS).map((sp) => ({ id: sp.id, name: sp.name, element: sp.element, level: sp.level })),
+    ranks: SKILL_RANKS.map((r) => ({ id: r.id, name: r.name, from: r.from })),
+    shapes: SKILL_SHAPES,
+    spellShapes: KIND_TEXT,
+    skills: Object.values(SKILLS).map((sk) => ({ id: sk.id, name: sk.name, icon: sk.icon, category: skillCategory(sk), power: skillPower(sk), rank: sk.rank,
+      classes: skillClasses(sk), general: (sk.cls || []).includes('any'), element: sk.el && sk.el !== 'Steel' && sk.el !== 'Gold' ? sk.el : '', shape: sk.type, magic: !!sk.magic, sp: sk.sp, cd: sk.cd, text: sk.text })),
+    spells: Object.values(SPELLS).map((sp) => ({ id: sp.id, name: sp.name, element: sp.element, level: sp.level, rank: spellRank(sp), category: spellCategory(sp), shape: sp.kind, sp: sp.sp, cd: sp.cd, text: spellText(sp) })),
     uniqueRanks: U.UNIQUE_RANKS,
     uniques: [U.APPRAISAL.name, ...U.UNIQUE_SKILLS.map((u) => u.name)],
   };

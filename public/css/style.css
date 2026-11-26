@@ -506,6 +506,12 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 #jump-btn { position: absolute; right: 124px; bottom: 34px; width: 64px; height: 64px; display: none; place-items: center; padding: 14px; border-radius: 50%; border: 2px solid var(--gold-2); background: radial-gradient(circle at 40% 35%, #2a2414, #0d0905); color: var(--gold-1); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6); touch-action: none; cursor: pointer; }
 #jump-btn svg { width: 100%; height: 100%; }
 #jump-btn:active { transform: scale(0.92); }
+/* the dive button, above the jump button, while you fly a dragon or wyvern on a touch screen (hold it to fly down) */
+#dive-btn { position: absolute; right: max(124px, calc(env(safe-area-inset-right) + 112px)); bottom: max(110px, calc(env(safe-area-inset-bottom) + 94px)); width: 64px; height: 64px; display: none; place-items: center; padding: 14px; border-radius: 50%; border: 2px solid var(--gold-2); background: radial-gradient(circle at 40% 35%, #2a2414, #0d0905); color: var(--gold-1); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6); touch-action: none; cursor: pointer; }
+#dive-btn svg { width: 100%; height: 100%; }
+#dive-btn:active { transform: scale(0.92); }
+@media (pointer: coarse) { #dive-btn:not(.hidden) { display: grid; } }
+@media (max-width: 700px), (max-height: 500px) { #dive-btn { width: 54px; height: 54px; padding: 12px; right: max(108px, calc(env(safe-area-inset-right) + 96px)); bottom: max(96px, calc(env(safe-area-inset-bottom) + 80px)); } }
 
 /* Settings */
 .settings-window { text-transform: none; }
@@ -1180,3 +1186,17 @@ body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: fil
 #death-screen .death-lives { font-size: 22px; color: #fff; }
 #death-screen .death-wait { margin-top: 18px; font-size: 15px; color: #bdbdbd; }
 @keyframes death-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- Skills window: the filter (kind, rank, element, name) and rank tags ---------- */
+.sk-filter { margin: 4px 0 10px; }
+.sk-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.sk-chip { padding: 4px 10px; border-radius: 999px; border: 1px solid #4a3608; background: #0d0a05; color: #e8d6a8; font: 0.8rem Georgia, serif; cursor: pointer; }
+.sk-chip.on { background: linear-gradient(180deg, #f5c84c, #c8921a); color: #1a1206; border-color: #f5c84c; }
+.sk-filter-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.sk-filter-row select, .sk-filter-row input { flex: 1 1 120px; min-width: 0; padding: 5px 8px; border-radius: 4px; border: 1px solid #4a3608; background: #0d0a05; color: #f4ead2; font: 0.85rem Georgia, serif; }
+.sk-row[hidden], .sk-kind[hidden], .sk-filter-none[hidden] { display: none; }
+.sk-rank { font: italic 0.72rem Georgia, serif; font-weight: normal; padding: 0 6px; margin-left: 4px; border-radius: 3px; border: 1px solid currentColor; }
+.sk-rank-basic { color: #b8c0c8; }
+.sk-rank-advanced { color: #7fc8ff; }
+.sk-rank-expert { color: #c48aff; }
+.sk-rank-master { color: #ffb347; }

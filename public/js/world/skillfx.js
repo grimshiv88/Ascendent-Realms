@@ -213,6 +213,13 @@ export function createSkillFx(scene) {
     if (id === 'quick_wall') { aura(p, h, '#b89a6a', '#8a7454'); return burst(from, '#8a7454', 16, 2, 0.7, 2); }
     if (id === 'blessing') return healRise(p, h, '#ffe68a');
     if (id === 'haggle') { aura(p, h, '#ffd24a'); return coins(p, h); }
+    // the wider book of skills: drawn in their element's colours, bigger for higher ranks
+    if (sk.el) {
+      const tier = { basic: 0, advanced: 1, expert: 3, master: 5 }[sk.rank] || 0;
+      if (sk.el === 'Gold' && sk.type === 'bolt' && hit) { const c = mesh(geo.coin, '#ffd24a', 1); return shot(c, from, hit, 28, null, () => { flash(hit, '#ffe070', 0.9 + tier * 0.2); coins(to, 0.5, 5 + tier * 2); }); }
+      if (sk.el === 'Gold' && sk.type === 'buff') { aura(p, h, '#ffd24a'); return coins(p, h); }
+      return unique({ ...sk, element: sk.el, tier }, p, h, heading, from, to, hit, path);
+    }
     if (sk.type === 'heal') return healRise(p, h, id === 'hearty_meal' ? '#ffc070' : '#7dff9a');
     if (sk.type === 'dash') return dash(path, id === 'shadow_step' ? '#4a2a6a' : '#b9a98a', id === 'shadow_step');
     if (id === 'fire_bolt' && hit) {
@@ -274,6 +281,8 @@ export function createSkillFx(scene) {
     Nature: { core: '#6ad04a', trail: '#9aff7a', hit: '#c0ff9a' },
     Light: { core: '#fff2c0', trail: '#ffffff', hit: '#fff6d8' },
     Dark: { core: '#7a3aa8', trail: '#3a1a5a', hit: '#a060d0' },
+    Steel: { core: '#e4e8f0', trail: '#aab0bc', hit: '#ffffff' },
+    Gold: { core: '#ffd24a', trail: '#ffe9a0', hit: '#fff2c0' },
   };
   function spell(element, from, to) {
     const L = ELEMENT_LOOK[element] || ELEMENT_LOOK.Light;

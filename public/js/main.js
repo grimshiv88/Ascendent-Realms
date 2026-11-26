@@ -912,6 +912,17 @@ function startGame(character) {
   $('attack-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.attack(); });
   $('jump-btn').classList.remove('hidden');
   $('jump-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.jump(); });
+  // on a dragon or wyvern: hold to fly down (tap jump to climb); shown only while you fly
+  {
+    const dive = document.createElement('button');
+    dive.type = 'button'; dive.id = 'dive-btn'; dive.className = 'hidden'; dive.setAttribute('aria-label', 'Fly down');
+    dive.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v13m-6-6 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    $('jump-btn').after(dive);
+    const set = (on) => (e) => { e.preventDefault(); e.stopPropagation(); world?.flyDown?.(on); };
+    dive.addEventListener('pointerdown', set(true));
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) dive.addEventListener(ev, set(false));
+    setInterval(() => { const on = !!world?.flying; if (dive.classList.contains('hidden') === on) dive.classList.toggle('hidden', !on); if (!on) world?.flyDown?.(false); }, 400);
+  }
 
   const SHOP_SAYS = { ok: 'Bought. It is in your bag.', locked: 'You need a higher level for that.', coins: 'Not enough coins.', full: 'Your bag is full.' };
   const BREW_SAYS = { ok: 'Brewing…', class: 'Only a Potion Maker can brew.', coins: 'Not enough coins.', herbs: 'Not enough Healing Herbs. Buy them in the shop or find them on monsters.', busy: 'You are already brewing as much as you can.', pick: '' };

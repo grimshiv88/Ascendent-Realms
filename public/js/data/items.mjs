@@ -51,6 +51,8 @@ export const ITEMS = {
   dragon_scale: { name: 'Dragon Scale', icon: '🐉', kind: 'material', price: 900, text: 'A scale from a dragon or a wyvern, harder than steel. Smiths pay well for it.' },
   dragon_heart: { name: 'Dragon Heart', icon: '❤️‍🔥', kind: 'material', price: 6000, text: 'The still-warm heart stone of a slain dragon. Very rare.' },
   wyvern_fang: { name: 'Wyvern Fang', icon: '🦷', kind: 'material', price: 350, text: 'A long, curved fang from a wyvern.' },
+  star_scale: { name: 'Star Scale', icon: '✨', kind: 'material', price: 4000, text: 'A scale of Astrazhar, King of the Wild Dragons. Tiny stars still drift inside it.' },
+  cosmic_heart: { name: 'Cosmic Heart', icon: '🌌', kind: 'material', price: 25000, text: 'The heart of the King of the Wild Dragons: a whole night sky turning inside a stone. There is only ever one at a time.' },
   spirit_pearl: { name: 'Spirit Pearl', icon: '🫧', kind: 'material', price: 9000, text: 'The glowing heart of the Spirit King of the great lake. There is only ever one at a time.' },
   // mined in the depths; rank shows how rare each one is
   copper_ore: { name: 'Copper Ore', icon: '🟠', kind: 'material', rank: 1, price: 3, text: 'Soft reddish ore, common in shallow caves. Minted into Copper coins, or forged into cheap copper gear.' },
@@ -178,6 +180,14 @@ export const ITEMS = {
   riding_donkey: { name: 'Riding Donkey', icon: '🫏', kind: 'mount', mount: 'donkey', price: 200, text: 'Slow but sure-footed, and cheap to keep. Call it from your bag, or press H.' },
   tamed_horse: { name: 'Tamed Wild Horse', icon: '🐎', kind: 'mount', mount: 'wild_horse', price: 500, text: 'A wild horse that came to trust you. The fastest mount there is.' },
   tamed_camel: { name: 'Tamed Camel', icon: '🐪', kind: 'mount', mount: 'camel', price: 400, text: 'A camel that came to trust you. Tireless in the desert.' },
+  // dragons and wyverns you have tamed (see creatures.js: beat one down until it lands, worn out, then use a Dragon Bridle on it)
+  tamed_peak_wyvern: { name: 'Tamed Peak Wyvern', icon: '🐉', kind: 'mount', mount: 'peak_wyvern', price: 30000, text: 'A grey wyvern of the Stonecrown peaks that you beat and tamed. It flies.' },
+  tamed_frost_wyvern: { name: 'Tamed Frost Wyvern', icon: '🐉', kind: 'mount', mount: 'frost_wyvern', price: 34000, text: 'An ice-blue wyvern of Frostreach that you beat and tamed. It flies and breathes frost.' },
+  tamed_fire_wyvern: { name: 'Tamed Fire Wyvern', icon: '🐉', kind: 'mount', mount: 'fire_wyvern', price: 36000, text: 'A wyvern of the Dragon Peaks that you beat and tamed. It flies and breathes fire.' },
+  tamed_storm_dragon: { name: 'Tamed Storm Dragon', icon: '🐲', kind: 'mount', mount: 'storm_dragon', price: 90000, text: 'The Storm Dragon of the Stonecrown Highlands, beaten and tamed. It flies faster than any other.' },
+  tamed_frost_dragon: { name: 'Tamed Frost Dragon', icon: '🐲', kind: 'mount', mount: 'frost_dragon', price: 90000, text: 'The Frost Dragon of Frostreach, beaten and tamed. It flies and breathes frost.' },
+  tamed_fire_dragon: { name: 'Tamed Fire Dragon', icon: '🐲', kind: 'mount', mount: 'fire_dragon', price: 95000, text: 'A Fire Dragon of the volcanoes, beaten and tamed. It flies and breathes fire.' },
+  dragon_bridle: { name: 'Dragon Bridle', icon: '🪢', kind: 'material', price: 12000, text: 'Chains and dragonhide straps. Beat a dragon or wyvern until it lands, worn out, then press E beside it to tame it (the bridle is used up, whether it works or not).' },
   // clothes: worn for looks, not protection (a little DEF at most)
   linen_shirt: { name: 'Linen Shirt', icon: '👕', kind: 'armour', slot: 'body', rank: 0, def: 1, fashion: true, price: 35, look: { color: '#e8e0cc' }, text: 'Light, clean linen.' },
   embroidered_tunic: { name: 'Embroidered Tunic', icon: '👘', kind: 'armour', slot: 'body', rank: 1, def: 1, fashion: true, price: 120, look: { color: '#7a2a3a' }, text: 'Gold thread at the collar and cuffs.' },
@@ -420,7 +430,7 @@ export function mergeCost(it, plus = 0) {
 export const SHOP = [
   // potions and food
   ['water_flask', 1], ['apple', 1], ['bread', 1], ['herbal_tea', 1], ['herb', 1], ['honey_cake', 3], ['roast_meat', 4], ['stew', 12], ['torch', 1], ['tent', 1], ['hunting_knife', 1], ['firewood', 1], ['shovel', 1], ['sp_potion', 2], ['calm_draught', 2], ['poison_potion', 3], ['potion', 5], ['sp_booster', 5],
-  ['swift_potion', 5], ['strength_potion', 6], ['stone_potion', 6], ['fire_oil', 8], ['frost_oil', 8], ['big_potion', 20],
+  ['dragon_bridle', 200], ['swift_potion', 5], ['strength_potion', 6], ['stone_potion', 6], ['fire_oil', 8], ['frost_oil', 8], ['big_potion', 20],
   // weapons
   ['arrow_bundle', 1], ['bait_trap', 1], ['taxidermy_kit', 1], ['hunting_bow', 1], ['longbow', 5], ['composite_bow', 12], ['elven_bow', 20],
   ['wooden_club', 1], ['rusty_sword', 1], ['hand_axe', 3], ['iron_dagger', 3], ['oak_staff', 3], ['iron_sword', 5],
@@ -556,7 +566,7 @@ Object.assign(MARKETS, {
   stall_herbs: { bot: true, name: 'Herbalist', text: 'Herbs, teas and small potions.', items: ['herb', 'herbal_tea', 'potion', 'sp_potion'] },
   stall_soup: { bot: true, name: 'Soup Pot', text: 'A cheap hot meal for anyone.', items: ['lentil_soup', 'stew', 'bread', 'water_flask'] },
   stall_scrap: { bot: true, name: 'Second-hand', text: 'Old things, mended and sold again.', items: ['stool', 'rag_rug', 'candle_stub', 'crate_table', 'straw_bed', 'torch', 'firewood'] },
-  farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields, seeds and tools to grow your own, and horses and donkeys to ride.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain', 'seed_carrot', 'seed_cabbage', 'seed_lettuce', 'seed_turnip', 'seed_potato', 'seed_onion', 'seed_pumpkin', 'seed_wheat', 'hoe', 'shovel', 'watering_can', 'riding_donkey', 'riding_horse'] },
+  farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields, seeds and tools to grow your own, and horses and donkeys to ride.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain', 'seed_carrot', 'seed_cabbage', 'seed_lettuce', 'seed_turnip', 'seed_potato', 'seed_onion', 'seed_pumpkin', 'seed_wheat', 'hoe', 'shovel', 'watering_can', 'riding_donkey', 'riding_horse', 'dragon_bridle'] },
   butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you. Snare traps, arrows and taxidermy kits for hunters.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'firewood', 'bait_trap', 'arrow_bundle', 'taxidermy_kit'] },
   tavern: { bot: true, name: 'Tavern', text: 'Halal food, fresh drinks and rooms to rent. No alcohol is served here.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask', 'herbal_tea', 'lentil_soup', 'bread'] },
 });
