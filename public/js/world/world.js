@@ -2564,7 +2564,6 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       powers = { ...p };
     },
     flyDown(v) { flyDown = !!v; },
-    flying: () => !!powers.fly,
     position: () => ({ x: pos.x, z: pos.z, heading }),
     // where you are out in the world (the door you came in by, while indoors)
     outdoors: () => (inside ? { x: inside.back.x, z: inside.back.z } : { x: pos.x, z: pos.z }),
