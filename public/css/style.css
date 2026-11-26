@@ -1188,8 +1188,33 @@ button, a, label, select, summary, [data-open], [data-act] { touch-action: manip
 .rd-list li b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-list li small { grid-column: 1 / -1; opacity: 0.75; }
 .rd-list li.drg b { color: #ff7a6a; } .rd-list li.wyv b { color: #ffb050; } .rd-list li.king b { color: #d8a0ff; } .rd-list li.gone b { color: #9a9a9a; }
-@media (max-width: 700px) { .rd { top: 180px; width: 110px; } .rd-disc { width: 110px; height: 110px; } .rd-list li small { display: none; } }
-@media (max-height: 500px) { .rd { top: calc(max(12px, env(safe-area-inset-top)) + 154px); width: 96px; } .rd-disc { width: 96px; height: 96px; } .rd-list { display: none; } }
+/* the big radar: a tap on the small one opens it */
+.rd-big { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.55); }
+.rd-big[hidden] { display: none; }
+.rd-big-box { width: min(980px, 100%); max-height: 100%; display: flex; flex-direction: column; padding: 12px; color: #e8f5ea; font: 0.85rem Georgia, serif; background: rgba(6, 16, 9, 0.96); border: 1px solid #5fe08a; border-radius: 10px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7); }
+.rd-big-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.rd-big-head b { font: 600 1rem 'Cinzel', serif; color: #5fe08a; }
+.rd-big-range { flex: 1; font-size: 0.78rem; opacity: 0.8; }
+.rd-close { padding: 4px 10px; color: #5fe08a; background: none; border: 1px solid #5fe08a; border-radius: 4px; cursor: pointer; }
+.rd-big-body { display: flex; gap: 12px; min-height: 0; }
+.rd-stage { position: relative; flex: 0 0 auto; width: min(70vh, 620px, calc(100vw - 56px)); aspect-ratio: 1; }
+.rd-stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.rd-stage canvas:active { cursor: grabbing; }
+.rd-zoom { position: absolute; right: 4px; bottom: 4px; display: flex; flex-direction: column; gap: 6px; }
+.rd-zoom button { width: 40px; height: 40px; font: 700 1.2rem sans-serif; color: #0a1a0e; background: #5fe08a; border: 0; border-radius: 50%; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
+.rd-side { flex: 1; min-width: 0; overflow-y: auto; max-height: min(70vh, 620px); }
+.rd-hint { margin: 0 0 6px; font-size: 0.75rem; opacity: 0.75; }
+.rd-big .rd-list { margin: 0; }
+.rd-big .rd-list li small { display: block; }
+@media (max-width: 700px), (max-height: 500px) {
+  .rd-big { padding: 6px; }
+  .rd-big-body { flex-direction: column; }
+  .rd-stage { width: min(calc(100vw - 40px), calc(100vh - 140px)); align-self: center; }
+  .rd-side { max-height: 30vh; }
+}
+@media (max-height: 500px) { .rd-big-body { flex-direction: row; } .rd-stage { width: calc(100vh - 90px); } .rd-side { max-height: calc(100vh - 90px); } }
+@media (max-width: 700px) { .rd { top: 180px; width: 110px; } .rd-disc { width: 110px; height: 110px; } .rd .rd-list li small { display: none; } }
+@media (max-height: 500px) { .rd { top: calc(max(12px, env(safe-area-inset-top)) + 154px); width: 96px; } .rd-disc { width: 96px; height: 96px; } .rd .rd-list { display: none; } }
 
 /* ---------- the death screen: the world turns grey, then you wake at a shrine ---------- */
 body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: filter 0.6s; }
