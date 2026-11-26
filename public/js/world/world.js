@@ -651,6 +651,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     isNight: () => night,
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
+    // a beast drawn to your bait, caught in your snare (or tearing free of it)
+    onSnare(m, what) {
+      const name = m.kind.animal?.name || m.kind.name;
+      if (what === 'caught') { say(`Your snare has caught a ${name}! It is held fast for 30 seconds`, 'exp'); floatText('Snared!', new THREE.Vector3(m.x, m.y + m.height + 0.5, m.z), 'crit'); }
+      else say(`The ${name} tears free of the snare!`, 'hurt');
+    },
     isInsideCave: insideCave,
     blockedAt: (x, z, r, y) => (!inside && !depth ? blockedAt(x, z, r, y) : null),
     // slide a creature out of anything solid it has ended up in (walls, fences, trees, rocks)
@@ -1351,9 +1357,87 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (dead || cooldown > 0) return;
     if (sheathed) { sayPutAway(); return; }
     const w = game?.weapon();
+    // a bow needs an arrow for every shot
+    if (w?.type === 'bow' && !game.has('arrow')) { cooldown = 0.6; say('No arrows. Buy a Bundle of 10 Arrows at a shop or market', 'hurt'); return; }
     cooldown = (w || FIST).speed;
     attackT = 0;
     swingDone = false;
+  }
+
+  // ---------- arrows ----------
+  // A bow shoots at the foe you face (a little either side counts, so you needn't aim exactly):
+  // the arrow flies in a shallow arc and hits when it gets there, if the foe is still in its path.
+  // One that misses sticks in the ground for a while.
+  const arrows = [];
+  const ARROW_SPEED = 45;
+  const arrowMats = { shaft: new THREE.MeshStandardMaterial({ color: '#8a6a44', roughness: 0.8 }), head: new THREE.MeshStandardMaterial({ color: '#9ea4ac', metalness: 1, roughness: 0.35 }), fletch: new THREE.MeshStandardMaterial({ color: '#e8e2d4', roughness: 0.9, side: THREE.DoubleSide }) };
+  function arrowMesh() {
+    const g = new THREE.Group();
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.75, 5), arrowMats.shaft);
+    shaft.rotation.x = Math.PI / 2;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.06, 5), arrowMats.head);
+    head.rotation.x = Math.PI / 2; head.position.z = 0.4;
+    g.add(shaft, head);
+    for (let i = 0; i < 3; i++) {
+      const f = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.1), arrowMats.fletch);
+      f.position.z = -0.32; f.rotation.set(0, Math.PI / 2, (i / 3) * Math.PI * 2);
+      f.rotateY(0); g.add(f);
+    }
+    g.traverse((o) => { o.castShadow = true; });
+    return g;
+  }
+  function shootArrow(w) {
+    if (!game.giveAway('arrow')) { say('No arrows left', 'hurt'); return; }
+    const r = weaponReach(w);
+    const from = new THREE.Vector3(pos.x + Math.sin(heading) * 0.5, pos.y + bodyH * 0.78, pos.z + Math.cos(heading) * 0.5);
+    const m = creatures.target(pos.x, pos.z, heading, r.range, r.aim);
+    let to;
+    if (m) to = new THREE.Vector3(m.x, m.y + m.height * 0.55, m.z);
+    else to = new THREE.Vector3(pos.x + Math.sin(heading) * r.range, 0, pos.z + Math.cos(heading) * r.range);
+    if (!m) to.y = from.y - 0.5;
+    const dist = from.distanceTo(to);
+    const obj = arrowMesh();
+    obj.position.copy(from);
+    scene.add(obj);
+    arrows.push({ obj, from, to, m, t: 0, dur: Math.max(0.08, dist / ARROW_SPEED), lift: dist * 0.04, stuck: 0, sharp: r.sharp, w });
+    if (!game.has('arrow')) say('That was your last arrow', 'note');
+  }
+  const arrowPrev = new THREE.Vector3();
+  function tickArrows(dt) {
+    for (let i = arrows.length - 1; i >= 0; i--) {
+      const a = arrows[i];
+      if (a.stuck) {
+        a.stuck -= dt;
+        if (a.stuck <= 0) { scene.remove(a.obj); arrows.splice(i, 1); }
+        continue;
+      }
+      a.t += dt;
+      const k = Math.min(1, a.t / a.dur);
+      arrowPrev.copy(a.obj.position);
+      a.obj.position.lerpVectors(a.from, a.to, k);
+      a.obj.position.y += Math.sin(k * Math.PI) * a.lift;
+      if (k < 1 || !a.m) a.obj.lookAt(a.obj.position.clone().multiplyScalar(2).sub(arrowPrev));
+      // into the ground (or out of range): it sticks where it lands
+      const g = groundAt(a.obj.position.x, a.obj.position.z, a.obj.position.y + 2);
+      if (k >= 1 || a.obj.position.y < g) {
+        const m = a.m;
+        if (m && !m.dead && k >= 1 && Math.hypot(m.x - a.to.x, m.z - a.to.z) < m.radius + 0.8) {
+          // a hit: it stays in the foe for a moment
+          damageMonster(m, a.sharp, null, 'pierce', a.w);
+          scene.remove(a.obj); arrows.splice(i, 1);
+          continue;
+        }
+        if (!m && k < 1) { a.obj.position.y = g + 0.15; }
+        else if (k >= 1 && a.obj.position.y > g + 0.05) {
+          // missed (the foe moved): keep flying on and down until it lands
+          const dir = a.to.clone().sub(a.from).setY(0).normalize();
+          a.from = a.obj.position.clone(); a.to = a.from.clone().addScaledVector(dir, 6); a.to.y = g - 0.5; a.m = null; a.t = 0; a.dur = 0.15; a.lift = 0;
+          continue;
+        }
+        a.obj.position.y = Math.max(a.obj.position.y, g + 0.12);
+        a.stuck = 20;
+      }
+    }
   }
   // Skills that raise ATK or DEF for a while
   const buffs = { atk: { pct: 0, until: 0 }, def: { pct: 0, until: 0 } };
@@ -1361,8 +1445,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const buffed = (stat) => 1 + ((buffs[stat] && clock.elapsedTime < buffs[stat].until ? buffs[stat].pct : 0) + (game?.boostPct(stat) || 0)) / 100;
 
   // Hit a monster with your weapon (or fists); `mult` and `magic` come from skills
-  function damageMonster(m, mult = 1, magic = null, how = null) {
-    const w = game?.weapon();
+  function damageMonster(m, mult = 1, magic = null, how = null, shotWith = null) {
+    const w = shotWith || game?.weapon();
     const s = game.stats();
     const useMagic = magic ?? !!w?.magic;
     let dmg = (w || magic !== null ? (useMagic ? s.matk * buffed('matk') : s.atk) : s.base.atk * 0.6 + 2) * mult * buffed('atk');
@@ -1680,6 +1764,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       return;
     }
     if (w?.type === 'staff' || (w?.magic && character.cls === 'mage')) { castSpell(); return; }
+    if (w?.type === 'bow') { shootArrow(w); return; }
     const r = weaponReach(w);
     const reach = bodyR + r.reach * Math.max(0.8, bodyH / 1.8);
     // monsters first: a long or wide weapon can catch more than one
@@ -1928,10 +2013,24 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   // the weapon arm's ready pose [shoulder, elbow] with a blade (see gear.js: the blade then points ahead)
   const READY = [-0.35, -0.85];
-  const bladeHeld = () => { const w = game?.weapon(); return !sheathed && !!w && w.type !== 'spear' && w.type !== 'staff'; };
+  const bladeHeld = () => { const w = game?.weapon(); return !sheathed && !!w && w.type !== 'spear' && w.type !== 'staff' && w.type !== 'bow'; };
   function poseAttack(rig, k, armed) {
     const arm = rig.arms?.[0];
     if (arm) {
+      if (armed && game?.weapon()?.type === 'bow') {
+        // a shot: the bow arm comes up straight ahead, the other hand draws the string back to the
+        // cheek, lets go, then both come down
+        const L = THREE.MathUtils.lerp, pull = rig.arms[1];
+        const up = k < 0.3 ? k / 0.3 : k < 0.8 ? 1 : 1 - (k - 0.8) / 0.2;
+        const ease = up * up * (3 - 2 * up);
+        arm.shoulder.rotation.x = L(0, -1.55, ease); arm.elbow.rotation.x = L(0, -0.05, ease);
+        if (pull) {
+          const draw = k < 0.45 ? Math.min(1, k / 0.4) : Math.max(0, 1 - (k - 0.45) / 0.1) * 0.35 + (k < 0.8 ? 0.65 : 0.65 * (1 - (k - 0.8) / 0.2));
+          pull.shoulder.rotation.x = L(0, -1.45, ease); pull.elbow.rotation.x = L(0, -2.1, draw * ease);
+        }
+        if (rig.spine) { rig.spine.rotation.y = -0.45 * ease; rig.spine.rotation.x = 0; }
+        return;
+      }
       if (armed) {
         // an overhead slash: up from the ready pose until the blade points at the sky, down hard
         // until it points ahead and low, then back to ready
@@ -2212,6 +2311,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const k of skyCards.values()) { k.card.group.visible = !inside && !depth && Math.hypot(pos.x - k.place.x, pos.z - k.place.z) < 1500; if (k.card.group.visible) k.card.update(t, 42); }
     creatures.update(dt, t);
     tickEffects(dt);
+    tickArrows(dt);
     skillFx.update(dt);
     if (depth) {
       tickNests(dt);
@@ -2465,6 +2565,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // hunting (the choice shown for a body, a campfire from Firewood)
     dragCarcass: () => husbandry.drag(),
     cutCarcass: () => husbandry.cut(),
+    baitCarcass: () => husbandry.bait(),
+    stuffCarcass: (how) => husbandry.stuff(how),
+    debugBaits: () => husbandry.debugBaits(),
+    debugBaitNow: () => husbandry.debugBaitNow(),
+    debugPullVisitor: (d) => husbandry.debugPullVisitor(d),
     lightCampfire: () => (!inside && !depth ? husbandry.lightCampfire() : 'inside'),
     // oil: everyone's derricks, and where you would dig a test pit (just in front of you), or why not
     setWells: (list) => oil?.setWells(list),

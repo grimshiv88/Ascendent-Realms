@@ -25,7 +25,7 @@ export const INJURY = {
   ribs: { name: 'Broken ribs', effect: 'Your SP is 30% lower.' },
 };
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
-import { portalById, portalFee } from './data/portals.mjs';
+import { portalById, portalFee, portalOpen } from './data/portals.mjs';
 import { actionFor, FIXED_KEYS } from './data/controls.mjs';
 import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, randomSkill } from './data/skills.mjs';
 import { SPELLS, randomSpell, staffSlots } from './data/spells.mjs';
@@ -287,7 +287,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
       if (market ? !marketStock(market, c.level).includes(id) : c.level < unlock) return 'locked';
       const price = market ? marketPrice(market, id) : it.price;
       if (c.coins < price) return poor(price);
-      if (!addItem(id, 1)) return 'full';
+      // a bundle (of arrows) opens into the bag as what it holds
+      if (!(it.unpack ? addItem(it.unpack[0], it.unpack[1]) : addItem(id, 1))) return 'full';
       c.coins -= price;
       changed('coins');
       return 'ok';
@@ -630,6 +631,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
       const from = portalById(fromId), to = portalById(toId);
       if (!from || !to || from === to) return 'pick';
       if (from.region !== to.region) return 'sea';
+      // only to where the monsters are your level or lower
+      if (!portalOpen(to, c.level)) return 'level';
       const fee = portalFee(from, to);
       if (c.coins < fee) return poor(fee);
       c.coins -= fee;
