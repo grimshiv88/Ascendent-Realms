@@ -6,7 +6,8 @@ import { CITY_R } from '../data/world-layout.mjs';
 import { MARKETS } from '../data/items.mjs';
 import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS } from '../data/birth.mjs';
 import { TIERS, TERRACE, ROAD_ANGLES, ROAD_HALF } from '../data/citylevels.mjs';
-import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID } from '../data/citylayout.mjs';
+import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, BANK_ID } from '../data/citylayout.mjs';
+import { BANK_NAME } from '../data/economy.mjs';
 import { INNER_R, MOAT, GATE_ANGLES, GUILD_NAME, DARK_GUILD_NAME, ESTATE_NAME } from './city.js';
 import { TOWN_TONES } from './houses.js';
 
@@ -74,7 +75,7 @@ export function drawCityPlan(ctx, place, at, k, alpha = 1, labels = true) {
   const PG = plan.playground;
   rect(PG.x, PG.z, PG.w, PG.d, PG.a, '#8fb05a', '#5a7a3a', 1);
   // the homes, each in its roof's colour; houses for sale outlined in green
-  for (const h of cityHouses(place.id)) rect(h.x, h.z, h.w, h.d, h.rot, h.style === 'shack' ? '#6a5a44' : TOWN_TONES[(h.i * 7 + Math.floor(h.i / 3)) % TOWN_TONES.length][1], 'rgba(30, 20, 10, 0.6)', 0.6);
+  for (const h of cityHouses(place.id)) if (!h.gone) rect(h.x, h.z, h.w, h.d, h.rot, h.style === 'shack' ? '#6a5a44' : TOWN_TONES[(h.i * 7 + Math.floor(h.i / 3)) % TOWN_TONES.length][1], 'rgba(30, 20, 10, 0.6)', 0.6);
   for (const h of plan.sale) rect(h.x, h.z, h.w, h.d, h.rot, h.style === 'shack' ? '#6a5a44' : '#8a7a5a', '#7aff8a', 1.2);
   // the castle and the city's own buildings, outlined in gold
   if (!monster) rect(CASTLE_SPOT.x, CASTLE_SPOT.z, 30, 24, 0, '#3a3e5a', '#ffd76a', 2);
@@ -84,7 +85,7 @@ export function drawCityPlan(ctx, place, at, k, alpha = 1, labels = true) {
   named.push([monster ? DARK_GUILD_NAME : GUILD_NAME, GUILD_SPOT.x, GUILD_SPOT.z]);
   for (const p of plan.shops) {
     rect(p.x, p.z, p.w, p.d, p.rot, '#7a4a2a', '#ffd76a', 1.6);
-    named.push([p.id === ESTATE_ID ? ESTATE_NAME : MARKETS[p.id]?.name || p.id, p.x, p.z]);
+    named.push([p.id === ESTATE_ID ? ESTATE_NAME : p.id === BANK_ID ? BANK_NAME : MARKETS[p.id]?.name || p.id, p.x, p.z]);
   }
   const academies = [];
   for (const { school, x, z, rot } of ACADEMIES) {

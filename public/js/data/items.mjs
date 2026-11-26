@@ -169,6 +169,7 @@ export const ITEMS = {
   seed_onion: { name: 'Onion Sets', icon: '🌱', kind: 'seed', crop: 'onion', price: 2, text: 'Plant a bed of onions. Ripe in about 12 minutes.' },
   seed_pumpkin: { name: 'Pumpkin Seeds', icon: '🌱', kind: 'seed', crop: 'pumpkin', price: 6, text: 'Plant a bed of pumpkins. Slow, about 30 minutes, but big.' },
   seed_wheat: { name: 'Seed Wheat', icon: '🌱', kind: 'seed', crop: 'wheat', price: 3, text: 'Plant a bed of wheat for grain and hay. Ripe in about 20 minutes.' },
+  shovel: { name: 'Shovel', icon: '🪏', kind: 'material', price: 15, text: 'Digs a test pit anywhere out in the wilds, to look for oil under the ground (from your bag). Even with no oil, the pit tells you which way it lies.' },
   hoe: { name: 'Hoe', icon: '⛏️', kind: 'material', price: 12, text: 'Digs a new bed on your own Farm land (E where you want it).' },
   watering_can: { name: 'Watering Can', icon: '🪣', kind: 'material', price: 8, text: 'Fill it at a river, lake, well or trough (E), then water a bed (E) to make it grow faster.' },
   watering_can_full: { name: 'Watering Can (full)', icon: '🪣', kind: 'material', price: 8, text: 'Full of water. E by a growing bed waters it: it grows half as fast again.' },
@@ -418,7 +419,7 @@ export function mergeCost(it, plus = 0) {
 // What the shop sells, and the level at which each item unlocks
 export const SHOP = [
   // potions and food
-  ['water_flask', 1], ['apple', 1], ['bread', 1], ['herbal_tea', 1], ['herb', 1], ['honey_cake', 3], ['roast_meat', 4], ['stew', 12], ['torch', 1], ['tent', 1], ['hunting_knife', 1], ['firewood', 1], ['sp_potion', 2], ['calm_draught', 2], ['poison_potion', 3], ['potion', 5], ['sp_booster', 5],
+  ['water_flask', 1], ['apple', 1], ['bread', 1], ['herbal_tea', 1], ['herb', 1], ['honey_cake', 3], ['roast_meat', 4], ['stew', 12], ['torch', 1], ['tent', 1], ['hunting_knife', 1], ['firewood', 1], ['shovel', 1], ['sp_potion', 2], ['calm_draught', 2], ['poison_potion', 3], ['potion', 5], ['sp_booster', 5],
   ['swift_potion', 5], ['strength_potion', 6], ['stone_potion', 6], ['fire_oil', 8], ['frost_oil', 8], ['big_potion', 20],
   // weapons
   ['arrow_bundle', 1], ['bait_trap', 1], ['taxidermy_kit', 1], ['hunting_bow', 1], ['longbow', 5], ['composite_bow', 12], ['elven_bow', 20],
@@ -538,14 +539,14 @@ export const BOT_MARKUP = 1.4, BOT_BUY_SHARE = 0.7;
 const basicGear = (kind) => SHOP.filter(([id]) => ITEMS[id].kind === kind && (ITEMS[id].rank || 0) <= 1 && !ITEMS[id].fashion).map(([id]) => id);
 Object.assign(MARKETS, {
   city_potions: { bot: true, name: 'The Green Vial', text: 'Small potions and remedies, run by the city.', items: ['potion', 'sp_potion', 'calm_draught', 'herb', 'big_potion', 'strength_potion', 'stone_potion', 'swift_potion'] },
-  city_smith: { bot: true, name: 'City Forge', text: 'Basic weapons and tools, run by the city.', items: [...basicGear('weapon'), 'poison_potion', 'fire_oil', 'frost_oil', 'torch', 'tent', 'hunting_knife', 'firewood', 'arrow_bundle', 'bait_trap', 'taxidermy_kit'] },
+  city_smith: { bot: true, name: 'City Forge', text: 'Basic weapons and tools, run by the city.', items: [...basicGear('weapon'), 'poison_potion', 'fire_oil', 'frost_oil', 'torch', 'tent', 'hunting_knife', 'firewood', 'shovel', 'arrow_bundle', 'bait_trap', 'taxidermy_kit'] },
   city_armoury: { bot: true, name: 'City Armoury', text: 'Plain armour and shields, run by the city.', items: basicGear('armour') },
   city_tailor: { bot: true, name: 'The Silk Thread', text: 'Clothes to wear for looks, not for battle.', items: ['linen_shirt', 'wide_trousers', 'felt_hat', 'sandals', 'embroidered_tunic', 'turban', 'riding_boots', 'silk_robe'] },
   city_food: { bot: true, name: 'The Olive Tree', text: 'Halal meals that heal and give a short boost.', items: ['bread', 'apple', 'lentil_soup', 'falafel_wrap', 'lamb_kebab', 'chicken_rice', 'date_bowl', 'stew'] },
   furniture_dump: { bot: true, name: 'Junk Dealer', text: 'Second-hand furniture, cheap and a little broken.', items: ['straw_bed', 'crate_table', 'stool', 'rag_rug', 'candle_stub'] },
   furniture_common: { bot: true, name: 'Oak & Hearth Furniture', text: 'Good plain furniture for a family home.', items: ['wooden_bed', 'oak_table', 'chair', 'wardrobe', 'wool_rug', 'oil_lamp', 'bookshelf', 'potted_plant'] },
   furniture_noble: { bot: true, name: 'The Gilded Room', text: 'The finest furniture in the realm, for noble houses.', items: ['canopy_bed', 'marble_table', 'velvet_chair', 'chandelier', 'tapestry', 'gilded_mirror', 'grand_wardrobe'] },
-  farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields, seeds and tools to grow your own, and horses and donkeys to ride.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain', 'seed_carrot', 'seed_cabbage', 'seed_lettuce', 'seed_turnip', 'seed_potato', 'seed_onion', 'seed_pumpkin', 'seed_wheat', 'hoe', 'watering_can', 'riding_donkey', 'riding_horse'] },
+  farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields, seeds and tools to grow your own, and horses and donkeys to ride.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain', 'seed_carrot', 'seed_cabbage', 'seed_lettuce', 'seed_turnip', 'seed_potato', 'seed_onion', 'seed_pumpkin', 'seed_wheat', 'hoe', 'shovel', 'watering_can', 'riding_donkey', 'riding_horse'] },
   butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you. Snare traps, arrows and taxidermy kits for hunters.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'firewood', 'bait_trap', 'arrow_bundle', 'taxidermy_kit'] },
   tavern: { bot: true, name: 'Tavern', text: 'Halal food, fresh drinks and rooms to rent. No alcohol is served here.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask', 'herbal_tea', 'lentil_soup', 'bread'] },
 });

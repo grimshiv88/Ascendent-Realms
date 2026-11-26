@@ -1,6 +1,6 @@
 // Your character's progress while playing: HP and SP, EXP and levels, coins, the bag and what you wear.
 // Every change is saved to the server a moment later.
-import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm } from './data/game-data.mjs';
+import { CLASSES, RACES, KEY_LEVELS, derivedStats, expToNext, mayChangeForm, levelHeal, setTuning } from './data/game-data.mjs';
 import { MINT } from './data/money.mjs';
 import { HUNGER_MAX, fillOf, STARVE_ATK } from './data/hunger.mjs';
 import { cleanBeds } from './data/crops.mjs';
@@ -59,6 +59,8 @@ function giveSpell(c) {
 }
 
 export function createProgress(c, { save, onChange, onEvent }) {
+  // the admins' health and healing numbers, sent with the character (see TUNING)
+  if (c.tuning) { setTuning(c.tuning); delete c.tuning; }
   c.inventory ||= [];
   c.equipped = { ...Object.fromEntries(SLOTS.map(([s]) => [s, null])), ...(c.equipped || {}) };
   c.boosts ||= [];
@@ -117,7 +119,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     // a child's body is still growing: only part of their stats count yet
     const share = c.child ? childStatShare(ageOf(c)) : 1;
     const base = share === 1 ? c.stats : Object.fromEntries(Object.entries(c.stats).map(([k, v]) => [k, Math.max(1, Math.round(v * share))]));
-    const d = derivedStats(base, c.level, c.trained);
+    const d = derivedStats(base, c.level, c.trained, c.extraHp);
     const b = bonus();
     // a broken arm weakens your blows; broken ribs leave you short of breath (less SP)
     const arm = (c.injury?.part === 'arm' ? 0.7 : 1) * (c.hunger <= 0 ? STARVE_ATK : 1), ribs = c.injury?.part === 'ribs' ? 0.7 : 1;
@@ -249,7 +251,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
         c.boosts.push({ stat: it.buff.stat, pct: it.buff.pct, until: Date.now() + it.buff.minutes * 60000 });
       }
       if (it.rest) c.fatigue = Math.max(0, c.fatigue - it.rest);
-      if (it.heal) c.hp = Math.min(stats().hp, c.hp + it.heal);
+      if (it.heal) c.hp = Math.min(stats().hp, c.hp + levelHeal(it.heal, c.level));
       if (it.sp) c.sp = Math.min(stats().sp, c.sp + it.sp);
       c.hunger = Math.min(HUNGER_MAX, c.hunger + fillOf(e.id, it));
       changed('hp');
@@ -407,7 +409,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     serve(id) {
       const it = ITEMS[id];
       if (!it) return;
-      if (it.heal) c.hp = Math.min(stats().hp, c.hp + Math.round(it.heal * 1.25));
+      if (it.heal) c.hp = Math.min(stats().hp, c.hp + levelHeal(Math.round(it.heal * 1.25), c.level));
       if (it.sp) c.sp = Math.min(stats().sp, c.sp + Math.round(it.sp * 1.25));
       if (it.rest) c.fatigue = Math.max(0, c.fatigue - it.rest);
       if (it.boost) c.boosts.push({ sp: it.boost.sp, until: Date.now() + it.boost.minutes * 60000 });

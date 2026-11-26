@@ -8,6 +8,12 @@ import * as THREE from 'three';
 // `cell` (metres): also split by squares of the ground this size, so far squares are skipped by
 // the camera and by the sun's shadow. Meshes marked userData.detail (window frames, rails) go in
 // meshes of their own marked userData.detailFar, which showDetail() hides beyond a distance.
+// On a phone or tablet the small details (window frames, braces, rails) are not built at all: in a
+// big city they were more than half of the houses' memory, and an iPhone closes a page that uses
+// too much. They were only drawn within 50 m there anyway.
+let leanDetail = false;
+export function setLeanDetail(on) { leanDetail = !!on; }
+
 export function mergeStill(group, { cell = 0 } = {}) {
   group.updateMatrixWorld(true);
   const toLocal = new THREE.Matrix4().copy(group.matrixWorld).invert();
@@ -25,6 +31,7 @@ export function mergeStill(group, { cell = 0 } = {}) {
   walk(group, false);
   const tmp = new THREE.Vector3();
   for (const [m, det] of meshes) {
+    if (det && leanDetail) { m.parent.remove(m); continue; }
     const geo = toFlat(m.geometry);
     geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toLocal, m.matrixWorld));
     let key = '';

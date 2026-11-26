@@ -16,6 +16,8 @@ import { playWork } from './workscene.js';
 import { renderAssess, renderParents } from './idcard.js';
 import { renderQuests, renderGuild } from './quests.js';
 import { renderLand, renderCave, renderEstate } from './landui.js';
+import { renderBank, renderDerrick, renderOilSpot } from './bankui.js';
+import { depositById, BANK_ID, bankPlace } from './data/economy.mjs';
 import { caveById } from './data/depths.mjs';
 import { portalFee, portalKm, portalLevel } from './data/portals.mjs';
 import { openBuilder as openBuilderView } from './builder.js';
@@ -26,7 +28,8 @@ import { PLOT, REACH, inReach, plotPrice } from './data/land.mjs';
 import { makeStage } from './characters/stage.js';
 import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
-import { fillIcons } from './characters/icons.js';
+import { fillIcons, warmIcons } from './characters/icons.js';
+import { warmWorldMap } from './world/mapdraw.js';
 import { SPELLS } from './data/spells.mjs';
 import { renderIdCard } from './idcard.js';
 import { renderRooms } from './roomsui.js';
@@ -481,6 +484,48 @@ function startGame(character) {
   function setLands(list) { ui.myPlots = list.filter((p) => p.mine); ui.otherPlots = list.filter((p) => !p.mine); world.setLands(list); }
   const loadHomes = () => api.homeList().then((r) => { ui.homes = r.homes || []; world?.setHomes(ui.homes); }).catch(() => {});
   const loadCaves = () => api.caveList().then((r) => { ui.caves = r.caves || []; }).catch(() => {});
+  // the Bank and oil (see bankui.js and data/economy.mjs)
+  const takeWells = (list) => { ui.wells = list || []; world?.setWells(ui.wells); if (ui.well) ui.well = ui.wells.find((w) => w.id === ui.well.id) || ui.well; };
+  const loadOil = () => api.oilInfo().then((r) => { takeWells(r.wells); ui.bankInfo = { ...(ui.bankInfo || {}), oil: r.oil }; }).catch(() => {});
+  const loadBank = () => api.bankInfo().then((r) => { game.setCoins(r.coins); ui.bankInfo = { bank: r.bank, oil: r.oil }; }).catch((e) => { ui.econMsg = e.message; ui.econBad = true; });
+  // one thing done at the Bank or with oil: the server sees your latest coins, bag and spot first
+  async function econ(run) {
+    ui.econBusy = true; drawPanel();
+    try {
+      await game.saveNow();
+      if (world) await api.saveLocation(world.here()).catch(() => {});
+      const r = await run();
+      if (r.coins != null) game.setCoins(r.coins);
+      if (r.bank) ui.bankInfo = { ...(ui.bankInfo || {}), bank: r.bank };
+      if (r.oil) ui.bankInfo = { ...(ui.bankInfo || {}), oil: r.oil };
+      if (r.wells) takeWells(r.wells);
+      ui.econMsg = r.message || ''; ui.econBad = false;
+      return r;
+    } catch (err) { ui.econMsg = err.message; ui.econBad = true; return null; }
+    finally { ui.econBusy = false; drawPanel(); }
+  }
+  // dig a test pit with a Shovel, just in front of you
+  let digging = false;
+  function digPit() {
+    if (digging) return;
+    const spot = world?.digSpot();
+    if (!spot || spot.error) { showArea(spot?.error || 'You can\'t dig here.'); return; }
+    digging = true;
+    showArea('You dig a test pit...');
+    setTimeout(async () => {
+      try {
+        await game.saveNow();
+        await api.saveLocation(world.here()).catch(() => {});
+        const r = await api.oilAct({ act: 'dig', x: spot.x, z: spot.z });
+        world?.digPit(spot.x, spot.z);
+        if (r.oil) ui.bankInfo = { ...(ui.bankInfo || {}), oil: r.oil };
+        if (r.wells) takeWells(r.wells);
+        showArea(r.message);
+        if (r.found) { ui.oilSpot = depositById(r.found); ui.econMsg = r.message; ui.econBad = false; openPanel('oilspot'); }
+      } catch (err) { showArea(err.message); }
+      digging = false;
+    }, 2500);
+  }
   function toggleLand() {
     const on = !world.landMode;
     world.setLandMode(on);
@@ -611,6 +656,9 @@ function startGame(character) {
       const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
       renderCave(overlay, ui.atCave, game, { owner: own?.owner, mine: own?.mine, message: ui.caveMsg || '', busy: ui.caveBusy });
     }
+    else if (name === 'bank' && ui.bankCity) renderBank(overlay, game, { city: ui.bankCity, info: ui.bankInfo, tab: ui.bankTab, message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy, wells: ui.wells || [] });
+    else if (name === 'derrick' && ui.well) renderDerrick(overlay, ui.well, { message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
+    else if (name === 'oilspot' && ui.oilSpot) renderOilSpot(overlay, game, ui.oilSpot, { info: ui.bankInfo, well: (ui.wells || []).find((w) => w.id === ui.oilSpot.id), message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
     else if (name === 'estate' && ui.estateCity) renderEstate(overlay, game, { city: ui.estateCity, homes: ui.homes || [], ring: ui.estateRing, message: ui.estateMsg || '', busy: ui.estateBusy });
     else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy, basket: ui.basket.map((p) => ({ ...p, price: plotPrice(p.ix, p.iz) })) });
     else overlay.innerHTML = HELP_HTML;
@@ -640,25 +688,66 @@ function startGame(character) {
     overlay.classList.remove('hidden');
   };
   // A death: it costs one of your 3 lives and you wake at the nearest shrine, or, with none left
-  // (or of old age below level 250), it is final (see data/life.mjs)
+  // (or of old age below level 250), it is final (see data/life.mjs).
+  // The screen turns grey at once with the news and the lives left; the heavy work of moving you
+  // to the shrine (building its town and land) happens only after that has been drawn, behind a
+  // dark screen, so the moment of death never freezes the game. Then you stand up again by yourself.
   function died(by, cause) {
     const out = game.die(cause);
     if (!out.rise) { fallen(by); return; }
-    const where = world?.riseAtShrine();
+    if (!overlay.classList.contains('hidden')) closePanel();
     world?.releaseMouse();
-    overlay.dataset.panel = 'risen';
-    const what = cause === 'age' ? 'Your body gave out to old age' : `You were defeated by ${cause === 'monster' ? 'a ' : ''}${esc(by)}`;
-    overlay.innerHTML = `
-      <div class="status-window welcome-window fallen-window" role="dialog" aria-label="You have fallen">
-        <h2>You have fallen</h2>
-        <p>${what}.</p>
-        ${out.free ? `<p>But you are past level ${UNDYING_LEVEL}: death cannot hold you. ${out.renewed ? `The shrine renews you, and you wake at the age of ${RENEW_AGE}.` : 'No life is lost.'}</p>`
-          : `<p>The shrine's light gathers you back. <b>${out.livesLeft} ${out.livesLeft === 1 ? 'life' : 'lives'} left.</b> ${out.livesLeft === 1 ? 'The next death will be your last.' : ''}</p>`}
-        <p>You wake at the shrine of ${esc(where || 'the nearest town')}.</p>
-        <button type="button" class="gold-button" data-close>Rise</button>
+    const what = cause === 'age' ? 'Your body gave out to old age.'
+      : cause === 'fall' ? 'You fell from too high.'
+      : cause === 'drown' ? 'You drowned.'
+      : `You were killed by ${cause === 'monster' && !/^the /i.test(by) ? 'a ' : ''}${esc(by)}.`;
+    const lives = out.free
+      ? (out.renewed ? `Past level ${UNDYING_LEVEL}, death cannot hold you: the shrine renews you at the age of ${RENEW_AGE}.` : `Past level ${UNDYING_LEVEL}, death cannot hold you. <b>No life lost.</b>`)
+      : `<b class="death-lives">${out.livesLeft} ${out.livesLeft === 1 ? 'life' : 'lives'} left</b>${out.livesLeft === 1 ? '<br><small>The next death will be your last.</small>' : ''}`;
+    showDeathScreen(what, lives);
+  }
+  const DEATH_GREY_MS = 3000; // how long the grey screen shows before you are carried to the shrine
+  const DEATH_LOAD_MS = 2500; // the most time spent building the shrine's land before you stand up
+  let deathScreen = null;
+  function showDeathScreen(what, lives) {
+    deathScreen?.remove();
+    const el = deathScreen = document.createElement('div');
+    el.id = 'death-screen';
+    el.setAttribute('role', 'alert');
+    el.innerHTML = `
+      <div class="death-box">
+        <h2>You died</h2>
+        <p>${what}</p>
+        <p>${lives}</p>
+        <p class="death-wait">Respawning in <span data-count>${Math.ceil(DEATH_GREY_MS / 1000)}</span>…</p>
       </div>`;
-    overlay.classList.remove('hidden');
-    drawHud();
+    document.body.append(el);
+    document.body.classList.add('player-dead');
+    const count = el.querySelector('[data-count]');
+    const wait = el.querySelector('.death-wait');
+    const t0 = performance.now();
+    const tick = setInterval(() => { count.textContent = Math.max(1, Math.ceil((DEATH_GREY_MS - (performance.now() - t0)) / 1000)); }, 250);
+    setTimeout(() => {
+      clearInterval(tick);
+      el.classList.add('dark'); // fade to a dark screen, then do the heavy work behind it
+      wait.textContent = 'Waking at the shrine…';
+      setTimeout(() => requestAnimationFrame(() => {
+        const where = world?.riseAtShrine();
+        wait.textContent = `Waking at the shrine of ${where || 'the nearest town'}…`;
+        drawHud();
+        const s0 = performance.now();
+        const build = () => {
+          if (deathScreen !== el) return;
+          const left = world?.catchUpLand(24) || 0;
+          if (left > 0 && performance.now() - s0 < DEATH_LOAD_MS) { requestAnimationFrame(build); return; }
+          world?.stand();
+          document.body.classList.remove('player-dead');
+          el.classList.add('gone');
+          setTimeout(() => { el.remove(); if (deathScreen === el) deathScreen = null; }, 700);
+        };
+        requestAnimationFrame(build);
+      }), 450);
+    }, DEATH_GREY_MS);
   }
   // Death is final: the character is gone. Only the Unique Skill passes on to the next one.
   async function fallen(by) {
@@ -1111,6 +1200,21 @@ function startGame(character) {
     if ((v = t('data-bind')) != null) { ui.binding = v; ui.skillMsg = 'Press the key you want for this skill (Esc to cancel).'; drawPanel(); return; }
     if (t('data-torch') != null) { closePanel(); world?.placeTorch(); return; }
     if (t('data-hold-torch') != null) { closePanel(); world?.holdTorch(); return; }
+    if (t('data-dig') != null) { closePanel(); digPit(); return; }
+    if ((v = t('data-bank-tab')) != null) { ui.bankTab = v; ui.econMsg = ''; drawPanel(); return; }
+    if ((v = t('data-bank')) != null) {
+      const box = overlay.querySelector('#bank-amount');
+      const amount = box && box.value !== '' ? Math.floor(Number(box.value)) : undefined;
+      const name = overlay.querySelector('#bank-company')?.value;
+      if (v === 'found') econ(() => api.oilAct({ act: 'found', name, city: ui.bankCity?.id }));
+      else econ(() => api.bankAct({ act: v, amount, cur: e.target.closest('[data-cur]')?.dataset.cur, from: e.target.closest('[data-from]')?.dataset.from, city: ui.bankCity?.id }));
+      return;
+    }
+    if ((v = t('data-oil')) != null) {
+      if (v === 'drill' && ui.oilSpot) econ(() => api.oilAct({ act: 'drill', x: ui.oilSpot.x, z: ui.oilSpot.z })).then((r) => { if (r?.ok) { ui.well = (ui.wells || []).find((w) => w.id === ui.oilSpot.id); if (ui.well) { overlay.dataset.panel = 'derrick'; drawPanel(); } } });
+      else if (ui.well) econ(() => api.oilAct({ act: v, id: ui.well.id })).then((r) => { if (r?.ok && v === 'close') { ui.well = null; closePanel(); showArea(r.message); } });
+      return;
+    }
     if ((v = t('data-estate-ring')) != null) { ui.estateRing = v; ui.estateMsg = ''; drawPanel(); return; }
     if ((v = t('data-home-buy')) != null && ui.estateCity) {
       ui.estateBusy = true; drawPanel();
@@ -1279,9 +1383,21 @@ function startGame(character) {
     }
   });
 
+  // If the page closed by itself last time while you were in the world (a phone out of memory),
+  // this time the world opens on Battery saver, and says so. Leaving normally clears the mark.
+  let closedBySelf = false;
+  try { closedBySelf = localStorage.getItem('ar.inWorld') === '1'; localStorage.setItem('ar.inWorld', '1'); } catch { /* private window */ }
+  const markInWorld = (on) => { try { if (on) localStorage.setItem('ar.inWorld', '1'); else localStorage.removeItem('ar.inWorld'); } catch { /* private window */ } };
+  window.addEventListener('pagehide', () => markInWorld(false));
+  document.addEventListener('visibilitychange', () => markInWorld(document.visibilityState !== 'hidden'));
+  const safeStart = closedBySelf && settings.graphics !== 'low';
+  if (safeStart) setTimeout(() => showArea('The game closed last time, so it is on Battery saver for now (Settings to change it)'), 4000);
+
+  // painted now, behind the loading clouds, so the first look at the map or the bag doesn't stall
+  try { warmWorldMap(); warmIcons([...(character.inventory || []).map((e) => e.id), ...Object.values(character.equipped || {}).map((e) => e?.id).filter(Boolean)]); } catch { /* only a head start */ }
   world = startWorld($('world'), character, {
     game,
-    view: { camera: settings.camera, mouse: settings.mouse, view: settings.view, graphics: settings.graphics },
+    view: { camera: settings.camera, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
     onView(v) { settings.view = v; saveSettings(); showArea(v === 'first' ? 'First person view' : 'Third person view'); if (overlay.dataset.panel === 'settings' && !overlay.classList.contains('hidden')) drawPanel(); },
     onArea: (name) => showArea(name),
     onPlot(info) {
@@ -1295,6 +1411,10 @@ function startGame(character) {
     onMouseFreed: () => { if (overlay.classList.contains('hidden')) openPanel('settings'); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
+      // the phone took the graphics away for a moment (see world.js): wait, or reload if they don't come back
+      if (type === 'graphicsLost') { showArea('Getting the graphics back...'); return; }
+      if (type === 'graphicsBack') { showArea('Graphics are back'); return; }
+      if (type === 'graphicsGone') { markInWorld(false); Promise.resolve(game.saveNow()).finally(() => location.reload()); return; }
       if (type === 'carcass') { showCarcass(data); return; }
       if (type === 'plant') { showPlant(data); return; }
       if (type === 'kill') for (const title of game.questKill(data.kind, data.level)) questReady(title);
@@ -1335,6 +1455,20 @@ function startGame(character) {
         loadHomes().then(drawPanel);
         openPanel('estate');
       }
+      // the counter of a city's Bank, or a village's Bank Kiosk: the window opens only there
+      if ((type === 'market' && data === BANK_ID) || type === 'kiosk') {
+        const p = world?.outdoors();
+        const city = type === 'kiosk' ? null : p && placesWithPositions().filter((q) => q.city).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+        ui.bankCity = bankPlace(type === 'kiosk' ? data : city?.id);
+        if (!ui.bankCity) return;
+        if (!ui.bankCity.full && ui.bankTab === 'loan') ui.bankTab = 'safe';
+        ui.econMsg = ''; ui.econBad = false; ui.bankTab ||= 'safe';
+        loadBank().then(loadOil).then(drawPanel);
+        openPanel('bank');
+        return;
+      }
+      if (type === 'derrick') { ui.well = data; ui.econMsg = ''; ui.econBad = false; openPanel('derrick'); loadOil().then(drawPanel); return; }
+      if (type === 'oil-spot') { ui.oilSpot = data; ui.econMsg = ''; ui.econBad = false; openPanel('oilspot'); loadOil().then(drawPanel); return; }
       else if (type === 'market') { ui.market = data; openPanel('market'); }
       if (type === 'indoors') {
         $('minimap').classList.add('hidden');
@@ -1433,6 +1567,8 @@ function startGame(character) {
   api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
   loadCaves();
   loadHomes();
+  loadOil();
+  setInterval(loadOil, 120000); // derricks' tanks fill, and others put new ones up
   api.kingsList().then((r) => { takeCourts(r.courts); world.setCourts(r.courts); }).catch(() => {});
   setInterval(() => api.kingsList().then((r) => takeCourts(r.courts)).catch(() => {}), 60000);
   loadCult(); // a cult's offer, a mission, or news that you were stripped

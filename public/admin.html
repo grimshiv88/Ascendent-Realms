@@ -120,6 +120,7 @@
       <button type="button" role="tab" data-tab="players" aria-selected="true">Players</button>
       <button type="button" role="tab" data-tab="chat">Chat</button>
       <button type="button" role="tab" data-tab="reports">Reports</button>
+      <button type="button" role="tab" data-tab="skills">Skills</button>
       <button type="button" role="tab" data-tab="world">World</button>
       <button type="button" role="tab" data-tab="log">Log</button>
     </nav>
@@ -147,8 +148,30 @@
       <div id="reports"></div>
     </div>
 
+    <div data-panel="skills" class="card" hidden>
+      <h2>Skills by kind</h2>
+      <p class="quiet">From defence to attack. Under each kind: every Unique Skill held in the world, from the highest rank to the weakest, then the ordinary skills from the strongest. Click a holder to open their card.</p>
+      <div id="skillboard"></div>
+    </div>
+
     <div data-panel="world" hidden>
       <div class="grid2">
+        <form class="card" id="tuning">
+          <h2>Health and healing</h2>
+          <p class="quiet">Health and healing grow with level. Change the numbers any time: every player gets them the next time their game loads.</p>
+          <div class="statgrid">
+            <label>Base HP <input name="hpBase" type="number" min="1" step="any"></label>
+            <label>HP per level <input name="hpPerLevel" type="number" min="0" step="any"></label>
+            <label>Heals stronger per level (%) <input name="healPerLevel" type="number" min="0" max="100" step="any"></label>
+          </div>
+          <p class="quiet" id="tuning-eg"></p>
+          <div class="row"><button class="primary" type="submit">Save</button><button type="button" id="tuning-reset">Back to the starting numbers</button></div>
+        </form>
+        <div class="card">
+          <h2>Sect leaders</h2>
+          <p class="quiet">One leader of each sect at a time. Appoint someone from their card on the Players tab.</p>
+          <div class="tablewrap"><table><tbody id="sects"></tbody></table></div>
+        </div>
         <div class="card">
           <h2>Announcement</h2>
           <p class="quiet">Shown across the top of every player's screen.</p>
@@ -225,7 +248,7 @@ async function drawStats() {
 }
 
 // ---------- tabs ----------
-const loaders = { players: drawPlayers, chat: drawChat, reports: drawReports, world: drawWorld, log: drawLog };
+const loaders = { players: drawPlayers, chat: drawChat, reports: drawReports, skills: drawSkills, world: drawWorld, log: drawLog };
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-tab]');
   if (!b) return;
@@ -258,6 +281,10 @@ async function openPlayer(id) {
   try { drawCard((await call(`api/admin/player?id=${id}`)).player); } catch (err) { say(err.message); }
 }
 
+// skills grouped by kind, from defence to attack, the strongest first
+function skillGroups(ids) {
+  return catalogue.categories.map((k) => ({ ...k, list: catalogue.skills.filter((sk) => sk.category === k.id && ids.includes(sk.id)).sort((a, b) => b.power - a.power) })).filter((g) => g.list.length);
+}
 const STAT_NAMES = { str: 'Strength', agi: 'Agility', dex: 'Dexterity', sta: 'Stamina', int: 'Intellect' };
 function drawCard(p) {
   const c = p.character;
@@ -281,7 +308,9 @@ function drawCard(p) {
           <dt>Coins</dt><dd>${c.coins} Copper</dd>
           <dt>EXP</dt><dd>${c.exp}</dd>
           <dt>HP · SP</dt><dd>${c.hp ?? "—"} · ${c.sp ?? "—"}</dd>
-          <dt>Lives left</dt><dd>${c.livesLeft ?? '—'}</dd>
+          <dt>Lives left</dt><dd>${c.livesLeft ?? 3} <span class="quiet">(this is life number ${c.lives})</span></dd>
+          <dt>City pass</dt><dd>${esc(c.cityPass.name)} <span class="quiet">(${esc(c.cityPass.why)})</span></dd>
+          ${p.leads ? `<dt>Leads</dt><dd>${p.leads === 'dark' ? 'the evil sect (Dark Side)' : 'the good sect (Order of the Dawn)'}</dd>` : c.pact ? `<dt>Side</dt><dd>${c.pact === 'dark' ? 'Dark Side' : 'the Light'}</dd>` : ''}
           <dt>Unspent points</dt><dd>${c.unspentPoints || 0}</dd>
           ${c.child ? `<dt>Childhood</dt><dd>a child of ${c.child.age}</dd>` : ''}
           ${c.injury ? `<dt>Injury</dt><dd>${esc(c.injury.name || c.injury.kind || 'hurt')}</dd>` : ''}
@@ -296,14 +325,15 @@ function drawCard(p) {
 
       <form class="card" data-form="numbers">
         <h3>Change numbers</h3>
-        <p class="quiet">Leave a box empty to keep it as it is.</p>
+        <p class="quiet">Leave a box empty to keep it as it is. Raising the level also gives the Stat Points of every level gained (3 a level, 10 at key levels).</p>
         <div class="statgrid">
           <label>Coins (set) <input name="coins" type="number" min="0" placeholder="${c.coins}"></label>
           <label>Coins (+/−) <input name="addCoins" type="number" placeholder="e.g. 500"></label>
           <label>Level <input name="level" type="number" min="1" max="10000" placeholder="${c.level}"></label>
           <label>EXP <input name="exp" type="number" min="0" placeholder="${c.exp}"></label>
           <label>Unspent points <input name="points" type="number" min="0" placeholder="${c.unspentPoints || 0}"></label>
-          <label>Lives (1–3) <input name="lives" type="number" min="1" max="3" placeholder="${c.livesLeft ?? ''}"></label>
+          <label>Lives left <input name="lives" type="number" min="0" placeholder="${c.livesLeft ?? 3}"></label>
+          <label>Extra HP <input name="extraHp" type="number" min="0" placeholder="${c.extraHp || 0}"></label>
         </div>
         <h3 style="margin-top:10px">Stats</h3>
         <div class="statgrid">
@@ -311,6 +341,52 @@ function drawCard(p) {
         </div>
         <div class="row" style="margin-top:10px"><button class="primary" type="submit">Save changes</button></div>
       </form>
+    </div>
+
+    <div class="grid2">
+      <form class="card" data-form="who">
+        <h3>Race, class and city</h3>
+        <div class="statgrid">
+          <label>Race <select name="race">${catalogue.allRaces.map((r) => `<option value="${r.id}"${r.id === c.race ? ' selected' : ''}>${esc(r.name)} (${r.side})</option>`).join('')}</select></label>
+          <label>Class <select name="cls">${c.child ? '<option value="" selected>Child (no class yet)</option>' : ''}${catalogue.classes.map((k) => `<option value="${k.id}"${k.id === c.cls ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}</select></label>
+          <label>City levels they may enter <select name="cityAccess"><option value="">Only what they have earned</option>${catalogue.rings.filter((r) => r.id !== 'dump').map((r) => `<option value="${r.id}"${r.id === c.cityAccess ? ' selected' : ''}>Up to ${esc(r.name)}</option>`).join('')}</select></label>
+        </div>
+        <p class="quiet">A new race swaps the old race's base stats for the new one's and gives its look and element. A new class swaps the class bonus. The City Pass lets them through the guards' gates up to that level, in every city.</p>
+        <div class="row"><button class="primary" type="submit">Save</button></div>
+      </form>
+
+      <div class="card">
+        <h3>Sects</h3>
+        <p class="quiet">${p.leads ? `Leads the ${p.leads === 'dark' ? 'evil sect (Dark Side)' : 'good sect (Order of the Dawn)'}.` : 'Leads no sect.'} The leader of the evil sect sees every cult and member and casts dark spells; the leader of the good sect sees everyone in the Order and gets the Book of the Dawn. Appointing someone takes the title from whoever had it.</p>
+        <div class="row">
+          <button type="button" data-act="lead-dark"${p.leads === 'dark' ? ' disabled' : ''}>Make leader of the evil sect</button>
+          <button type="button" data-act="lead-light"${p.leads === 'light' ? ' disabled' : ''}>Make leader of the good sect</button>
+          ${p.leads ? `<button type="button" class="danger" data-act="unlead" data-side="${p.leads}">Take the title away</button>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Skills</h3>
+      ${skillGroups(c.skills).map((g) => `<p class="quiet" style="margin:8px 0 4px">${g.icon} ${esc(g.name)}</p><div class="bag">${g.list.map((sk) => `<div class="slot"><span>${esc(sk.icon)}</span><span class="nm">${esc(sk.name)}</span><button type="button" data-unskill="${sk.id}" title="Take away">✕</button></div>`).join('')}</div>`).join('') || '<p class="quiet">No skills yet.</p>'}
+      <form data-form="skill" class="row" style="margin-top:10px">
+        <select name="skill" aria-label="Skill to give"><option value="">Give a skill...</option>${catalogue.categories.map((k) => `<optgroup label="${esc(k.name)}">${catalogue.skills.filter((sk) => sk.category === k.id && !c.skills.includes(sk.id)).sort((a, b) => b.power - a.power).map((sk) => `<option value="${sk.id}">${esc(sk.icon)} ${esc(sk.name)}</option>`).join('')}</optgroup>`).join('')}</select>
+        <button class="primary" type="submit">Give</button>
+      </form>
+      <h3 style="margin-top:14px">Spells</h3>
+      <div class="bag">${c.spells.map((id) => { const sp = catalogue.spells.find((x) => x.id === id); return `<div class="slot"><span>✨</span><span class="nm">${esc(sp?.name || id)} <span class="quiet">${esc(sp?.element || '')}</span></span><button type="button" data-unspell="${esc(id)}" title="Take away">✕</button></div>`; }).join('') || '<p class="quiet">No spells. Mages and the Dark Side learn them.</p>'}</div>
+      <form data-form="spell" class="row" style="margin-top:10px">
+        <select name="spell" aria-label="Spell to give"><option value="">Give a spell...</option>${catalogue.spells.filter((sp) => !c.spells.includes(sp.id)).map((sp) => `<option value="${sp.id}">${esc(sp.name)} (${esc(sp.element)}, from Lv ${sp.level})</option>`).join('')}</select>
+        <button class="primary" type="submit">Give</button>
+      </form>
+      <h3 style="margin-top:14px">Unique Skill</h3>
+      <p>${c.uniqueSkill ? `${esc(c.uniqueSkill.name)} <span class="tag">${esc(c.uniqueSkill.rank)}</span> <span class="quiet">${esc(c.uniqueSkill.element || '')}</span>` : 'None'}</p>
+      <form data-form="unique" class="row">
+        <input name="uname" list="uniques" placeholder="Unique Skill (type to search ${catalogue.uniques.length})">
+        <select name="rank" aria-label="Rank">${catalogue.uniqueRanks.slice().reverse().map((r) => `<option${r === c.uniqueSkill?.rank ? ' selected' : ''}>${r}</option>`).join('')}</select>
+        <button class="primary" type="submit">Change</button>
+      </form>
+      <p class="quiet">Leave the name empty to keep the skill and only change its rank. The admin can go past the world limits for SS and SSS.</p>
     </div>
 
     <div class="card">
@@ -337,6 +413,24 @@ function drawCard(p) {
         <button class="primary" type="submit">Move</button>
       </div>
     </form>` : '<div class="card empty">This account has no character yet.</div>'}
+
+    <div class="card">
+      <h3>Past lives</h3>
+      <p class="quiet">Every life they lose is kept here (from now on). Change one, or bring them back to it: it becomes their character again with at least 1 life, and the life they have now is kept here instead.</p>
+      ${p.pastLives.lives.length ? `<div class="tablewrap"><table><thead><tr><th>Lost</th><th>Character</th><th>Change it</th><th></th></tr></thead><tbody>${p.pastLives.lives.map((l) => `<tr>
+        <td class="quiet">${when(l.at)}<br>${esc(l.cause || '')}</td>
+        <td><b>${esc(l.name)}</b><br><span class="quiet">Lv ${l.level} ${esc(nice(l.race))} ${esc(nice(l.cls))} · ${l.coins} Copper · ${l.livesLeft ?? '?'} lives${l.unique ? ` · ${esc(l.unique)}` : ''}</span></td>
+        <td><form data-form="life" data-life="${l.id}" class="row">
+          <input name="name" placeholder="Name" maxlength="24" style="flex:1 1 90px">
+          <input name="level" type="number" min="1" placeholder="Level" style="flex:0 0 80px">
+          <input name="coins" type="number" min="0" placeholder="Coins" style="flex:0 0 90px">
+          <input name="lives" type="number" min="0" placeholder="Lives" style="flex:0 0 70px">
+          <select name="race"><option value="">Race</option>${catalogue.allRaces.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>
+          <select name="cls"><option value="">Class</option>${catalogue.classes.map((k) => `<option value="${k.id}">${esc(k.name)}</option>`).join('')}</select>
+          <button type="submit">Save</button></form></td>
+        <td><button type="button" class="primary" data-restore="${l.id}">Return to this life</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="quiet">No lives lost yet (lives lost before this board could keep them aren\'t here).</p>'}
+      ${p.pastLives.passedOn ? `<p class="quiet">Passed on from the last death: ${esc(p.pastLives.passedOn.uniqueSkill?.name || '')} (${esc(p.pastLives.passedOn.uniqueSkill?.rank || '')}), life number ${p.pastLives.passedOn.lives}${p.pastLives.passedOn.soul ? `, a ${esc(p.pastLives.passedOn.soul)} soul` : ''}.</p>` : ''}
+    </div>
 
     <div class="grid2">
       <form class="card" data-form="ban">
@@ -374,6 +468,7 @@ function drawCard(p) {
       </div>
     </div>`;
   $('pcard').dataset.id = p.id;
+  $('pcard').dataset.unique = c?.uniqueSkill?.name || '';
   $('pcard').dataset.name = p.username;
 }
 
@@ -387,11 +482,27 @@ async function change(path, body, done) {
   } catch (err) { say(err.message); }
 }
 $('pcard').addEventListener('click', async (e) => {
-  const b = e.target.closest('button[data-act], button[data-remove]');
+  const b = e.target.closest('button[data-act], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore]');
   if (!b) return;
   const name = $('pcard').dataset.name;
   if (b.dataset.remove) return change('api/admin/edit', { removeItem: { index: Number(b.dataset.remove) } }, 'Taken away.');
+  if (b.dataset.unskill) return change('api/admin/edit', { removeSkill: b.dataset.unskill }, 'Skill taken away.');
+  if (b.dataset.unspell) return change('api/admin/edit', { removeSpell: b.dataset.unspell }, 'Spell taken away.');
+  if (b.dataset.restore) {
+    if (!confirm(`Bring ${name} back to this past life? The life they have now is kept among the past lives.`)) return;
+    return change('api/admin/life/restore', { life: Number(b.dataset.restore) }, `${name} is back in that life. If they are playing, their game loads it.`);
+  }
   const a = b.dataset.act;
+  if (a === 'lead-dark' || a === 'lead-light') {
+    const side = a === 'lead-dark' ? 'dark' : 'light';
+    if (!confirm(`Make ${name} the leader of the ${side === 'dark' ? 'evil sect (Dark Side)' : 'good sect (Order of the Dawn)'}? They join that side, and whoever led it before loses the title.`)) return;
+    return change('api/admin/sects', { side }, `${name} now leads the ${side === 'dark' ? 'evil' : 'good'} sect.`);
+  }
+  if (a === 'unlead') {
+    const side = b.dataset.side;
+    try { await call('api/admin/sects', { side }); say(`${name} no longer leads a sect.`, true); openPlayer(open); } catch (err) { say(err.message); }
+    return;
+  }
   if (a === 'heal') return change('api/admin/edit', { heal: true }, `${name} is healed.`);
   if (a === 'skipchild') { if (confirm(`Make ${name} 7 now? Their Ceremony happens when they next reach the shrine.`)) change('api/admin/skip/childhood', {}, `${name}'s childhood was skipped.`); return; }
   if (a === 'unban') return change('api/admin/ban', { lift: true }, `${name}'s ban was lifted.`);
@@ -408,7 +519,7 @@ $('pcard').addEventListener('submit', async (e) => {
   const v = (k) => f.elements[k]?.value.trim();
   if (kind === 'numbers') {
     const body = {};
-    for (const k of ['coins', 'addCoins', 'level', 'exp', 'points', 'lives']) if (v(k)) body[k] = Number(v(k));
+    for (const k of ['coins', 'addCoins', 'level', 'exp', 'points', 'lives', 'extraHp']) if (v(k)) body[k] = Number(v(k));
     const stats = [...f.elements].filter((el) => el.name?.startsWith('stat_') && el.value.trim());
     if (!Object.keys(body).length && !stats.length) return say('Type a number in a box first.');
     try {
@@ -417,6 +528,20 @@ $('pcard').addEventListener('submit', async (e) => {
       say(`${name}'s numbers were changed.`, true);
       openPlayer(open);
     } catch (err) { say(err.message); }
+  }
+  if (kind === 'who') {
+    const body = { race: v('race'), cityAccess: v('cityAccess') || null };
+    if (v('cls')) body.cls = v('cls');
+    change('api/admin/edit', body, `${name}'s race, class and city pass were saved.`);
+  }
+  if (kind === 'skill') { if (!v('skill')) return say('Choose a skill.'); change('api/admin/edit', { addSkill: v('skill') }, `Skill given to ${name}.`); }
+  if (kind === 'spell') { if (!v('spell')) return say('Choose a spell.'); change('api/admin/edit', { addSpell: v('spell') }, `Spell given to ${name}.`); }
+  if (kind === 'unique') change('api/admin/edit', { unique: { name: v('uname') || $('pcard').dataset.unique, rank: v('rank') } }, `${name}'s Unique Skill was changed.`);
+  if (kind === 'life') {
+    const body = { life: Number(f.dataset.life) };
+    for (const k of ['name', 'race', 'cls']) if (v(k)) body[k] = v(k);
+    for (const k of ['level', 'coins', 'lives']) if (v(k)) body[k] = Number(v(k));
+    change('api/admin/life/edit', body, 'The past life was changed.');
   }
   if (kind === 'give') {
     const typed = v('item').toLowerCase();
@@ -470,6 +595,7 @@ $('reports').addEventListener('click', async (e) => {
 // ---------- world ----------
 const CITIES = [['central', 'Central City'], ['emberfall', 'Emberfall'], ['ashgrave', 'Ashgrave'], ['lumenhollow', 'Lumenhollow'], ['mirehaven', 'Mirehaven']];
 async function drawWorld() {
+  drawTuning().catch((err) => say(err.message));
   const w = await call('api/admin/world');
   $('ann-now').innerHTML = w.announcement ? `Showing now: “${esc(w.announcement.text)}” until ${when(w.announcement.until)}` : 'Nothing is showing now.';
   $('courts').innerHTML = w.courts.map((c) => `<tr><td>${esc(nice(c.race))}</td><td>${esc(c.king.name)} <span class="quiet">Lv ${c.king.level}${c.king.npc ? ' · the first King' : ' · a player'}</span></td><td>${c.king.npc ? '' : `<button type="button" class="danger" data-king="${esc(c.race)}">Put the first King back</button>`}</td></tr>`).join('');
@@ -495,6 +621,47 @@ $('announce').addEventListener('submit', async (e) => {
   try { await call('api/admin/announce', { text: e.target.text.value.trim(), minutes: Number(e.target.minutes.value) }); e.target.reset(); say('Everyone sees it within a few seconds.', true); drawWorld(); } catch (err) { say(err.message); }
 });
 
+// ---------- skills ----------
+async function drawSkills() {
+  const { categories } = await call('api/admin/skills');
+  $('skillboard').innerHTML = categories.map((k) => `<h3 style="margin-top:14px">${esc(k.icon)} ${esc(k.name)}</h3>
+    <div class="tablewrap"><table><thead><tr><th>Rank</th><th>Unique Skill</th><th>Held by</th></tr></thead><tbody>
+    ${k.uniques.map((u) => `<tr><td><span class="tag">${esc(u.rank)}</span></td><td>${esc(u.skill)} <span class="quiet">${esc(u.element)}</span></td><td><button type="button" data-look="${u.id}">${esc(u.name)}</button> <span class="quiet">Lv ${u.level}</span></td></tr>`).join('') || '<tr><td colspan="3" class="quiet">Nobody holds one of this kind.</td></tr>'}
+    </tbody></table></div>
+    <p class="quiet">Skills: ${k.skills.map((sk) => `${esc(sk.icon)} ${esc(sk.name)}`).join(' · ') || 'none'}</p>`).join('');
+}
+$('skillboard').addEventListener('click', (e) => { const b = e.target.closest('[data-look]'); if (b) { document.querySelector('[data-tab="players"]').click(); openPlayer(Number(b.dataset.look)); } });
+
+// ---------- health numbers and sect leaders (World tab) ----------
+async function drawTuning() {
+  const { tuning: t } = await call('api/admin/tuning');
+  for (const k of ['hpBase', 'hpPerLevel', 'healPerLevel']) $('tuning').elements[k].value = t[k];
+  showTuning();
+  const { leaders } = await call('api/admin/sects');
+  $('sects').innerHTML = [['dark', 'Evil sect (Dark Side)'], ['light', 'Good sect (Order of the Dawn)']].map(([k, n]) => `<tr><td>${n}</td><td>${leaders[k] ? esc(leaders[k]) : '<span class="quiet">nobody</span>'}</td><td>${leaders[k] ? `<button type="button" class="danger" data-unlead="${k}">Take the title away</button>` : ''}</td></tr>`).join('');
+}
+function showTuning() {
+  const f = $('tuning').elements, n = (k) => Number(f[k].value) || 0;
+  const at = (lv) => Math.round(n('hpBase') + lv * n('hpPerLevel'));
+  $('tuning-eg').textContent = `Before Stamina and Strength: level 1 starts with ${at(1)} HP, level 100 with ${at(100)}, level 1000 with ${at(1000)}. A bread that heals 20 heals ${Math.round(20 * (1 + 99 * n('healPerLevel') / 100))} at level 100.`;
+}
+$('tuning').addEventListener('input', showTuning);
+$('tuning').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target.elements;
+  try { await call('api/admin/tuning', { hpBase: Number(f.hpBase.value), hpPerLevel: Number(f.hpPerLevel.value), healPerLevel: Number(f.healPerLevel.value) }); say('Saved. Players get the new numbers when their game next loads.', true); drawTuning(); } catch (err) { say(err.message); }
+});
+$('tuning-reset').addEventListener('click', async () => {
+  const { defaults } = await call('api/admin/tuning');
+  for (const k of Object.keys(defaults)) $('tuning').elements[k].value = defaults[k];
+  showTuning();
+});
+$('sects').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-unlead]');
+  if (!b || !confirm('Take this sect leader\'s title away?')) return;
+  try { await call('api/admin/sects', { side: b.dataset.unlead }); say('The title was taken away.', true); drawTuning(); } catch (err) { say(err.message); }
+});
+
 // ---------- log ----------
 async function drawLog() {
   const { log } = await call('api/admin/log');
@@ -510,7 +677,10 @@ async function start() {
     const dl = document.createElement('datalist');
     dl.id = 'items';
     dl.innerHTML = catalogue.items.map((i) => `<option value="${esc(i.name)}">`).join('');
-    document.body.append(dl);
+    const ul = document.createElement('datalist');
+    ul.id = 'uniques';
+    ul.innerHTML = catalogue.uniques.map((n) => `<option value="${esc(n)}">`).join('');
+    document.body.append(dl, ul);
     await drawPlayers();
   } catch (e) {
     $('board').hidden = true; $('login').hidden = false; $('logout').hidden = true;

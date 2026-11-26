@@ -1,7 +1,7 @@
 // Every table the game keeps (Postgres). Run on start; safe to run again and again.
 // Row Level Security is switched on for every table with no rules, so the public Supabase web API
 // can't read or change anything: only the game's own server (which connects as the owner) can.
-const TABLES = ['admin_log', 'reports', 'accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes'];
+const TABLES = ['admin_log', 'reports', 'accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes', 'past_lives', 'oil_wells'];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS accounts (
@@ -62,6 +62,16 @@ CREATE TABLE IF NOT EXISTS fallen (
   account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   data       TEXT NOT NULL
 );
+-- every life a player has lost (the whole character as it was), for the admins: they can change one
+-- and bring the player back to it
+CREATE TABLE IF NOT EXISTS past_lives (
+  id         SERIAL PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  at         BIGINT NOT NULL,
+  cause      TEXT,
+  data       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS past_lives_account ON past_lives (account_id);
 -- small shared states kept as one JSON value each (guilds, cults, proposals, ceremonies, city gates)
 CREATE TABLE IF NOT EXISTS world_state (
   key  TEXT PRIMARY KEY,
@@ -157,6 +167,19 @@ CREATE TABLE IF NOT EXISTS reports (
   reason  TEXT NOT NULL,
   text    TEXT,
   done    BOOLEAN NOT NULL DEFAULT false
+);
+
+-- oil derricks of the Oil Companies, one per pool (see data/economy.mjs)
+CREATE TABLE IF NOT EXISTS oil_wells (
+  id          TEXT PRIMARY KEY,
+  x           INTEGER NOT NULL,
+  z           INTEGER NOT NULL,
+  account_id  INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  owner       TEXT NOT NULL,
+  company     TEXT NOT NULL,
+  last        BIGINT NOT NULL,
+  tank        INTEGER NOT NULL DEFAULT 0,
+  out_barrels INTEGER NOT NULL DEFAULT 0
 );
 
 ${TABLES.map((t) => `ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY;`).join('\n')}

@@ -1,6 +1,7 @@
-// Spells: cast with a staff in one of your elements. Magic belongs to the Dark Side alone: those
-// who join it get a spell in each of their elements, then a new one every 10 levels (given at random
-// from their elements, like skills); nobody else learns spells (see progress.js spellsDue). Spells are attached to
+// Spells: cast with a staff in one of your elements. Mages learn them (one at once, then a new one
+// every 10 levels, given at random from their elements, like skills). Those who join the Dark Side
+// get a spell in each of their elements as well, and cast every spell in its dark form: the same
+// spell, black with shadow and stronger (DARK_SPELL_POWER). See progress.js spellsDue. Spells are attached to
 // a staff to be cast: 3 to a staff, 5 to a Legendary or Mythic one. The attack key casts the chosen
 // spell; the Spell key (X) changes which one.
 //
@@ -41,6 +42,12 @@ export const SPELLS = {
   oblivion: { name: 'Oblivion', element: 'Dark', level: 120, kind: 'burst', power: 4.1, sp: 46, cd: 19, effect: { id: 'drain', chance: 0.6 } },
 };
 for (const [id, s] of Object.entries(SPELLS)) s.id = id;
+
+// the Dark Side casts the same spells, dark and stronger
+export const DARK_SPELL_POWER = 1.35;
+export const darkSpells = (c) => c?.pact === 'dark';
+export const spellName = (sp, c) => (darkSpells(c) ? `Dark ${sp.name}` : sp.name);
+export const spellPower = (sp, c) => sp.power * (darkSpells(c) ? DARK_SPELL_POWER : 1);
 
 export const SPELL_EVERY = { mage: 10, other: 20 };
 export const spellEvery = (cls) => (cls === 'mage' ? SPELL_EVERY.mage : SPELL_EVERY.other);

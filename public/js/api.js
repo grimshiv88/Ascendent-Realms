@@ -99,7 +99,7 @@ async function cloudStart() {
     if (!window.claude?.use) return;
     const db = await Promise.race([window.claude.use('db'), new Promise((r) => setTimeout(() => r(null), 8000))]);
     if (!db) return;
-    const [accSnap, landSnap, caveSnap, kingSnap] = await Promise.all([db.collection('accounts').get(), db.doc('world/lands').get(), db.doc('world/caves').get(), db.doc('world/kings').get()]);
+    const [accSnap, landSnap, caveSnap, kingSnap, oilSnap] = await Promise.all([db.collection('accounts').get(), db.doc('world/lands').get(), db.doc('world/caves').get(), db.doc('world/kings').get(), db.doc('world/oil').get().catch(() => null)]);
     cloud = db;
     const local = preview.accounts();
     const merged = new Map(local.map((a) => [cloudKey(a.email), a]));
@@ -127,6 +127,10 @@ async function cloudStart() {
     for (const c of previewCaves.all()) if (!caves.some((q) => q.cave === c.cave)) caves.push(c);
     storage.set('ar.preview.caves', JSON.stringify(caves));
     if (caves.length !== remoteCaves.length) await db.doc('world/caves').set({ caves }).catch(() => {});
+    // oil derricks: the copy with the latest collection wins
+    const wells = new Map(previewOil.all().map((w) => [w.id, w]));
+    for (const w of (oilSnap?.exists ? oilSnap.data().wells || [] : [])) if (!wells.has(w.id) || (w.last || 0) > (wells.get(w.id).last || 0)) wells.set(w.id, w);
+    storage.set('ar.preview.oil', JSON.stringify([...wells.values()]));
     // the Monster Kings' courts: the one with the latest change to its throne wins
     const remoteCourts = kingSnap.exists ? kingSnap.data().courts || [] : [];
     const courts = new Map(previewKings.saved().map((c) => [c.race, c]));
@@ -710,6 +714,59 @@ export async function homeBuy(city, house) {
     });
   }
   return request('api/homes/buy', { method: 'POST', body: { city, house } });
+}
+
+// ---------- the Bank and oil (rules in data/economy.mjs) ----------
+// In preview mode the derricks live in this browser, like the plots.
+const previewOil = {
+  all() { try { return JSON.parse(storage.get('ar.preview.oil')) || []; } catch { return []; } },
+  save(list) { storage.set('ar.preview.oil', JSON.stringify(list)); cloudPush('world/oil', { wells: list }); },
+};
+const econView = (E, c, now) => ({ coins: c.coins, bank: E.bankView(c, now), oil: E.oilView(c) });
+const wellsView = (E, list, name, now) => list.map((w) => ({ id: w.id, x: w.x, z: w.z, owner: w.owner, company: w.company, ...E.wellState(w, now), mine: w.owner === name }));
+export async function bankInfo() {
+  if (await isPreviewMode()) {
+    const E = await import('./data/economy.mjs');
+    return updatePreviewAccount((acc) => ({ ok: true, ...econView(E, acc.character, Date.now()) }));
+  }
+  return request('api/bank');
+}
+// { act: 'deposit' | 'withdraw' | 'borrow' | 'repay' | 'buy' | 'sell' | 'sell_oil', amount, cur, city }
+export async function bankAct(body) {
+  if (await isPreviewMode()) {
+    const E = await import('./data/economy.mjs');
+    return updatePreviewAccount((acc) => {
+      const now = Date.now();
+      const r = E.bankAct(acc.character, body, now);
+      if (r.error) throw poor(r.error, r.need ?? null);
+      return { ...r, ...econView(E, acc.character, now) };
+    });
+  }
+  return request('api/bank', { method: 'POST', body });
+}
+export async function oilInfo() {
+  if (await isPreviewMode()) {
+    const E = await import('./data/economy.mjs');
+    return updatePreviewAccount((acc) => ({ ok: true, wells: wellsView(E, previewOil.all(), acc.character.name, Date.now()), oil: E.oilView(acc.character) }));
+  }
+  return request('api/oil');
+}
+// { act: 'dig' | 'found' | 'drill' | 'collect' | 'close', x, z, id, name }
+export async function oilAct(body) {
+  if (await isPreviewMode()) {
+    const E = await import('./data/economy.mjs');
+    return updatePreviewAccount((acc) => {
+      const now = Date.now();
+      const wells = previewOil.all();
+      const lands = new Map(previewLand.all().map((p) => [`${p.ix},${p.iz}`, p.owner]));
+      const r = E.oilAct(acc.character, wells, body, { now, plotOwner: (ix, iz) => lands.get(`${ix},${iz}`) || null });
+      if (r.error) throw poor(r.error, r.need ?? null);
+      previewOil.save(wells);
+      const { changed, removed, ...rest } = r;
+      return { ...rest, coins: acc.character.coins, wells: wellsView(E, wells, acc.character.name, now), oil: E.oilView(acc.character) };
+    });
+  }
+  return request('api/oil', { method: 'POST', body });
 }
 
 export async function landList() {

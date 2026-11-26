@@ -8,7 +8,8 @@
 //   - where you were born (a family in the Dump, the Common Quarter or the Noble Quarter),
 //   - your level (PASS_LEVEL),
 //   - a house you own in the city (a house on a ring lets you in to that ring),
-//   - a crown or an empire (Kings and Emperors may go anywhere).
+//   - a crown or an empire (Kings and Emperors may go anywhere),
+//   - a pass granted by the realm's admins (c.cityAccess: 'common', 'noble' or 'castle').
 // Children may always go up to the Common Quarter (that is where the Academies are), and when their
 // Ceremony is due they are let up to the shrine on Castle Hill.
 // Anyone stopped at a gate can buy a day pass for that ring (DAY_PASS, for one day of the realm).
@@ -33,7 +34,7 @@ export function rollBirthTier(rnd = Math.random) {
   return 'dump';
 }
 // the family houses on that ring (numbers into cityHouses)
-export const housesOnTier = (city, tier) => cityHouses(city).filter((h) => h.tier === tier).map((h) => h.i);
+export const housesOnTier = (city, tier) => cityHouses(city).filter((h) => h.tier === tier && !h.gone).map((h) => h.i);
 
 const rankOf = (tier) => Math.max(0, PASS_ORDER.indexOf(tier));
 // the ring a character was born on (their family's house), or null for characters from before
@@ -52,6 +53,7 @@ export function cityPass(c, perks = {}) {
   for (const t of ['common', 'noble', 'castle']) if ((c?.level || 1) >= PASS_LEVEL[t]) up(t, `Level ${PASS_LEVEL[t]}`);
   for (const t of perks.homes || []) up(t, 'Owns a house there');
   if (perks.crowned) up('castle', perks.crowned === true ? 'Crowned' : perks.crowned);
+  if (PASS_ORDER.includes(c?.cityAccess)) up(c.cityAccess, 'Granted by the realm');
   return { tier, why, name: PASS_NAME[tier] };
 }
 

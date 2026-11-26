@@ -6,14 +6,14 @@ import { heightAt, CITY_R } from '../data/world-layout.mjs';
 import { MARKETS, ITEMS } from '../data/items.mjs';
 import { moneyWords } from '../data/money.mjs';
 import { buildSpawn, textTexture } from './spawn.js';
-import { buildCharacter, animateCharacter } from '../characters/model.js';
-import { joinCrowd, bakeCharacter, isShown } from '../characters/crowd.js';
+import { buildCharacter, animateCharacter, bodyHeight } from '../characters/model.js';
+import { lazyCharacter, isShown } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, buildShack, paved, pavedGeometry, TOWN_TONES } from './houses.js';
 import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS, familyOf, PARENT_JOBS, townName, seeded } from '../data/birth.mjs';
 import { TIERS, TOP_Y, TERRACE, INNER_R, ROAD_ANGLES, ROAD_HALF, RAMPS, RAMP_IN, RAMP_OUT, RAMP_WALL, ringY, rampAt, alongRoad, cityLift } from '../data/citylevels.mjs';
-import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, tierY, RACE_HOME, homeFootprint } from '../data/citylayout.mjs';
+import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, BANK_ID, tierY, RACE_HOME, homeFootprint } from '../data/citylayout.mjs';
 
 export { PLAZA_R, INNER_R };
 // the look of the city's own buildings: [wall, roof, awning or banner colour]
@@ -22,8 +22,10 @@ const SHOP_LOOK = {
   city_food: ['#e2d2a8', '#8a5a2a', '#c8782a'], tavern: ['#c8b48e', '#6a3a1e', '#8a4a1e'], city_smith: ['#9a8e7e', '#3a3632', '#4a4a4a'],
   city_armoury: ['#b0a690', '#4a4a5a', '#2a4a7a'], furniture_common: ['#e4d6b8', '#7a4a2a', '#6a4a2a'], furniture_noble: ['#efe8da', '#2e3e5e', '#8a6a1a'],
   furniture_dump: ['#7a6a52', '#5a4a3a', '#6a5a3a'], [ESTATE_ID]: ['#e8e0cc', '#2a4a3a', '#1e5a3a'],
+  [BANK_ID]: ['#ece6d6', '#3a3a4a', '#b8902a'],
 };
 export const ESTATE_NAME = 'Real Estate Office';
+import { BANK_NAME } from '../data/economy.mjs';
 
 // The walls: the outer fortress wall, the moat inside it, then the inner wall. Only two gates (north
 // and south), each with a bridge over the moat that can be raised to shut the inner gate.
@@ -61,6 +63,9 @@ const matOf = (color, roughness = 0.9, extra = null) => {
   if (!MATS.has(k)) MATS.set(k, new THREE.MeshStandardMaterial({ color, roughness, ...(extra || {}) }));
   return MATS.get(k);
 };
+// A guard in the city's armour, built only when you come near (see lazyCharacter)
+const lazyGuard = (race, gear) => lazyCharacter(() => { const b = buildCharacter({ race, form: 'humanoid', look: {} }); wearGear(b, gear); return b; }, bodyHeight(race, 'humanoid'));
+
 // A building in the town style (see world/houses.js): w wide, d deep, about h high (3.1 m a storey)
 function house(w, d, h, wall, roof, label, opts = {}) {
   return buildHouse({ w, d, floors: Math.max(1, Math.round(h / 3.1)), wall, roof, seed: opts.seed ?? `${w}:${d}:${h}:${label}`, labelTex: label ? textTexture(label) : null, ...opts });
@@ -324,7 +329,7 @@ export function buildCity(place, opts = {}) {
     fixtures(b, cx + at.bx, cz + at.bz, at.rot, b.position.y, solid, pads);
     return at;
   };
-  const shopName = (id) => (id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : id === ESTATE_ID ? ESTATE_NAME : MARKETS[id].name);
+  const shopName = (id) => (id === 'guild' ? (monster ? DARK_GUILD_NAME : GUILD_NAME) : id === ESTATE_ID ? ESTATE_NAME : id === BANK_ID ? BANK_NAME : MARKETS[id].name);
   // the Main Guild Hall on Castle Hill, with its bell tower
   {
     const { x, z, w, d, h } = GUILD_SPOT, len = Math.hypot(x, z), fx = -x / len, fz = -z / len;
@@ -342,7 +347,7 @@ export function buildCity(place, opts = {}) {
   plan.shops.forEach((p, i) => {
     const [wall0, roof0, accent] = SHOP_LOOK[p.id];
     const [wall, roof] = monster ? S.tones[i % S.tones.length] : [wall0, roof0];
-    const b = house(p.w, p.d, p.h, wall, roof, shopName(p.id), { style: p.id === ESTATE_ID ? 'guild' : 'shop', accent });
+    const b = house(p.w, p.d, p.h, wall, roof, shopName(p.id), { style: p.id === ESTATE_ID || p.id === BANK_ID ? 'guild' : 'shop', accent });
     const at = raise(b, p.x, p.z, p.fx, p.fz, p.w, p.d, ringRel(p.tier));
     shops.push({ id: p.id, name: shopName(p.id), x: cx + at.x, z: cz + at.z, building: true });
   });
@@ -419,7 +424,7 @@ export function buildCity(place, opts = {}) {
     if (h.tilt) hb.rotation.y += h.tilt;
     if (h.style === 'manor') garden(fixed, h, ringRel(h.tier), solid, cx, cz);
   };
-  for (const h of houses) putHome(h, '');
+  for (const h of houses) if (!h.gone) putHome(h, ''); // (a 'gone' house gave its place to the Mages' Academy)
   const saleSigns = new Map();
   for (const h of plan.sale) {
     putHome(h, 'sale');
@@ -462,9 +467,7 @@ export function buildCity(place, opts = {}) {
     gates.push({ x: cx + ox * CITY_R, z: cz + oz * CITY_R, a });
     for (const side of [-1, 1]) {
       const race = guardRaces[(k * 2 + (side > 0 ? 1 : 0)) % guardRaces.length];
-      const body = buildCharacter({ race, form: 'humanoid', look: {} });
-      wearGear(body, guardGear);
-      joinCrowd(bakeCharacter(body));
+      const body = lazyGuard(race, guardGear);
       const r = CITY_R + 3.5, lat = side * 3.4;
       const x = ox * r + oz * lat, z = oz * r - ox * lat;
       body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz), z);
@@ -479,9 +482,7 @@ export function buildCity(place, opts = {}) {
   innerGates.forEach((G, n) => {
     for (const side of [-1, 1]) {
       const race = guardRaces[(n * 2 + (side > 0 ? 1 : 0) + 1) % guardRaces.length];
-      const body = buildCharacter({ race, form: 'humanoid', look: {} });
-      wearGear(body, guardGear);
-      joinCrowd(bakeCharacter(body));
+      const body = lazyGuard(race, guardGear);
       const along = G.line - 1.6, lat = side * (ROAD_HALF - 0.7);
       const x = Math.sin(G.a) * along + Math.cos(G.a) * lat, z = Math.cos(G.a) * along - Math.sin(G.a) * lat;
       body.position.set(x, yAt(x, z), z);
@@ -495,11 +496,13 @@ export function buildCity(place, opts = {}) {
   // townsfolk: families at their doors, and merchants and businessmen round the plaza
   const npcs = [];
   const addNpc = (race, x, z, faceA, info) => {
-    const body = buildCharacter({ race, form: 'humanoid', look: info.look || {} });
+    const body = lazyCharacter(() => {
+      const b = buildCharacter({ race, form: 'humanoid', look: info.look || {} });
+      if (info.small) b.scale.setScalar(0.58);
+      return b;
+    }, bodyHeight(race, 'humanoid') * (info.small ? 0.58 : 1));
     body.position.set(x, heightAt(cx + x, cz + z) - heightAt(cx, cz), z);
     body.rotation.y = faceA;
-    if (info.small) body.scale.setScalar(0.58);
-    joinCrowd(bakeCharacter(body));
     g.add(body);
     // your own parents carry a sign over their heads, so you can find them in a crowd
     if (info.mine) { const sign = parentSign(); sign.position.y = (body.userData.height || 1.8) + 0.55; body.add(sign); }
@@ -890,9 +893,7 @@ function buildCastleGrounds(k, C, rot, cx, cz, solid, S) {
   const guards = [];
   const gearOf = Object.fromEntries(Object.entries(S.gear).map(([key, id]) => [key, ITEMS[id]]));
   const guard = (lx, lz, y, face, race) => {
-    const b = buildCharacter({ race, form: 'humanoid', look: {} });
-    wearGear(b, gearOf);
-    joinCrowd(bakeCharacter(b));
+    const b = lazyGuard(race, gearOf);
     b.position.set(lx, y, lz); b.rotation.y = face;
     k.add(b); guards.push(b);
     if (!y) put(lx, lz, 0.6, 2);
@@ -1113,6 +1114,7 @@ export function buildVillage(place) {
   const doors = doorKeeper();
   const pads = [];
   const shops = centre.market ? [{ ...centre.market, name: MARKETS[centre.market.id].name }] : [];
+  if (centre.kiosk) shops.push(centre.kiosk);
   // (kept off the north-south street between the gates: each at least 10 m to the side of it)
   const spots = [[-0.6, 30, 'tavern'], [0.05, 33], [0.7, 30], [2.45, 32], [3.14, 30], [3.83, 33]];
   for (const [a, r, id] of spots) {
@@ -1158,9 +1160,7 @@ export function buildVillage(place) {
       solid.push({ x: cx + tx, z: cz + tz, r: 1.5, kind: 'wall', height: 8, y: baseY + ty });
       // a guard outside the gate
       const gx = ox * (R + 2.2) + sx * side * 2.2, gz = oz * (R + 2.2) + sz * side * 2.2;
-      const b = buildCharacter({ race: ['dwarf', 'elf', 'beastkin', 'hobbit'][(guards.length + place.id.length) % 4], form: 'humanoid', look: {} });
-      wearGear(b, gearOf);
-      joinCrowd(bakeCharacter(b));
+      const b = lazyGuard(['dwarf', 'elf', 'beastkin', 'hobbit'][(guards.length + place.id.length) % 4], gearOf);
       b.position.set(gx, heightAt(cx + gx, cz + gz) - baseY, gz);
       b.rotation.y = ga;
       g.add(b); guards.push(b);

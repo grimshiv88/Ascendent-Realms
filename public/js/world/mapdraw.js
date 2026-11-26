@@ -4,19 +4,22 @@ import { REGIONS, PLACES, RIVERS, LAKE, LAKES, SECTIONS, METRES_PER_PX, sectionA
 
 let cache = null;
 
+// Paint the map ahead of time (while the game is idle), so the first time it opens is instant
+export function warmWorldMap() {
+  if (cache) return;
+  cache = document.createElement('canvas');
+  cache.width = 3200;
+  cache.height = 2000;
+  const c2 = cache.getContext('2d');
+  c2.scale(2, 2);
+  paint(c2, 1600, 1000);
+}
+
 // Draws the map once and keeps it; `player` ({x, z, heading} in world metres) adds a marker.
 // `marks` ([{x, z, label}]) adds quest targets as glowing blue diamonds.
 export function drawWorldMap(cv, { player = null, marks = [] } = {}) {
   const ctx = cv.getContext('2d');
-  if (!cache) {
-    // painted at twice the size so the map stays sharp when zoomed in
-    cache = document.createElement('canvas');
-    cache.width = 3200;
-    cache.height = 2000;
-    const c2 = cache.getContext('2d');
-    c2.scale(2, 2);
-    paint(c2, 1600, 1000);
-  }
+  warmWorldMap(); // (painted at twice the size so the map stays sharp when zoomed in)
   ctx.drawImage(cache, 0, 0, cv.width, cv.height);
   for (const m of marks) {
     const p = toMap(m.x, m.z);
