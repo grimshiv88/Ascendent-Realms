@@ -357,6 +357,7 @@ $('plist').addEventListener('click', (e) => { const b = e.target.closest('[data-
 
 async function openPlayer(id) {
   open = id;
+  heldLoaded = false; // who holds which Unique Skill may have changed
   drawList();
   try { drawCard((await call(`api/admin/player?id=${id}`)).player); } catch (err) { say(err.message); }
 }
@@ -443,7 +444,8 @@ function uniqueFilters(key, withRank) {
   const els = [...new Set(catalogue.uniqueList.map((u) => u[2]).filter(Boolean))].sort();
   return `<div class="chips">${[{ id: 'all', name: 'All', icon: '' }, ...catalogue.categories].map((k) => `<button type="button" data-u-cat="${k.id}" class="${f.cat === k.id ? 'on' : ''}">${esc(k.icon || '')} ${esc(k.name)}</button>`).join('')}</div>
     <div class="filters">
-      ${withRank ? `<select data-u="rank" aria-label="Rank">${opt('all', 'Every rank', f.rank)}${catalogue.uniqueRanks.slice().reverse().map((r) => opt(r, `${r}-Rank`, f.rank)).join('')}</select>` : ''}
+      ${withRank ? `<select data-u="rank" aria-label="Rank">${opt('all', 'Every rank', f.rank)}${catalogue.uniqueRanks.slice().reverse().map((r) => opt(r, `${r}-Rank`, f.rank)).join('')}</select>`
+        : `<select data-u="rank" aria-label="Rank held at">${opt('all', 'Any rank (held or free)', f.rank)}${opt('free', 'Free: nobody holds it', f.rank)}${opt('held', 'Held by someone', f.rank)}${catalogue.uniqueRanks.slice().reverse().map((r) => opt(r, `Held at ${r}-Rank`, f.rank)).join('')}</select>`}
       <select data-u="kind" aria-label="Power">${opt('all', 'Every power', f.kind)}${Object.entries(catalogue.uniqueKinds || {}).map(([k, v]) => opt(k, v, f.kind)).join('')}</select>
       <select data-u="el" aria-label="Element">${opt('all', 'Every element', f.el)}${els.map((e) => opt(e, e, f.el)).join('')}</select>
       <select data-u="fit" aria-label="Suits">${opt('all', 'Suits any class', f.fit)}${catalogue.classes.map((k) => opt(k.id, `Suits a ${k.name}`, f.fit)).join('')}</select>
@@ -455,15 +457,40 @@ const uMatch = (f, { kind, el, fit, name, rank, who = '' }) => (f.cat === 'all' 
   && (!f.q.trim() || `${name} ${who}`.toLowerCase().includes(f.q.trim().toLowerCase()));
 function uniquePickerHtml(mine) {
   const f = uFilter('ugive');
+  setTimeout(loadHeld);
   return `<div class="picker" data-upicker="ugive">${uniqueFilters('ugive', false)}
     <div class="row" style="margin-bottom:8px"><label style="grid-auto-flow:column;align-items:center">Rank to give <select data-u="give">${catalogue.uniqueRanks.slice().reverse().map((r) => `<option${r === (f.give || mine?.rank || 'B') ? ' selected' : ''}>${r}</option>`).join('')}</select></label></div>
     <div class="pick-list">${uniqueListHtml(mine)}</div></div>`;
 }
+// A Unique Skill has no rank of its own: the rank is rolled (or chosen here) when someone gets it,
+// so the same skill can be F for one player and S for another. The Give list's rank filter is the
+// rank it is held at now (or free), and every row says who holds it.
+let heldLoaded = false;
+async function loadHeld() {
+  if (heldLoaded) return;
+  heldLoaded = true;
+  try {
+    const { categories } = await call('api/admin/skills');
+    heldUniques = categories.flatMap((k) => k.uniques);
+    const box = document.querySelector('[data-upicker="ugive"] .pick-list');
+    if (box) box.innerHTML = uniqueListHtml({ name: $('pcard').dataset.unique });
+  } catch { heldLoaded = false; }
+}
+function holdersOf() {
+  const m = new Map();
+  for (const u of heldUniques) { const k = u.skill.toLowerCase(); if (!m.has(k)) m.set(k, []); m.get(k).push(u); }
+  return m;
+}
 function uniqueListHtml(mine) {
   const f = uFilter('ugive');
-  const list = catalogue.uniqueList.filter(([name, kind, el, fit]) => name !== mine?.name && uMatch({ ...f, rank: 'all' }, { kind, el, fit, name }));
+  const holders = holdersOf();
+  const rankOk = (name) => { const h = holders.get(name.toLowerCase()) || [];
+    return f.rank === 'all' || (f.rank === 'free' ? !h.length : f.rank === 'held' ? h.length > 0 : h.some((u) => u.rank === f.rank)); };
+  const list = catalogue.uniqueList.filter(([name, kind, el, fit]) => name !== mine?.name && uMatch({ ...f, rank: 'all' }, { kind, el, fit, name }) && rankOk(name));
+  const heldTag = (name) => { const h = holders.get(name.toLowerCase()) || [];
+    return h.length ? ` <span class="tag rk rk-${esc(h[0].rank)}">Held at ${esc(h[0].rank)} by ${esc(h[0].name)}${h.length > 1 ? ` +${h.length - 1}` : ''}</span>` : ' <span class="tag">Free</span>'; };
   const rows = list.slice(0, U_SHOW).map(([name, kind, el, fit]) => { const k = catalogue.categories.find((x) => x.id === uCat(kind)); return `<div class="pick"><span class="ic">${esc(k?.icon || '✦')}</span>
-    <span><b>${esc(name)}</b> <span class="tag">${esc(k?.name || '')}</span> <span class="tag">${esc(kindName(kind))}</span>${el ? ` <span class="tag">${esc(el)}</span>` : ''}<small>${fit ? `Suits a ${esc(clsName(fit))}` : ''}</small></span>
+    <span><b>${esc(name)}</b> <span class="tag">${esc(k?.name || '')}</span> <span class="tag">${esc(kindName(kind))}</span>${el ? ` <span class="tag">${esc(el)}</span>` : ''}${heldTag(name)}<small>${fit ? `Suits a ${esc(clsName(fit))}` : ''}</small></span>
     <button type="button" class="primary" data-give-unique="${esc(name)}">Give</button></div>`; }).join('');
   return `<p class="quiet" style="margin:0 0 4px">${list.length} match${list.length === 1 ? '' : 'es'}${list.length > U_SHOW ? `, showing the first ${U_SHOW}: narrow the filters or type a name` : ''}</p>${rows || '<p class="quiet">Nothing matches.</p>'}`;
 }
@@ -603,7 +630,7 @@ function drawCard(p) {
         <button class="primary" type="submit">Change</button>
       </form>
       <p class="quiet">Leave the name empty to keep the skill and only change its rank. The admin can go past the world limits for SS and SSS.</p>
-      <p class="quiet" style="margin:10px 0 0">Or find one with the filters and press Give (it gets the rank chosen here).</p>
+      <p class="quiet" style="margin:10px 0 0">Or find one with the filters and press Give. A Unique Skill has no rank of its own: it gets one (F to SSS) when someone receives it, so the same skill can be F for one player and S for another. Here it gets the Rank to give you pick; the rank filter shows which skills are free or held, and at what rank.</p>
       ${uniquePickerHtml(c.uniqueSkill)}
     </div>
 
@@ -857,7 +884,7 @@ $('announce').addEventListener('submit', async (e) => {
 // ---------- skills ----------
 async function drawSkills() {
   const { categories } = await call('api/admin/skills');
-  heldUniques = categories.flatMap((k) => k.uniques);
+  heldUniques = categories.flatMap((k) => k.uniques); heldLoaded = true;
   $('skillboard').innerHTML = `<div class="picker" data-upicker="uheld">${uniqueFilters('uheld', true)}<div class="held-list">${heldHtml()}</div></div>`;
   $('skillbook').innerHTML = `<h3>Skills <span class="quiet">(${catalogue.skills.length})</span></h3>${pickerHtml('book')}<h3 style="margin-top:16px">Spells <span class="quiet">(${catalogue.spells.length})</span></h3>${pickerHtml('spellbook')}`;
 }
