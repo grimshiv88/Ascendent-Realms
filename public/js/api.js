@@ -1301,6 +1301,16 @@ export async function setPrivacy(privacy) {
   return request('api/privacy', { method: 'POST', body: { privacy } });
 }
 
+// Seeing other players: say where you are, hear who is close by. The preview page is yours alone.
+export async function presence(spot) {
+  if (await isPreviewMode()) return { players: [], preview: true };
+  return request('api/presence', { method: 'POST', body: spot });
+}
+export async function presenceLeave() {
+  if (await isPreviewMode()) return { ok: true };
+  return request('api/presence/leave', { method: 'POST', body: {} });
+}
+
 // Voice chat (16+): a short pass to join the voice room. The preview page has no voice server.
 export async function voicePass() {
   if (await isPreviewMode()) throw new Error('Voice chat works on the live game only, not in this preview.');
