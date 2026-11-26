@@ -1217,3 +1217,28 @@ body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: fil
 .sk-rank-B, .sk-rank-A { color: #c48aff; }
 .sk-rank-S { color: #ffb347; }
 .sk-rank-SS, .sk-rank-SSS { color: #ff6a5a; }
+
+/* The tutorial for new players (tutorial.js): a card at the bottom, an arrow that points the way,
+   and a bouncing pointer under the button a step is about */
+.tut-card { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 2; width: min(460px, calc(100% - 32px)); padding: 12px 14px; background: rgba(8, 6, 3, 0.86); border: 1px solid var(--gold-3); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55); color: var(--ink); font: 0.92rem/1.45 Georgia, serif; }
+.tut-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.tut-count { font: 700 0.75rem 'Cinzel', serif; letter-spacing: 0.08em; color: var(--ink-quiet); }
+.tut-skip { padding: 4px 8px; font: inherit; font-size: 0.8rem; color: var(--ink-quiet); background: none; border: 1px solid rgba(200, 146, 26, 0.45); border-radius: 4px; cursor: pointer; }
+.tut-skip:hover { color: var(--gold-1); border-color: var(--gold-2); }
+.tut-body { display: flex; gap: 12px; align-items: flex-start; }
+.tut-words { min-width: 0; flex: 1; }
+.tut-words h3 { margin: 0 0 4px; font: 700 1.02rem 'Cinzel', serif; color: var(--gold-2); letter-spacing: 0.04em; }
+.tut-words p { margin: 0; }
+.tut-words kbd { display: inline-block; min-width: 1.6em; padding: 0 5px; text-align: center; font: 700 0.8rem system-ui, sans-serif; color: var(--gold-1); background: #2a1f0c; border: 1px solid var(--gold-3); border-radius: 3px; }
+.tut-where { margin-top: 6px !important; color: var(--gold-1); font-weight: 700; }
+.tut-compass { flex: none; display: grid; justify-items: center; gap: 2px; width: 64px; }
+.tut-arrow { width: 56px; height: 56px; fill: var(--gold-2); stroke: #3a2606; stroke-width: 1.5; filter: drop-shadow(0 0 6px rgba(245, 200, 76, 0.6)); transition: transform 0.08s linear; }
+.tut-dist { font: 700 0.75rem system-ui, sans-serif; color: var(--gold-1); }
+.tut-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.tut-actions .gold-button { width: auto; padding: 8px 18px; }
+.tut-pointer { position: absolute; z-index: 2; width: 0; height: 0; pointer-events: none; }
+.tut-pointer::before { content: ''; position: absolute; left: -12px; top: 0; border: 12px solid transparent; border-top: 0; border-bottom: 18px solid var(--gold-2); filter: drop-shadow(0 0 6px rgba(245, 200, 76, 0.8)); animation: tut-bob 0.9s ease-in-out infinite; }
+.tut-pointer.hidden { display: none; }
+@keyframes tut-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(8px); } }
+@media (max-width: 700px) { .tut-card { bottom: 132px; font-size: 0.85rem; } .tut-compass { width: 52px; } .tut-arrow { width: 44px; height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .tut-pointer::before { animation: none; } }

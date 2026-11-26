@@ -174,7 +174,7 @@ const hideEmail = (email) => email.replace(/^(.{1,2})[^@]*(@.*)$/, (m, a, b) => 
 const previewAccount = (a) => ({
   email: realEmail(a), username: a.username, character: a.character, emailVerified: !!a.verified, needsEmail: !realEmail(a),
   mustVerify: !realEmail(a) || (!a.verified && !a.welcomed), twofa: a.twofa || null, mail: true, preview: true,
-  birthdate: a.birthdate || null, age: ageOf(a.birthdate), needsBirthdate: !a.birthdate,
+  birthdate: a.birthdate || null, age: ageOf(a.birthdate), needsBirthdate: !a.birthdate, tutorialDone: !!a.tutorialDone,
 });
 
 // Authenticator-app codes (TOTP, the same as server/totp.js), for the preview
@@ -405,6 +405,12 @@ export async function setBirthdate(birthdate) {
     });
   }
   return request('api/birthdate', { method: 'POST', body: { birthdate } });
+}
+
+// the tutorial for new players was finished or skipped: it isn't shown again on this account
+export async function setTutorialDone() {
+  if (await isPreviewMode()) return updatePreviewAccount((acc) => { acc.tutorialDone = true; return { ok: true }; });
+  return request('api/tutorial', { method: 'POST', body: {} });
 }
 
 // a signed-in player changes the password: the current one is needed

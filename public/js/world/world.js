@@ -2654,8 +2654,34 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     return true;
   }
 
+  // The tutorial's beam of light over the place it wants you to go (see tutorial.js): a tall soft
+  // column you can see from across the city, and a gold arrow bobbing over the spot
+  let guide = null;
+  const guideMats = {
+    beam: new THREE.MeshBasicMaterial({ color: 0xffd56a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }),
+    arrow: new THREE.MeshBasicMaterial({ color: 0xffc23a, fog: false }),
+  };
+  function setGuide(at) {
+    if (guide) { scene.remove(guide); guide = null; }
+    if (!at || !Number.isFinite(at.x) || !Number.isFinite(at.z)) return;
+    guide = new THREE.Group();
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 60, 16, 1, true), guideMats.beam);
+    beam.position.y = 30;
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.4, 4), guideMats.arrow);
+    arrow.rotation.x = Math.PI; // pointing down at the spot
+    arrow.position.y = 3.2;
+    arrow.onBeforeRender = () => { const t = performance.now() / 1000; arrow.position.y = 3.2 + Math.sin(t * 2.4) * 0.35; arrow.rotation.y = t * 1.5; };
+    guide.add(beam, arrow);
+    guide.position.set(at.x, surfaceAt(at.x, at.z), at.z);
+    scene.add(guide);
+  }
+
   return {
     rebuildAvatar,
+    setGuide,
+    // for the tutorial's arrow: where you stand, which way the camera looks, and whether you are
+    // indoors or down a cave (the arrow points outside the world then)
+    guideView: () => ({ x: pos.x, z: pos.z, yaw, inside: !!inside, depth: !!depth }),
     jump() { jumpQueued = true; },
     // an admin's powers turned on or off; landing after flying never hurts
     setPowers(p) {

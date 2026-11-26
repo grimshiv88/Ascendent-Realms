@@ -100,6 +100,7 @@ app.post('/api/email/send', requireSession, async (req, res) => {
   res.status(result.error ? 400 : 200).json(result);
 });
 app.post('/api/birthdate', requireSession, answer((body, acc) => auth.setBirthdate(acc, body)));
+app.post('/api/tutorial', requireSession, answer((body, acc) => auth.setTutorialDone(acc)));
 app.post('/api/email/set', requireSession, answer((body, acc) => auth.setEmail(acc, body)));
 app.post('/api/password', requireSession, async (req, res) => {
   const result = await auth.changePassword(req.account, req.body || {}, bearer(req));
