@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { heightAt, SAFE_R } from '../data/world-layout.mjs';
 import { MARKETS } from '../data/items.mjs';
+import { KIOSK_ID, KIOSK_NAME } from '../data/economy.mjs';
 
 export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { market: withMarket = true, lanterns = true } = {}) {
   const g = new THREE.Group();
@@ -191,9 +192,41 @@ export function buildSpawn(place = { x: 0, z: 0, name: 'Central City' }, { marke
     marketAt = { id: place.id, x: cx + mx, z: cz + mz };
   }
 
+  // the Bank Kiosk: a little booth with a counter window, across the waystone from the market
+  // (every village and homeland; the great cities have a whole Bank)
+  let kioskAt = null;
+  if (withMarket && !place.city) {
+    const kx = -14, kz = 8;
+    const k = new THREE.Group();
+    k.position.set(kx, heightAt(cx + kx, cz + kz) - baseY, kz);
+    k.rotation.y = Math.atan2(-kx, -kz); // its window looks at the shrine
+    const wall = new THREE.MeshStandardMaterial({ color: '#ece6d6', roughness: 0.85 });
+    const trim = new THREE.MeshStandardMaterial({ color: '#b8902a', roughness: 0.5, metalness: 0.4 });
+    const slate = new THREE.MeshStandardMaterial({ color: '#3a3a4a', roughness: 0.8 });
+    const back = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.6, 0.2), wall); back.position.set(0, 1.3, -0.9);
+    const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.6, 2), wall); sideL.position.set(-1.2, 1.3, 0);
+    const sideR = sideL.clone(); sideR.position.x = 1.2;
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.05, 0.25), wall); counter.position.set(0, 0.52, 0.9);
+    const ledge = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.08, 0.45), trim); ledge.position.set(0, 1.08, 0.95);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 0.25), wall); lintel.position.set(0, 2.35, 0.9);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(2.1, 1.1, 4), slate); roof.position.y = 3.15; roof.rotation.y = Math.PI / 4;
+    // bars across the window, and a coin sign on top
+    for (let i = -2; i <= 2; i++) { const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1, 5), trim); bar.position.set(i * 0.45, 1.6, 0.9); k.add(bar); }
+    const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.07, 18), trim); coin.rotation.x = Math.PI / 2; coin.position.set(0, 3.95, 0);
+    k.add(back, sideL, sideR, counter, ledge, lintel, roof, coin);
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), new THREE.MeshBasicMaterial({ map: textTexture(KIOSK_NAME), transparent: true }));
+    label.position.set(0, 2.36, 1.03);
+    k.add(label);
+    k.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    g.add(k);
+    put(kx, kz, 1.4, 2.8);
+    kioskAt = { id: KIOSK_ID, name: KIOSK_NAME, place: place.id, x: cx + kx, z: cz + kz };
+  }
+
   return {
     group: g,
     market: marketAt,
+    kiosk: kioskAt,
     solid,
     update(t) {
       crystal.rotation.y = t * 0.6;
