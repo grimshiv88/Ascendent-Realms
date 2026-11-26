@@ -49,8 +49,8 @@ const link = (params) => `${appUrl()}/?${new URLSearchParams(params)}`;
 
 const emails = {
   verify: (to, name, ticket, code) => send(to, `Confirm your email: ${code}`,
-    page('Confirm your email', [`Welcome, <b>${esc(name)}</b>. Confirm this is your email to finish making your account.`, 'Click the button, or type this code in the game. It works for 24 hours.'], { code, button: { href: link({ verify: ticket, code }), text: 'Confirm my email' } }),
-    `Welcome, ${name}. Your code is ${code}, or open ${link({ verify: ticket, code })} (24 hours).`),
+    page('Confirm your email', [`Welcome, <b>${esc(name)}</b>. Confirm this is your email to finish making your account.`, 'Click the button, or type this code in the game. It works for 5 minutes. If it runs out, ask the game to send a new one.'], { code, button: { href: link({ verify: ticket, code }), text: 'Confirm my email' } }),
+    `Welcome, ${name}. Your code is ${code}, or open ${link({ verify: ticket, code })} (works for 5 minutes).`),
   welcome: (to, name) => send(to, 'Welcome to Ascendant Realms',
     page('Welcome to the realm', [`Your email is confirmed, <b>${esc(name)}</b>.`, 'Your story starts at birth: a family in one of the great cities, lucky or not. Grow up, train, find your class and climb as high as you can.', 'You can turn on 2-step sign-in in Options, then Settings, to keep your account safe.'], { button: { href: appUrl(), text: 'Enter the realm' } }),
     `Your email is confirmed, ${name}. Play at ${appUrl()}`),
