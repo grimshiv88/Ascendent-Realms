@@ -172,6 +172,7 @@ function openCreation(username) {
 }
 
 let world = null;
+let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
 const settings = (() => {
@@ -828,6 +829,7 @@ function startGame(character) {
     await Promise.resolve(game.saveNow()).catch(() => {});
     world?.stop();
     social?.dispose();
+    await api.presenceLeave().catch(() => {});
     await api.signOut();
     location.reload();
   }
@@ -1580,6 +1582,36 @@ function startGame(character) {
   window.addEventListener('pagehide', () => game.saveNow());
   // Friends and chat: search at the top right, chat at the bottom left
   social = createSocial($('game'));
+  // Other players close by: every second or so the game says where you are and draws who is near
+  // (every few seconds while nobody is). Your body is sent again whenever it or your gear changes.
+  if (!presenceOn) (async () => {
+    presenceOn = true;
+    const P = await import('./data/presence.mjs');
+    let sentSig = '', sentAt = 0, busy = false;
+    const myBody = () => {
+      const gear = {};
+      for (const [slot, g] of Object.entries(game.worn())) gear[slot] = { id: g.entry?.id || g.id, plus: g.plus || 0 };
+      return { race: character.race, form: character.form, stage: character.stage || 0, look: character.look || {}, age: ageOf(character), gear };
+    };
+    const tick = async () => {
+      let wait = P.POLL_ALONE_MS;
+      if (world && !busy && document.visibilityState !== 'hidden') {
+        busy = true;
+        try {
+          const spot = world.presence();
+          const body = myBody(), sig = P.bodySig(body);
+          // the body goes with the first report, when it changes, and once a minute in case the server forgot it
+          if (sig !== sentSig || Date.now() - sentAt > 60000) { spot.body = body; sentSig = sig; sentAt = Date.now(); }
+          const r = await api.presence(spot);
+          if (r.preview) return; // the preview page has nobody else in it
+          world.showOthers(r.players || []);
+          if (r.players?.length) wait = P.POLL_MS;
+        } catch { sentSig = ''; } finally { busy = false; }
+      }
+      setTimeout(tick, wait);
+    };
+    tick();
+  })();
   // Voice chat (16+): a mic button under the chat button; voices fade with distance
   createVoice($('game'), { position: () => world?.position() });
   // An admin's powers (fly, can't die, run fast, teleport), given by the owner on the Admin Board.

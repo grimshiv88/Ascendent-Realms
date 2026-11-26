@@ -16,6 +16,7 @@ const db = require('./db');
 const mail = require('./mail');
 const voice = require('./voice');
 const economy = require('./economy');
+const presence = require('./presence');
 
 const app = express();
 // (a save can carry up to 80 planted beds, so 64 kB rather than 10)
@@ -284,6 +285,10 @@ app.post('/api/voice/pass', requireAccount, async (req, res) => {
   const r = await voice.pass(req.account);
   res.status(r.error ? (r.off ? 503 : 403) : 200).json(r);
 });
+
+// Seeing other players: report where you are, hear who is close by (see server/presence.js)
+app.post('/api/presence', requireAccount, answer((body, acc) => presence.report(acc, body)));
+app.post('/api/presence/leave', requireAccount, answer((body, acc) => presence.leave(acc)));
 
 app.post('/api/report', requireAccount, answer((body, acc) => admin.report(acc, body)));
 

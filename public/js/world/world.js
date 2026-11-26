@@ -27,6 +27,7 @@ import { placeBuilding, CELL } from '../data/building.mjs';
 import { caveById, THEMES, chestLoot, bossLevel, caveOres, pickOre, SIZES } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { createOthers } from './others.js';
 import { updateCrowd, setCrowdFar } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { allLairs } from '../data/beasts.mjs';
@@ -401,6 +402,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // Land plots: the buying grid and owned land
   const plots = createPlots(scene);
   let prepared = new Set();
+
+  // Other players close by (the game reports where you are and hears who is near: see main.js)
+  const others = createOthers(scene);
 
   // Your character, wearing your gear
   let avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look, age: ageOf(character) });
@@ -929,6 +933,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     scene.add(built.group);
     colliders.add(built.solid);
     creatures.clear();
+    others.clear(); // (the players in here are shown at the next report)
     depth = { cave, built, back: site.built.mouth, leftExit: false };
     safeAt = null; pitTime = 0;
     pos.set(built.start.x, built.floorAt(built.start.x, built.start.z), built.start.z);
@@ -972,6 +977,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     built.dispose();
     setUnderground(null);
     depth = null;
+    others.clear();
     pos.set(back.x, heightAt(back.x, back.z), back.z);
     heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; snapCam = true;
     scene.fog.density = quality.fog;
@@ -1013,6 +1019,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     scene.add(built.group);
     colliders.add(built.solid);
     creatures.clear();
+    others.clear(); // (the players in here are shown at the next report)
     // back outside: a step out of the door, facing away from it
     const out = Math.atan2(pos.x - shop.x, pos.z - shop.z);
     inside = { built, shop, leftExit: false, back: { x: shop.x, z: shop.z, heading: heading + Math.PI } };
@@ -1033,6 +1040,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     built.dispose();
     setUnderground(null);
     inside = null;
+    others.clear();
     pos.set(back.x, heightAt(back.x, back.z), back.z);
     heading = back.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; snapCam = true;
     scene.fog.density = quality.fog;
@@ -2324,6 +2332,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     else if (bladeHeld() && !sleeping && !dead && rig.arms) { rig.arms[0].shoulder.rotation.x = READY[0]; rig.arms[0].elbow.rotation.x = READY[1]; }
     moveHelper(dt, t);
     moveGuard(dt, t);
+    others.tick(dt, t);
 
     if (skillPose) { skillPose.t += dt; poseSkill(rig, skillPose); if (skillPose.t >= skillPose.dur) skillPose = null; }
     // Attacks
@@ -2642,6 +2651,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     get flying() { return !!riding?.flying; },
     get flyer() { return !!riding?.flyer(); },
     position: () => ({ x: pos.x, z: pos.z, heading }),
+    // for seeing each other: exactly where you are and what you are doing, and which place you are in
+    presence() {
+      const place = depth ? `cave:${String(depth.cave.id).replace(/[^\w-]/g, "_").slice(0, 40)}` : inside ? `in:${String(inside.shop.id || 'room').replace(/[^\w-]/g, '_').slice(0, 40)}:${Math.round(inside.shop.x)},${Math.round(inside.shop.z)}` : 'out';
+      const pose = dead || sleeping || collapsed > 0 ? 'lie' : sitting ? 'sit' : riding?.flying ? 'fly' : riding?.riding ? 'ride' : '';
+      return { x: avatar.position.x, y: avatar.position.y, z: avatar.position.z, heading, speed: speedNow, place, pose };
+    },
+    showOthers: (list) => others.show(list),
+    get othersNear() { return others.count(); },
+    debugOthers: () => others.list(),
     // where you are out in the world (the door you came in by, while indoors)
     outdoors: () => (inside ? { x: inside.back.x, z: inside.back.z } : { x: pos.x, z: pos.z }),
     // for testing: where you and the camera are
@@ -2835,6 +2853,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       saveNow();
       renderer.setAnimationLoop(null);
       creatures.clear();
+      others.clear();
       skillFx.clear();
       land.dispose();
       sky.dispose();

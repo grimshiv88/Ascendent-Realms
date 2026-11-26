@@ -1,7 +1,7 @@
 // Every table the game keeps (Postgres). Run on start; safe to run again and again.
 // Row Level Security is switched on for every table with no rules, so the public Supabase web API
 // can't read or change anything: only the game's own server (which connects as the owner) can.
-const TABLES = ['admin_log', 'reports', 'accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes', 'past_lives', 'oil_wells'];
+const TABLES = ['admin_log', 'reports', 'accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes', 'past_lives', 'oil_wells', 'presence'];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS accounts (
@@ -183,6 +183,22 @@ CREATE TABLE IF NOT EXISTS oil_wells (
   tank        INTEGER NOT NULL DEFAULT 0,
   out_barrels INTEGER NOT NULL DEFAULT 0
 );
+
+-- where each player is right now, so players close by can see each other (see server/presence.js)
+CREATE TABLE IF NOT EXISTS presence (
+  account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  x          DOUBLE PRECISION NOT NULL,
+  y          DOUBLE PRECISION NOT NULL,
+  z          DOUBLE PRECISION NOT NULL,
+  heading    DOUBLE PRECISION NOT NULL DEFAULT 0,
+  speed      DOUBLE PRECISION NOT NULL DEFAULT 0,
+  place      TEXT NOT NULL DEFAULT 'out',
+  pose       TEXT NOT NULL DEFAULT '',
+  body       TEXT,
+  at         BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS presence_place_at ON presence (place, at);
 
 ${TABLES.map((t) => `ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY;`).join('\n')}
 `;
