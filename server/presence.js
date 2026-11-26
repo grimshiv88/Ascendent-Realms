@@ -8,6 +8,38 @@ const { caveById } = require('../public/js/data/depths.mjs');
 
 let lastSweep = 0;
 
+// Live movement (public/js/live.js) goes through Supabase Realtime. The game needs the project's
+// address and its public (anon) key. Vercel's Supabase integration adds them as settings
+// (SUPABASE_URL and SUPABASE_ANON_KEY, or the NEXT_PUBLIC_ ones); without the key, one is made from
+// SUPABASE_JWT_SECRET. Neither is secret: Supabase's public key is meant for browsers, and every
+// table has Row Level Security on with no rules, so it can't read or change any game data.
+// REALTIME_OFF=1 switches live movement off (players then move with the slower server checks).
+const crypto = require('node:crypto');
+let liveCache;
+function liveConfig() {
+  if (liveCache !== undefined) return liveCache;
+  const env = process.env;
+  if (env.REALTIME_OFF === '1') return (liveCache = null);
+  let url = (env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+  if (!url) {
+    // the project's id is in the database address: db.<ref>.supabase.co, or the user postgres.<ref> on the pooler
+    try {
+      const u = new URL(env.DATABASE_URL || env.POSTGRES_URL || '');
+      const ref = /^db\.([a-z0-9]+)\.supabase\.co$/.exec(u.hostname)?.[1] || /^postgres\.([a-z0-9]+)$/.exec(decodeURIComponent(u.username))?.[1];
+      if (ref) url = `https://${ref}.supabase.co`;
+    } catch { /* no database address */ }
+  }
+  let key = (env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '').trim();
+  if (!key && env.SUPABASE_JWT_SECRET) {
+    const b = (v) => Buffer.from(JSON.stringify(v)).toString('base64url');
+    const now = Math.floor(Date.now() / 1000);
+    const head = b({ alg: 'HS256', typ: 'JWT' }), body = b({ iss: 'supabase', role: 'anon', iat: now, exp: now + 10 * 365 * 86400 });
+    key = `${head}.${body}.${crypto.createHmac('sha256', env.SUPABASE_JWT_SECRET).update(`${head}.${body}`).digest('base64url')}`;
+  }
+  liveCache = url && key ? { url, key } : null;
+  return liveCache;
+}
+
 // In words, where a spot is: the nearest town or landmark and the land it is in
 function whereIs(place, x, z) {
   if (place.startsWith('cave:')) return `In ${caveById(place.slice(5))?.name || 'a cave'}`;
@@ -75,6 +107,8 @@ async function report(acc, body = {}, now = Date.now(), isAdmin = false) {
   }
   return {
     ok: true,
+    me: acc.id,
+    ...(body.wantLive ? { live: liveConfig() } : {}),
     ...(isAdmin ? { online: await onlineCount(now) } : {}),
     players: rows.map((r) => ({
       id: r.account_id, name: r.name, x: r.x, y: r.y, z: r.z, heading: r.heading, speed: r.speed, pose: r.pose,
@@ -86,4 +120,4 @@ async function report(acc, body = {}, now = Date.now(), isAdmin = false) {
 // Signing out or closing the game: gone at once instead of after a few seconds
 const leave = (acc) => db.run('DELETE FROM presence WHERE account_id = ?', acc.id).then(() => ({ ok: true }));
 
-module.exports = { report, leave, online, onlineCount, whereIs };
+module.exports = { liveConfig, report, leave, online, onlineCount, whereIs };

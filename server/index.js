@@ -45,7 +45,7 @@ function checkAppraisalNow() {
   characters.keepAppraisalHeld().catch((e) => console.error('appraisal check:', e));
 }
 
-app.get('/api/health', async (req, res) => res.json({ ok: true, now: Date.now(), mail: mail.ready(), voice: voice.ready() }));
+app.get('/api/health', async (req, res) => res.json({ ok: true, now: Date.now(), mail: mail.ready(), voice: voice.ready(), live: !!presence.liveConfig() }));
 
 app.post('/api/signup', async (req, res) => {
   const result = await auth.signUp(req.body || {});

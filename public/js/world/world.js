@@ -2687,6 +2687,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       return { x: avatar.position.x, y: avatar.position.y, z: avatar.position.z, heading, speed: speedNow, place, pose };
     },
     showOthers: (list) => others.show(list),
+    moveOther: (m) => others.move(m),
     get othersNear() { return others.count(); },
     debugOthers: () => others.list(),
     // where you are out in the world (the door you came in by, while indoors)
