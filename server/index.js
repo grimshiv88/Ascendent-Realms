@@ -254,6 +254,8 @@ const adminGate = (method, route) => async (req, res, next) => {
   next();
 };
 app.get('/api/admin/accounts', adminGate('GET', 'accounts'), async (req, res) => res.json(await admin.accounts()));
+// who is in the world right now, and where (see server/presence.js)
+app.get('/api/admin/online', adminGate('GET', 'online'), async (req, res) => res.json(await presence.online()));
 app.post('/api/admin/gates', adminGate('POST', 'gates'), async (req, res) => {
   const { city, raised } = req.body || {};
   if (!['central', 'emberfall', 'ashgrave', 'lumenhollow', 'mirehaven'].includes(city)) return res.status(400).json({ error: 'No such city.' });
@@ -287,7 +289,7 @@ app.post('/api/voice/pass', requireAccount, async (req, res) => {
 });
 
 // Seeing other players: report where you are, hear who is close by (see server/presence.js)
-app.post('/api/presence', requireAccount, answer((body, acc) => presence.report(acc, body)));
+app.post('/api/presence', requireAccount, answer((body, acc) => presence.report(acc, body, Date.now(), require('./staff').canBoard(require('./staff').access(acc)))));
 app.post('/api/presence/leave', requireAccount, answer((body, acc) => presence.leave(acc)));
 
 app.post('/api/report', requireAccount, answer((body, acc) => admin.report(acc, body)));

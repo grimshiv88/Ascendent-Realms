@@ -1595,6 +1595,29 @@ function startGame(character) {
       for (const [slot, g] of Object.entries(game.worn())) gear[slot] = { id: g.entry?.id || g.id, plus: g.plus || 0 };
       return { race: character.race, form: character.form, stage: character.stage || 0, look: character.look || {}, age: ageOf(character), gear };
     };
+    // admins: how many are in the world right now; tap it for who and where
+    let onlineBtn = null, onlineList = null;
+    const showOnline = (n) => {
+      if (!onlineBtn) {
+        onlineBtn = document.createElement('button');
+        onlineBtn.type = 'button'; onlineBtn.id = 'online-now'; onlineBtn.setAttribute('aria-expanded', 'false');
+        onlineList = document.createElement('div');
+        onlineList.id = 'online-list'; onlineList.hidden = true;
+        $('game').append(onlineBtn, onlineList);
+        onlineBtn.addEventListener('click', async () => {
+          onlineList.hidden = !onlineList.hidden;
+          onlineBtn.setAttribute('aria-expanded', String(!onlineList.hidden));
+          if (onlineList.hidden) return;
+          onlineList.innerHTML = '<p>Looking…</p>';
+          try {
+            const { players } = await api.onlineNow();
+            const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+            onlineList.innerHTML = `<h3>In the world now (${players.length})</h3><ul>${players.map((p) => `<li><b>${esc(p.username)}</b>${p.level ? ` <span>Lv ${p.level} ${esc(p.race || '')}</span>` : ''}<small>${esc(p.where)}</small></li>`).join('')}</ul>`;
+          } catch (e) { onlineList.innerHTML = `<p>${e.message}</p>`; }
+        });
+      }
+      onlineBtn.innerHTML = `<span class="on-dot"></span>${n} online`;
+    };
     const tick = async () => {
       let wait = P.POLL_ALONE_MS;
       if (world && !busy && document.visibilityState !== 'hidden') {
@@ -1608,6 +1631,7 @@ function startGame(character) {
           if (r.preview) return; // the preview page has nobody else in it
           world.showOthers(r.players || []);
           if (r.players?.length) wait = P.POLL_MS;
+          if (r.online != null) showOnline(r.online);
         } catch (e) { sentSig = ''; console.warn('presence', e); } finally { busy = false; }
       }
       setTimeout(tick, wait);
