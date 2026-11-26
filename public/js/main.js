@@ -1499,12 +1499,15 @@ function startGame(character) {
         openPanel('parents');
         return;
       }
+      if (type === 'npc' && data.kind === 'stall') { ui.market = data.market; openPanel('market'); return; }
       if (type === 'npc') {
         const job = PARENT_JOBS[data.job]?.name;
         const line = data.kind === 'parent'
           ? (data.mine ? (isChild(character) ? `${data.name}, your parent (${job}): "Off to Academy Street with you! Pick the Academy of the class you want, register, and work hard."` : `${data.name}, your parent (${job}): "We are proud of you. Come home safe."`) : `${data.name} (${job}): "Good day to you."`)
           : data.kind === 'teacher' ? `${data.name}, teacher of the ${SCHOOLS[data.school].name}: "${isChild(character) ? (character.child.school === data.school ? 'Stand here with me and practise. Every minute counts, and soon you will learn our techniques.' : 'Is this your school? Choose it at the Academy, then come and train with me.') : 'You have grown well. Come back and teach the little ones some day.'}"`
           : data.kind === 'child' ? `${data.name}: "Want to play? Catch me if you can!"`
+          : data.kind === 'shopper' ? `${data.name}: "Busy market today. The bread here is still warm."`
+          : data.kind === 'idler' ? (data.pose === 'lying' ? `${data.name} is fast asleep on an old blanket.` : `${data.name}: "Spare a coin? No? Then mind the mud, friend."`)
           : data.kind === 'businessman' ? `${data.name}, ${data.title}: "Looking for a shop of your own? Come and see me once you are grown."` : `${data.name}, ${data.title}: "The finest goods in the city, for those with coin."`;
         showArea(line);
       }

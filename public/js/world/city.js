@@ -11,6 +11,7 @@ import { lazyCharacter, isShown } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, buildShack, paved, pavedGeometry, TOWN_TONES } from './houses.js';
+import { marketStall } from './farms.js';
 import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS, familyOf, PARENT_JOBS, townName, seeded } from '../data/birth.mjs';
 import { TIERS, TOP_Y, TERRACE, INNER_R, ROAD_ANGLES, ROAD_HALF, RAMPS, RAMP_IN, RAMP_OUT, RAMP_WALL, ringY, rampAt, alongRoad, cityLift } from '../data/citylevels.mjs';
 import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, BANK_ID, tierY, RACE_HOME, homeFootprint } from '../data/citylayout.mjs';
@@ -252,6 +253,12 @@ export function buildCity(place, opts = {}) {
     m.position.y = ringRel(R.tier) + 0.025;
     g.add(m);
   }
+
+  // the ground of each ring: one flat, solid floor per ring at its exact level, from the foot of
+  // the terrace wall below it out to under the next wall (the land itself is sunk out of sight
+  // inside the inner wall, so its coarse slopes never poke out over the streets as grass). Where a
+  // ramp is cut down into a ring, the floor leaves a gap for it (the ramp's road and walls fill it).
+  g.add(ringFloors(S, monster, ringRel));
 
   // buildings and walls never move: they are merged into a few meshes at the end
   const fixed = new THREE.Group();
@@ -509,7 +516,7 @@ export function buildCity(place, opts = {}) {
     const npc = { ...info, x: cx + x, z: cz + z };
     npcs.push(npc);
     // townsfolk stroll about near their spot: parents in front of their house, traders round the plaza
-    walkers.push({ body, npc, hx: x, hy: body.position.y, hz: z, range: info.still ? 0.4 : info.kind === 'parent' ? 2.6 : info.kind === 'child' ? 7 : 5, tx: x, tz: z, wait: 1 + rnd2() * 4, talk: 0 });
+    walkers.push({ body, npc, hx: x, hy: body.position.y, hz: z, range: info.still ? 0.4 : info.range ?? (info.kind === 'parent' ? 2.6 : info.kind === 'child' ? 7 : 5), tx: x, tz: z, wait: 1 + rnd2() * 4, talk: 0 });
   };
   const walkers = [];
   let seed2 = 7;
@@ -524,7 +531,7 @@ export function buildCity(place, opts = {}) {
     if (on === gathering) return;
     gathering = on;
     walkers.forEach((w, i) => {
-      if (w.npc.kind === 'teacher') return;
+      if (w.npc.kind === 'teacher' || w.npc.kind === 'stall') return;
       const a = (i * 2.399963) % (Math.PI * 2), r = 9.5 + (i % 3) * 1.3;
       if (on) {
         w.slot = { x: Math.cos(a) * r, z: Math.sin(a) * r };
@@ -607,6 +614,90 @@ export function buildCity(place, opts = {}) {
     addNpc(S.guards[i % S.guards.length], Math.cos(a) * r, Math.sin(a) * r, Math.atan2(Math.cos(a), Math.sin(a)), { kind, title, name: townName(side, rnd) });
   });
 
+  // ---------- the markets: stalls along the main roads, each with its seller, and shoppers ----------
+  const STALL_LOOK = {
+    stall_bread: [['#f0e2c0', '#b8782a'], ['#d8a85a', '#c89048', '#e8c890']], stall_greens: [['#e8d8a8', '#4a8a3a'], ['#e07020', '#6aa04a', '#c83a2a', '#e0b030']],
+    stall_grill: [['#f0e4cc', '#a83a2a'], ['#8a4a2a', '#a85a3a', '#e8d0a0']], stall_drinks: [['#e8f0f0', '#2a7a8a'], ['#6ac8d0', '#e8a040', '#f0f0e0']],
+    stall_cloth: [['#efe4d4', '#7a3a6a'], ['#c84a5a', '#4a6aa8', '#e8d8b0', '#6a8a4a']], stall_tools: [['#d8d0c0', '#4a4a4a'], ['#6a5a4a', '#8a8a8a', '#4a3a2a']],
+    stall_herbs: [['#e8f0d8', '#3a6a3a'], ['#4a8a3a', '#8ac85a', '#c8d890']], stall_soup: [['#d8c8a8', '#8a5a2a'], ['#8a6a3a', '#c8a060', '#5a4a3a']],
+    stall_scrap: [['#a89a80', '#6a5a4a'], ['#7a5a3a', '#5a5a5a', '#8a6a4a', '#6a4a3a']],
+  };
+  const vendorRnd = seeded(`${place.id}:market`);
+  plan.stalls.forEach((st, i) => {
+    const [colors, goods] = STALL_LOOK[st.id] || STALL_LOOK.stall_greens;
+    const { group: sg, solid: parts } = marketStall(MARKETS[st.id].name, colors, goods);
+    const y = ringRel(st.tier);
+    sg.position.set(st.x, y, st.z); sg.rotation.y = st.rot;
+    fixed.add(sg);
+    const c = Math.cos(st.rot), sn = Math.sin(st.rot);
+    const local = (lx, lz) => ({ x: st.x + lx * c + lz * sn, z: st.z - lx * sn + lz * c });
+    for (const [lx, lz, r, height] of parts) { const w = local(lx, lz); solid.push({ x: cx + w.x, z: cz + w.z, r, kind: 'wall', height }); }
+    // the seller behind the counter (talk to them to buy), and a shopper or two in front
+    const v = local(0, -0.45);
+    addNpc(S.guards[(i * 5 + 2) % S.guards.length], v.x, v.z, st.rot, { kind: 'stall', market: st.id, title: MARKETS[st.id].name, name: townName(side, vendorRnd), still: true });
+    for (let k = 0; k < (i % 3 === 0 ? 2 : 1); k++) {
+      const q = local((k ? 1 : -1) * 0.9, 2.1 + vendorRnd() * 0.8);
+      addNpc(S.guards[(i * 3 + k + 4) % S.guards.length], q.x, q.z, st.rot + Math.PI, { kind: 'shopper', name: townName(side, vendorRnd), range: 5 });
+    }
+  });
+  // ---------- life in the Dump: children playing in the dirt, folk lying or sitting about ----------
+  const dirtMat = matOf('#6e5e46', 1, { polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -24 });
+  const ballMats = ['#c8402a', '#3a6ab0', '#d8b030'].map((col) => matOf(col, 0.6));
+  plan.yards.forEach((Y) => {
+    const y = ringRel(Y.tier);
+    const patch = new THREE.Mesh(new THREE.CircleGeometry(3.2, 16), dirtMat);
+    patch.rotation.x = -Math.PI / 2; patch.position.set(Y.x, y + 0.03, Y.z); fixed.add(patch);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), ballMats[Y.seed % 3]);
+    ball.position.set(Y.x + 0.8, y + 0.16, Y.z - 0.5); ball.castShadow = true; g.add(ball);
+    for (let k = 0; k < Y.kids; k++) {
+      const a = (k / Y.kids) * Math.PI * 2 + Y.seed;
+      const x = Y.x + Math.cos(a) * 1.8, z = Y.z + Math.sin(a) * 1.8;
+      addNpc(S.guards[(Y.seed * 3 + k) % S.guards.length], x, z, a + Math.PI, { kind: 'child', name: townName(side, vendorRnd), small: true, range: 3 });
+    }
+  });
+  const blanketMats = ['#6a5a48', '#7a4a3a', '#5a5a4a', '#8a7a5a'].map((col) => matOf(col, 1, { polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -24 }));
+  plan.idlers.forEach((I) => {
+    const y = ringRel(I.tier);
+    const race = S.guards[(I.seed * 7 + 3) % S.guards.length];
+    const H = bodyHeight(race, 'humanoid');
+    const face = I.a + Math.PI / 2 + (I.seed % 2 ? 0.4 : -0.4);
+    const at = new THREE.Group(); at.position.set(I.x, y, I.z); at.rotation.y = face; g.add(at);
+    const blanket = new THREE.Mesh(new THREE.PlaneGeometry(I.pose === 'lying' ? 1.1 : 1.2, I.pose === 'lying' ? H + 0.3 : 1.2), blanketMats[I.seed % 4]);
+    blanket.rotation.x = -Math.PI / 2; blanket.position.set(0, 0.03, I.pose === 'lying' ? -H / 2 : 0.2); at.add(blanket);
+    // built only when you come near (like all townsfolk)
+    const body = lazyCharacter(() => {
+      const b = buildCharacter({ race, form: 'humanoid', look: {} });
+      const h = b.userData.height || H;
+      if (I.pose === 'lying') {
+        // flat on their back on an old blanket, asleep
+        b.rotation.x = -Math.PI / 2; b.position.y = 0.14;
+      } else {
+        // sitting on the ground, legs out in front
+        const leg = b.userData.rig?.legs?.[0];
+        for (const l of b.userData.rig?.legs || []) l.hip.rotation.x = -Math.PI / 2;
+        b.position.y = Math.max(-(leg?.thighLen ?? h * 0.25) - (leg?.shinLen ?? h * 0.25) + 0.08, -h * 0.6);
+      }
+      return b;
+    }, H);
+    at.add(body);
+    solid.push({ x: cx + I.x, z: cz + I.z, r: 0.5, kind: 'wall', height: 0.5 });
+    npcs.push({ kind: 'idler', name: townName(side, vendorRnd), pose: I.pose, x: cx + I.x, z: cz + I.z });
+  });
+  // ---------- the checkpoint: the waystone in the Dump where you rise again after a death ----------
+  {
+    const C = plan.checkpoint, y = ringRel(C.tier);
+    const cp = new THREE.Group(); cp.position.set(C.x, y, C.z); g.add(cp);
+    const stoneM = matOf('#8a857a', 0.9), runeM = new THREE.MeshStandardMaterial({ color: '#f5c84c', emissive: '#f5a81c', emissiveIntensity: 1.6, roughness: 0.3 });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.5, 0.3, 16), stoneM); base.position.y = 0.15; cp.add(base);
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 2.6, 0.5), stoneM); pillar.position.y = 1.6; cp.add(pillar);
+    for (const sd of [1, -1]) { const r = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 1.4), runeM); r.position.set(0, 1.7, sd * 0.26); if (sd < 0) r.rotation.y = Math.PI; cp.add(r); }
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.28), runeM); gem.position.y = 3.15; cp.add(gem);
+    cp.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.45), new THREE.MeshBasicMaterial({ map: textTexture('Checkpoint', { board: true }) }));
+    board.position.set(0, 0.75, 0.9); cp.rotation.y = C.rot; cp.add(board);
+    const back = board.clone(); back.rotation.y = Math.PI; back.position.z = 0.88; cp.add(back);
+    solid.push({ x: cx + C.x, z: cz + C.z, r: 1.4, kind: 'wall', height: 3, step: false });
+  }
   const glow = decorate(g, S, cx, cz, solid);
   let detailAt = -1;
   const update = (t, you, blocked) => {
@@ -650,7 +741,64 @@ export function buildCity(place, opts = {}) {
   // the houses for sale: show who owns each (`owners`: house id -> owner's name)
   const setOwners = (owners) => { for (const [id, sign] of saleSigns) sign.set(owners?.[id] || null, plan.sale.find((h) => h.id === id)); };
   setOwners({});
-  return { group: g, update, gather, shops, solid, gates, innerGates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, doors, centre: { x: cx, z: cz } };
+  return { group: g, update, gather, shops, solid, gates, innerGates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, doors, centre: { x: cx, z: cz }, checkpoint: { x: cx + plan.checkpoint.x + plan.checkpoint.fx * 3.4, z: cz + plan.checkpoint.z + plan.checkpoint.fz * 3.4 } };
+}
+
+// The rings' floors (see buildCity): grassy lawns on Castle Hill, in the Noble and the Common
+// Quarter, packed earth in the Dump. Built as one polar grid per ring, about 1.5 m a cell round,
+// with the cells over a ramp cut left out.
+const FLOOR_LOOK = { castle: '#5f7d38', noble: '#5a7a34', common: '#667a3c', dump: '#6e5e46' };
+let floorTex = null;
+function floorTexture() {
+  if (floorTex) return floorTex;
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(128, 128);
+  let sd = 9;
+  const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  for (let i = 0; i < 128 * 128; i++) { const v = 205 + rnd() * 50; img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v * 0.97; img.data[i * 4 + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+  floorTex = new THREE.CanvasTexture(c);
+  floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+  floorTex.colorSpace = THREE.SRGBColorSpace;
+  return floorTex;
+}
+function ringFloors(S, monster, ringRel) {
+  const group = new THREE.Group();
+  const cut = (k, x, z) => RAMPS.some((R) => {
+    if (R.k !== k) return false;
+    const { along, lat } = alongRoad(x, z, R.a), b = TIERS[k].r1;
+    return Math.abs(lat) < ROAD_HALF + RAMP_WALL / 2 && along > b - RAMP_IN - 0.5 && along < b + TERRACE + 1;
+  });
+  TIERS.forEach((T, k) => {
+    const r0 = k === 0 ? 0.5 : TIERS[k - 1].r1 + TERRACE - 0.8;
+    const r1 = k === TIERS.length - 1 ? INNER_R + 0.6 : T.r1 + TERRACE - 0.6;
+    // rows: every 2 m near the terrace (where the ramps cut in), wider apart elsewhere
+    const rows = [r0];
+    const fine = k < TIERS.length - 1 ? T.r1 - RAMP_IN - 1 : Infinity;
+    while (rows[rows.length - 1] < r1 - 0.01) { const last = rows[rows.length - 1]; rows.push(Math.min(r1, last + (last >= fine - 0.01 ? 2 : Math.max(4, Math.min(12, fine - last))))); }
+    const n = Math.ceil((2 * Math.PI * r1) / 1.5);
+    const pos = [], uv = [], idx = [];
+    const y = ringRel(T.id);
+    for (const r of rows) for (let i = 0; i <= n; i++) { const a = (i / n) * Math.PI * 2, x = Math.sin(a) * r, z = Math.cos(a) * r; pos.push(x, y, z); uv.push(x / 6, z / 6); }
+    for (let j = 0; j < rows.length - 1; j++) for (let i = 0; i < n; i++) {
+      const am = ((i + 0.5) / n) * Math.PI * 2, rm = (rows[j] + rows[j + 1]) / 2;
+      if (cut(k, Math.sin(am) * rm, Math.cos(am) * rm)) continue;
+      const a = j * (n + 1) + i, b2 = a + 1, c = a + n + 1, d = c + 1;
+      idx.push(a, b2, c, b2, d, c);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    if (geo.attributes.normal.getY(0) < 0) { for (let q = 0; q < idx.length; q += 3) [idx[q + 1], idx[q + 2]] = [idx[q + 2], idx[q + 1]]; geo.setIndex(idx); geo.computeVertexNormals(); }
+    const color = monster && T.id !== 'dump' ? (S.ground || FLOOR_LOOK[T.id]) : FLOOR_LOOK[T.id];
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, map: floorTexture(), roughness: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 4 }));
+    m.receiveShadow = true;
+    group.add(m);
+  });
+  return group;
 }
 
 // The open ground of the Common Quarter: the lots kept for Businessmen's shops on the market

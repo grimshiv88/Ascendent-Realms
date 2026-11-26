@@ -701,7 +701,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     getHand: () => { const a = avatar.userData.rig?.arms; const hand = a?.[1]?.hand || a?.[0]?.hand; if (hand) { avatar.updateMatrixWorld(true); return hand.getWorldPosition(new THREE.Vector3()); } return new THREE.Vector3(pos.x, pos.y + bodyH * 0.5, pos.z); },
     onTame: (item, m) => riding?.adopt(item, m.x, m.z, m.heading),
     creatures: () => creatures,
-    getPos: () => pos, getHeading: () => heading,
+    getPos: () => pos, getHeading: () => heading, isNight: () => night,
     groundAt: (x, z) => groundAt(x, z, pos.y),
     // the campfire beside each waystone (see spawn.js)
     siteFires: () => sites.filter((s) => s.built && !s.place.cave && Math.hypot(s.place.x - pos.x, s.place.z - pos.z) < 60).map((s) => ({ x: s.place.x + 9.5, z: s.place.z - 11 })),
@@ -839,6 +839,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const spots = placesWithPositions().filter((p) => !p.cave && (p.city || p.village || p.spawn));
     const best = spots.reduce((a, b) => (Math.hypot(b.x - pos.x, b.z - pos.z) < Math.hypot(a.x - pos.x, a.z - pos.z) ? b : a));
     pos.set(best.x + 3, 0, best.z + 3);
+    // in a great walled city you rise at its checkpoint in the Dump, by the south gate, far below the castle
+    if (best.city) { updateSites(best.x, best.z); const c = builtCities().find((q) => q.place.id === best.id)?.built.checkpoint; if (c) pos.set(c.x, 0, c.z); }
     updateSites(pos.x, pos.z);
     // only the ground under your feet now; the rest of the land catches up while the death
     // screen is still up (see catchUpLand), so dying no longer freezes the game

@@ -536,7 +536,17 @@ export function heightAt(x, z) {
 // every SURFACE_STEP metres, so walking on this (not the exact height between those points) keeps
 // feet on the ground you see, without floating or sinking.
 export const SURFACE_STEP = 4;
+// Inside a great city's inner wall the rings are drawn by the city itself (exact flat floors and
+// stone terrace walls, see world/city.js), not by the land: this is that city ({ x, z, flat }), or null
+export function cityFloorAt(x, z, margin = 0) {
+  for (const c of CITY_FLATS) { const dx = x - c.x, dz = z - c.z; if (dx * dx + dz * dz < (INNER_R - margin) ** 2) return c; }
+  return null;
+}
 export function surfaceAt(x, z) {
+  // in a great city you stand on its rings exactly (the land's coarse triangles used to slope out
+  // past each terrace wall as patches of grass over the street below)
+  const c = cityFloorAt(x, z);
+  if (c) return c.flat + cityGround(x - c.x, z - c.z);
   const S = SURFACE_STEP;
   const gx = Math.floor(x / S), gz = Math.floor(z / S);
   const fx = x / S - gx, fz = z / S - gz;

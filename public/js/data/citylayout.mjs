@@ -34,7 +34,23 @@ export const RING_ROADS = [
   { tier: 'common', r: 153, w: 6 },
   { tier: 'common', r: 179.5, w: 5 },
   { tier: 'dump', r: 208, w: 4, dirt: true },
+  { tier: 'dump', r: 243, w: 4, dirt: true },  // the outer Dump (added when the Dump grew, 2026-11-24)
 ];
+
+// ---------- the markets ----------
+// Open-air stalls lining the main roads, either side, their fronts to the road: the Common
+// Quarter's market on the south and west roads (between its two ring roads), the Dump's on the
+// south road (between its two dirt tracks), near where everyone comes in from the south gate.
+// [tier, road, from, to, stall ids]
+const MARKET_RUNS = [
+  ['common', 'south', 158, 176, ['stall_bread', 'stall_greens', 'stall_grill', 'stall_drinks', 'stall_cloth', 'stall_tools', 'stall_herbs', 'stall_greens']],
+  ['common', 'west', 158, 176, ['stall_grill', 'stall_bread', 'stall_drinks', 'stall_greens', 'stall_herbs', 'stall_cloth', 'stall_bread', 'stall_tools']],
+  ['dump', 'south', 212, 239, ['stall_soup', 'stall_scrap', 'stall_greens', 'stall_bread', 'stall_drinks', 'stall_scrap', 'stall_tools', 'stall_soup', 'stall_greens', 'stall_cloth']],
+];
+export const STALL_LAT = ROAD_HALF + 2.1; // a stall's middle, this far from the road's middle
+// The spot where you rise again after a death in a great city: a waystone checkpoint in the Dump
+// beside the south road, just inside the inner south gate, far below the castle
+export const CHECKPOINT = { along: 252, lat: -(ROAD_HALF + 3), road: 'south' };
 
 // ---------- the shops on the market street (the inner row of the Common Quarter) ----------
 // [id, width, depth, height]; they stand in this order south from the east road
@@ -175,6 +191,55 @@ export function cityPlan() {
       t += (w + gap) / r;
     }
   });
+  // the outer Dump (it grew outwards): two more rows of shacks on a second dirt track. They come
+  // after all the older homes, so the townsfolk's old homes keep their numbers.
+  const outerRows = [[236, 1], [250, -1]];
+  const dumpRows = (rows, tag) => rows.forEach(([r, face], ri) => {
+    const rnd = seeded(`${tag}${ri}`);
+    let t = -Math.PI;
+    while (t < Math.PI) {
+      const w = Math.round((4 + rnd() * 2.2) * 10) / 10, d = Math.round((4 + rnd() * 1.4) * 10) / 10;
+      const mid = t + w / 2 / r;
+      if (!clearOfRoads(r, mid, w, d)) { t += 1 / r; continue; }
+      const jr = r + (rnd() - 0.5) * 1.6;
+      extra.push(onRing(jr, mid, w, d, face, { floors: 1, doorX: (rnd() - 0.5) * (w - 2), tier: 'dump', style: 'shack', tilt: (rnd() - 0.5) * 0.16 }));
+      const gap = 2 + rnd() * 5;
+      if (gap > 4.5) junk.push({ x: Math.sin(mid + (w / 2 + gap / 2) / r) * r, z: Math.cos(mid + (w / 2 + gap / 2) / r) * r, size: 0.8 + rnd(), seed: junk.length });
+      t += (w + gap) / r;
+    }
+  });
+  const extra = [];
+  dumpRows(outerRows, 'dumpout');
+  // life in the Dump's back lots (between the old shacks and the new, and along the inner wall):
+  // children playing in the dirt, and folk lying or sitting on the ground on old blankets
+  const yards = [], idlers = [];
+  {
+    const rnd = seeded('dumplife');
+    for (const r of [226, 259]) {
+      for (let k = 0; k < 28; k++) {
+        const a = (k / 28) * Math.PI * 2 + rnd() * 0.08;
+        if (!clearOfRoads(r, a, 8, 6)) continue;
+        if (k % 3 === 0) yards.push({ x: Math.sin(a) * r, z: Math.cos(a) * r, a, r, tier: 'dump', kids: 3 + Math.floor(rnd() * 3), seed: yards.length });
+        else idlers.push({ x: Math.sin(a) * r, z: Math.cos(a) * r, a, r, tier: 'dump', pose: rnd() < 0.55 ? 'lying' : 'sitting', seed: idlers.length });
+      }
+    }
+  }
+  // the market stalls
+  const stalls = [];
+  for (const [tierId, road, from, to, ids] of MARKET_RUNS) {
+    const ra = ROAD_ANGLES[road], per = ids.length / 2, step = (to - from) / per;
+    ids.forEach((id, i) => {
+      const side = i % 2 ? 1 : -1, along = from + step * (Math.floor(i / 2) + 0.5);
+      const lat = side * STALL_LAT;
+      const x = Math.sin(ra) * along + Math.cos(ra) * lat, z = Math.cos(ra) * along - Math.sin(ra) * lat;
+      // its front (+z of the stall) faces the road's middle
+      const fx = -Math.cos(ra) * side, fz = Math.sin(ra) * side;
+      stalls.push({ id, x, z, rot: Math.atan2(fx, fz), fx, fz, tier: tierId, road, along, lat });
+    });
+  }
+  // the checkpoint where you rise again
+  const cp = (() => { const ra = ROAD_ANGLES[CHECKPOINT.road], { along, lat } = CHECKPOINT; const sd = -Math.sign(lat), fx = Math.cos(ra) * sd, fz = -Math.sin(ra) * sd; return { x: Math.sin(ra) * along + Math.cos(ra) * lat, z: Math.cos(ra) * along - Math.sin(ra) * lat, a: ra, fx, fz, rot: Math.atan2(fx, fz), tier: 'dump' }; })();
+
   // the junk dealer, by the south road
   {
     const r = 201, ja = ROAD_ANGLES.south - (CLEAR + 6) / r;
@@ -194,9 +259,11 @@ export function cityPlan() {
   }
 
   // number them: the townsfolk's homes, then the houses for sale (each with its price)
+  // (the outer Dump's shacks come last, so every older home keeps its number)
+  { const rnd = seeded('dumpout-sale'); for (const b of extra) addHome(b, rnd); }
   const family = homes.filter((h) => !h.sale).map((h, i) => ({ ...h, i, h: h.floors * 3.1 }));
   const sale = homes.filter((h) => h.sale).map((h, i) => ({ ...h, i, h: h.floors * 3.1, id: `${h.tier}${i}`, price: HOUSE_PRICE[h.tier] })).filter((h) => !h.gone);
-  PLAN = { family, sale, shops, academies, lots, junk, playground };
+  PLAN = { family, sale, shops, academies, lots, junk, playground, stalls, yards, idlers, checkpoint: cp };
   return PLAN;
 }
 // the height of a ring above the city's foot
