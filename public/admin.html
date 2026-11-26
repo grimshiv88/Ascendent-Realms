@@ -40,6 +40,12 @@
     .row > input { flex: 1 1 120px; }
     .quiet { color: var(--quiet); font-size: 0.88rem; }
     .tag { display: inline-block; font-size: 0.72rem; padding: 1px 6px; border-radius: 3px; background: #2a2010; color: var(--gold-2); margin-left: 4px; vertical-align: middle; }
+    h4 { margin: 10px 0 4px; font: 600 0.8rem Cinzel, serif; color: var(--gold-2); }
+    .perms { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }
+    .perm { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; cursor: pointer; }
+    .perm input { margin-top: 3px; }
+    .perm span { display: flex; flex-direction: column; }
+    .perm small { opacity: 0.7; font-size: 0.75rem; }
     .tag.bad { background: #3a120e; color: #ffb3aa; }
     .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #555; margin-right: 6px; }
     .dot.on { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
@@ -99,7 +105,7 @@
   <header>
     <div>
       <h1>Ascendant Realms</h1>
-      <p class="sub">The Admin Board. Only admin accounts can open it.</p>
+      <p class="sub">The Admin Board. Only admin accounts can open it. <span id="who-am-i"></span></p>
     </div>
     <button type="button" id="logout" hidden>Sign out of the board</button>
   </header>
@@ -118,11 +124,12 @@
     <div class="stats" id="stats"></div>
     <nav role="tablist" id="tabs">
       <button type="button" role="tab" data-tab="players" aria-selected="true">Players</button>
-      <button type="button" role="tab" data-tab="chat">Chat</button>
-      <button type="button" role="tab" data-tab="reports">Reports</button>
-      <button type="button" role="tab" data-tab="skills">Skills</button>
-      <button type="button" role="tab" data-tab="world">World</button>
-      <button type="button" role="tab" data-tab="log">Log</button>
+      <button type="button" role="tab" data-tab="chat" data-need="chat">Chat</button>
+      <button type="button" role="tab" data-tab="reports" data-need="reports">Reports</button>
+      <button type="button" role="tab" data-tab="skills" data-need="edit">Skills</button>
+      <button type="button" role="tab" data-tab="world" data-need="world announce">World</button>
+      <button type="button" role="tab" data-tab="admins" data-need="owner">Admins</button>
+      <button type="button" role="tab" data-tab="log" data-need="owner">Log</button>
     </nav>
     <p class="msg" id="msg" role="status"></p>
 
@@ -156,7 +163,7 @@
 
     <div data-panel="world" hidden>
       <div class="grid2">
-        <form class="card" id="tuning">
+        <form class="card" id="tuning" data-need="world">
           <h2>Health and healing</h2>
           <p class="quiet">Health and healing grow with level. Change the numbers any time: every player gets them the next time their game loads.</p>
           <div class="statgrid">
@@ -167,7 +174,7 @@
           <p class="quiet" id="tuning-eg"></p>
           <div class="row"><button class="primary" type="submit">Save</button><button type="button" id="tuning-reset">Back to the starting numbers</button></div>
         </form>
-        <div class="card">
+        <div class="card" data-need="world">
           <h2>Sect leaders</h2>
           <p class="quiet">One leader of each sect at a time. Appoint someone from their card on the Players tab.</p>
           <div class="tablewrap"><table><tbody id="sects"></tbody></table></div>
@@ -186,28 +193,34 @@
             <button type="button" id="ann-clear">Take it down</button>
           </form>
         </div>
-        <div class="card">
+        <div class="card" data-need="world">
           <h2>City bridges</h2>
           <p class="quiet">Raise a city's bridges in a war or a monster attack: they stand up and shut the inner gates.</p>
           <div class="row" id="gates"></div>
         </div>
-        <div class="card">
+        <div class="card" data-need="world">
           <h2>Kings' thrones</h2>
           <div class="tablewrap"><table><thead><tr><th>Throne</th><th>King</th><th></th></tr></thead><tbody id="courts"></tbody></table></div>
         </div>
-        <div class="card">
+        <div class="card" data-need="world">
           <h2>Land</h2>
           <div class="tablewrap"><table><thead><tr><th>Owner</th><th>Plots</th><th></th></tr></thead><tbody id="land"></tbody></table></div>
         </div>
-        <div class="card">
+        <div class="card" data-need="world">
           <h2>Caves</h2>
           <div class="tablewrap"><table><thead><tr><th>Cave</th><th>Owner</th><th></th></tr></thead><tbody id="caves"></tbody></table></div>
         </div>
-        <div class="card">
+        <div class="card" data-need="world">
           <h2>City houses</h2>
           <div class="tablewrap"><table><thead><tr><th>House</th><th>Owner</th><th></th></tr></thead><tbody id="homes"></tbody></table></div>
         </div>
       </div>
+    </div>
+
+    <div data-panel="admins" class="card" hidden>
+      <h2>Admins</h2>
+      <p class="quiet">Accounts you gave admin access to, and what each may do. To make someone an admin, or change or take away their access, open their card on the Players tab and use <b>Admin access</b> at the bottom. Only you (the owner) can do this. Everything admins do shows in the Log.</p>
+      <div class="tablewrap"><table><thead><tr><th>Admin</th><th>On the board</th><th>In the game</th><th></th></tr></thead><tbody id="admins"></tbody></table></div>
     </div>
 
     <div data-panel="log" class="card" hidden>
@@ -238,6 +251,58 @@ let accounts = [];
 let catalogue = { items: [], places: [], races: [] };
 let open = null; // the player whose card is open
 
+// ---------- what this admin may do ----------
+// The owner can do everything. An admin the owner made sees only what their permissions allow (the
+// server checks every request too, so hiding a button is only to keep the board tidy).
+let me = { owner: false, perms: [], banDays: 0, boardPerms: [], gamePowers: [] };
+const can = (need) => me.owner || String(need).split(' ').some((n) => n !== 'owner' && me.perms.includes(n));
+function limit(root) {
+  for (const el of root.querySelectorAll('[data-need]')) if (!can(el.dataset.need)) el.hidden = true;
+}
+// on a player's card: hide what this admin can't do, and keep bans within their most days
+function limitCard(p) {
+  limit($('pcard'));
+  const days = $('pcard').querySelector('[data-form="ban"] select[name="days"]');
+  if (days && !me.owner) {
+    for (const o of [...days.options]) if (o.value === 'forever' || Number(o.value) > me.banDays) o.remove();
+    if (![...days.options].some((o) => Number(o.value) === me.banDays)) days.add(new Option(`${me.banDays} day${me.banDays === 1 ? '' : 's'} (your most)`, String(me.banDays)));
+  }
+  // an admin can't act on the owner or on another admin
+  if (!me.owner && (p.owner || p.staff)) for (const el of $('pcard').querySelectorAll('[data-need]')) if (el.matches('form, .card, button')) el.hidden = true;
+}
+
+// The owner's box on a player's card: give admin access, choosing each permission
+function accessCard(p) {
+  if (p.owner) return '<div class="card"><h3>Admin access</h3><p class="quiet">This is an owner account (its email is in ADMIN_EMAILS): it can do everything.</p></div>';
+  const s = p.staff || { perms: [], banDays: me.banDaysDefault };
+  const box = ([id, name, about]) => `<label class="perm"><input type="checkbox" name="perm" value="${id}"${s.perms.includes(id) ? ' checked' : ''}><span><b>${esc(name)}</b><small>${esc(about)}</small></span></label>`;
+  return `<form class="card" data-form="access">
+      <h3>Admin access ${s.perms.length ? '<span class="tag">admin</span>' : ''}</h3>
+      <p class="quiet">${s.perms.length ? `${esc(p.username)} is an admin. Tick or untick what they may do, then save.` : `Make ${esc(p.username)} an admin: tick what they may do, then save.`} Only you can give or take away admin access. Admins can't use their powers on you or on other admins, and everything they do is written in the Log.</p>
+      <h4>On this board</h4>
+      <div class="perms">${me.boardPerms.map(box).join('')}</div>
+      <label class="row" style="margin:6px 0">Longest ban they may give <input name="banDays" type="number" min="1" max="365" value="${s.banDays}" style="flex:0 0 80px"> days</label>
+      <h4>In the game</h4>
+      <div class="perms">${me.gamePowers.map(box).join('')}</div>
+      <p class="quiet">Powers in the game show as a 👑 button on the left of their screen, where they switch each one on or off. They get them the next time their game loads.</p>
+      <div class="row">
+        <button class="primary" type="submit">Save admin access</button>
+        ${s.perms.length ? '<button type="button" class="danger" data-act="unstaff">Take away all admin access</button>' : ''}
+      </div>
+    </form>`;
+}
+
+// ---------- admins (the owner's list) ----------
+async function drawAdmins() {
+  const { staff } = await call('api/admin/staff');
+  const names = (list, ids) => list.filter(([id]) => ids.includes(id)).map(([, n]) => esc(n)).join(', ') || '<span class="quiet">none</span>';
+  $('admins').innerHTML = staff.map((a) => `<tr><td><b>${esc(a.username)}</b></td>
+    <td>${names(me.boardPerms, a.perms)}${a.perms.includes('ban') ? ` <span class="quiet">(bans up to ${a.banDays} day${a.banDays === 1 ? '' : 's'})</span>` : ''}</td>
+    <td>${names(me.gamePowers, a.perms)}</td>
+    <td><button type="button" data-look="${a.id}">Open card</button></td></tr>`).join('') || '<tr><td colspan="4" class="quiet">No admins yet. Open a player\'s card to make them one.</td></tr>';
+}
+$('admins').addEventListener('click', (e) => { const b = e.target.closest('[data-look]'); if (b) { document.querySelector('[data-tab="players"]').click(); openPlayer(Number(b.dataset.look)); } });
+
 // ---------- the numbers at the top ----------
 async function drawStats() {
   const { stats: s } = await call('api/admin/stats');
@@ -248,7 +313,7 @@ async function drawStats() {
 }
 
 // ---------- tabs ----------
-const loaders = { players: drawPlayers, chat: drawChat, reports: drawReports, skills: drawSkills, world: drawWorld, log: drawLog };
+const loaders = { players: drawPlayers, chat: drawChat, reports: drawReports, skills: drawSkills, world: drawWorld, admins: drawAdmins, log: drawLog };
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-tab]');
   if (!b) return;
@@ -268,7 +333,7 @@ function drawList() {
   const list = accounts.filter((a) => !q || [a.username, a.email, a.character?.name].some((v) => String(v || '').toLowerCase().includes(q)));
   $('plist').innerHTML = list.map((a) => `
     <button type="button" class="pl" data-open="${a.id}" aria-current="${open === a.id}">
-      <span class="dot${a.signedIn ? ' on' : ''}"></span><b>${esc(a.username)}</b>${a.admin ? '<span class="tag">admin</span>' : ''}
+      <span class="dot${a.signedIn ? ' on' : ''}"></span><b>${esc(a.username)}</b>${a.admin ? '<span class="tag">owner</span>' : a.staff ? '<span class="tag">admin</span>' : ''}
       <small>${a.character ? `${esc(a.character.name)} · Lv ${a.character.level} ${esc(nice(a.character.race))} ${esc(nice(a.character.cls))}` : 'No character yet'}</small>
     </button>`).join('') || '<p class="empty">No players match.</p>';
 }
@@ -318,12 +383,12 @@ function drawCard(p) {
           <dt>Where</dt><dd>${c.location ? `${esc(c.location.area || '?')} (${Math.round(c.location.x)}, ${Math.round(c.location.z)})` : '—'}</dd>
         </dl>
         <div class="row" style="margin-top:10px">
-          <button type="button" data-act="heal">Heal fully</button>
-          ${c.child ? '<button type="button" data-act="skipchild">Skip childhood</button>' : ''}
+          <button type="button" data-act="heal" data-need="heal edit">Heal fully</button>
+          ${c.child ? '<button type="button" data-act="skipchild" data-need="edit">Skip childhood</button>' : ''}
         </div>
       </div>
 
-      <form class="card" data-form="numbers">
+      <form class="card" data-form="numbers" data-need="edit">
         <h3>Change numbers</h3>
         <p class="quiet">Leave a box empty to keep it as it is. Raising the level also gives the Stat Points of every level gained (3 a level, 10 at key levels).</p>
         <div class="statgrid">
@@ -344,7 +409,7 @@ function drawCard(p) {
     </div>
 
     <div class="grid2">
-      <form class="card" data-form="who">
+      <form class="card" data-form="who" data-need="edit">
         <h3>Race, class and city</h3>
         <div class="statgrid">
           <label>Race <select name="race">${catalogue.allRaces.map((r) => `<option value="${r.id}"${r.id === c.race ? ' selected' : ''}>${esc(r.name)} (${r.side})</option>`).join('')}</select></label>
@@ -355,7 +420,7 @@ function drawCard(p) {
         <div class="row"><button class="primary" type="submit">Save</button></div>
       </form>
 
-      <div class="card">
+      <div class="card" data-need="world">
         <h3>Sects</h3>
         <p class="quiet">${p.leads ? `Leads the ${p.leads === 'dark' ? 'evil sect (Dark Side)' : 'good sect (Order of the Dawn)'}.` : 'Leads no sect.'} The leader of the evil sect sees every cult and member and casts dark spells; the leader of the good sect sees everyone in the Order and gets the Book of the Dawn. Appointing someone takes the title from whoever had it.</p>
         <div class="row">
@@ -366,7 +431,7 @@ function drawCard(p) {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" data-need="edit">
       <h3>Skills</h3>
       ${skillGroups(c.skills).map((g) => `<p class="quiet" style="margin:8px 0 4px">${g.icon} ${esc(g.name)}</p><div class="bag">${g.list.map((sk) => `<div class="slot"><span>${esc(sk.icon)}</span><span class="nm">${esc(sk.name)}</span><button type="button" data-unskill="${sk.id}" title="Take away">✕</button></div>`).join('')}</div>`).join('') || '<p class="quiet">No skills yet.</p>'}
       <form data-form="skill" class="row" style="margin-top:10px">
@@ -389,7 +454,7 @@ function drawCard(p) {
       <p class="quiet">Leave the name empty to keep the skill and only change its rank. The admin can go past the world limits for SS and SSS.</p>
     </div>
 
-    <div class="card">
+    <div class="card" data-need="edit">
       <h3>Bag (${c.inventory.length}/60)</h3>
       <div class="bag">
         ${c.inventory.map((s, i) => `<div class="slot${s.uid && equippedUids.has(s.uid) ? ' eq' : ''}" title="${esc(s.name)}${s.uid && equippedUids.has(s.uid) ? ' (worn)' : ''}">
@@ -403,7 +468,7 @@ function drawCard(p) {
       </form>
     </div>
 
-    <form class="card" data-form="move">
+    <form class="card" data-form="move" data-need="move">
       <h3>Move them</h3>
       <div class="row">
         <select name="place" aria-label="Place"><option value="">Choose a place...</option>${catalogue.places.map((pl) => `<option value="${esc(pl.id)}">${esc(pl.name)}${pl.city ? ' (city)' : ''}</option>`).join('')}</select>
@@ -414,7 +479,7 @@ function drawCard(p) {
       </div>
     </form>` : '<div class="card empty">This account has no character yet.</div>'}
 
-    <div class="card">
+    <div class="card" data-need="owner">
       <h3>Past lives</h3>
       <p class="quiet">Every life they lose is kept here (from now on). Change one, or bring them back to it: it becomes their character again with at least 1 life, and the life they have now is kept here instead.</p>
       ${p.pastLives.lives.length ? `<div class="tablewrap"><table><thead><tr><th>Lost</th><th>Character</th><th>Change it</th><th></th></tr></thead><tbody>${p.pastLives.lives.map((l) => `<tr>
@@ -433,7 +498,7 @@ function drawCard(p) {
     </div>
 
     <div class="grid2">
-      <form class="card" data-form="ban">
+      <form class="card" data-form="ban" data-need="ban">
         <h3>${p.banned ? 'Banned' : 'Ban'}</h3>
         ${p.banned ? `<p>Banned ${p.banned.until === -1 ? 'forever' : `until ${when(p.banned.until)}`}. Reason: ${esc(p.banned.reason)}</p><button type="button" data-act="unban">Lift the ban</button>` : `
         <div class="row">
@@ -442,7 +507,7 @@ function drawCard(p) {
           <button class="danger" type="submit">Ban</button>
         </div>`}
       </form>
-      <form class="card" data-form="mute">
+      <form class="card" data-form="mute" data-need="mute">
         <h3>Chat</h3>
         ${p.muted ? `<p>Muted until ${when(p.muted.until)}.</p><button type="button" data-act="unmute">Unmute</button>` : `
         <div class="row">
@@ -450,23 +515,25 @@ function drawCard(p) {
           <button type="submit">Mute</button>
         </div>`}
       </form>
-      <form class="card" data-form="password">
+      <form class="card" data-form="password" data-need="owner">
         <h3>New password</h3>
         <p class="quiet">Saved scrambled, like every password. They are signed out until they use it.</p>
         <div class="row"><input name="password" minlength="8" placeholder="8 or more characters" required><button class="primary" type="submit">Save</button></div>
       </form>
-      <form class="card" data-form="birthdate">
+      <form class="card" data-form="birthdate" data-need="owner">
         <h3>Birth date</h3>
         <div class="row"><input name="birthdate" type="date" required><button class="primary" type="submit">Save</button></div>
       </form>
-      <div class="card">
+      <div class="card" data-need="kick owner">
         <h3>Account</h3>
         <div class="row">
-          <button type="button" data-act="signout">Sign out everywhere</button>
-          <button type="button" class="danger" data-act="delete">Delete account</button>
+          <button type="button" data-act="signout" data-need="kick">Sign out everywhere</button>
+          <button type="button" class="danger" data-act="delete" data-need="owner">Delete account</button>
         </div>
       </div>
-    </div>`;
+    </div>
+    ${me.owner ? accessCard(p) : ''}`;
+  limitCard(p);
   $('pcard').dataset.id = p.id;
   $('pcard').dataset.unique = c?.uniqueSkill?.name || '';
   $('pcard').dataset.name = p.username;
@@ -502,6 +569,10 @@ $('pcard').addEventListener('click', async (e) => {
     const side = b.dataset.side;
     try { await call('api/admin/sects', { side }); say(`${name} no longer leads a sect.`, true); openPlayer(open); } catch (err) { say(err.message); }
     return;
+  }
+  if (a === 'unstaff') {
+    if (!confirm(`Take away all of ${name}'s admin access?`)) return;
+    return change('api/admin/staff', { perms: [] }, `${name} is not an admin any more.`);
   }
   if (a === 'heal') return change('api/admin/edit', { heal: true }, `${name} is healed.`);
   if (a === 'skipchild') { if (confirm(`Make ${name} 7 now? Their Ceremony happens when they next reach the shrine.`)) change('api/admin/skip/childhood', {}, `${name}'s childhood was skipped.`); return; }
@@ -558,6 +629,12 @@ $('pcard').addEventListener('submit', async (e) => {
     if (!confirm(`Ban ${name}? They are signed out at once.`)) return;
     change('api/admin/ban', v('days') === 'forever' ? { forever: true, reason: v('reason') } : { days: Number(v('days')), reason: v('reason') }, `${name} is banned.`);
   }
+  if (kind === 'access') {
+    const perms = [...f.querySelectorAll('input[name="perm"]:checked')].map((x) => x.value);
+    if (!perms.length && !confirm(`Nothing is ticked: this takes away all of ${name}'s admin access. Go on?`)) return;
+    await change('api/admin/staff', { perms, banDays: Number(v('banDays')) || me.banDaysDefault }, perms.length ? `${name}'s admin access was saved. Game powers reach them when their game next loads.` : `${name} is not an admin any more.`);
+    drawPlayers().catch(() => {});
+  }
   if (kind === 'mute') change('api/admin/mute', { minutes: Number(v('minutes')) }, `${name} is muted.`);
   if (kind === 'password') { await change('api/admin/password', { password: v('password') }, `New password saved for ${name}. Tell them to sign in with it.`); f.reset(); }
   if (kind === 'birthdate') change('api/admin/birthdate', { birthdate: v('birthdate') }, `Birth date saved for ${name}.`);
@@ -595,7 +672,7 @@ $('reports').addEventListener('click', async (e) => {
 // ---------- world ----------
 const CITIES = [['central', 'Central City'], ['emberfall', 'Emberfall'], ['ashgrave', 'Ashgrave'], ['lumenhollow', 'Lumenhollow'], ['mirehaven', 'Mirehaven']];
 async function drawWorld() {
-  drawTuning().catch((err) => say(err.message));
+  if (can('world')) drawTuning().catch((err) => say(err.message));
   const w = await call('api/admin/world');
   $('ann-now').innerHTML = w.announcement ? `Showing now: “${esc(w.announcement.text)}” until ${when(w.announcement.until)}` : 'Nothing is showing now.';
   $('courts').innerHTML = w.courts.map((c) => `<tr><td>${esc(nice(c.race))}</td><td>${esc(c.king.name)} <span class="quiet">Lv ${c.king.level}${c.king.npc ? ' · the first King' : ' · a player'}</span></td><td>${c.king.npc ? '' : `<button type="button" class="danger" data-king="${esc(c.race)}">Put the first King back</button>`}</td></tr>`).join('');
@@ -671,8 +748,11 @@ async function drawLog() {
 // ---------- signing in ----------
 async function start() {
   try {
+    me = await call('api/admin/me');
+    limit(document);
     await drawStats();
     $('login').hidden = true; $('board').hidden = false; $('logout').hidden = false;
+    $('who-am-i').textContent = me.owner ? 'You are the owner: you can do everything.' : `You are an admin (${me.username}). You can only use what the owner allowed you.`;
     catalogue = await call('api/admin/catalogue');
     const dl = document.createElement('datalist');
     dl.id = 'items';
@@ -684,7 +764,7 @@ async function start() {
     await drawPlayers();
   } catch (e) {
     $('board').hidden = true; $('login').hidden = false; $('logout').hidden = true;
-    if (e.status === 403) $('login-msg').textContent = 'That account is not an admin. Its email must be in ADMIN_EMAILS on the server (and confirmed).';
+    if (e.status === 403) $('login-msg').textContent = 'That account is not an admin. The owner can make it one from its card on the board.';
     else if (e.status !== 401) $('login-msg').textContent = e.message;
   }
 }

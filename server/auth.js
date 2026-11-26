@@ -67,6 +67,9 @@ async function publicAccount(row) {
     age: ageOf(row.birthdate),
     needsBirthdate: !row.birthdate,
     mail: mail.ready(),
+    // admin access: the powers in the game this account has (fly, can't die, ...), and whether it can open the Admin Board
+    powers: require('./staff').powersOf(row),
+    adminBoard: require('./staff').canBoard(require('./staff').access(row)),
     character: character ? await require('./characters').withTuning(JSON.parse(character.data)) : null,
   };
 }
