@@ -1619,7 +1619,7 @@ function startGame(character) {
   // An admin's powers (fly, can't die, run fast, teleport), given by the owner on the Admin Board.
   // The private preview page belongs to the owner, so there every power is there to switch on.
   api.isPreviewMode().then((preview) => {
-    const radar = (preview || (myAccount?.powers || []).includes('radar')) ? createRadar($('game'), { read: () => world?.radar() }) : null;
+    const radar = (preview || (myAccount?.powers || []).includes('radar')) ? createRadar($('game'), { read: () => world?.radar(), onOpen: () => world?.releaseMouse() }) : null;
     ui.adminPowers = createPowers($('game'), preview ? POWER_IDS : myAccount?.powers || [], {
       apply(p, down) {
         world?.setPowers(p);
