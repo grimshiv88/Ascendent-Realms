@@ -28,6 +28,8 @@ const KINDS = {
   devour: { type: 'strike', icon: '🦷', mult: [1.3, 1.8, 2.4, 3.2, 4.2, 5.5, 24], drain: [0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 1], what: (p) => `one blow for ${p.mult}× damage that heals you by ${Math.round(p.drain * 100)}% of it` },
 };
 export const UNIQUE_KINDS = Object.keys(KINDS);
+// each kind of power in plain words (for lists and filters)
+export const UNIQUE_KIND_NAMES = { strike: 'Blow', sweep: 'Blast around you', bolt: 'Shot', dash: 'Rush', heal: 'Cure', fury: 'War cry (+ATK)', ward: 'Ward (+DEF)', freeze: 'Freeze', devour: 'Life-stealing bite', appraise: 'Appraisal' };
 
 // ---------- ranks ----------
 // Every Unique Skill is born with a rank, from D up to SSS. The higher the rank, the stronger it hits
