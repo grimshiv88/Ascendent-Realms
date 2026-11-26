@@ -885,6 +885,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
 
   return {
     update, target, targets, hit,
+    // how many seconds until a slain great beast's lair has a new one (0: it is there)
+    slainIn: (lairId) => Math.max(0, (slain.get(lairId) || 0) - nowT),
     calm() { for (const m of list) { m.angry = false; m.state = 'wander'; m.timer = 4; } },
     // the living grazing animal nearest (x, z) within r metres (to feed or pet)
     animalNear(x, z, r) {

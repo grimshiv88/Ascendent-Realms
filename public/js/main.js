@@ -45,6 +45,7 @@ import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
 import { createVoice } from './voice.js';
 import { createPowers } from './powersui.js';
+import { createRadar } from './radarui.js';
 import { POWER_IDS } from './data/staff.mjs';
 
 // Nothing in the game can be selected, copied or right-clicked, except the boxes you type in
@@ -1586,11 +1587,13 @@ function startGame(character) {
   // An admin's powers (fly, can't die, run fast, teleport), given by the owner on the Admin Board.
   // The private preview page belongs to the owner, so there every power is there to switch on.
   api.isPreviewMode().then((preview) => {
+    const radar = (preview || (myAccount?.powers || []).includes('radar')) ? createRadar($('game'), { read: () => world?.radar() }) : null;
     ui.adminPowers = createPowers($('game'), preview ? POWER_IDS : myAccount?.powers || [], {
       apply(p, down) {
         world?.setPowers(p);
         game.setNoDeath(p.nodeath);
         if (down !== undefined) world?.flyDown(down);
+        radar?.show(!!p.radar);
       },
       say: (text) => world?.say(text, 'note'),
     });

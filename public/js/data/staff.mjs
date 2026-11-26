@@ -22,6 +22,7 @@ export const GAME_POWERS = [
   ['nodeath', 'Can\'t die', 'Nothing can kill them: they stay on at least 1 HP and never lose a life.'],
   ['speed', 'Run fast', 'Walk and run three times as fast.'],
   ['teleport', 'Teleport', 'Tap any place on the world map to go there at once.'],
+  ['radar', 'Dragon radar', 'A radar of every dragon and wyvern: where each one is, how far, and whether it is alive or slain.'],
 ];
 export const ALL_PERMS = [...BOARD_PERMS, ...GAME_POWERS].map(([id]) => id);
 export const POWER_IDS = GAME_POWERS.map(([id]) => id);

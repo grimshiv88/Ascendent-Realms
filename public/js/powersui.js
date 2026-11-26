@@ -38,7 +38,7 @@ export function createPowers(host, have, { apply, say }) {
     keep(on);
     show();
     const name = list.find(([p]) => p === id)[1];
-    say(`${name}: ${on[id] ? 'on' : 'off'}${id === 'fly' && on.fly ? '. Jump to rise, Ctrl to go down.' : id === 'teleport' && on.teleport ? '. Open the map (M) and tap where to go.' : ''}`);
+    say(`${name}: ${on[id] ? 'on' : 'off'}${id === 'fly' && on.fly ? '. Jump to rise, Ctrl to go down.' : id === 'teleport' && on.teleport ? '. Open the map (M) and tap where to go.' : id === 'radar' && on.radar ? '. Tap the radar to change its range.' : ''}`);
   });
   const hold = (v) => (e) => { e.preventDefault(); apply({ ...on }, v); };
   down.addEventListener('pointerdown', hold(true));
