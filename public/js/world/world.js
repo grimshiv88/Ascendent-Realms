@@ -58,6 +58,9 @@ import { HUNGER_DRAIN, HUNGRY, STARVE_HIT, STARVE_FLOOR } from '../data/hunger.m
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
+// how hard you push off the ground to jump (m/s): about 1.5 m high, up to 1.9 m with high agility
+// (it was 4.2, under a metre, and felt like a hop)
+const JUMP_V = 5.4;
 const SWIM = 0.45;  // share of walking speed while swimming
 const TURN = 9;     // how quickly you turn to face where you're going
 const STEER = 1.2;  // radians a second you curve while walking forward and pressing left or right
@@ -464,7 +467,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let atCave = null; // the cave you're standing in up top
   let lastArea = -10;
 
-  const agiSpeed = 1 + Math.min(character.stats.agi * 0.003, 0.6);
+  // (worked out as you go: points put into agility count at once, not after a reload)
+  const agiSpeed = () => 1 + Math.min((game?.character || character).stats.agi * 0.003, 0.6);
+  // tall bodies take longer strides; a short one (a dwarf, a child) is never slower for it, so
+  // agility decides who is faster (a dwarf with 37 AGI was slower than a human with 17)
+  const bodyPace = () => Math.max(1, Math.sqrt(bodyH / 1.8));
   let bodyH = avatar.userData.height;
   let bodyR = Math.max(0.25, Math.min(bodyH * 0.18, 0.9));
   // A monster player switching between monster and humanoid form: a new body in the same spot
@@ -2264,7 +2271,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (Math.abs(fz) > 0.05) {
         const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
         move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
-        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
+        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed() * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * bodyPace() * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
       }
       if (!look) {
         const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
@@ -2291,7 +2298,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (Math.abs(back) < 2) { const turn = back * Math.min(1, dt * 2.2) * Math.min(1, amount); yaw += turn; backYaw += turn; }
       }
       // move the way you want to go, even while still turning to face it
-      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
+      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed() * (1 + (game?.boostPct('speed') || 0) / 100) * amount * bodyPace() * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
@@ -2358,7 +2365,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       pos.y = Math.min(Math.max(pos.y, ground), ground + 600);
       velY = 0; airborne = pos.y > ground + 0.05; fallFrom = pos.y;
     }
-    else if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = riding?.jump() ?? (game?.injurySpeed() < 1 ? 1.6 : 4.2); airborne = true; fallFrom = pos.y; }
+    else if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = riding?.jump() ?? (game?.injurySpeed() < 1 ? 2.4 : JUMP_V + Math.min(character.stats.agi * 0.01, 0.9)); airborne = true; fallFrom = pos.y; }
     jumpQueued = false;
     // walking down a slope keeps your feet on it; only a real drop (a cliff, a ledge) is a fall
     const drop = pos.y - ground;
