@@ -1467,6 +1467,7 @@ function startGame(character) {
       }
       if (type === 'depths') $('minimap').classList.add('hidden'); // no map underground
       if (type === 'depths') showArea(`${data.cave.name}: ${{ small: 'a small', medium: 'a winding', deep: 'a deep' }[data.cave.size]} ${data.cave.dungeon ? 'dungeon in the mountain' : 'cave'}. Not every tunnel leads down to the boss: some are false routes that go deep and end in rock. ${world?.holding ? '' : 'Pitch dark: light a torch (T). '}Mine glowing ore veins, break nests, and find the boss at the bottom.`);
+      if (type === 'practice-tip') { showArea(data); return; }
       if (type === 'surface') { ui.atCave = null; drawHud(); $('minimap').classList.remove('hidden'); }
       if (type === 'cave') {
         ui.atCave = data; ui.caveMsg = '';

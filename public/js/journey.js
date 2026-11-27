@@ -83,6 +83,8 @@ function buildSteps(c, P) {
     { id: 'join', child: true, goal: 'Find the Academy you wish to join and register at its counter', target: P.street,
       skip: () => !isChild(c), done: () => !!school(),
       after: () => ({ title: `Welcome to the ${school().academy}`, text: `${esc(school().text)} Stand on the red mat beside your teacher to train. Here you learn to fight the way of your school, and the more you train, the likelier you are to be given this class at your Ceremony.` }) },
+    { id: 'practice', child: true, goal: 'Beat the practice monster at your Academy, the way it teaches', skip: () => !isChild(c) || !school(), event: 'practice-win',
+      after: () => ({ title: 'Well fought!', text: 'You beat the practice monster the way your Academy teaches. Come back and fight it again whenever you like: every win is good training. Now go and see the rest of the city.' }) },
     { id: 'market', goal: 'See the market street', target: P.market, near: 14,
       reach: { title: 'The market street', text: `The city's own shops: food, potions, a tailor, a smith, an armoury and the tavern. Walk up to a counter and press ${key('interact')} to buy. All food and drink here is halal. Sell for less than you paid.` } },
     { id: 'estate', goal: 'Visit the Real Estate office', target: P.estate, near: 14,

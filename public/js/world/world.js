@@ -55,6 +55,7 @@ import { BEAST_TAME } from '../data/mounts.mjs';
 import { RIDE_FATIGUE } from '../data/mounts.mjs';
 import { allFarms } from '../data/farms.mjs';
 import { HUNGER_DRAIN, HUNGRY, STARVE_HIT, STARVE_FLOOR } from '../data/hunger.mjs';
+import { createPractice } from './practice.js';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -1841,8 +1842,31 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const sp = game?.nextSpell();
     say(sp ? `Spell: ${sp.name}` : game?.staff() ? 'No spells on this staff yet: attach some in Skills (K)' : 'Hold a staff to cast spells', sp ? 'exp' : 'note');
   }
+  // the practice monster of the Academy you are in (made the first time it is needed)
+  function practiceHere() {
+    const p = inside?.built.practice;
+    if (!p) return null;
+    return (inside.practiceCtl ??= createPractice(p, {
+      say, float: floatText, tip: (text) => onEvent?.('practice-tip', text),
+      won() {
+        // beaten the way the school teaches: a good bit of EXP for a child of this Academy
+        if (game?.character.child?.school === p.school) {
+          let exp = 0;
+          for (let i = 0; i < 5; i++) exp += game.trainHit() || 0;
+          if (exp) floatText(`+${exp} EXP`, pos.clone().add(new THREE.Vector3(0, bodyH + 0.3, 0)), 'exp');
+        }
+        say('You beat the practice monster the way your Academy teaches!', 'exp');
+        onEvent?.('practice-win', { school: p.school });
+      },
+    }));
+  }
   function resolveSwing() {
     const w = game?.weapon();
+    // the practice monster in an Academy takes the blow if it is aimed at it
+    if (practiceHere()?.swing(pos, heading, speedNow)) {
+      if (game?.character.child && trainingAt() === game.character.child.school) { const exp = game.trainHit(); if (exp) floatText(`+${exp} EXP`, pos.clone().add(new THREE.Vector3(0, bodyH + 0.3, 0)), 'exp'); }
+      return;
+    }
     // practice on your Academy's mat: every swing earns a little EXP
     if (game?.character.child && trainingAt() === game.character.child.school) {
       const exp = game.trainHit();
@@ -2452,6 +2476,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (inside) {
       inside.built.update(t, pos);
+      // an Academy's practice monster: it turns to you, lunges now and then and knocks you back
+      const pr = practiceHere();
+      const knock = pr?.update(pos, speedNow);
+      if (knock) { pos.x += knock.x; pos.z += knock.z; inside.built.clampPos(pos); }
       checkRooms();
       checkInn();
       const d = Math.hypot(pos.x - inside.built.exit.x, pos.z - inside.built.exit.z);
@@ -2862,6 +2890,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugDeaths: () => creatures.list.filter((m) => m.death).map((m) => m.death.t),
     debugLeave() { if (inside) leaveBuilding(); },
     debugCounter() { const c = inside?.built?.counter; if (!c) return false; pos.set(c.x, c.y, c.z); useIndoors(); return true; },
+    // for testing: the Academy's practice monster (where it is) and a swing
+    debugPractice() { const p = inside?.built.practice; practiceHere(); return p ? { x: p.ox + p.body.position.x, z: p.oz + p.body.position.z, school: p.school, facing: p.body.rotation.y, lying: p.body.rotation.z } : null; },
+    debugSwing: () => resolveSwing(),
     debugEnter(id) { for (const c of builtCities()) { const sh = c.built.shops.find((q) => q.id === id); if (sh) { pos.set(sh.x, pos.y, sh.z); enterBuilding(sh); return true; } } return false; },
     refreshHelper,
     refreshGuard,

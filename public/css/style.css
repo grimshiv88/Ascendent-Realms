@@ -1244,7 +1244,7 @@ body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: fil
 @media (prefers-reduced-motion: reduce) { .tut-pointer::before { animation: none; } }
 
 /* The first journey (journey.js): the goal at the top with its arrow, and the notice at each new place */
-.journey-goal { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 2; display: flex; align-items: center; gap: 10px; max-width: min(440px, calc(100% - 32px)); padding: 6px 8px 6px 10px; background: rgba(8, 6, 3, 0.8); border: 1px solid var(--gold-3); border-radius: 999px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); color: var(--ink); font: 0.88rem/1.3 Georgia, serif; }
+.journey-goal { position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%); z-index: 2; display: flex; align-items: center; gap: 10px; max-width: min(440px, calc(100% - 32px)); padding: 6px 8px 6px 10px; background: rgba(8, 6, 3, 0.8); border: 1px solid var(--gold-3); border-radius: 999px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); color: var(--ink); font: 0.88rem/1.3 Georgia, serif; }
 .journey-goal.hidden { display: none; }
 .jg-arrow { flex: none; width: 34px; height: 34px; fill: var(--gold-2); stroke: #3a2606; stroke-width: 1.5; filter: drop-shadow(0 0 5px rgba(245, 200, 76, 0.6)); }
 .jg-dot { flex: none; width: 34px; text-align: center; color: var(--gold-2); font-size: 1.2rem; }
@@ -1254,7 +1254,7 @@ body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: fil
 .jg-dist { font: 700 0.75rem system-ui, sans-serif; color: var(--gold-2); }
 .jg-hide { flex: none; width: 26px; height: 26px; padding: 0; border: 1px solid rgba(200, 146, 26, 0.45); border-radius: 50%; background: none; color: var(--ink-quiet); cursor: pointer; font-size: 1rem; line-height: 1; }
 .jg-hide:hover { color: var(--gold-1); }
-.journey-toast { position: absolute; top: 120px; left: 50%; transform: translateX(-50%); z-index: 2; width: min(420px, calc(100% - 32px)); padding: 12px 16px 14px; background: linear-gradient(180deg, rgba(40, 28, 8, 0.94), rgba(10, 7, 3, 0.94)); border: 1px solid var(--gold-2); border-radius: 8px; box-shadow: 0 0 24px rgba(245, 200, 76, 0.3); color: var(--ink); font: 0.92rem/1.45 Georgia, serif; animation: jt-in 0.35s ease-out; }
+.journey-toast { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%); z-index: 2; width: min(420px, calc(100% - 32px)); padding: 12px 16px 14px; background: linear-gradient(180deg, rgba(40, 28, 8, 0.94), rgba(10, 7, 3, 0.94)); border: 1px solid var(--gold-2); border-radius: 8px; box-shadow: 0 0 24px rgba(245, 200, 76, 0.3); color: var(--ink); font: 0.92rem/1.45 Georgia, serif; animation: jt-in 0.35s ease-out; }
 .journey-toast.hidden { display: none; }
 .journey-toast h3 { margin: 0 0 6px; font: 700 1.1rem 'Cinzel', serif; color: var(--gold-2); }
 .journey-toast p { margin: 0; }
@@ -1262,5 +1262,5 @@ body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: fil
 .journey-toast kbd { display: inline-block; min-width: 1.6em; padding: 0 5px; text-align: center; font: 700 0.8rem system-ui, sans-serif; color: var(--gold-1); background: #2a1f0c; border: 1px solid var(--gold-3); border-radius: 3px; }
 .jt-ok { display: block; margin: 10px 0 0 auto; padding: 5px 16px; font: 700 0.8rem 'Cinzel', serif; color: #2a1a00; background: var(--gold-2); border: 0; border-radius: 4px; cursor: pointer; }
 @keyframes jt-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
-@media (max-width: 700px) { .journey-goal { top: auto; bottom: 132px; } .journey-toast { top: auto; bottom: 190px; } }
+@media (max-width: 700px) { .journey-goal { bottom: 132px; } .journey-toast { bottom: 190px; } }
 @media (prefers-reduced-motion: reduce) { .journey-toast { animation: none; } }
