@@ -19,7 +19,7 @@ const shownEmail = (email) => (hasEmail(email) ? email : '');
 const hideEmail = (email) => email.replace(/^(.{1,2})[^@]*(@.*)$/, (m, a, b) => `${a}****${b}`);
 
 const MIN = 60 * 1000;
-const TTL = { verify: 5 * MIN, reset: 15 * MIN, signin: 10 * MIN, totp: 15 * MIN };
+const TTL = { verify: 5 * MIN, reset: 15 * MIN, signin: 10 * MIN, totp: 15 * MIN, staff: 10 * MIN };
 const RESEND_AFTER = 45 * 1000; // a new code for the same thing at most this often
 const MAX_TRIES = 5;
 
@@ -377,5 +377,6 @@ async function twofaOff(row, { password }) {
 
 module.exports = {
   shownEmail, hasEmail, mustVerify, banned, hashPassword, signUp, signIn, signInCode, signInByEmail, signOut, accountFromToken, accountRow,
+  makeCode, useCode, ticketRow, hideEmail,
   sendVerify, verifyEmail, setEmail, setBirthdate, setKeys, setTutorialDone, changePassword, forgotPassword, resetPassword, twofaEmail, twofaAppStart, twofaAppConfirm, twofaOff,
 };
