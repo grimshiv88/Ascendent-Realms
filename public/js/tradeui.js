@@ -59,7 +59,7 @@ export function createTrade(ctx) {
     const now = view.trade;
     if (before && now && before.id === now.id && before.state === 'asked' && now.state === 'open' && now.asker) { ctx.say(`${now.with} agreed to trade.`); if (!ctx.isOpen()) ctx.open(); }
     if (before && !now && !view.finished.some((f) => f.id === before.id) && !before.endedByMe) { msg = before.state === 'asked' ? `${before.with} didn't take up your offer to trade.` : `${before.with} called off the trade.`; bad = true; if (before.state === 'open') ctx.say(msg); }
-    if (now && before && before.id === now.id && before.v !== now.v && now.state === 'open') { msg = `${now.with} changed the offer: confirm again if you are happy.`; bad = false; }
+    if (now && before && before.id === now.id && JSON.stringify(before.theirs) !== JSON.stringify(now.theirs) && now.state === 'open') { msg = `${now.with} changed the offer: confirm again if you are happy.`; bad = false; }
     lastTrade = now ? { ...now } : null;
     drawCard();
     // (redrawn only when something changed, so a box you are typing in isn't wiped by each check)
