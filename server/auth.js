@@ -66,6 +66,7 @@ async function publicAccount(row) {
     birthdate: row.birthdate || null,
     age: ageOf(row.birthdate),
     needsBirthdate: !row.birthdate,
+    tutorialDone: !!row.tutorial_done,
     keys: readKeys(row.keybinds),
     mail: mail.ready(),
     // admin access: the powers in the game this account has (fly, can't die, ...), and whether it can open the Admin Board
@@ -272,6 +273,12 @@ async function setBirthdate(row, { birthdate }) {
   return { ok: true, account: await publicAccount(acc || row) };
 }
 
+// the tutorial for new players was finished or skipped (it is shown once per account)
+async function setTutorialDone(row) {
+  await db.run('UPDATE accounts SET tutorial_done = true WHERE id = ?', row.id);
+  return { ok: true };
+}
+
 // ---------- the player's keys (Settings → Controls) ----------
 // only the shape is checked: action names and key names, at most 100 actions
 function readKeys(text) { try { return text ? JSON.parse(text) : null; } catch { return null; } }
@@ -362,5 +369,5 @@ async function twofaOff(row, { password }) {
 
 module.exports = {
   shownEmail, hasEmail, mustVerify, banned, hashPassword, signUp, signIn, signInCode, signInByEmail, signOut, accountFromToken, accountRow,
-  sendVerify, verifyEmail, setEmail, setBirthdate, setKeys, changePassword, forgotPassword, resetPassword, twofaEmail, twofaAppStart, twofaAppConfirm, twofaOff,
+  sendVerify, verifyEmail, setEmail, setBirthdate, setKeys, setTutorialDone, changePassword, forgotPassword, resetPassword, twofaEmail, twofaAppStart, twofaAppConfirm, twofaOff,
 };

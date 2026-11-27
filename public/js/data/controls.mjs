@@ -35,6 +35,7 @@ export const CONTROLS = [
   ['zoomout', 'Camera further', [null, null], 'camera', 'The same as scrolling the mouse wheel down.'],
   ['mouse', 'Free the mouse / catch it again', [null, null], 'camera', 'Lets the mouse go so you can click windows, or catches it again to turn the camera.'],
   ['mount', 'Call / ride your mount', ['KeyH', null], 'fly'],
+  ['dragon', 'Your dragon: attack / come back', ['Digit7', null], 'fly', 'Sets your tamed dragon or wyvern on the foe in front of you, or calls it back. On its back, it breathes fire ahead.'],
   ['flyup', 'Fly up / climb', ['Space', null], 'fly', 'On a dragon or wyvern, or with the admin Fly power.'],
   ['flydown', 'Fly down / dive', [null, null], 'fly', 'Pick any key you like. Until you do, Run (Shift) dives.'],
   ['interact', 'Open / pick up / talk', ['KeyE', null], 'world'],

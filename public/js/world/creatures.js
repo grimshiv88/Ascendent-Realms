@@ -320,12 +320,14 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const L = m.home;
     const fromLair = Math.hypot(p.x - L.x, p.z - L.z);
     const pAir = p.flying ? Math.max(0, (p.y ?? 0) - groundH(p.x, p.z)) : 0; // (how high you fly)
-    const sees = !p.dead && !p.underground && fromLair < b.range;
+    // (one whose egg you stole hunts you down whenever it sees you, far from its lair too)
+    const grudge = !!(m.lair && p.grudges?.[m.lair.id]);
+    const sees = !p.dead && !p.underground && (fromLair < b.range || (grudge && (fromLair < b.range * 3 || dist < b.notice * 4)));
     // (the King of the Wild Dragons never strikes first: he only fights once you have struck him)
     const calmKing = b.king && !m.angry;
     if (calmKing) m.mode = 'circle';
     else if (!sees) { if (m.mode !== 'circle') { m.mode = 'circle'; m.angry = false; m.hover = null; endNova(m); } }
-    else if (m.mode === 'circle' && (m.angry || dist < b.notice || fromLair < b.circle * 0.8)) { m.mode = 'dive'; m.modeT = 0; m.angry = true; onBeast?.(m, 'notice'); } // (close to it, or into the lair it circles)
+    else if (m.mode === 'circle' && (m.angry || grudge || dist < b.notice || fromLair < b.circle * 0.8)) { m.mode = 'dive'; m.modeT = 0; m.angry = true; onBeast?.(m, grudge ? 'grudge' : 'notice'); } // (close to it, or into the lair it circles)
     m.modeT += dt;
     m.attackCd -= dt; m.breathCd -= dt;
     let tx = p.x, tz = p.z, wantAir = b.cruise, speed = b.fly, rate = 1.4;
@@ -919,6 +921,14 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       if (ok) { if (m.lair) slain.set(m.lair.id, nowT + BEAST_RETURNS); remove(m); return true; }
       m.mode = 'climb'; m.modeT = 0; m.angry = true; m.hp = Math.max(m.hp, Math.round(m.maxHp * 0.3)); onBeast?.(m, 'shake');
       return false;
+    },
+    // someone took an egg from this lair's nest: its beast (if it is about) comes for them
+    angerLair(lairId) {
+      const m = list.find((q) => q.kind.beast && !q.dead && q.lair?.id === lairId);
+      if (!m) return null;
+      m.angry = true; m.hover = null;
+      if (m.mode === 'circle' || m.mode === 'downed') { m.mode = 'dive'; m.modeT = 0; }
+      return m;
     },
     beastNear: (x, z, r) => list.find((m) => m.kind.beast && !m.dead && Math.hypot(m.x - x, m.z - z) < r) || null,
     removeWhere(fn) { for (const m of [...list]) if (fn(m)) remove(m); },
