@@ -1608,7 +1608,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // their monsters, and their blows on yours
     if (m.k === 'mobs') { if (!inside) creatures.netApply(m.i, m.l); return; }
     if (m.k === 'mobhit') { creatures.netHit(m.n, Number(m.d), m.how); return; }
-    const o = others.get(m.i);
+    const o = others.entry(m.i);
     if (!o || !o.body.visible) return;
     const b = o.body, p = b.position.clone(), h = b.userData.height || 1.8, hd = b.rotation.y;
     if (Math.hypot(p.x - pos.x, p.z - pos.z) > 150) return;

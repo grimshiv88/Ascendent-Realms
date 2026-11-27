@@ -143,7 +143,7 @@ export function createOthers(scene, hooks = {}) {
     },
     // they attacked or cast: show the move on their body (a newer one replaces it)
     act(id, a) { const o = seen.get(id); if (o) o.act = { t: 0, dur: 0.6, ...a }; },
-    get: (id) => seen.get(id),
+    entry: (id) => seen.get(id), // (their whole record: body, pose, act)
     // where the players standing within r metres of (x, z) are, to bump into (not ones lying down or riding)
     near(x, z, r) {
       const out = [];
