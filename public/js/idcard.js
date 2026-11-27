@@ -4,7 +4,7 @@ import { RACES, CLASSES, ADVANCEMENTS, rankFor } from './data/game-data.mjs';
 import { CASTLES } from './data/kings.mjs';
 import { characterPortrait } from './characters/icons.js';
 import { CARD_RANKS, rankIndex } from './data/guildcard.mjs';
-import { now, DAY_MS } from './data/clock.mjs';
+import { gameTime } from './data/clock.mjs';
 import { PLACES } from './data/world-layout.mjs';
 import { familyOfChar, parentInfo, parentAlive, visitDue, VISIT_EVERY_MS } from './data/birth.mjs';
 import { cityPass, DAY_PASS, PASS_NAME } from './data/citypass.mjs';
@@ -29,7 +29,7 @@ export function titleOf(c, courts = [], nation = null) {
 export function lifeRows(c) {
   const joined = c.createdAt ? new Date(c.createdAt) : null;
   const hours = Math.floor((c.playMs || 0) / 3600000), mins = Math.floor(((c.playMs || 0) % 3600000) / 60000);
-  const days = joined ? Math.max(0, Math.floor((now() - joined.getTime()) / DAY_MS)) : 0;
+  const days = joined ? Math.max(0, gameTime().day - gameTime(joined.getTime()).day) : 0;
   return `${joined ? `<div><dt>Joined</dt><dd>${joined.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</dd></div>` : ''}
     <div><dt>Played</dt><dd>${hours ? `${hours} h ` : ''}${mins} min</dd></div>
     ${joined ? `<div><dt>Days in the realm</dt><dd>${days}</dd></div>` : ''}`;

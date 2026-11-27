@@ -206,8 +206,9 @@ function cityGate(fixed, R, T, line, stoneMat, capMat, cx, cz) {
 }
 
 // how far a city's small details (window frames, rails) are drawn: less on phones (quality.js)
-let DETAIL_FAR = 90;
-export function setCityDetail(m) { DETAIL_FAR = m || 90; }
+let DETAIL_FAR = 90, CELL_FAR = Infinity;
+// (cellFar: whole patches of the city further than this aren't drawn: quality.js)
+export function setCityDetail(m, cellFar) { DETAIL_FAR = m || 90; CELL_FAR = cellFar || Infinity; }
 const detailFar = () => DETAIL_FAR;
 
 export function buildCity(place, opts = {}) {
@@ -644,7 +645,7 @@ export function buildCity(place, opts = {}) {
     market.add(sg);
     const c = Math.cos(st.rot), sn = Math.sin(st.rot);
     const local = (lx, lz) => ({ x: st.x + lx * c + lz * sn, z: st.z - lx * sn + lz * c });
-    for (const [lx, lz, r, height] of parts) { const w = local(lx, lz); solid.push({ x: cx + w.x, z: cz + w.z, r, kind: 'wall', height }); }
+    for (const [lx, lz, r, height, lift] of parts) { const w = local(lx, lz); solid.push({ x: cx + w.x, z: cz + w.z, r, kind: 'wall', height, ...(lift ? { lift, camOnly: true } : {}) }); }
     // the seller behind the counter (talk to them to buy), and a shopper or two in front
     const v = local(0, -0.45);
     addNpc(S.guards[(i * 5 + 2) % S.guards.length], v.x, v.z, st.rot, { kind: 'stall', market: st.id, title: MARKETS[st.id].name, name: townName(side, vendorRnd), still: true });
@@ -716,7 +717,7 @@ export function buildCity(place, opts = {}) {
   let detailAt = -1;
   const update = (t, you, blocked) => {
     centre.update?.(t);
-    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z, detailFar()); doors.lod(you, detailFar() + 20); for (const sg of saleSigns.values()) sg.lod(you, detailFar()); }
+    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z, detailFar(), CELL_FAR); showDetail(market, you.x, you.z, detailFar(), CELL_FAR); doors.lod(you, detailFar() + 20); for (const sg of saleSigns.values()) sg.lod(you, detailFar()); }
     doors.update(you, t);
     for (const b of guards) if (isShown(b)) animateCharacter(b, t, 0);
     walkFolk(t, you, blocked);
