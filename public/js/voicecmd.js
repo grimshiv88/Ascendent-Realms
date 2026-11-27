@@ -12,6 +12,10 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', 
 const ON_KEY = 'ar.voicecmd.on';
 const Recognition = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
 export const voiceCommandsSupported = () => !!Recognition;
+// Inside the claude.ai preview page the browser's own listening is blocked, so the page's
+// dictation (claude.use('dictation'), when the page is allowed it) is used instead.
+let dictation = null;
+if (typeof window !== 'undefined' && window.claude?.use) window.claude.use('dictation').then((d) => { dictation = d; }).catch(() => {});
 
 // hooks: { say(text, kind), inParty(): Promise<bool>, pet(): { kind, item, name } | null,
 //          petName(item): string | null, setPetName(item, name), order(order, what): string | null,
@@ -28,6 +32,8 @@ export function createVoiceCommands(root, hooks) {
   panel.hidden = true;
   root.append(btn, panel);
 
+  const canListen = () => !!(dictation || Recognition);
+  let dictOff = null; // (unsubscribes from the dictation events)
   let on = false, rec = null, party = false, partyAt = 0, heard = '', did = '', restartT = null, failed = 0;
 
   function petLine() {
@@ -43,7 +49,7 @@ export function createVoiceCommands(root, hooks) {
     const help = Object.entries(ORDER_HELP).map(([k, v]) => `<li><b>${k === 'back' ? 'come back' : k}</b>: ${esc(v)}</li>`).join('');
     panel.innerHTML = `
       <div class="vc-head"><b>Voice commands</b><button type="button" data-act="close" aria-label="Close">✕</button></div>
-      ${Recognition ? `<button type="button" class="vc-switch" data-act="switch" aria-pressed="${on}">${on ? 'Listening: on' : 'Listening: off'}</button>` : '<p class="vc-hint">This browser can\'t listen for commands. Use Chrome or Edge (or Safari).</p>'}
+      ${canListen() ? `<button type="button" class="vc-switch" data-act="switch" aria-pressed="${on}">${on ? 'Listening: on' : 'Listening: off'}</button>` : '<p class="vc-hint">This browser can\'t listen for commands. Use Chrome or Edge (or Safari).</p>'}
       <p class="vc-mode">${party ? 'In a party: say your pet\'s name first ("Ignis, attack"), and a skill or spell name on its own.' : 'On your own: "attack", "come back", or any skill or spell name works.'}</p>
       ${heard ? `<p class="vc-heard">Heard: “${esc(heard)}”${did ? ` <span>→ ${esc(did)}</span>` : ''}</p>` : ''}
       ${petLine()}
@@ -90,7 +96,34 @@ export function createVoiceCommands(root, hooks) {
     return [own, kind, ...KIND_WORDS].filter(Boolean);
   }
 
+  // the page's dictation (in the preview): call from a click or key press, before any await
+  function startDictation() {
+    const d = dictation;
+    if (!dictOff) {
+      const offs = [
+        d.onFinal(({ text }) => { if (text.trim()) { act(text); checkParty(); } }),
+        d.onState(({ state, reason }) => {
+          rec = state === 'idle' ? null : d;
+          if (state === 'idle' && on) {
+            if (reason === 'not_granted' || reason === 'unavailable') { hooks.say('Voice commands need your microphone. Allow dictation for this page, then switch them on again', 'hurt'); stop(true); }
+            else if (reason === 'viewer_stopped' || reason === 'time_limit') stop(true);
+            else waitForClick(); // (hidden, a hiccup: listen again at the next click)
+          }
+          show();
+        }),
+      ];
+      dictOff = () => offs.forEach((f) => f());
+    }
+    rec = d;
+    d.start().catch((e) => { if (e?.code === 'not_granted' || e?.code === 'unavailable') { hooks.say('Voice commands need your microphone. Allow dictation for this page, then switch them on again', 'hurt'); stop(true); } });
+    show();
+  }
+  function waitForClick() {
+    const again = () => { window.removeEventListener('pointerdown', again, true); if (on && !rec) startDictation(); };
+    window.addEventListener('pointerdown', again, true);
+  }
   function start() {
+    if (dictation) { startDictation(); return; }
     if (!Recognition || rec) return;
     const r = new Recognition();
     r.lang = navigator.language || 'en-US';
@@ -124,19 +157,21 @@ export function createVoiceCommands(root, hooks) {
     on = false;
     clearTimeout(restartT);
     const r = rec; rec = null;
-    try { r?.stop(); } catch { /* already stopped */ }
+    if (r && r === dictation) r.stop().catch(() => {});
+    else try { r?.stop(); } catch { /* already stopped */ }
     try { localStorage.setItem(ON_KEY, '0'); } catch { /* private window */ }
     if (!quiet) hooks.say('Voice commands off', 'note');
     show();
   }
   async function toggle() {
-    if (!Recognition) { hooks.say('This browser can\'t listen for voice commands. Use Chrome or Edge', 'hurt'); show(true); return; }
+    if (!canListen()) { hooks.say('This browser can\'t listen for voice commands. Use Chrome or Edge', 'hurt'); show(true); return; }
     if (on) { stop(); return; }
     on = true; failed = 0;
     try { localStorage.setItem(ON_KEY, '1'); } catch { /* private window */ }
     partyAt = 0;
+    if (dictation) start(); // (it must start straight from the click)
     await checkParty();
-    start();
+    if (!dictation) start();
     hooks.say(party ? 'Voice commands on. In a party, say your pet\'s name first, or a skill or spell name on its own' : 'Voice commands on. Say your pet\'s name and an order, or a skill or spell name', 'exp');
   }
 
@@ -164,7 +199,7 @@ export function createVoiceCommands(root, hooks) {
   // left on last time: the browser needs a click or a key before it will listen again
   let want = false;
   try { want = localStorage.getItem(ON_KEY) === '1'; } catch { /* private window */ }
-  if (want && Recognition) {
+  if (want && canListen()) {
     btn.classList.add('wanted');
     const resume = (e) => { if (e.target?.closest?.('.vc-toggle, .vc-panel')) return; window.removeEventListener('pointerdown', resume, true); btn.classList.remove('wanted'); if (!on) toggle(); };
     window.addEventListener('pointerdown', resume, true);
