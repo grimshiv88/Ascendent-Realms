@@ -3,6 +3,7 @@
 // Their tamed dragon or wyvern (ridden, or at their side) and their hatchling show too.
 import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { poseSwim, endSwim } from '../characters/moves.js';
 import { wearGear } from '../characters/gear.js';
 import { ITEMS } from '../data/items.mjs';
 import { bodySig, GONE_MS } from '../data/presence.mjs';
@@ -158,6 +159,9 @@ export function createOthers(scene) {
         const lying = o.pose === 'lie';
         o.body.rotation.z = lying ? Math.PI / 2 : 0;
         animateCharacter(o.body, t, lying || o.pose === 'sit' || o.pose === 'ride' || o.pose === 'fly' ? 0 : o.speed / WALK * 1.6);
+        // swimming: the same front crawl or treading water as your own body
+        if (o.pose === 'swim') { poseSwim(o.body, x, y, z, h, t, o.speed / (WALK * 0.45)); o.swam = true; }
+        else if (o.swam) { o.swam = false; endSwim(o.body); }
         const q = o.pet;
         if (q) {
           const k = Math.min(1, dt * 3), was = { x: q.x, z: q.z };

@@ -25,7 +25,7 @@ export function cleanSpot(s = {}) {
     speed: round(num(s.speed, 0, 12)),
     place: placeKey(s.place),
     // what they are doing that changes how they look: riding, sitting, lying down (asleep or knocked out)
-    pose: ['ride', 'sit', 'lie', 'fly'].includes(s.pose) ? s.pose : '',
+    pose: ['ride', 'sit', 'lie', 'fly', 'swim'].includes(s.pose) ? s.pose : '',
   };
 }
 
