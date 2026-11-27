@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { GlowLight, lightPool } from './lightpool.js';
 import { sharedNotices } from '../notices.js';
+import { place as placeTags, restore as restoreTags } from './nametags.js';
 import { createLand } from './land.js';
 import { pickQuality, createSmoothness, isMobile } from './quality.js';
 import { setLeanDetail } from './merge.js';
@@ -3053,7 +3054,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
     if (camOverride) { camera.position.set(...camOverride[0]); camera.lookAt(...camOverride[1]); avatar.visible = !!camOverride[2]; }
     if (t - lastCrowd > 0.1) { lastCrowd = t; updateCrowd(camera.position.x, camera.position.y, camera.position.z, scene); }
+    // monster name tags: just above each head, never overlapping, always on the screen
+    camera.updateMatrixWorld();
+    placeTags(camera, canvas.clientWidth, canvas.clientHeight, creatures.tags());
     renderer.render(scene, camera);
+    restoreTags();
 
     // floating text rises and fades
     const w = canvas.clientWidth, h = canvas.clientHeight;
