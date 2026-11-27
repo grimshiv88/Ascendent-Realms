@@ -105,6 +105,10 @@ export function landWorth({ plots = [], homes = [], wells = [], people = {} } = 
 // how much stronger or weaker a land's money is against the Crown because of what the lands are worth
 export const worthEdge = (cur) => (cur === 'crown' ? 1 : worthFactor(cur) / worthFactor('crown'));
 
+// Note values are kept simple: whole Copper, or a quarter, a half or three quarters
+export const QUARTER = 0.25;
+export const toQuarter = (v) => Math.round(v * 4) / 4;
+const upQuarter = (v) => Math.ceil(v * 4 - 1e-9) / 4, downQuarter = (v) => Math.floor(v * 4 + 1e-9) / 4;
 // What one note of a currency is worth in Copper now: its par, times how its land's worth stands
 // against the Heartland's, with a little wobble through the day
 export function rate(cur, now = Date.now()) {
@@ -112,7 +116,7 @@ export function rate(cur, now = Date.now()) {
   if (!C || cur === 'crown') return 1;
   const seed = FOREIGN.indexOf(cur) * 13.37 + 1;
   const v = C.par * worthEdge(cur) * (1 + C.swing * (0.7 * wobble(now, 8 * HOUR, seed) + 0.3 * wobble(now, 2 * DAY, seed + 5)));
-  return Math.max(0.01, Math.round(v * 100) / 100);
+  return Math.max(QUARTER, toQuarter(v));
 }
 // The Bank changes money with a small spread (its way of earning, instead of interest): it sells you
 // notes for a little more than they are worth, and buys them for a little less. A land's own Bank
@@ -120,8 +124,8 @@ export function rate(cur, now = Date.now()) {
 export const SPREAD = 0.03;
 export const HOME_SPREAD = 0.01;
 const spreadOf = (cur, here) => (here && here === cur ? HOME_SPREAD : SPREAD);
-export const buyRate = (cur, now, here = null) => Math.ceil(rate(cur, now) * (1 + spreadOf(cur, here)) * 100) / 100; // Copper you pay for 1 note
-export const sellRate = (cur, now, here = null) => Math.floor(rate(cur, now) * (1 - spreadOf(cur, here)) * 100) / 100; // Copper you get for 1 note
+export const buyRate = (cur, now, here = null) => upQuarter(rate(cur, now) * (1 + spreadOf(cur, here))); // Copper you pay for 1 note
+export const sellRate = (cur, now, here = null) => Math.max(QUARTER, downQuarter(rate(cur, now) * (1 - spreadOf(cur, here)))); // Copper you get for 1 note
 // Notes of one land straight into notes of another: how many `to` notes `n` `from` notes buy
 export const swapGets = (from, to, n, now, here = null) => Math.floor((n * sellRate(from, now, here)) / buyRate(to, now, here));
 export const coinsWords = (cur, n) => (cur === 'crown' ? moneyWords(n) : `${n.toLocaleString()} ${n === 1 ? CURRENCIES[cur].name : CURRENCIES[cur].plural}`);
@@ -150,9 +154,19 @@ export function loanLimit(c) {
   const base = Math.min(50 * 10000, 500 + (c.level || 1) * 150);
   return Math.floor(base / ((c.bank?.late || 0) > 0 ? 2 : 1));
 }
+// Your purse holds both: coins (what monsters, chests and quests give you) and Crown notes (lighter,
+// and taken everywhere just the same). Coins are turned into notes, or notes broken into coins, only
+// at a Bank or kiosk. Paying for something spends notes and coins alike, so the notes you hold can
+// never be more than the money you have.
+export const purseOf = (c) => {
+  const total = Math.max(0, Math.floor(Number(c?.coins) || 0));
+  const notes = Math.min(Math.max(0, Math.floor(Number(c?.bank?.notes) || 0)), Math.floor(total / SILVER) * SILVER);
+  return { notes, coins: total - notes };
+};
 export function freshBank(c) {
   c.bank ||= {};
   const b = c.bank;
+  b.notes = purseOf(c).notes;
   b.deposit = Math.max(0, Math.floor(Number(b.deposit) || 0));
   b.wallet = Object.fromEntries(FOREIGN.map((k) => [k, Math.max(0, Math.floor(Number(b.wallet?.[k]) || 0))]));
   b.loan = b.loan && b.loan.owed > 0 ? b.loan : null;
@@ -176,7 +190,7 @@ function note(b, now, text) { b.log.push({ at: now, text }); b.log = b.log.slice
 export function bankView(c, now = Date.now()) {
   const b = freshBank(c);
   collectLate(c, now);
-  return { deposit: b.deposit, wallet: { ...b.wallet }, loan: b.loan ? { ...b.loan } : null, late: b.late, limit: loanLimit(c), log: b.log.slice().reverse() };
+  return { purse: purseOf(c), deposit: b.deposit, wallet: { ...b.wallet }, loan: b.loan ? { ...b.loan } : null, late: b.late, limit: loanLimit(c), log: b.log.slice().reverse() };
 }
 
 const whole = (v) => (Number.isInteger(v) && v > 0 && v < 1e12 ? v : null);
@@ -202,6 +216,16 @@ export function bankAct(c, body, now = Date.now()) {
       if (b.deposit < n) return fail(`You only have ${moneyWords(b.deposit)} in the Bank.`);
       b.deposit -= n; c.coins += n; note(b, now, `Took out ${moneyWords(n)}`);
       return { ok: true, message: `You take ${moneyWords(n)} out of the Bank.` };
+    case 'to_notes': case 'to_coins': { // Crown coins in your purse into Crown notes, or back
+      const p = purseOf(c);
+      const toNotes = body.act === 'to_notes';
+      const want = n ? Math.floor(n / SILVER) * SILVER : Math.floor((toNotes ? p.coins : p.notes) / SILVER) * SILVER;
+      if (!want) return fail(`Notes start at 1 Silver (${SILVER} Copper).`);
+      if ((toNotes ? p.coins : p.notes) < want) return fail(toNotes ? `You only have ${moneyWords(p.coins)} in coins.` : `You only have ${moneyWords(p.notes)} in notes.`);
+      b.notes = p.notes + (toNotes ? want : -want);
+      note(b, now, toNotes ? `Changed ${moneyWords(want)} of coins into notes` : `Broke ${moneyWords(want)} of notes into coins`);
+      return { ok: true, message: toNotes ? `The clerk counts your coins and hands you ${cashWords('crown', want)}. No fee.` : `The clerk breaks ${moneyWords(want)} of notes into coins for you. No fee.` };
+    }
     case 'borrow': {
       if (!place.full) return fail('Loans are only made at the Bank of a great city, not at a kiosk.');
       if (c.child) return fail('The Bank does not lend to children.');
@@ -322,7 +346,7 @@ export const depositAt = (x, z) => depositsNear(x, z, 0).find((d) => Math.hypot(
 // The price of a barrel at a city's Bank, in that city's own coin
 export function oilPrice(cur, now = Date.now()) {
   const copper = OIL_PRICE * (1 + 0.2 * wobble(now, 12 * HOUR, 77));
-  return Math.max(0.01, Math.round((copper / rate(cur, now)) * 100) / 100);
+  return Math.max(QUARTER, toQuarter(copper / rate(cur, now)));
 }
 
 export function freshOil(c) {

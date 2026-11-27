@@ -24,11 +24,13 @@ export function renderBank(el, game, { city, info, tab = 'safe', message = '', b
     if (tab === 'safe') {
       body = `<p class="sys-hint">Money left with the Bank is kept safe for you, exactly as it is. The Bank pays no interest and takes no fee: it is a trust, not a trade. Take it out at any Bank or village kiosk.</p>
         <p class="sys-top">With you: <b>${money(c.coins)}</b> <span>·</span> In the Bank: <b>${money(b.deposit)}</b></p>
-        <p class="sys-hint">In your purse: ${esc(cashWords('crown', c.coins))}.</p>
+        <p class="sys-top">In your purse: <b>${money(b.purse?.notes || 0)}</b> in notes <span>·</span> <b>${money(b.purse?.coins ?? c.coins)}</b> in coins</p>
         <div class="bank-row">${amountBox('Amount in Copper')}
           <button type="button" class="sys-button" data-bank="deposit" ${dis}>Put in</button>
           <button type="button" class="sys-button" data-bank="withdraw" ${dis}>Take out</button></div>
-        <p class="sys-hint">1 Silver = 100 Copper, 1 Gold = 100 Silver. Crown notes come in 1, 5 and 10 Silver and 1 and 10 Gold; Copper and smaller change are coins.</p>`;
+        <div class="bank-row"><button type="button" class="sys-button" data-bank="to_notes" ${dis} ${(b.purse?.coins || 0) >= 100 ? '' : 'disabled'}>Coins into notes</button>
+          <button type="button" class="sys-button ghost" data-bank="to_coins" ${dis} ${b.purse?.notes ? '' : 'disabled'}>Notes into coins</button></div>
+        <details class="bank-info"><summary>About notes and coins</summary><p class="sys-hint">1 Silver = 100 Copper, 1 Gold = 100 Silver. Crown notes come in 1, 5 and 10 Silver and 1 and 10 Gold, and are taken everywhere coins are. Monsters, chests and quests pay in coins: bring them to any Bank or kiosk to change them into notes (no fee). Leave the box empty to change all you can.</p></details>`;
     } else if (tab === 'loan') {
       const L = b.loan;
       body = `<p class="sys-hint">A goodwill loan: you pay back exactly what you borrow, never a coin more, however long it takes. The only charge is one small service fee of ${moneyWords(LOAN_FEE)} for the paperwork, the same for any amount. Pay back within ${LOAN_DAYS} days. If you are late it costs nothing extra, but the Bank takes what you owe from your safekeeping, and it will only lend you half as much from then on.</p>
@@ -44,8 +46,8 @@ export function renderBank(el, game, { city, info, tab = 'safe', message = '', b
       const rows = FOREIGN.map((k) => {
         const C = CURRENCIES[k];
         const have = b.wallet[k] || 0;
-        return `<div class="estate-row bank-cur${k === cur ? ' mine' : ''}"><span>${C.icon} <b>${esc(C.name)}</b>${k === cur ? ' <small>(printed here)</small>' : ''} <span>·</span> ${esc(C.text)}<br>
-          <small>1 note is worth ${rate(k, now)} Copper today <span>·</span> you buy at ${buyRate(k, now, cur)}, sell at ${sellRate(k, now, cur)} <span>·</span> yours: <b>${have.toLocaleString()}</b>${have ? ` (${esc(cashWords(k, have))})` : ''}</small></span>
+        return `<div class="estate-row bank-cur${k === cur ? ' mine' : ''}"><span><details class="bank-note"><summary>${C.icon} <b>${esc(C.name)}</b> = <b>${rate(k, now)}</b> Copper <span>·</span> yours: <b>${have.toLocaleString()}</b></summary>
+          <small>${esc(C.text)}${k === cur ? ' Printed here.' : ''}<br>You buy at ${buyRate(k, now, cur)} Copper, sell at ${sellRate(k, now, cur)}.${have ? ` You hold ${esc(cashWords(k, have))}.` : ''}</small></details></span>
           <span class="bank-btns"><button type="button" class="sys-button" data-bank="buy" data-cur="${k}" ${dis}>Buy</button>
           <button type="button" class="sys-button ghost" data-bank="sell" data-cur="${k}" ${dis} ${have ? '' : 'disabled'}>Sell</button></span></div>`;
       }).join('');
@@ -54,9 +56,9 @@ export function renderBank(el, game, { city, info, tab = 'safe', message = '', b
         <span>${k === 'crown' ? 'counts every price' : `${pct(worthEdge(k))} from worth`}</span></div>`).join('');
       const opts = (sel) => FOREIGN.map((k) => `<option value="${k}"${k === sel ? ' selected' : ''}>${esc(CURRENCIES[k].plural)}</option>`).join('');
       const other = FOREIGN.find((k) => k !== (FOREIGN.includes(cur) ? cur : FOREIGN[0])) || FOREIGN[1];
-      body = `<p class="sys-hint">Every land prints its own banknotes at its city's Bank. The Crown (Crown notes, with Copper, Silver and Gold coins as change) of the Heartland is taken everywhere; every price is counted in it. A land's notes are worth more the more that land is worth: every plot owned, house bought, oil derrick pumping and person born there makes its money stronger. Money is changed hand to hand, at today's rate: the Bank earns only the small gap between what it buys and sells at (${Math.round(SPREAD * 100)}%, or ${Math.round(HOME_SPREAD * 100)}% for a land's own notes at its own Bank and kiosks).</p>
-        <p class="sys-top">With you: <b>${money(c.coins)}</b></p>
+      body = `<p class="sys-top">With you: <b>${money(c.coins)}</b></p>
         <div class="bank-row">${amountBox('How many notes')}</div>
+        <p class="sys-hint">Tap a note to read about it.</p>
         <div class="estate-list">${rows}</div>
         <h3 class="sys-sub">Change one land's notes into another's</h3>
         <div class="bank-row"><select class="bank-amount" id="bank-from" aria-label="From">${opts(FOREIGN.includes(cur) ? cur : FOREIGN[0])}</select>
@@ -65,6 +67,7 @@ export function renderBank(el, game, { city, info, tab = 'safe', message = '', b
         <p class="sys-hint">Uses the number in the box above.</p>
         <h3 class="sys-sub">What the lands are worth</h3>
         <div class="estate-list">${worthRows}</div>
+        <details class="bank-info"><summary>How money works</summary><p class="sys-hint">Every land prints its own banknotes at its city's Bank. The Crown (Crown notes, with Copper, Silver and Gold coins as change) of the Heartland is taken everywhere; every price is counted in it. A land's notes are worth more the more that land is worth: every plot owned, house bought, oil derrick pumping and person born there makes its money stronger. Money is changed hand to hand, at today's rate: the Bank earns only the small gap between what it buys and sells at (${Math.round(SPREAD * 100)}%, or ${Math.round(HOME_SPREAD * 100)}% for a land's own notes at its own Bank and kiosks).</p></details>
         <p class="sys-hint">Each land starts with a treasury of ${money(LAND_BASE)}. Its money is measured against the Heartland's: if the Heartland grows faster, the other lands' notes buy fewer Crowns.</p>`;
     } else {
       const each = oilPrice(cur, now);
