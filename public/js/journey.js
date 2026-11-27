@@ -129,7 +129,7 @@ export function startJourney(host, { character, game, getWorld, paused }) {
     toast.innerHTML = `<p class="jt-kicker">New</p><h3>${n.title}</h3><p>${n.text}</p><button type="button" class="jt-ok" data-jt-ok>OK</button>`;
     toast.classList.remove('hidden');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.add('hidden'), 16000);
+    toastTimer = setTimeout(() => toast.classList.add("hidden"), 25000);
   }
   toast.addEventListener('click', (e) => { if (e.target.closest('[data-jt-ok]')) { clearTimeout(toastTimer); toast.classList.add('hidden'); } });
   for (const type of ['pointerdown', 'mousedown', 'touchstart']) {
@@ -185,7 +185,7 @@ export function startJourney(host, { character, game, getWorld, paused }) {
     cancelAnimationFrame(raf);
     if (guided) getWorld()?.setGuide?.(null);
     bar.remove();
-    setTimeout(() => toast.remove(), toast.classList.contains('hidden') ? 0 : 16000);
+    setTimeout(() => toast.remove(), toast.classList.contains("hidden") ? 0 : 25000);
   }
   raf = requestAnimationFrame(tick);
   return {
