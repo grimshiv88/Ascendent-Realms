@@ -41,7 +41,7 @@ export function cleanStaff(v) {
 // (passwords, birth dates, deleting accounts, past lives, the log, and giving admin access).
 export const ROUTE_PERMS = {
   // looking
-  'GET stats': 'any', 'GET accounts': 'any', 'GET player': 'any', 'GET catalogue': 'any', 'GET me': 'any',
+  'GET stats': 'any', 'GET accounts': 'any', 'GET online': 'any', 'GET player': 'any', 'GET catalogue': 'any', 'GET me': 'any',
   'GET chat': 'chat', 'GET reports': 'reports', 'GET world': ['world', 'announce'], 'GET tuning': 'world', 'GET sects': 'world', 'GET skills': 'edit',
   // doing
   'POST mute': 'mute', 'POST ban': 'ban', 'POST signout': 'kick', 'POST chat/delete': 'chat', 'POST reports/close': 'reports',

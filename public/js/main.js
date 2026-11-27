@@ -1590,10 +1590,41 @@ function startGame(character) {
     presenceOn = true;
     const P = await import('./data/presence.mjs');
     let sentSig = '', sentAt = 0, busy = false;
+    // live movement: about 10 updates a second between players close by (see live.js)
+    let live = null, liveAsked = false;
+    const startLiveMoves = async (r) => {
+      if (!r.live || !r.me || typeof WebSocket === 'undefined') return;
+      const { startLive } = await import('./live.js');
+      live = startLive(r.live, r.me, (m) => world?.moveOther(m), (state, why) => { if (state === 'refused') console.warn('live movement refused', why); });
+      setInterval(() => { if (world && document.visibilityState !== 'hidden') live.update(world.presence(), world.othersNear > 0); }, 50);
+    };
     const myBody = () => {
       const gear = {};
       for (const [slot, g] of Object.entries(game.worn())) gear[slot] = { id: g.entry?.id || g.id, plus: g.plus || 0 };
       return { race: character.race, form: character.form, stage: character.stage || 0, look: character.look || {}, age: ageOf(character), gear };
+    };
+    // admins: how many are in the world right now; tap it for who and where
+    let onlineBtn = null, onlineList = null;
+    const showOnline = (n) => {
+      if (!onlineBtn) {
+        onlineBtn = document.createElement('button');
+        onlineBtn.type = 'button'; onlineBtn.id = 'online-now'; onlineBtn.setAttribute('aria-expanded', 'false');
+        onlineList = document.createElement('div');
+        onlineList.id = 'online-list'; onlineList.hidden = true;
+        $('game').append(onlineBtn, onlineList);
+        onlineBtn.addEventListener('click', async () => {
+          onlineList.hidden = !onlineList.hidden;
+          onlineBtn.setAttribute('aria-expanded', String(!onlineList.hidden));
+          if (onlineList.hidden) return;
+          onlineList.innerHTML = '<p>Looking…</p>';
+          try {
+            const { players } = await api.onlineNow();
+            const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+            onlineList.innerHTML = `<h3>In the world now (${players.length})</h3><ul>${players.map((p) => `<li><b>${esc(p.username)}</b>${p.level ? ` <span>Lv ${p.level} ${esc(p.race || '')}</span>` : ''}<small>${esc(p.where)}</small></li>`).join('')}</ul>`;
+          } catch (e) { onlineList.innerHTML = `<p>${e.message}</p>`; }
+        });
+      }
+      onlineBtn.innerHTML = `<span class="on-dot"></span>${n} online`;
     };
     const tick = async () => {
       let wait = P.POLL_ALONE_MS;
@@ -1604,10 +1635,13 @@ function startGame(character) {
           const body = myBody(), sig = P.bodySig(body);
           // the body goes with the first report, when it changes, and once a minute in case the server forgot it
           if (sig !== sentSig || Date.now() - sentAt > 60000) { spot.body = body; sentSig = sig; sentAt = Date.now(); }
+          if (!liveAsked) spot.wantLive = true;
           const r = await api.presence(spot);
           if (r.preview) return; // the preview page has nobody else in it
           world.showOthers(r.players || []);
-          if (r.players?.length) wait = P.POLL_MS;
+          if (!liveAsked) { liveAsked = true; startLiveMoves(r); }
+          if (r.players?.length) wait = live?.on ? P.POLL_LIVE_MS : P.POLL_MS;
+          if (r.online != null) showOnline(r.online);
         } catch (e) { sentSig = ''; console.warn('presence', e); } finally { busy = false; }
       }
       setTimeout(tick, wait);

@@ -1306,6 +1306,11 @@ export async function presence(spot) {
   if (await isPreviewMode()) return { players: [], preview: true };
   return request('api/presence', { method: 'POST', body: spot });
 }
+// For admins: everyone in the world right now, and where they are
+export async function onlineNow() {
+  if (await isPreviewMode()) return { players: [] };
+  return request('api/admin/online');
+}
 export async function presenceLeave() {
   if (await isPreviewMode()) return { ok: true };
   return request('api/presence/leave', { method: 'POST', body: {} });
