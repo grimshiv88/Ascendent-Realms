@@ -48,6 +48,7 @@ import { createVoice } from './voice.js';
 import { createVoiceCommands } from './voicecmd.js';
 import { createPowers } from './powersui.js';
 import { createRadar } from './radarui.js';
+import { createArena } from './arenaui.js';
 import { POWER_IDS } from './data/staff.mjs';
 
 // Nothing in the game can be selected, copied or right-clicked, except the boxes you type in
@@ -181,6 +182,7 @@ function openCreation(username) {
 }
 
 let world = null;
+let arena = null; // the Colosseum (see arenaui.js)
 let tutorial = null; // the guide for new players, while it runs (see tutorial.js)
 let journey = null; // a newcomer's first journey: goals with arrows and notices (see journey.js)
 let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
@@ -646,6 +648,7 @@ function startGame(character) {
     else if (name === 'groups') renderGroups(overlay, game, ui.groups, { message: ui.groupMsg, busy: ui.groupBusy });
     else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy, castle: !!ui.roomsCastle, emperor: !!ui.groups?.nation });
     else if (name === 'appraise') renderAppraise(overlay, game, ui.appraise || {});
+    else if (name === 'colosseum') arena?.render(overlay);
     else if (name === 'parents') renderParents(overlay, game, { visited: ui.parentsVisited });
     else if (name === 'academy') renderAcademy(overlay, game, { school: ui.academySchool, message: ui.academyMsg || '' });
     else if (name === 'ceremony') renderCeremony(overlay, game, { result: ui.grown, busy: ui.ceremonyBusy, message: ui.ceremonyMsg || '' });
@@ -1504,6 +1507,8 @@ function startGame(character) {
     onEvent(type, data) {
       tutorial?.saw(type, data);
       journey?.saw(type, data);
+      // the Colosseum's board, blows in a duel, sitting in the stands (see arenaui.js)
+      if (arena?.onWorldEvent(type, data)) return;
       // the phone took the graphics away for a moment (see world.js): wait, or reload if they don't come back
       if (type === 'graphicsLost') { showArea('Getting the graphics back...'); return; }
       if (type === 'graphicsBack') { showArea('Graphics are back'); return; }
@@ -1729,6 +1734,10 @@ function startGame(character) {
         busy = true;
         try {
           const spot = world.presence();
+          // in a Colosseum fight, or watching one: seen there by the fighters and those watching
+          const ring = arena?.place();
+          if (ring) spot.place = ring;
+          if (arena?.watchId()) spot.watch = arena.watchId();
           const body = myBody(), sig = P.bodySig(body);
           // the body goes with the first report, when it changes, and once a minute in case the server forgot it
           if (sig !== sentSig || Date.now() - sentAt > 60000) { spot.body = body; sentSig = sig; sentAt = Date.now(); }
@@ -1739,12 +1748,20 @@ function startGame(character) {
           if (!liveAsked) { liveAsked = true; startLiveMoves(r); }
           if (r.players?.length) wait = live?.on ? P.POLL_LIVE_MS : P.POLL_MS;
           if (r.online != null) showOnline(r.online);
+          arena?.take(r.arena);
+          if (arena?.fast()) wait = 600; // a fight on: both HP bars keep up
         } catch (e) { sentSig = ''; console.warn('presence', e); } finally { busy = false; }
       }
       setTimeout(tick, wait);
     };
     tick();
   })();
+  // The Colosseum: challenges, the summons to a fight, the fight's bars, the board (see arenaui.js)
+  arena = createArena({
+    root: $('game'), overlay, api, world: () => world, game, me: () => myAccount,
+    say: (text, kind) => world?.say(text, kind), showArea,
+    openPanel, closePanel, drawPanel, isOpen: () => !overlay.classList.contains('hidden') && overlay.dataset.panel === 'colosseum',
+  });
   // Voice chat (16+): a mic button under the chat button; voices fade with distance
   createVoice($('game'), { position: () => world?.position() });
   // Voice commands: your pet's name and an order, or a skill or spell name, said aloud

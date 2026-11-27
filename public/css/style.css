@@ -1302,6 +1302,38 @@ body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: fil
 .sk-rank-S { color: #ffb347; }
 .sk-rank-SS, .sk-rank-SSS { color: #ff6a5a; }
 
+/* The Colosseum (arenaui.js): the call to a fight, the fight's bars across the top, and its board */
+.arena-card { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 40; width: min(420px, calc(100vw - 32px));
+  padding: 12px 16px; border: 1px solid var(--gold-3); border-radius: 8px; background: linear-gradient(180deg, rgba(40, 28, 12, 0.96), rgba(18, 12, 6, 0.96));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6); font: 15px/1.4 Georgia, serif; color: var(--ink); }
+.arena-card.hidden, .arena-hud.hidden { display: none; }
+.arena-card p { margin: 0 0 8px; }
+.arena-buttons { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.arena-hud { position: absolute; top: 54px; left: 50%; transform: translateX(-50%); z-index: 30; width: min(640px, calc(100vw - 24px));
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 8px;
+  background: rgba(10, 6, 2, 0.72); border: 1px solid rgba(200, 146, 26, 0.6); font: 13px Georgia, serif; pointer-events: auto; }
+.arena-side { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.arena-side b { font-family: Cinzel, serif; color: var(--gold-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arena-side.foe { text-align: right; }
+.arena-side small { color: var(--ink-quiet); }
+.arena-bar { display: block; height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.arena-bar i { display: block; height: 100%; background: linear-gradient(90deg, #c8402a, #f07a4a); transition: width 0.25s; }
+.arena-side.foe .arena-bar i { margin-left: auto; }
+.arena-mid { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.arena-mid b { font-family: Cinzel, serif; color: var(--gold-1); }
+.arena-count { font-size: 30px; line-height: 1; }
+.arena-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.arena-tabs button { padding: 5px 10px; border: 1px solid rgba(245, 200, 76, 0.5); border-radius: 14px; background: transparent; color: var(--ink); font: 13px Georgia, serif; cursor: pointer; }
+.arena-tabs button.on { background: var(--gold-3); color: #1a1208; border-color: var(--gold-2); }
+.arena-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
+.arena-form label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 180px; font: 13px Georgia, serif; }
+.arena-check { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; font: 14px Georgia, serif; }
+.arena-you { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--gold-2); background: rgba(245, 200, 76, 0.08); font: 14px Georgia, serif; }
+.arena-match { padding: 3px 0; font: 13px Georgia, serif; }
+.arena-match span { color: var(--ink-quiet); margin: 0 4px; }
+.arena-window details { margin: 6px 0; }
+.arena-window summary { cursor: pointer; color: var(--gold-2); font: 14px Georgia, serif; }
+@media (max-width: 520px) { .arena-hud { top: 46px; font-size: 12px; } .arena-count { font-size: 24px; } }
 /* Admins: how many players are in the world right now (under the map), and who */
 #online-now { position: absolute; top: 222px; right: max(12px, env(safe-area-inset-right)); z-index: 5; padding: 4px 10px; border-radius: 999px; border: 1px solid #c8921a; background: rgba(21, 17, 11, 0.85); color: #f5e6c0; font: 600 13px Oswald, sans-serif; cursor: pointer; }
 #online-now .on-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: #4cd964; box-shadow: 0 0 6px #4cd964; }

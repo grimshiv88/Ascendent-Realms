@@ -1,7 +1,7 @@
 // Every table the game keeps (Postgres). Run on start; safe to run again and again.
 // Row Level Security is switched on for every table with no rules, so the public Supabase web API
 // can't read or change anything: only the game's own server (which connects as the owner) can.
-const TABLES = ['admin_log', 'reports', 'accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes', 'past_lives', 'oil_wells', 'presence', 'deliveries'];
+const TABLES = ['admin_log', 'reports', 'accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes', 'past_lives', 'oil_wells', 'presence', 'deliveries', 'duels', 'arena_players'];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS accounts (
@@ -206,6 +206,48 @@ CREATE INDEX IF NOT EXISTS presence_place_at ON presence (place, at);
 -- the dragon, wyvern or hatchling with them (see cleanPet in public/js/data/presence.mjs)
 ALTER TABLE presence ADD COLUMN IF NOT EXISTS pet TEXT;
 
+-- Colosseum fights (see server/arena.js): a challenge, a fight waiting for both, a fight on, or one over.
+-- 'friendly' duels and 'cup' fights of the Weekly Championship. The server keeps both fighters' HP.
+CREATE TABLE IF NOT EXISTS duels (
+  id         SERIAL PRIMARY KEY,
+  kind       TEXT NOT NULL DEFAULT 'friendly',
+  a_id       INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  b_id       INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  a_name     TEXT NOT NULL,
+  b_name     TEXT NOT NULL,
+  state      TEXT NOT NULL,
+  made_at    BIGINT NOT NULL,
+  until_at   BIGINT NOT NULL,
+  a_in       BOOLEAN NOT NULL DEFAULT false,
+  b_in       BOOLEAN NOT NULL DEFAULT false,
+  start_at   BIGINT,
+  ends_at    BIGINT,
+  hp_a       INTEGER,
+  hp_b       INTEGER,
+  max_a      INTEGER,
+  max_b      INTEGER,
+  stats      TEXT,
+  last_a     BIGINT NOT NULL DEFAULT 0,
+  last_b     BIGINT NOT NULL DEFAULT 0,
+  winner_id  INTEGER,
+  how        TEXT,
+  ended_at   BIGINT,
+  cup_week   BIGINT,
+  cup_round  INTEGER,
+  cup_match  INTEGER
+);
+CREATE INDEX IF NOT EXISTS duels_a ON duels (a_id, state);
+CREATE INDEX IF NOT EXISTS duels_b ON duels (b_id, state);
+CREATE INDEX IF NOT EXISTS duels_state ON duels (state);
+-- each player's Colosseum record, and whether they want its emails
+CREATE TABLE IF NOT EXISTS arena_players (
+  account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  wins       INTEGER NOT NULL DEFAULT 0,
+  losses     INTEGER NOT NULL DEFAULT 0,
+  cup_wins   INTEGER NOT NULL DEFAULT 0,
+  mail_duels BOOLEAN NOT NULL DEFAULT true,
+  mail_cup   BOOLEAN NOT NULL DEFAULT true
+);
 -- what the realm's keepers send into a player's game without a reload (see server/gifts.js):
 -- gifts (kind 'gift', opened from the bag) and orders for their pets (kind 'pet')
 CREATE TABLE IF NOT EXISTS deliveries (

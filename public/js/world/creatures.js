@@ -28,6 +28,8 @@ export const KINDS = {
   wisp: { name: 'Fae Wisp', body: { race: 'fairy', form: 'monster', size: 1.6 }, levels: [4, 8], aggressive: false, speed: 2.5, drops: [['fae_dust', 0.7, 1, 2]] },
   drake: { name: 'Young Drake', body: { race: 'dragonewt', form: 'monster', size: 0.7 }, levels: [20, 30], aggressive: true, speed: 3.2, drops: [['drake_horn', 0.4, 1, 1], ['potion', 0.2, 1, 1]] },
   frostslime: { name: 'Frost Slime', body: { race: 'slime', form: 'monster', look: { skin: '#dff3ff' }, size: 0.9 }, levels: [14, 20], aggressive: true, speed: 1.5, drops: [['frost_core', 0.5, 1, 1], ['slime_gel', 0.6, 1, 2]] },
+  // the Colosseum's practice fighter (see world.js practice): no loot, it yields when beaten
+  gladiator: { name: 'Gladiator', body: { race: 'beastkin', form: 'humanoid' }, levels: [1, 1], aggressive: true, speed: 3, drops: [] },
   sandlizard: { name: 'Sand Lizard', body: { race: 'lizardman', form: 'monster', look: { skin: '#c9a060' } }, levels: [12, 18], aggressive: true, speed: 3, drops: [['lizard_scale', 0.7, 1, 2], ['cactus_flesh', 0.3, 1, 1]] },
 };
 // The Monster Kings' courts: the King (in humanoid form, crowned), the Overlords and the castle guards.
