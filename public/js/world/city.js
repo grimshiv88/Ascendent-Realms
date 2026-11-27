@@ -92,11 +92,11 @@ function stoneTexture() {
   return stoneTex;
 }
 const STONE_MATS = new Map();
-const stoneWallMat = (color) => {
+export const stoneWallMat = (color) => {
   if (!STONE_MATS.has(color)) STONE_MATS.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.95, map: stoneTexture() }));
   return STONE_MATS.get(color);
 };
-function stoneBox(w, h, d) {
+export function stoneBox(w, h, d) {
   const geo = new THREE.BoxGeometry(w, h, d);
   const uv = geo.attributes.uv;
   // faces in order: +x, -x (d by h), +y, -y (w by d), +z, -z (w by h); one texture is 2.4 m by 2.4 m

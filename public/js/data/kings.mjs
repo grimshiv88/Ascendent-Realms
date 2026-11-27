@@ -38,7 +38,7 @@ export const CASTLES = {
     names: ['Ssiv', 'Krath', 'Ixel', 'Tharr', 'Zesk', 'Orrik', 'Vesh', 'Kaal', 'Ruuth', 'Sesk'],
   },
   naga: {
-    title: 'King of Serpents', race: 'naga', home: 'temple', castle: 'The Drowned Palace',
+    title: 'King of Serpents', race: 'naga', home: 'temple', castle: 'The Drowned Palace', wet: true,
     king: 'Nahsir the Coiled', weapon: 'Fang of the Deep (Mythic glaive)',
     unique: 'Hypnotic Gaze: holds a foe still for a heartbeat with a look.',
     skills: ['Water Lash', 'Constrict', 'Venom Mist', 'Tide Call'],
@@ -53,29 +53,37 @@ export const CASTLES = {
   },
 };
 
-// A place for a castle: a 2 × 2 block of plots of dry, fairly even land about 2.5 km from the homeland's
-// waystone, so new monsters starting out there don't wander straight into it
+// A place for a castle: a square of 12 × 12 plots (240 m a side) of dry, fairly even land about
+// 2.5 km from the homeland's waystone, so new monsters starting out there don't wander straight into it.
+// The castles are palaces the size of half a city (see world/kingcastle.js), so they need room.
+export const CASTLE_PLOTS = 12;
 function findSpot(race) {
   const C = CASTLES[race];
   const home = PLACES.find((p) => p.id === C.home);
   const w = toWorld(home.px, home.py);
   const s = {};
   const region = home.region;
-  for (const d of [2500, 2000, 3000, 1600, 3600, 1200, 4500, 6000, 7500, 9000]) {
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * Math.PI * 2 + 0.3;
-      const ix = Math.floor((w.x + Math.cos(a) * d) / PLOT), iz = Math.floor((w.z + Math.sin(a) * d) / PLOT);
-      const hs = [];
-      let ok = true;
-      for (let gx = 0; gx <= 4 && ok; gx++) {
-        for (let gz = 0; gz <= 4 && ok; gz++) {
-          sample((ix + gx / 2) * PLOT, (iz + gz / 2) * PLOT, s, true);
-          if (s.region !== region || s.h < s.water + 2 || s.lake > 0.02) ok = false;
-          hs.push(s.h);
+  const N = CASTLE_PLOTS;
+  for (const steep of [30, 60, 120]) {
+    for (const d of [2500, 2000, 3000, 1600, 3600, 1200, 4500, 6000, 7500, 9000]) {
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2 + 0.3;
+        const ix = Math.floor((w.x + Math.cos(a) * d) / PLOT) - N / 2, iz = Math.floor((w.z + Math.sin(a) * d) / PLOT) - N / 2;
+        const hs = [];
+        let ok = true, wet = -Infinity;
+        for (let gx = 0; gx <= N && ok; gx += 2) {
+          for (let gz = 0; gz <= N && ok; gz += 2) {
+            sample((ix + gx) * PLOT, (iz + gz) * PLOT, s, true);
+            // (the Drowned Palace of the Serpents rises from the water: its ground is raised out of the lake)
+            if (s.region !== region || (!C.wet && (s.h < s.water + 2 || s.lake > 0.02))) ok = false;
+            hs.push(C.wet ? Math.max(s.h, s.water + 2) : s.h);
+            wet = Math.max(wet, s.water + 2);
+          }
         }
+        if (!ok || Math.max(...hs) - Math.min(...hs) > steep) continue;
+        const avg = hs.reduce((a, b) => a + b, 0) / hs.length;
+        return { ix, iz, flat: Math.round((C.wet ? Math.max(avg, wet) : avg) * 10) / 10 };
       }
-      if (!ok || Math.max(...hs) - Math.min(...hs) > 18) continue;
-      return { ix, iz, flat: Math.round((hs.reduce((a, b) => a + b, 0) / hs.length) * 10) / 10 };
     }
   }
   return null;
@@ -90,8 +98,9 @@ export function allCastles() {
   for (const race of Object.keys(CASTLES)) {
     const at = findSpot(race);
     if (!at) continue;
-    spots.push({ race, ...CASTLES[race], ...at, x: (at.ix + 1) * PLOT, z: (at.iz + 1) * PLOT, cell: [at.ix * (PLOT / 4), at.iz * (PLOT / 4)] });
-    for (let dx = 0; dx < 2; dx++) for (let dz = 0; dz < 2; dz++) flats.push({ ix: at.ix + dx, iz: at.iz + dz, flat: at.flat });
+    const half = CASTLE_PLOTS / 2;
+    spots.push({ race, ...CASTLES[race], ...at, x: (at.ix + half) * PLOT, z: (at.iz + half) * PLOT, cell: [(at.ix + half - 1) * (PLOT / 4), (at.iz + half - 1) * (PLOT / 4)] });
+    for (let dx = 0; dx < CASTLE_PLOTS; dx++) for (let dz = 0; dz < CASTLE_PLOTS; dz++) flats.push({ ix: at.ix + dx, iz: at.iz + dz, flat: at.flat });
   }
   // the ground under each castle is levelled for good
   addFixedFlats(flats);

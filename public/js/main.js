@@ -1591,6 +1591,7 @@ function startGame(character) {
       if (type === 'chest') showArea(`The chest held ${money(data.coins)}, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();
       if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
+      if (type === 'wonder' && data) showArea(`${data.name}: ${data.text}`);
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
       if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
