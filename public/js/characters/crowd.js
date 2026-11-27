@@ -26,7 +26,9 @@ export function lazyCharacter(make, height = 1.8) {
   holder.userData.make = make;
   return joinCrowd(holder);
 }
-const BUILD_EACH = 3; // bodies built per update (a few times a second), so arriving in a city doesn't stall
+// bodies built per update (about ten times a second): one at a time, so no single frame pays for
+// several (three at once made walking through a city hitch each time new townsfolk came into view)
+const BUILD_EACH = 1;
 const KEEP = 1.4;     // a built body is kept until it is this many times further than the drawing distance
 
 function build(holder) {

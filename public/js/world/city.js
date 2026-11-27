@@ -345,9 +345,14 @@ export function buildCity(place, opts = {}) {
         fixed.add(walk);
       }
       if (i % 2 === 0) { const m = new THREE.Mesh(stoneBox(1.3, 0.6, 1.2), stoneMat); m.position.set(Math.sin(a) * (face - 0.4), up + 1.4, Math.cos(a) * (face - 0.4)); m.rotation.y = a; fixed.add(m); }
-      // solid all along (two to a stretch, so nobody small slips between them and up the bank), up
-      // to a little over the battlements: too high to jump over, but you can fly over it
-      for (const da of [0, seg / 2 / face]) if (!gap(a + da, face, ROAD_HALF + RAMP_WALL + 0.5)) solid.push({ x: cx + Math.sin(a + da) * (face + 0.2), z: cz + Math.cos(a + da) * (face + 0.2), r: 1.0, kind: 'wall', y: wallBase + low - 1, height: up - low + 3.2 });
+      // solid all along, up to a little over the battlements: too high to jump over, but you can
+      // fly over it. Four posts to a stretch, down the middle of the wall and as thick as it, so its
+      // face is smooth on both sides: two big ones on the outer face let you push half into the
+      // parapet from the walk on top, and jerked you back and forth along it
+      for (let q = 0; q < 4; q++) {
+        const aq = a + ((q - 1.5) * seg / 4) / face;
+        if (!gap(aq, face, ROAD_HALF + RAMP_WALL + 0.5)) solid.push({ x: cx + Math.sin(aq) * (face - 0.4), z: cz + Math.cos(aq) * (face - 0.4), r: 0.6, kind: 'wall', y: wallBase + low - 1, height: up - low + 4.2 });
+      }
     }
     rampBands.push({ r0: b - 3.5, r1: face, y: up });
     // the ramps: a road climbing between two stone walls, cut into the higher ring and built out
@@ -973,7 +978,8 @@ function garden(fixed, h, y, solid, cx, cz) {
     m.position.set((x0 + x1) / 2, 0.55, (z0 + z1) / 2);
     m.rotation.y = Math.atan2(-(z1 - z0), x1 - x0);
     g.add(m);
-    for (let t = 0; t <= len; t += 1.6) {
+    // (posts close enough together that nobody slips between them through the hedge)
+    for (let t = 0; t <= len; t += 0.6) {
       const lx = x0 + (x1 - x0) * (t / len), lz = z0 + (z1 - z0) * (t / len);
       solid.push({ x: cx + h.x + lx * c + lz * s, z: cz + h.z - lx * s + lz * c, r: 0.5, kind: 'wall', height: 1.1, step: false });
     }
