@@ -83,7 +83,7 @@ export function renderHud(el, c, d = derivedStats(c.stats, c.level), cave = null
         <button type="button" data-open="map">Map <kbd>M</kbd></button>
         <button type="button" data-open="quests">Quests <kbd>Q</kbd></button>
         ${c.secretMenu ? `<button type="button" data-open="cult">${c.secretMenu}</button>` : ''}
-        <button type="button" data-open="options">Controls <kbd>Esc</kbd></button>
+        <button type="button" data-open="controls">Controls${codeFor('controls') ? ` <kbd>${esc(keyName(codeFor('controls')))}</kbd>` : ''}</button>
         <button type="button" data-signout>Log out</button>
       </div>
     </div>
@@ -233,14 +233,69 @@ const CTL_ICONS = {
   windows: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 8h18M7 12h6M7 16h10"/>',
   build: '<path d="M14 6l4 4-9 9H5v-4zM12 8l4 4M15 3l6 6-2 2-6-6z"/>',
   admin: '<path d="M3 18h18M4 18l-1-10 5 4 4-7 4 7 5-4-1 10"/>',
+  feel: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
 };
+// Rows of the Controls screen that can be opened or done straight from there (it took over the old
+// Menu window): a window to open, or an action to do now
+const OPENS = { status: 'open:status', bag: 'open:bag', shop: 'open:shop', smith: 'open:smith', quests: 'open:quests', skills: 'open:skills',
+  groups: 'open:groups', map: 'open:map', rankings: 'open:rankings', settings: 'open:settings', help: 'open:help', trade: 'open:trade',
+  portal: 'act:portal', land: 'act:land', sleep: 'act:sleep', tent: 'act:tent', torch: 'act:torch', builder: 'act:builder' };
+const openBtn = (id) => {
+  const go = OPENS[id];
+  if (!go) return '';
+  const [k, v] = go.split(':');
+  return `<button type="button" class="ctl-go" data-${k}="${v}" title="${k === 'open' ? 'Open it now' : 'Do it now'}">${k === 'open' ? 'Open' : 'Do'}</button>`;
+};
+// Controls → Sensitivity: sliders for how the camera turns and sees, and the camera and mouse choices
+const FEEL = [
+  ['mouse', 'Mouse look speed', 10, 400, 5, '%', 'How far the camera turns when you move the mouse (or drag with it).'],
+  ['touch', 'Touch look speed', 10, 400, 5, '%', 'How far the camera turns when you drag a finger on a phone or tablet.'],
+  ['turn', 'Key turn speed', 30, 300, 5, '%', 'How fast left and right turn you while walking (Follow your body camera).'],
+  ['zoom', 'Zoom speed', 20, 400, 10, '%', 'How fast the mouse wheel and the Camera closer / further keys zoom.'],
+  ['fov', 'Field of view', 45, 100, 1, '°', 'How wide the camera sees. Wider shows more around you; narrower looks closer.'],
+];
+export const FEEL_DEFAULT = { mouse: 1, touch: 1, turn: 1, zoom: 1, fov: 60, invertY: false };
+export const feelShown = (k, v) => (k === 'fov' ? `${Math.round(v)}°` : `${Math.round(v * 100)}%`);
+export function cameraOptions(settings) {
+  const opt = (value, title, text) => `<button type="button" class="setting-opt" data-camera="${value}" aria-pressed="${settings.camera === value}"><b>${title}</b><span>${text}</span></button>`;
+  return `<h3 class="bag-sub">Camera</h3>
+      <div class="setting-opts">
+        ${opt('free', 'Free camera', 'You turn the camera yourself (drag the mouse, or drag on the right of the screen). Your character walks the way you push, relative to the camera.')}
+        ${opt('follow', 'Follow your body', 'The camera stays behind your character. Left and right turn your body, forward walks the way you face.')}
+      </div>
+      <h3 class="bag-sub">Mouse</h3>
+      <div class="setting-opts">
+        <button type="button" class="setting-opt" data-mouse="locked" aria-pressed="${settings.mouse !== 'free'}"><b>Connected</b><span>Click the game and the mouse is captured: moving it turns the camera, clicking attacks. Esc lets it go.</span></button>
+        <button type="button" class="setting-opt" data-mouse="free" aria-pressed="${settings.mouse === 'free'}"><b>Free Move</b><span>The mouse stays free, so you can click the chat and windows while you walk. Drag on the game to turn the camera.</span></button>
+      </div>
+      <h4 class="ctl-group">Camera follows you (Free Move, and touch screens)</h4>
+      <div class="setting-opts">
+        <button type="button" class="setting-opt" data-cam-follow="on" aria-pressed="${settings.camFollow !== 'off'}"><b>Follows</b><span>As you walk, the camera swings round behind your character, so it looks where you are going. Drag to look around: it comes back behind you a moment after you let go.</span></button>
+        <button type="button" class="setting-opt" data-cam-follow="off" aria-pressed="${settings.camFollow === 'off'}"><b>Stays put</b><span>The camera stays where you point it until you drag it round yourself.</span></button>
+      </div>`;
+}
+function feelPanel(settings = {}) {
+  const f = { ...FEEL_DEFAULT, ...(settings.feel || {}) };
+  const rows = FEEL.map(([k, name, lo, hi, step, , about]) => {
+    const v = k === 'fov' ? f[k] : Math.round(f[k] * 100);
+    return `<label class="feel-row"><span class="ctl-name"><b>${esc(name)}</b><small>${esc(about)}</small></span>
+      <input type="range" min="${lo}" max="${hi}" step="${step}" value="${v}" data-feel="${k}" aria-label="${esc(name)}"><output data-feel-out="${k}">${feelShown(k, f[k])}</output></label>`;
+  }).join('');
+  return `<h3 class="bag-sub">Sensitivity</h3>
+    <div class="feel-table">${rows}
+      <div class="feel-row"><span class="ctl-name"><b>Invert up / down</b><small>Moving the mouse or a finger up looks down, like a plane's stick.</small></span>
+        <span class="feel-flip"><button type="button" class="setting-chip" data-feel-invert="off" aria-pressed="${!f.invertY}">Normal</button><button type="button" class="setting-chip" data-feel-invert="on" aria-pressed="${!!f.invertY}">Inverted</button></span></div>
+    </div>
+    <div class="ctl-foot"><button type="button" class="link-button" data-feel-reset>Put sensitivity back</button></div>
+    ${cameraOptions(settings)}`;
+}
 export function renderControlsWindow(el, keys = {}) {
   el.innerHTML = `
     <div class="status-window settings-window controls-window" role="dialog" aria-label="Controls">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       <h2>Controls</h2>
       ${renderControls(keys)}
-      <p class="bag-hint"><button type="button" class="link-button" data-open="settings">Back to Settings</button></p>
+      <p class="bag-hint ctl-more"><button type="button" class="link-button" data-open="settings">Settings</button><button type="button" class="link-button" data-switch>Switch account</button></p>
     </div>`;
 }
 export function renderControls(keys = {}) {
@@ -248,12 +303,14 @@ export function renderControls(keys = {}) {
   const tab = tabs.some(([id]) => id === keys.tab) ? keys.tab : 'move';
   const bad = clashes();
   const badTabs = new Set(Object.keys(bad).map((k) => CONTROL[k.split(':')[0]].tab));
+  const tabRow = `<div class="ctl-tabs" role="tablist">${tabs.map(([id, name]) => `<button type="button" role="tab" class="ctl-tab${badTabs.has(id) ? ' clash' : ''}" data-ctl-tab="${id}" aria-selected="${id === tab}" title="${esc(name)}"><svg viewBox="0 0 24 24" aria-hidden="true">${CTL_ICONS[id]}</svg><span>${esc(name)}</span></button>`).join('')}</div>`;
+  if (tab === 'feel') return `${tabRow}<div role="tabpanel">${feelPanel(keys.settings)}</div>`;
   const slot = (id, i) => {
     const code = codesFor(id)[i], waiting = keys.binding === `${id}:${i}`;
     return `<span class="ctl-slot${bad[`${id}:${i}`] ? ' clash' : ''}"><button type="button" class="sk-key${waiting ? ' waiting' : ''}${code ? '' : ' empty'}" data-control="${id}:${i}" aria-label="${i ? 'Second key' : 'Key'} for ${esc(CONTROL[id].name)}: ${esc(code ? keyName(code) : 'none')}">${waiting ? 'Press a key…' : code ? esc(keyName(code)) : 'No key'}</button>${code && !waiting ? `<button type="button" class="ctl-x" data-control-clear="${id}:${i}" aria-label="Leave it with no key" title="Leave it with no key">×</button>` : ''}</span>`;
   };
   const rows = CONTROLS.filter((c) => c[3] === tab).map(([id, name, , , about]) => `
-    <div class="ctl-row"><span class="ctl-name"><b>${esc(name)}</b>${about ? `<small>${esc(about)}</small>` : ''}</span>${slot(id, 0)}${slot(id, 1)}
+    <div class="ctl-row"><span class="ctl-name"><b>${esc(name)}</b>${about ? `<small>${esc(about)}</small>` : ''}</span>${openBtn(id)}${slot(id, 0)}${slot(id, 1)}
       <button type="button" class="ctl-undo" data-control-default="${id}" aria-label="Back to the first key" title="Back to the first key"${isDefault(id) ? ' disabled' : ''}>↺</button></div>`).join('');
   const skills = tab === 'combat' && keys.skillBar?.length ? `<h4 class="ctl-group">Skill bar</h4><div class="ctl-table">${keys.skillBar.map((b) => `
     <div class="ctl-row"><span class="ctl-name"><b>${esc(SKILLS[b.id]?.icon || '')} ${esc(SKILLS[b.id]?.name || b.id)}</b></span><span class="ctl-slot"><button type="button" class="sk-key${b.key ? '' : ' empty'}" data-open="skills">${b.key ? esc(keyName(b.key)) : 'No key'}</button></span></div>`).join('')}</div>
@@ -267,7 +324,7 @@ export function renderControls(keys = {}) {
         ${c.skill ? '' : '<button type="button" class="ghost" data-clash="both">Keep both on it</button>'}
         <button type="button" class="ghost" data-clash="cancel">Cancel</button>
       </div></div>` : '';
-  return `<div class="ctl-tabs" role="tablist">${tabs.map(([id, name]) => `<button type="button" role="tab" class="ctl-tab${badTabs.has(id) ? ' clash' : ''}" data-ctl-tab="${id}" aria-selected="${id === tab}" title="${esc(name)}"><svg viewBox="0 0 24 24" aria-hidden="true">${CTL_ICONS[id]}</svg><span>${esc(name)}</span></button>`).join('')}</div>
+  return `${tabRow}
     <p class="bag-hint">Click a key, then press the key (or mouse side button) you want. × leaves it with no key, ↺ puts it back. Esc always frees the mouse and closes windows.</p>
     ${ask}
     <p class="shop-msg" role="status">${esc(keys.message || '')}${Object.keys(bad).length ? `${keys.message ? ' ' : ''}<span class="ctl-warn">Keys in red are on two actions at once.</span>` : ''}</p>
@@ -278,7 +335,6 @@ export function renderControls(keys = {}) {
 
 // Player settings, kept in this browser
 export function renderSettings(el, settings, accounts = null, cloud = false, passwordMsg = '', keys = {}) {
-  const opt = (value, title, text) => `<button type="button" class="setting-opt" data-camera="${value}" aria-pressed="${settings.camera === value}"><b>${title}</b><span>${text}</span></button>`;
   el.innerHTML = `
     <div class="status-window settings-window" role="dialog" aria-label="Settings">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
@@ -301,24 +357,12 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
           ['high', 'Far view', 'For computers: sharp, with distant land, trees and grass drawn much further.']]
           .map(([v, title, text]) => `<button type="button" class="setting-opt" data-graphics="${v}" aria-pressed="${(settings.graphics || 'auto') === v}"><b>${title}</b><span>${esc(text)}</span></button>`).join('')}
       </div>
-      <h3 class="bag-sub">Camera</h3>
-      <div class="setting-opts">
-        ${opt('free', 'Free camera', 'You turn the camera yourself (drag the mouse, or drag on the right of the screen). Your character walks the way you push, relative to the camera.')}
-        ${opt('follow', 'Follow your body', 'The camera stays behind your character. Left and right turn your body, forward walks the way you face.')}
-      </div>
-      <h3 class="bag-sub">Mouse</h3>
-      <div class="setting-opts">
-        <button type="button" class="setting-opt" data-mouse="locked" aria-pressed="${settings.mouse !== 'free'}"><b>Connected</b><span>Click the game and the mouse is captured: moving it turns the camera, clicking attacks. Esc lets it go.</span></button>
-        <button type="button" class="setting-opt" data-mouse="free" aria-pressed="${settings.mouse === 'free'}"><b>Free Move</b><span>The mouse stays free, so you can click the chat and windows while you walk. Drag on the game to turn the camera.</span></button>
-      </div>
-      <h4 class="ctl-group">Camera follows you (Free Move, and touch screens)</h4>
-      <div class="setting-opts">
-        <button type="button" class="setting-opt" data-cam-follow="on" aria-pressed="${settings.camFollow !== 'off'}"><b>Follows</b><span>As you walk, the camera swings round behind your character, so it looks where you are going. Drag to look around: it comes back behind you a moment after you let go.</span></button>
-        <button type="button" class="setting-opt" data-cam-follow="off" aria-pressed="${settings.camFollow === 'off'}"><b>Stays put</b><span>The camera stays where you point it until you drag it round yourself.</span></button>
-      </div>
+      <h3 class="bag-sub">Camera, mouse and sensitivity</h3>
+      <p class="bag-hint">The camera, the mouse, how fast they turn, invert and field of view are in Controls → Sensitivity.</p>
+      <button type="button" class="gold-button" data-open="controls" data-ctl-tab="feel">Sensitivity</button>
       <h3 class="bag-sub">Controls</h3>
-      <p class="bag-hint">Put any action on any key, give it a second key, or leave it with no key.</p>
-      <button type="button" class="gold-button" data-open="controls">Change keys</button>
+      <p class="bag-hint">Put any action on any key, give it a second key, or leave it with no key. Every window can be opened from there too.</p>
+      <button type="button" class="gold-button" data-open="controls" data-ctl-tab="move">Change keys</button>
       <h3 class="bag-sub">Account</h3>
       ${keys.country !== undefined ? `<label class="country-setting">Where you are from <small>(its flag is on your ID)</small><span class="country-field"><select data-country>${countryOptions(keys.country || '')}</select><span data-country-flag>${flagHtml(keys.country)}</span></span></label>` : ''}
       ${keys.account ? accountSettings(keys.account, keys.acct || {}) : ''}
@@ -393,39 +437,6 @@ export function renderRankings(el, players, me, courts = []) {
     </div>`;
 }
 
-// Every window and action in the game, with the key that opens it; tap one to open it now
-const OPTIONS = [
-  ['Status', 'status', 'status', 'Your level, stats and Stat Points'],
-  ['Bag', 'bag', 'bag', 'Your items, and what you have on'],
-  ['Shop', 'shop', 'shop', 'Buy and sell'],
-  ['Quests', 'quests', 'quests', 'Take on quests and claim rewards'],
-  ['Skills', 'skills', 'skills', 'Your skills and their keys'],
-  ['World map', 'map', 'map', 'Where you are, your land and caves'],
-  ['Portals', 'portal', 'act:portal', 'Travel to another portal on this continent (beside a portal stone)'],
-  ['Land', 'land', 'act:land', 'Show the grid of plots to buy land'],
-  ['Builder View', 'builder', 'act:builder', 'Build on the land you own'],
-  ['Sleep / wake', 'sleep', 'act:sleep', 'By a fire, a torch or in your tent'],
-  ['Pitch / pack tent', 'tent', 'act:tent', 'Pitch your tent in front of you'],
-  ['Torch', 'torch', 'act:torch', 'Place a torch, or pick one back up'],
-  ['Trade', 'trade', 'trade', 'Swap items and coins with a player next to you'],
-  ['Top players', 'rankings', 'rankings', 'The highest-level characters'],
-  ['Settings', 'settings', 'settings', 'Camera, keys, password and accounts'],
-  ['Controls', 'controls', 'controls', 'Change any key, or leave it empty'],
-  ['Key guide', 'help', 'help', 'How to move, fight and more'],
-];
-export function renderOptions(el) {
-  el.innerHTML = `
-    <div class="status-window options-window" role="dialog" aria-label="Menu">
-      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>Menu</h2>
-      <p class="bag-hint">Press a key to open a window from anywhere, or tap it here. You can change any key in Settings → Controls.</p>
-      <div class="options-grid">
-        ${OPTIONS.map(([label, action, go, what]) => `<button type="button" class="option-btn" ${go.startsWith('act:') ? `data-act="${go.slice(4)}"` : `data-open="${go}"`}><kbd>${esc(keyName(codeFor(action)))}</kbd><b>${label}</b><small>${what}</small></button>`).join('')}
-        <button type="button" class="option-btn" data-switch><kbd>&nbsp;</kbd><b>Switch account</b><small>Sign in as someone else</small></button>
-      </div>
-    </div>`;
-}
-
 // What you see when you come into the realm: a short welcome and a Start button
 export function renderWelcome(el, name, back = true) {
   el.innerHTML = `
@@ -434,7 +445,7 @@ export function renderWelcome(el, name, back = true) {
       <p>The realm awaits you.</p>
       <button type="button" class="gold-button" data-close>Start</button>
       <p class="welcome-warn">Be careful out there: <b>death is final</b>. If you die, you start again from nothing and choose a new race and class. Only your Unique Skill stays with you.</p>
-      <p class="bag-hint">Every window is in the ☰ menu at the top of the screen, and every key can be changed in Settings → Controls.</p>
+      <p class="bag-hint">Every window is in the ☰ menu at the top of the screen, and in Controls, where every key can be changed.</p>
     </div>`;
 }
 
@@ -458,6 +469,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Quests</dt><dd>Q</dd></div>
       <div class="sw-row"><dt>Skills</dt><dd>K opens them. Use a skill with its key (1 to 6 at first; you can change them), or tap its button</dd></div>
       <div class="sw-row"><dt>Hunting</dt><dd>Kill a wild animal, then E beside its body: drag it to a Butcher, or cut it up (with a knife, sword, dagger or axe) and cook the meat with E by a campfire. Only halal animals give meat.</dd></div>
+      <div class="sw-row"><dt>Campfires</dt><dd>Light one from Firewood in your bag. E beside it cooks raw meat; with nothing to cook, E puts your campfire out. Don't step in a lit fire: it burns you.</dd></div>
       <div class="sw-row"><dt>Animals</dt><dd>E beside a grazing animal: feed it a vegetable, hay or grain from your bag, or pet it. Farm animals belong to the farmer: feed and pet them, don't hunt them.</dd></div>
       <div class="sw-row"><dt>Growing crops</dt><dd>Buy seeds at a Farm Stand and press E by one of the farm's visitors' beds to plant them (or dig your own beds with a Hoe on land you set to Farm). They grow while you are away; a Watering Can filled at water makes them grow faster. E again when ripe to harvest.</dd></div>
       <div class="sw-row"><dt>Riding</dt><dd>Buy a horse or donkey at a Farm Stand, or tame a wild horse or camel: stand still with a carrot or apple in your bag and feed it 3 times. ${keyName(codeFor('mount'))} calls it, and ${keyName(codeFor('mount'))} (or E beside it) gets you on and off. Run to gallop.</dd></div>
@@ -467,7 +479,7 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Torches</dt><dd>T places one (buy them in the shop; they keep monsters away at night). Press T beside one to pick it back up</dd></div>
       <div class="sw-row"><dt>Caves</dt><dd>Walk into the dark shaft at the back of a cave to go down. Underground, T lights a torch in your hand. Swing at glowing veins to mine ore, break nests, beat the boss and open its chest with E, then buy the cave. The shaft of daylight takes you back up</dd></div>
       <div class="sw-row"><dt>World map</dt><dd>M</dd></div>
-      <div class="sw-row"><dt>Portals</dt><dd>Stand on a portal stone (purple rings on the map) and press G. Pick where to go on the map, see the fee, then pay. Portals only reach other portals on the same continent</dd></div>
+      <div class="sw-row"><dt>Portals</dt><dd>Stand on a portal stone (purple rings on the map) and press G. Pick where to go on the map, see the fee, then pay. Portals only reach other portals on the same continent. The Central City has two: a public one outside the south gate, and the castle's private one on Castle Hill, only for Emperors, Guild Masters on council days and an Emperor's guests on trade days</dd></div>
       <div class="sw-row"><dt>Land</dt><dd>L shows the grid of plots; tap a square to buy it or manage it</dd></div>
       <div class="sw-row"><dt>Top players</dt><dd>R</dd></div>
       <div class="sw-row"><dt>Settings</dt><dd>O (a free camera, or one that follows your body)</dd></div>

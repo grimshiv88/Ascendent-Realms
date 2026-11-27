@@ -31,7 +31,9 @@ import { CELL } from '../data/building.mjs';
 import { caveById, THEMES, chestLoot, bossLevel, caveOres, pickOre, SIZES } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { COMBOS, COMBO_WINDOW, poseCombo, poseSwim, endSwim } from '../characters/moves.js';
 import { createOthers } from './others.js';
+import { onFloor, inColosseum as inColosseumAt, startSpots, colosseumPlace, FLOOR_R } from '../data/arena.mjs';
 import { updateCrowd, setCrowdFar } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { allLairs, BEASTS } from '../data/beasts.mjs';
@@ -39,7 +41,7 @@ import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionNam
 import { createPlots } from './plots.js';
 import { gameTime, now as realmNow } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
-import { spellPower, spellName, darkSpells, SELF_KINDS, DARK_SPELL_POWER } from '../data/spells.mjs';
+import { SPELLS, spellPower, spellName, darkSpells, SELF_KINDS, DARK_SPELL_POWER } from '../data/spells.mjs';
 import { skyCard } from './skycard.js';
 import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
@@ -50,10 +52,11 @@ import { rampAt, RAMP_WALL, INNER_R, tierAt } from '../data/citylevels.mjs';
 const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine after a new card goes up
 import { money } from '../data/money.mjs';
 import { howOf, canHarvest, harvest } from './deaths.js';
-import { createHusbandry } from './husbandry.js';
+import { createHusbandry, BURN_EVERY, BURN_SHARE } from './husbandry.js';
 import { createOil } from './oil.js';
 import { createCrops } from './crops.js';
 import { createRiding, poseRide } from './riding.js';
+import { createRaids } from './raids.js';
 import { createHatchery } from './hatchery.js';
 import { BEAST_TAME } from '../data/mounts.mjs';
 import { RIDE_FATIGUE } from '../data/mounts.mjs';
@@ -63,6 +66,9 @@ import { createPractice } from './practice.js';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
+// how hard you push off the ground to jump (m/s): about 1.5 m high, up to 1.9 m with high agility
+// (it was 4.2, under a metre, and felt like a hop)
+const JUMP_V = 5.4;
 const SWIM = 0.45;  // share of walking speed while swimming
 const TURN = 9;     // how quickly you turn to face where you're going
 const STEER = 1.2;  // radians a second you curve while walking forward and pressing left or right
@@ -200,9 +206,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   // your family's house (its parents stand at the door), and which cities have their bridges raised
   const homeOf = () => { const f = character.child?.family || character.family; return f ? { city: f.city, house: f.house, race: f.race, dead: [0, 1].filter((j) => !parentAlive(game?.character || character, j)) } : null; };
-  let cityRaised = {};
-  function setCityGates(raised = {}) {
-    cityRaised = { ...raised };
+  let cityRaised = {}, gatesSet = {};
+  let raids = null; // (made once the monsters are)
+  // (a monster attack on a city raises its bridges too, while it lasts: see raids.js)
+  function setCityGates(raised = gatesSet) {
+    gatesSet = { ...raised };
+    cityRaised = { ...gatesSet, ...(raids?.raisedCities() || {}) };
     for (const s of sites) if (s.built?.setRaised) s.built.setRaised(!!cityRaised[s.place.id], colliders);
   }
   // who owns the houses for sale in each great city: { city: { house: owner } }
@@ -213,6 +222,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const s of sites) if (s.place.city && s.built?.setOwners) s.built.setOwners(cityHomes[s.place.id] || {});
   }
   const builtCities = () => sites.filter((s) => s.place.city && s.built?.npcs);
+  // the Colosseum, once the Central City is built round you (see colosseum.js)
+  const colosseumHere = () => sites.find((s) => s.built?.colosseum)?.built.colosseum || null;
+  let arenaLock = false; // in a fight: kept on the sand
   // the cards of new Ceremonies, hanging in the sky over each city's shrine (the latest one per city)
   const skyCards = new Map(); // city id -> { at, card, place }
   let gatherAt = -1;
@@ -477,7 +489,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let atCave = null; // the cave you're standing in up top
   let lastArea = -10;
 
-  const agiSpeed = 1 + Math.min(character.stats.agi * 0.003, 0.6);
+  // (worked out as you go: points put into agility count at once, not after a reload)
+  const agiSpeed = () => 1 + Math.min((game?.character || character).stats.agi * 0.003, 0.6);
+  // tall bodies take longer strides; a short one (a dwarf, a child) is never slower for it, so
+  // agility decides who is faster (a dwarf with 37 AGI was slower than a human with 17)
+  const bodyPace = () => Math.max(1, Math.sqrt(bodyH / 1.8));
   let bodyH = avatar.userData.height;
   let bodyR = Math.max(0.25, Math.min(bodyH * 0.18, 0.9));
   // A monster player switching between monster and humanoid form: a new body in the same spot
@@ -503,6 +519,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // Free camera while the mouse isn't captured (Free Move mouse, or a touch screen): as you walk,
   // the camera swings round behind you on its own, unless the player turned that off in Settings
   let camFollow = view?.camFollow !== 'off';
+  // Controls → Sensitivity: how fast the mouse, a finger and the keys turn the camera, upside-down
+  // looking, how fast the wheel zooms, and how wide the camera sees (field of view, in degrees)
+  const feel = { mouse: 1, touch: 1, invertY: false, zoom: 1, turn: 1, fov: 60 };
+  function setFeel(f = {}) {
+    const n = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
+    feel.mouse = n(f.mouse, 0.1, 4, 1); feel.touch = n(f.touch, 0.1, 4, 1); feel.zoom = n(f.zoom, 0.2, 4, 1);
+    feel.turn = n(f.turn, 0.3, 3, 1); feel.fov = n(f.fov, 45, 100, 60); feel.invertY = !!f.invertY;
+    if (camera.fov !== feel.fov) { camera.fov = feel.fov; camera.updateProjectionMatrix(); }
+  }
+  setFeel(view?.feel);
   let lookEnded = -10; // when you last let go after dragging the camera round
   // 'third': the camera is behind you. 'first': you see through your character's eyes (head hidden,
   // arms and weapon still there). Scrolling all the way in goes to first person, scrolling out comes back.
@@ -726,6 +752,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // `breath`: fire, frost, storm or water from a great beast (half again as strong as a bite)
     onHitPlayer(m, breath = null) {
       if (!game || dead) return;
+      if (m.practice) { const d = Math.max(1, Math.round(monsterHit(m.atk, m.level, game.stats().def * buffed('def')))); floatText(`-${d}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt'); m.onStrike?.(d); return; }
       const s = game.stats();
       // (the King of the Wild Dragons: his breath of the void, falling stars, and the Supernova)
       const dmg = Math.round(monsterHit(m.atk, m.level, s.def * buffed('def')) * (breath ? ({ cosmic: 1.6, star: 1.2, nova: 2.5, tail: 1.3 }[breath] ?? 1.5) : 1));
@@ -737,6 +764,24 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   });
 
   for (const s of sites) if (s.built && s.place.cave) postGuards(s); // caves built before the monsters existed
+
+  // ---------- monster attacks on the towns (see raids.js), started by the realm's keepers ----------
+  raids = createRaids({ creatures, say, getPos: () => (inside ? { x: inside.back.x, z: inside.back.z } : { x: pos.x, z: pos.z }), inWorld: () => !inside && !depth });
+  let chatterT = 6;
+  // while the news is fresh the townsfolk crowd the plaza, and you hear what they say as you pass
+  function townChatter(dt) {
+    chatterT -= dt;
+    if (chatterT > 0 || inside || depth) return;
+    chatterT = 9;
+    for (const s of builtCities()) {
+      if (!raids.gatherAt(s.place) || Math.hypot(pos.x - s.place.x, pos.z - s.place.z) > 45) continue;
+      const folk = s.built.npcs.filter((n) => n.kind !== 'teacher' && n.kind !== 'stall' && n.kind !== 'child');
+      const n = folk[Math.floor(Math.random() * folk.length)];
+      const line = n && raids.talk(s.place.x, s.place.z, Math.floor(Math.random() * 5));
+      if (line) say(`${n.name}: "${line}"`, 'note');
+      return;
+    }
+  }
 
   // ---------- hunting, cooking and the farms (see husbandry.js) ----------
   husbandry = createHusbandry({
@@ -886,6 +931,23 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (powers.nodeath) { game?.heal(1); if (cause === 'drown' || cause === 'fall') say('Death passes you by.', 'note'); return; }
     dead = true;
     onEvent?.('defeated', { by: m.kind.name, cause });
+  }
+  // Standing in a lit campfire burns you, a little every half second, until you step out (jump over
+  // it and it can't). Inside a city's walls it can't kill you: it leaves you at 1 HP at worst.
+  let burnFor = 0;
+  function stepInFire(dt) {
+    if (!game || dead || airborne || riding?.riding || !husbandry.burningAt(pos.x, pos.z, pos.y)) { burnFor = 0; return; }
+    if (burnFor === 0) say('You stepped in the fire!', 'hurt');
+    burnFor -= dt;
+    if (burnFor > 0) return;
+    burnFor = BURN_EVERY;
+    const full = game.stats().hp;
+    let dmg = Math.max(1, Math.round(full * BURN_SHARE));
+    floatText(`-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
+    lastHurt = clock.elapsedTime;
+    const inCity = builtCities().some((c) => Math.hypot(pos.x - c.place.x, pos.z - c.place.z) < CITY_R);
+    if (inCity) dmg = Math.min(dmg, Math.max(0, Math.ceil(game.character.hp) - 1));
+    if (game.damage(dmg)) defeated({ kind: { name: 'campfire' } }, 'fire');
   }
   // Rise again at the nearest shrine (a city's plaza, a village's waystone or a waypoint)
   function riseAtShrine() {
@@ -1305,6 +1367,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (chest) { openChest(chest); return; }
     if (inside) { useIndoors(); return; }
     if (!depth) {
+      if (sitting) { standUp(); return; }
+      const seat = colosseumHere()?.seatNear(pos.x, pos.z, pos.y);
+      if (seat) { sitDown(seat); onEvent?.('colosseum-seat'); return; }
       const took = game.takeTorch(pos.x, pos.z);
       if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
       if (nearTent(pos.x, pos.z, TENT_IN + 1)) { pitchTent(); return; }
@@ -1420,20 +1485,28 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   // ---------- attacking ----------
   let attackT = -1;      // time since the swing started, or -1
+  let swungAt = -10;     // when you last swung, struck with a skill or cast (others see you swing)
   let swingDone = false;
   let cooldown = 0;
+  // Combos (moves.js): click again soon after a hit and the next swing chains on. Hit 2 is a
+  // flat Cross Cut, hit 3 a Piercing Lunge, then it starts over. A click during a swing is kept
+  // and the next one follows as soon as you can swing again.
+  let comboStep = 1, sinceSwing = 10, comboQueued = false; // (sinceSwing: game seconds since the last swing ended)
+  const meleeNow = () => { const w = game?.weapon(); return !(w?.type === 'bow' || w?.type === 'staff' || (w?.magic && character.cls === 'mage')); };
+  const comboNow = () => (meleeNow() ? COMBOS[game?.weapon() ? 'blade' : 'fist'][comboStep] : COMBOS.fist[1]);
   const FIST = { speed: 0.45, chop: 1 };
   // Inside a city's walls weapons stay put away: no drawing them, no fighting
   let sheathed = false;
   let sheathSaidAt = -10;
   const sayPutAway = () => { if (clock.elapsedTime - sheathSaidAt > 3) { sheathSaidAt = clock.elapsedTime; say('Weapons stay put away inside the city walls', 'note'); } };
-  function showWeapon() { avatar.traverse((o) => { if (o.userData.weapon) o.visible = !sheathed; }); }
+  function showWeapon() { avatar.traverse((o) => { if (o.userData.weapon) o.visible = !sheathed && !swimming; }); }
   function checkSheathed() {
-    const now = !depth && builtCities().some((c) => Math.hypot(pos.x - c.place.x, pos.z - c.place.z) < CITY_R);
+    const now = !depth && builtCities().some((c) => Math.hypot(pos.x - c.place.x, pos.z - c.place.z) < CITY_R) && !onFloor(pos.x, pos.z);
     if (now === sheathed) return;
     sheathed = now;
     showWeapon();
     if (sheathed && game?.weapon()) say('You put your weapon away: no weapons are drawn inside the city', 'note');
+    if (!sheathed && !depth && onFloor(pos.x, pos.z) && game?.weapon()) say('On the Colosseum\'s sand you may draw your weapon', 'note');
   }
   // ---------- your tamed dragon or wyvern, fighting beside you (see riding.js) ----------
   // It goes for the foe you set it on (the dragon key), or else whatever has hit you in the last
@@ -1455,7 +1528,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (sicOn && (!alive(sicOn) || Math.hypot(sicOn.x - pos.x, sicOn.z - pos.z) > 120)) sicOn = null;
     if (lastFoe && (!alive(lastFoe.m) || clock.elapsedTime - lastFoe.at > 25 || Math.hypot(lastFoe.m.x - pos.x, lastFoe.m.z - pos.z) > 60)) lastFoe = null;
     const foe = sicOn || lastFoe?.m || null;
-    if (!foe || dead) { riding.setGoal(null); return; }
+    // told to stay (by voice): it waits on that spot unless it is set on a foe
+    if (!foe || dead) { riding.setGoal(petStay ? { x: petStay.x, z: petStay.z, r: 2, air: 0 } : null); return; }
     const reach = c.breath ? Math.max(9, c.len * 0.7) : c.reach + (foe.radius || 1);
     const foeAir = foe.air || 0;
     riding.setGoal({ x: foe.x, z: foe.z, r: reach - 1, air: foeAir > 4 ? foeAir : undefined });
@@ -1478,6 +1552,70 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (foe && foe !== sicOn) { sicOn = foe; say(`You point at the ${foe.kind.name}. Your ${name} goes for it!`, 'note'); }
     else { sicOn = null; lastFoe = null; say(`Your ${name} comes back to your side`, 'note'); }
   }
+  // ---------- orders spoken aloud (see voicecmd.js and data/voicecmd.mjs) ----------
+  // attack: the foe you face, or the nearest one whose name you said ("attack the wolf");
+  // breathe: a burst of breath at what you face; back: stop and come to you (a horse is called);
+  // stay: wait on this spot; follow: come along again. Returns what happened, as a line to show.
+  let petStay = null;
+  function petOrder(order, what = null) {
+    if (!game || dead) return null;
+    const c = riding?.companion();
+    const m = riding?.mount();
+    if (!c) {
+      // no dragon: a horse, donkey or camel can still be called over
+      if (m && (order === 'back' || order === 'follow')) { riding.toggle(m.item); return null; }
+      if (m) return `Your ${ITEMS[m.item]?.name?.toLowerCase() || 'mount'} only knows "come"`;
+      return 'You have no dragon with you to command. Tame one (a Dragon Bridle on a worn-out one) or hatch an egg';
+    }
+    const name = BEASTS[c.id].name.toLowerCase();
+    if (order === 'attack') {
+      if (what && /\bplayers?\b/.test(what)) return `Your ${name} won't attack other players outside the Colosseum`;
+      let foe = null;
+      if (what) {
+        const words = what.split(' ').filter((w) => w.length > 2);
+        const named = creatures.list.filter((o) => !o.dead && o.hp > 0 && !o.farm && Math.hypot(o.x - pos.x, o.z - pos.z) < 60 && words.some((w) => (o.title || o.kind?.name || '').toLowerCase().includes(w.replace(/s$/, ''))));
+        foe = named.sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0] || null;
+      }
+      foe ||= creatures.target(pos.x, pos.z, heading, 40, 0.6) || lastFoe?.m || null;
+      if (!foe || !alive(foe)) return `Your ${name} looks about, but sees nothing to attack. Face a foe and say it again`;
+      if (c.riding) { riderBreath(); return null; }
+      sicOn = foe; petStay = null;
+      return `Your ${name} goes for the ${foe.title || foe.kind.name}!`;
+    }
+    if (order === 'breathe') {
+      if (c.riding) { riderBreath(); return null; }
+      const foe = creatures.target(pos.x, pos.z, heading, 40, 0.6) || sicOn || lastFoe?.m || null;
+      if (foe && alive(foe)) { sicOn = foe; petStay = null; dragonCd = 0; return `Your ${name} turns on the ${foe.title || foe.kind.name} and breathes!`; }
+      if (dragonCd > 0) return null;
+      dragonCd = 1.5;
+      const far = 14;
+      riding.breathe(() => ({ x: pos.x + Math.sin(heading) * far, y: pos.y + 1, z: pos.z + Math.cos(heading) * far }), 1.1);
+      return null;
+    }
+    if (order === 'stay') {
+      if (c.riding) return `You are on your ${name}'s back`;
+      sicOn = null; lastFoe = null; petStay = { x: c.x, z: c.z };
+      return `Your ${name} stays where it is. Say "follow" to call it along`;
+    }
+    // back / follow
+    sicOn = null; lastFoe = null; petStay = null;
+    return `Your ${name} comes back to your side`;
+  }
+  // a spell said aloud: any spell on the staff in your hand, not only the chosen one
+  function castSpellNamed(id) {
+    if (!game || dead || resting()) return 'busy';
+    if (sheathed) { sayPutAway(); return 'busy'; }
+    const st = game.staff();
+    if (!st) return 'staff';
+    if (!st.spells.includes(id)) return game.character.spells.includes(id) ? 'off' : 'unknown';
+    const sp = SPELLS[id];
+    if (clock.elapsedTime < (spellReady[id] || 0)) return 'cooling';
+    const cost = Math.max(1, Math.round(sp.sp * (game.character.cls === 'mage' ? 0.9 : 1)));
+    if (game.character.sp < cost) return 'sp';
+    castSpell(sp);
+    cooldown = Math.max(cooldown, (game.weapon() || FIST).speed);
+    return 'ok';
+  }
   // breath from your dragon's jaws while you ride it: it burns what is ahead of you
   function riderBreath() {
     const c = riding?.companion();
@@ -1489,15 +1627,22 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const m of foes) dragonHit(m, c, c.breath ? 1 : 0.8);
   }
   function attack() {
-    if (dead || cooldown > 0) return;
+    if (dead) return;
+    if (cooldown > 0) { if (attackT >= 0 || sinceSwing < 0.3) comboQueued = true; return; }
+    comboQueued = false;
     if (riding?.flyer()) { riderBreath(); return; } // (on a dragon's back, it breathes for you)
     if (sheathed) { sayPutAway(); return; }
+    if (swimming) { if (clock.elapsedTime - sheathSaidAt > 3) { sheathSaidAt = clock.elapsedTime; say('You can\'t fight while swimming. Get out of the water first', 'note'); } return; }
     const w = game?.weapon();
     // a bow needs an arrow for every shot
     if (w?.type === 'bow' && !game.has('arrow')) { cooldown = 0.6; say('No arrows. Buy a Bundle of 10 Arrows at a shop or market', 'hurt'); return; }
-    cooldown = (w || FIST).speed;
+    comboStep = meleeNow() && comboStep < 3 && sinceSwing < COMBO_WINDOW ? comboStep + 1 : 1;
+    const c = comboNow();
+    cooldown = (w || FIST).speed * c.time;
     attackT = 0;
     swingDone = false;
+    if (comboStep > 1) floatText(`${c.name}${comboStep === 3 ? '!' : ''}`, pos.clone().add(new THREE.Vector3(0, bodyH + 0.35, 0)), 'crit');
+    swungAt = clock.elapsedTime;
   }
 
   // ---------- arrows ----------
@@ -1526,7 +1671,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!game.giveAway('arrow')) { say('No arrows left', 'hurt'); return; }
     const r = weaponReach(w);
     const from = new THREE.Vector3(pos.x + Math.sin(heading) * 0.5, pos.y + bodyH * 0.78, pos.z + Math.cos(heading) * 0.5);
-    const m = creatures.target(pos.x, pos.z, heading, r.range, r.aim);
+    const m = foeAt(pos.x, pos.z, heading, r.range, r.aim);
     let to;
     if (m) to = new THREE.Vector3(m.x, m.y + m.height * 0.55, m.z);
     else to = new THREE.Vector3(pos.x + Math.sin(heading) * r.range, 0, pos.z + Math.cos(heading) * r.range);
@@ -1580,11 +1725,30 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // skill buffs and potion buffs add together
   const buffed = (stat) => 1 + ((buffs[stat] && clock.elapsedTime < buffs[stat].until ? buffs[stat].pct : 0) + (game?.boostPct(stat) || 0)) / 100;
 
+  // The other fighter in a Colosseum duel (arenaui.js tells where they are): blows, skills and
+  // spells aimed at them work as they do on monsters, but the server works out the damage
+  let duelFoe = null; // () => { x, y, z, height } or null
+  function foeProxy() {
+    const f = duelFoe?.();
+    return f ? { duel: true, x: f.x, y: f.y, z: f.z, height: f.height || 1.8, radius: 0.45, hp: 1, maxHp: 1, def: 0, level: 1, kind: { name: f.name || 'Foe' }, body: { position: new THREE.Vector3(f.x, f.y, f.z) } } : null;
+  }
+  function inArc(m, x, z, h, range, aim = 0.9) {
+    const dx = m.x - x, dz = m.z - z, d = Math.hypot(dx, dz);
+    if (d - m.radius > range) return false;
+    if (d < 0.8) return true;
+    let da = Math.atan2(dx, dz) - h; da = Math.atan2(Math.sin(da), Math.cos(da));
+    return Math.abs(da) < aim;
+  }
+  // the duel foe first (if in reach and in front), then the monsters
+  const foeAt = (x, z, h, range, aim) => { const f = foeProxy(); return f && inArc(f, x, z, h, range, aim ?? 0.9) ? f : creatures.target(x, z, h, range, aim); };
+  const foesAt = (x, z, h, range, arc) => { const f = foeProxy(); const list = creatures.targets(x, z, h, range, arc); return f && inArc(f, x, z, h, range, arc ?? 0.9) ? [f, ...list] : list; };
+
   // Hit a monster with your weapon (or fists); `mult` and `magic` come from skills
   function damageMonster(m, mult = 1, magic = null, how = null, shotWith = null) {
     const w = shotWith || game?.weapon();
     const s = game.stats();
     const useMagic = magic ?? !!w?.magic;
+    if (m.duel) { onEvent?.('duel-hit', { mult: (w || magic !== null ? 1 : 0.6) * mult, magic: !!useMagic }); return 1; }
     let dmg = (w || magic !== null ? (useMagic ? s.matk * buffed('matk') : s.atk) : s.base.atk * 0.6 + 2) * mult * buffed('atk');
     dmg = dmg * (0.9 + Math.random() * 0.2) - m.def * 0.5;
     const crit = Math.random() < 0.1 + Math.min(character.stats.dex * 0.002, 0.25);
@@ -1628,6 +1792,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
   function finishHit(m, reward) {
+    if (m.practice) { if (reward) { m.onYield?.(); setTimeout(() => creatures.removeWhere((q) => q === m), 2500); } return; }
     // a hunter says Allah's name over the animal as they strike (halal hunting)
     if (m.kind.animal?.meat && !m.named) { m.named = true; floatText('Bismillah, Allahu Akbar', new THREE.Vector3(m.x, m.y + m.height + 0.9, m.z), 'note'); }
     if (reward?.animal) {
@@ -1703,7 +1868,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (sk.type === 'strike' || sk.type === 'bolt') {
       // with nobody in reach the skill still goes off, into the air in front of you
-      const m = creatures.target(pos.x, pos.z, heading, sk.type === 'bolt' ? sk.reach : reachNear + 0.4);
+      const m = foeAt(pos.x, pos.z, heading, sk.type === 'bolt' ? sk.reach : reachNear + 0.4);
       if (m) {
         look.to = { x: m.x, y: m.y, z: m.z, h: m.height };
         hitFoe(m, sk.mult, sk.magic || null);
@@ -1714,6 +1879,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     } else if (sk.type === 'sweep') {
       const near = creatures.list.filter((m) => !m.dead && !m.farm && Math.hypot(m.x - pos.x, m.z - pos.z) - m.radius < sk.radius);
+      const f = foeProxy();
+      if (f && Math.hypot(f.x - pos.x, f.z - pos.z) - f.radius < sk.radius) near.unshift(f);
       for (const m of near) hitFoe(m, sk.mult, sk.magic || null);
     } else if (sk.type === 'dash') {
       // rush forward, stopping at the first foe in the way
@@ -1722,7 +1889,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         pos.x += Math.sin(heading) * 0.4; pos.z += Math.cos(heading) * 0.4;
         colliders.push(pos, bodyR);
         look.path.push(new THREE.Vector3(pos.x, heightAt(pos.x, pos.z) + bodyH * 0.5, pos.z));
-        const m = creatures.target(pos.x, pos.z, heading, reachNear);
+        const m = foeAt(pos.x, pos.z, heading, reachNear);
         if (m) { hitFoe(m, sk.mult, null); break; }
       }
       pos.y = Math.max(pos.y, heightAt(pos.x, pos.z));
@@ -1738,6 +1905,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // moment the blow lands: the dust flies as the stamping foot comes down
     const mv = moveFor(sk);
     attackT = -1;
+    swungAt = clock.elapsedTime;
     skillPose = { move: mv, t: 0, dur: mv.dur };
     if (mv.hit > 0) setTimeout(() => skillFx.play(sk, look), mv.dur * mv.hit * 1000);
     else skillFx.play(sk, look);
@@ -1750,13 +1918,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let spellTurn = 0;
   const SPELL_REACH = 14;
   const spellReady = {}; // spell id -> clock time it can be cast again
-  function castSpell() {
+  function castSpell(pick = null) {
     const c = game.character;
     const els = c.elements?.length ? c.elements : [RACES[c.race].element];
     const from = new THREE.Vector3(pos.x + Math.sin(heading) * 0.5, pos.y + bodyH * 0.7, pos.z + Math.cos(heading) * 0.5);
     const ahead = (d) => new THREE.Vector3(pos.x + Math.sin(heading) * d, pos.y + bodyH * 0.6, pos.z + Math.cos(heading) * d);
     const at = (m) => new THREE.Vector3(m.x, m.y + m.height * 0.6, m.z);
-    const sp = game.chosenSpell();
+    const sp = pick || game.chosenSpell();
     const cost = sp ? Math.max(1, Math.round(sp.sp * (c.cls === 'mage' ? 0.9 : 1))) : 0;
     if (sp && SELF_KINDS.includes(sp.kind) && clock.elapsedTime >= (spellReady[sp.id] || 0) && c.sp >= cost) {
       // a spell on yourself: heal, guard (+DEF) or empower (+MATK); the Dark Side's are stronger too
@@ -1779,17 +1947,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (sp && !SELF_KINDS.includes(sp.kind) && clock.elapsedTime >= (spellReady[sp.id] || 0) && c.sp >= cost) {
       let foes = [], to;
       if (sp.kind === 'bolt' || sp.kind === 'burst') {
-        const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
+        const m = foeAt(pos.x, pos.z, heading, SPELL_REACH);
         if (m) {
           foes = [m];
           if (sp.kind === 'burst') foes.push(...creatures.list.filter((o) => o !== m && !o.dead && !o.farm && Math.hypot(o.x - m.x, o.z - m.z) - o.radius < 3.5));
           to = at(m);
         } else to = ahead(SPELL_REACH);
       } else if (sp.kind === 'nova') {
-        foes = creatures.targets(pos.x, pos.z, heading, 6, Math.PI);
+        foes = foesAt(pos.x, pos.z, heading, 6, Math.PI);
         to = null;
       } else {
-        foes = creatures.targets(pos.x, pos.z, heading, SPELL_REACH, 0.25).slice(0, 3);
+        foes = foesAt(pos.x, pos.z, heading, SPELL_REACH, 0.25).slice(0, 3);
         to = foes.length ? at(foes[foes.length - 1]) : ahead(SPELL_REACH);
       }
       for (const m of foes) {
@@ -1811,7 +1979,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (sp && c.sp < cost && !castSpell.warned) { castSpell.warned = true; say(`Not enough SP for ${sp.name}`, 'hurt'); setTimeout(() => { castSpell.warned = false; }, 3000); }
     const element = els[spellTurn++ % els.length];
-    const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
+    const m = foeAt(pos.x, pos.z, heading, SPELL_REACH);
     let to;
     if (m) { to = at(m); damageMonster(m, 1, true, howOf({ element })); }
     else to = ahead(SPELL_REACH);
@@ -1992,10 +2160,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (w?.type === 'staff' || (w?.magic && character.cls === 'mage')) { castSpell(); return; }
     if (w?.type === 'bow') { shootArrow(w); return; }
     const r = weaponReach(w);
+    // a combo's later hits: the Cross Cut sweeps wider and catches one more foe, the Lunge reaches further and hits hardest
+    const c = comboNow();
+    r.arc *= c.arc || 1; r.hits += c.hits || 0; r.reach *= c.reach || 1;
     const reach = bodyR + r.reach * Math.max(0.8, bodyH / 1.8);
     // monsters first: a long or wide weapon can catch more than one
-    const foes = creatures.targets(pos.x, pos.z, heading, reach, r.arc).slice(0, r.hits);
-    if (foes.length) { foes.forEach((m, i) => damageMonster(m, r.sharp * (i ? 0.7 : 1))); return; }
+    const foes = foesAt(pos.x, pos.z, heading, reach, r.arc).slice(0, r.hits);
+    if (foes.length) { foes.forEach((m, i) => damageMonster(m, r.sharp * c.mult * (i ? 0.7 : 1))); return; }
     // then bushes and small trees in front of you
     const fx = pos.x + Math.sin(heading) * reach * 0.6, fz = pos.z + Math.cos(heading) * reach * 0.6;
     let best = null, bestD = Infinity;
@@ -2117,8 +2288,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   });
   document.addEventListener('mousemove', (e) => {
     if (!locked() || windowOpen?.()) return;
-    yaw -= e.movementX * 0.0025;
-    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018, pitchLo(), pitchHi());
+    yaw -= e.movementX * 0.0025 * feel.mouse;
+    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018 * feel.mouse * (feel.invertY ? -1 : 1), pitchLo(), pitchHi());
   });
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && locked()) { if (e.button === 0 && !talkAt(window.innerWidth / 2, window.innerHeight / 2)) attack(); return; }
@@ -2161,9 +2332,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     } else if (look && e.pointerId === look.id) {
       // a finger turns the camera more gently than a mouse, so small swipes are small turns
-      const k = look.mouse ? 1 : 0.55;
+      const k = look.mouse ? feel.mouse : 0.55 * feel.touch;
       yaw -= (e.clientX - look.x) * 0.006 * k;
-      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k, pitchLo(), pitchHi());
+      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k * (feel.invertY ? -1 : 1), pitchLo(), pitchHi());
       look.x = e.clientX; look.y = e.clientY;
     }
   });
@@ -2194,7 +2365,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function zoomBy(deltaY) {
     if (viewMode === 'first') { if (deltaY > 0) setView('third', true); }
     else if (dist <= 2 && deltaY < 0) setView('first', true);
-    else dist = THREE.MathUtils.clamp(dist + deltaY * 0.01, 2, 30);
+    else dist = THREE.MathUtils.clamp(dist + deltaY * 0.01 * feel.zoom, 2, 30);
   }
   canvas.addEventListener('wheel', (e) => { zoomBy(e.deltaY); e.preventDefault(); }, { passive: false });
   // catch the mouse for the camera again (after the chat, or the Free the mouse key); a key press
@@ -2244,6 +2415,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     return Math.hypot(px - e.x, pz - e.z) < Math.min(e.r * (e.kind === 'wall' ? 1.2 : 4), 3.5);
   };
   let swimming = false;
+  let wasSwimming = false, weaponWet = false; // (the swim pose is showing; the weapon is hidden for it)
   const tmpS = {};
   const v3 = new THREE.Vector3();
 
@@ -2278,6 +2450,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const bladeHeld = () => { const w = game?.weapon(); return !sheathed && !!w && w.type !== 'spear' && w.type !== 'staff' && w.type !== 'bow'; };
   function poseAttack(rig, k, armed) {
     const arm = rig.arms?.[0];
+    if (comboStep > 1 && meleeNow()) { poseCombo(rig, comboStep, k, armed, bladeHeld() ? READY : [0, -0.3]); return; }
     if (arm) {
       if (armed && game?.weapon()?.type === 'bow') {
         // a shot: the bow arm comes up straight ahead, the other hand draws the string back to the
@@ -2367,11 +2540,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (cameraMode === 'follow' && !fp) {
       // Follow camera: left and right turn your body, forward and back walk the way you face,
       // and the camera swings round behind you
-      heading -= fx * dt * (running ? STEER_RUN : STEER);
+      heading -= fx * dt * (running ? STEER_RUN : STEER) * feel.turn;
       if (Math.abs(fz) > 0.05) {
         const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
         move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
-        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
+        target = (running && fz > 0 ? RUN : WALK) * (fz < 0 ? 0.6 : 1) * agiSpeed() * (1 + (game?.boostPct('speed') || 0) / 100) * Math.min(1, Math.abs(fz)) * bodyPace() * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
       }
       if (!look) {
         const back = Math.atan2(Math.sin(heading + Math.PI - yaw), Math.cos(heading + Math.PI - yaw));
@@ -2381,7 +2554,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // Steering: while you go forward (walking or sprinting), left and right turn you gently,
       // as much as you press, and the camera turns with you. Only sideways on its own steps sideways.
       const steering = fz > 0.1 && !look && !fp; // in first person, left and right step sideways
-      if (steering) { const turn = fx * dt * (running ? STEER_RUN : STEER); yaw -= turn; backYaw -= turn; }
+      if (steering) { const turn = fx * dt * (running ? STEER_RUN : STEER) * feel.turn; yaw -= turn; backYaw -= turn; }
       const ya = aboutFace ? backYaw : yaw; // turning round: walk the new way while the camera catches up
       const camFwd = v3.set(-Math.sin(ya), 0, -Math.cos(ya));
       const side = steering ? fx * 0.25 : fx; // a slight lean into the turn instead of a sharp angle
@@ -2398,7 +2571,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (Math.abs(back) < 2) { const turn = back * Math.min(1, dt * 2.2) * Math.min(1, amount); yaw += turn; backYaw += turn; }
       }
       // move the way you want to go, even while still turning to face it
-      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed * (1 + (game?.boostPct('speed') || 0) / 100) * amount * Math.max(0.85, Math.sqrt(bodyH / 1.8)) * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
+      target = (running && fz > -0.1 ? RUN : WALK) * (fp && fz < -0.1 ? 0.6 : 1) * agiSpeed() * (1 + (game?.boostPct('speed') || 0) / 100) * amount * bodyPace() * (swimming ? SWIM : 1) * (game?.injurySpeed() ?? 1) * (husbandry?.dragSlow() ?? 1) * (riding?.pace(running, WALK, RUN) ?? 1) * (powers.speed ? 3 : 1);
     }
     speedNow += (target - speedNow) * Math.min(1, dt * 8);
     if (speedNow > 0.01) {
@@ -2426,6 +2599,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
 
+    // in a Colosseum fight: kept on the sand (the gates are shut to the fighters)
+    if (arenaLock && !inside && !depth) {
+      const c = colosseumPlace(), dx = pos.x - c.x, dz = pos.z - c.z, d = Math.hypot(dx, dz), max = FLOOR_R - 0.7;
+      if (d > max) { pos.x = c.x + (dx / d) * max; pos.z = c.z + (dz / d) * max; }
+    }
     // The city moats are deep: those who live in the city are hauled out by the watch, and anyone
     // who doesn't belong there (a monster in a players' city, a player in a Monster City) drowns
     if (!inside && !depth && !dead && !airborne && t - moatAt > 1) {
@@ -2467,7 +2645,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       pos.y = Math.min(Math.max(pos.y, ground), ground + 600);
       velY = 0; airborne = pos.y > ground + 0.05; fallFrom = pos.y;
     }
-    else if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = riding?.jump() ?? (game?.injurySpeed() < 1 ? 1.6 : 4.2); airborne = true; fallFrom = pos.y; }
+    else if ((held('jump') || jumpQueued) && !airborne && !swimming && !dead) { velY = riding?.jump() ?? (game?.injurySpeed() < 1 ? 2.4 : JUMP_V + Math.min(character.stats.agi * 0.01, 0.9)); airborne = true; fallFrom = pos.y; }
     jumpQueued = false;
     // walking down a slope keeps your feet on it; only a real drop (a cliff, a ledge) is a fall
     const drop = pos.y - ground;
@@ -2520,8 +2698,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       avatar.position.y = pos.y + riding.saddle() - hipY + bodyH * 0.01;
     }
     if (sitting) { poseSit(rig); avatar.position.y = sitting.y + 0.5 - bodyH * 0.27; }
+    // swimming: a front crawl when you move, treading water when you stay still (moves.js); in first
+    // person you stay upright so the view doesn't tip
+    else if (swimming && !onHorse && !dead && !sleeping) { poseSwim(avatar, pos.x, pos.y, pos.z, heading, t, speedNow / (WALK * SWIM), !!eyes); wasSwimming = true; }
     // a blade (sword, axe, club...) is held ready: the hand in front at the waist, the blade pointing ahead
     else if (bladeHeld() && !sleeping && !dead && rig.arms) { rig.arms[0].shoulder.rotation.x = READY[0]; rig.arms[0].elbow.rotation.x = READY[1]; }
+    if (wasSwimming && !(swimming && !onHorse && !dead && !sleeping)) { wasSwimming = false; endSwim(avatar); }
+    if (swimming !== weaponWet) { weaponWet = swimming; showWeapon(); }
     moveHelper(dt, t);
     moveGuard(dt, t);
     others.tick(dt, t);
@@ -2530,15 +2713,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // Attacks
     cooldown = Math.max(0, cooldown - dt);
     if (attackT >= 0) {
-      const dur = Math.max(0.25, (game?.weapon() || FIST).speed * 0.8);
+      const dur = Math.max(0.25, (game?.weapon() || FIST).speed * 0.8) * comboNow().time;
       attackT += dt;
       const k = attackT / dur;
       poseAttack(rig, Math.min(1, k), !!game?.weapon());
-      if (!swingDone && k > 0.45) { swingDone = true; resolveSwing(); }
-      if (k >= 1) attackT = -1;
-    }
+      // (the Lunge lands as the blade drives home, a little later than a cut)
+      if (!swingDone && k > (comboStep === 3 && meleeNow() ? 0.5 : 0.45)) { swingDone = true; resolveSwing(); }
+      if (k >= 1) { attackT = -1; sinceSwing = 0; }
+    } else sinceSwing += dt;
     checkSheathed();
-    if (held('attack') && cooldown <= 0 && attackT < 0) attack();
+    if ((held('attack') || comboQueued) && cooldown <= 0 && attackT < 0) attack();
 
     // Fatigue: it builds while you're awake (faster when running) and falls while you sleep.
     // At 100 you collapse where you stand, and monsters may find you.
@@ -2601,6 +2785,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     land.animate(t);
     for (const k of skyCards.values()) { k.card.group.visible = !inside && !depth && Math.hypot(pos.x - k.place.x, pos.z - k.place.z) < 1500; if (k.card.group.visible) k.card.update(t, 42); }
     creatures.update(dt, t);
+    raids?.tick(dt); townChatter(dt);
     tickEffects(dt);
     tickArrows(dt);
     skillFx.update(dt);
@@ -2745,16 +2930,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const k = skyCards.get(s.place.id);
         if (!inside && !depth && game && ceremonyDue(game.character) && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 12) s.ceremonyAt = t;
         // (yours: they stay a little while after, until your card shows in the sky)
-        s.built.gather(t - (s.ceremonyAt ?? -1e9) < 30 || (!!k && realmNow() - k.at < GATHER_MS));
+        s.built.gather(t - (s.ceremonyAt ?? -1e9) < 30 || (!!k && realmNow() - k.at < GATHER_MS) || !!raids?.gatherAt(s.place));
       }
     }
     for (const q of mobVillages.values()) q.built.update(t, pos, creatures.list);
-    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); dragonFight(dt); hatchery?.tick(dt, t); }
+    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); dragonFight(dt); hatchery?.tick(dt, t); stepInFire(dt); }
     walkBuild?.update();
     sky.follow(camera);
 
     if (camOverride) { camera.position.set(...camOverride[0]); camera.lookAt(...camOverride[1]); avatar.visible = !!camOverride[2]; }
-    if (t - lastCrowd > 0.25) { lastCrowd = t; updateCrowd(camera.position.x, camera.position.y, camera.position.z, scene); }
+    if (t - lastCrowd > 0.1) { lastCrowd = t; updateCrowd(camera.position.x, camera.position.y, camera.position.z, scene); }
     renderer.render(scene, camera);
 
     // floating text rises and fades
@@ -2893,17 +3078,30 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     },
     // on a flying mount: the phone's dive button (held) and whether you are in the air
     flyDown(on) { flyDown = !!on; },
+    // monster attacks on the towns (the list from the server, every few seconds)
+    setRaids(list) { raids.set(list); setCityGates(); },
+    // what a townsperson says about the news, if there is any where they live
+    raidTalk: (n, speaker = 0) => raids.talk(n.x, n.z, speaker),
+    debugRaids: () => raids.debugList(),
+    // the realm's keepers bring slain great beasts back to life (`kind`: a beast id, or 'all')
+    reviveBeasts(kind = 'all') {
+      const n = creatures.revive(allLairs().filter((L) => kind === 'all' || L.kind === kind).map((L) => L.id));
+      if (n) say(kind === 'all' ? 'The great beasts stir in their lairs again…' : `The ${BEASTS[kind]?.name || 'beast'} returns to its lair…`, 'note');
+      return n;
+    },
     commandDragon: () => commandDragon(),
+    petOrder, castSpellNamed,
+    petNow: () => { const c = riding?.companion(), m = riding?.mount(); return c ? { kind: 'dragon', id: c.id, item: m?.item, name: BEASTS[c.id].name } : m ? { kind: 'mount', id: m.id, item: m.item, name: ITEMS[m.item]?.name } : null; },
     get hasDragon() { return !!riding?.companion(); },
-    // an admin's Dragon radar: every dragon and wyvern lair, and where the beast is now if it is near
+    // an admin's Dragon radar: every dragon and wyvern lair and the Spirit King's lake, and where the
+    // beast is now if it is near
     radar() {
       const out = [];
       for (const L of allLairs()) {
         const b = BEASTS[L.kind];
-        if (b.shape === 'spirit') continue;
         const m = creatures.list.find((q) => q.lair === L && !q.dead);
         const x = m ? m.x : L.x, z = m ? m.z : L.z;
-        out.push({ id: L.id, name: b.name, king: !!b.king, boss: !!b.boss, wyvern: b.shape === 'wyvern', x, z, dist: Math.hypot(x - pos.x, z - pos.z),
+        out.push({ id: L.id, name: b.name, king: !!b.king, boss: !!b.boss, wyvern: b.shape === 'wyvern', spirit: b.shape === 'spirit', x, z, dist: Math.hypot(x - pos.x, z - pos.z),
           seen: !!m, air: m ? Math.round(m.air || 0) : 0, hp: m ? Math.round(100 * m.hp / m.maxHp) : null, backIn: creatures.slainIn(L.id) });
       }
       return { x: pos.x, z: pos.z, yaw, beasts: out.sort((a, b) => a.dist - b.dist) };
@@ -2914,14 +3112,60 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // for seeing each other: exactly where you are and what you are doing, and which place you are in
     presence() {
       const place = depth ? `cave:${String(depth.cave.id).replace(/[^\w-]/g, "_").slice(0, 40)}` : inside ? `in:${String(inside.shop.id || 'room').replace(/[^\w-]/g, '_').slice(0, 40)}:${Math.round(inside.shop.x)},${Math.round(inside.shop.z)}` : 'out';
-      const pose = dead || sleeping || collapsed > 0 ? 'lie' : sitting ? 'sit' : riding?.flying ? 'fly' : riding?.riding ? 'ride' : '';
+      const pose = dead || sleeping || collapsed > 0 ? 'lie' : sitting ? 'sit' : riding?.flying ? 'fly' : riding?.riding ? 'ride' : clock.elapsedTime - swungAt < 0.6 ? 'swing' : swimming ? 'swim' : '';
       // your dragon (ridden or beside you) or your hatchling, for everyone to see
       const c = riding?.companion(), h = hatchery?.petSpot();
       const pet = c ? { k: c.id, x: c.x, y: c.y, z: c.z, h: c.heading, air: c.air } : h ? { k: `h:${h.kind}`, x: h.x, y: h.y, z: h.z, h: h.heading, air: h.air, s: h.scale } : null;
-      return { x: avatar.position.x, y: avatar.position.y, z: avatar.position.z, heading, speed: speedNow, place, pose, pet };
+      // (a swimmer's body is tipped and moved about the hips: send where they really are)
+      const at = pose === 'swim' ? pos : avatar.position;
+      return { x: at.x, y: at.y, z: at.z, heading, speed: speedNow, place, pose, pet };
     },
     showOthers: (list) => others.show(list),
     moveOther: (m) => others.move(m),
+    // ---------- the Colosseum (see arenaui.js) ----------
+    // the other fighter, for your blows to find; a fighter is kept on the sand during a fight
+    setDuelFoe(fn) { duelFoe = fn || null; },
+    otherPlayer: (id) => others.get(id),
+    lockToFloor(on) { arenaLock = !!on; },
+    colosseum: () => colosseumHere(),
+    // where you are in it: 'floor', 'stands' or null
+    inColosseum() {
+      if (inside || depth) return null;
+      if (onFloor(pos.x, pos.z)) return 'floor';
+      return inColosseumAt(pos.x, pos.z) ? 'stands' : null;
+    },
+    // summoned: straight onto the sand at this spot, facing this way
+    goTo(x, z, h) {
+      if (dead) return false;
+      if (depth) leaveDepths();
+      if (inside) leaveBuilding();
+      if (sleeping) toggleSleep();
+      if (sitting) sitting = null;
+      if (riding?.riding) riding.dismount(true);
+      pos.set(x, 0, z);
+      updateSites(pos.x, pos.z);
+      land.update(pos.x, pos.z, Infinity);
+      pos.y = groundAt(pos.x, pos.z, -1e4);
+      velY = 0; speedNow = 0; autoWalk = false;
+      if (h !== undefined) { heading = h; yaw = h + Math.PI; }
+      snapCam = true;
+      saveNow();
+      return true;
+    },
+    floatAt(text, x, y, z, kind = 'dmg') { floatText(text, new THREE.Vector3(x, y, z), kind); },
+    floatOnMe(text, kind = 'hurt') { floatText(text, pos.clone().add(new THREE.Vector3(0, bodyH + 0.2, 0)), kind); },
+    cheer(on) { colosseumHere()?.cheer(on); },
+    // a practice bout: a Gladiator of about your level on the sand (`onStrike(dmg)` when it hits you,
+    // `onYield()` when it is beaten)
+    practice(level, { onStrike, onYield }) {
+      const col = colosseumHere();
+      if (!col) return null;
+      creatures.removeWhere((q) => q.practice);
+      const spot = startSpots()[1];
+      const m = creatures.spawnAt('gladiator', level, spot.x, spot.z, { practice: true, keep: true, hurtBy: true, title: 'Gladiator', onStrike, onYield });
+      m.angry = true; m.heading = spot.heading;
+      return { stop: () => creatures.removeWhere((q) => q === m), hp: () => ({ hp: Math.max(0, Math.round(m.hp)), max: m.maxHp }) };
+    },
     get othersNear() { return others.count(); },
     debugOthers: () => others.list(),
     // where you are out in the world (the door you came in by, while indoors)
@@ -2965,6 +3209,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     digPit: (x, z) => oil?.pit(x, z, heading),
     plantSeed: (id) => (!inside && !depth ? crops?.plantSeed(id) : 'inside'),
     callMount: (id) => riding?.toggle(id),
+    // the realm's keepers move a pet (see gifts.js): to you, home, and whether you are flying on it
+    petCome: (id) => riding?.come(id) || 'none',
+    petHome: (id) => riding?.putAway(id) || 'none',
+    petFlying: (id) => !!riding?.flyingOn(id),
     placeEgg: (id) => hatchery?.placeEgg(id),
     debugHatchery: () => hatchery?.debug(),
     debugWarmEggs: (secs) => hatchery?.debugWarm(secs),
@@ -3122,6 +3370,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debug: { scene, renderer, camera }, // (tests: what is drawn, and how much)
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     setCameraFollow(on) { camFollow = on !== 'off' && on !== false; },
+    setFeel,
     setView(mode) { setView(mode); },
     // order a drink in the tavern: `served` runs when the waiter brings it to you (wherever you are inside)
     tavernOrder(served) { if (inside?.built.order) inside.built.order(() => ({ x: pos.x, z: pos.z }), served); },
@@ -3129,6 +3378,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     stop() {
       saveNow();
       renderer.setAnimationLoop(null);
+      raids?.dispose();
       creatures.clear();
       others.clear();
       skillFx.clear();

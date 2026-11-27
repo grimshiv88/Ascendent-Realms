@@ -2,7 +2,7 @@
 // ground levelled for good (2 x 2 land plots, 40 m square). Each has a vegetable field, a pen of
 // farm animals, a chicken yard, a barn, a Farm Stand and a Halal Butcher. A farm's front (its
 // local +z, where the stand and the butcher are) faces the town.
-import { placesWithPositions, sample, PLOT, addFixedFlats, safeRadius, riverDistance } from './world-layout.mjs';
+import { placesWithPositions, sample, PLOT, addFixedFlats, safeRadius, riverDistance, CITY_R } from './world-layout.mjs';
 
 export const FARM_HALF = PLOT; // 20 m either side of the middle
 const ANGLES = [Math.PI / 2, -Math.PI / 2, Math.PI / 4, -Math.PI / 4, (3 * Math.PI) / 4, (-3 * Math.PI) / 4]; // never in front of the gates (north and south)
@@ -25,7 +25,9 @@ function findSpot(p, others) {
       if (!ok || Math.max(...hs) - Math.min(...hs) > 7) continue;
       if (riverDistance(x, z) < 40) continue;
       // clear of every town, cave and other farm
-      if (placesWithPositions().some((q) => Math.hypot(q.x - x, q.z - z) < (q.cave ? 90 : safeRadius(q) + 30))) continue;
+      // (and clear of a great city's own levelled ground with room for the slope between them: the
+      // Central City's farm stood right against it, 3 m higher, and its barn hung out over the drop)
+      if (placesWithPositions().some((q) => Math.hypot(q.x - x, q.z - z) < (q.cave ? 90 : q.city ? CITY_R + 75 : safeRadius(q) + 30))) continue;
       if (others.some((f) => Math.hypot(f.x - x, f.z - z) < 80)) continue;
       const flat = Math.round((hs.reduce((s, h) => s + h, 0) / hs.length) * 10) / 10;
       // turned in quarter turns so its front faces the town

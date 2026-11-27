@@ -25,7 +25,7 @@ export const INJURY = {
   ribs: { name: 'Broken ribs', effect: 'Your SP is 30% lower.' },
 };
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
-import { portalById, portalFee, portalOpen } from './data/portals.mjs';
+import { portalById, portalFee, portalOpen, portalShut } from './data/portals.mjs';
 import { actionFor, FIXED_KEYS } from './data/controls.mjs';
 import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, randomSkill } from './data/skills.mjs';
 import { SPELLS, randomSpell, staffSlots } from './data/spells.mjs';
@@ -70,6 +70,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   c.fatigue ??= 0;
   c.hunger ??= HUNGER_MAX; // how full you are (data/hunger.mjs)
   c.crops = cleanBeds(c.crops); // the beds you have planted (data/crops.mjs)
+  c.petNames ??= {}; // what you named your dragon or mount (by its item id), for voice commands
   c.mount ??= null; // where you left your mount: { item, x, z }
   c.trained = { atk: 0, def: 0, matk: 0, mdef: 0, hp: 0, ...(c.trained || {}) }; // Stat Points put straight into ATK, DEF, MATK, MDEF or HP
   c.caves ??= {}; // cave id -> when you last beat its boss
@@ -150,7 +151,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
     journey: c.journey || null, tradesTaken: c.tradesTaken || [], room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), hunger: Math.round(c.hunger), crops: c.crops, mount: c.mount || null, torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, dayPass: c.dayPass || null, country: c.country || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
-    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null,
+    spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null, petNames: c.petNames || {},
   });
 
   // worn gear doesn't take up room in the bag
@@ -648,10 +649,12 @@ export function createProgress(c, { save, onChange, onEvent }) {
     canHire: () => c.cls === 'potion_maker',
     makerHired: () => false,
     // Pay a portal's fee to go to another portal on the same continent
-    usePortal(fromId, toId) {
+    usePortal(fromId, toId, access = {}) {
       const from = portalById(fromId), to = portalById(toId);
       if (!from || !to || from === to) return 'pick';
       if (from.region !== to.region) return 'sea';
+      // the castle's private portal serves only the castle's own people
+      if (portalShut(from, access) || portalShut(to, access)) return 'private';
       // only to where the monsters are your level or lower
       if (!portalOpen(to, c.level)) return 'level';
       const fee = portalFee(from, to);

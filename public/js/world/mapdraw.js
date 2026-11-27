@@ -1,6 +1,6 @@
 // Draws the world map onto a canvas (1600 × 1000). Used by the map page and the in-game map.
 import { allLairs, BEASTS } from '../data/beasts.mjs';
-import { REGIONS, PLACES, RIVERS, LAKE, LAKES, SECTIONS, METRES_PER_PX, sectionAt, noise1, toMap } from '../data/world-layout.mjs';
+import { REGIONS, PLACES, RIVERS, LAKE, LAKES, SECTIONS, METRES_PER_PX, sectionAt, noise1, toMap, frozenLake } from '../data/world-layout.mjs';
 
 let cache = null;
 
@@ -179,10 +179,11 @@ function paint(ctx, W, H) {
   const lake = blobPath(LAKE.x, LAKE.y, LAKE.r, LAKE.seed, LAKE.stretch, LAKE.wobble);
   trace(lake); ctx.fillStyle = '#6fa3b0'; ctx.fill(); ctx.strokeStyle = '#3b5a68'; ctx.lineWidth = 1.6; ctx.stroke();
   scatter('mire', 120, 18, (x, y) => tuft(x, y), (x, y) => !inside(lake, x, y) && Math.hypot((x - LAKE.x) / 1.5, y - LAKE.y) > 82);
-  // the smaller lakes everywhere
+  // the smaller lakes everywhere (Frostreach's are frozen: pale ice)
   LAKES.forEach(([x, y, r], i) => {
     trace(blobPath(x, y, Math.max(1.6, r), 60 + i, [1.2, 0.85], 0.2));
-    ctx.fillStyle = '#6fa3b0'; ctx.fill(); ctx.strokeStyle = '#3b5a68'; ctx.lineWidth = 0.8; ctx.stroke();
+    const ice = frozenLake(i);
+    ctx.fillStyle = ice ? '#c4dce6' : '#6fa3b0'; ctx.fill(); ctx.strokeStyle = ice ? '#7a9aa8' : '#3b5a68'; ctx.lineWidth = 0.8; ctx.stroke();
   });
   // Temple in the lake
   ctx.fillStyle = '#e8dcb8'; ctx.strokeStyle = '#3b2a17'; ctx.lineWidth = 1.2;

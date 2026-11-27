@@ -8,6 +8,7 @@
 import { RACES, CLASSES, STARTER_CLASSES, APPEARANCE, newCharacter } from './game-data.mjs';
 import { PLACES, toWorld } from './world-layout.mjs';
 import { cityPlan } from './citylayout.mjs';
+import { COLOSSEUM, underColosseum } from './arena.mjs';
 
 export const BORN_AGE = 4;
 export const CEREMONY_AGE = 7;
@@ -30,8 +31,13 @@ export { CASTLE_SPOT, ACADEMY_W, ACADEMY_D } from './citylayout.mjs';
 // The family houses (shacks, town houses and manors). Each: { i, x, z, rot (facing), fx, fz (the
 // way the door faces), w (its front), d, floors, doorX (the door's place along the front), door:
 // { x, z } (the door's offset from the middle), tier ('dump', 'common' or 'noble'), style }
+// (in the Central City, the shacks where the Colosseum now stands are gone: nobody is born there)
+const CLEARED = new Map();
 export function cityHouses(placeId) {
-  return cityPlan().family;
+  const list = cityPlan().family;
+  if (placeId !== COLOSSEUM.city) return list;
+  if (!CLEARED.has(placeId)) CLEARED.set(placeId, list.map((h) => (underColosseum(placeId, h.x, h.z, Math.max(h.w, h.d) / 2 + 2) ? { ...h, gone: true } : h)));
+  return CLEARED.get(placeId);
 }
 export const houseCount = (placeId) => cityHouses(placeId).length;
 

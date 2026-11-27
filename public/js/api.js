@@ -1032,6 +1032,12 @@ export async function playerProfile(name) {
   }
   return request(`api/players/${encodeURIComponent(name)}`);
 }
+// A gift or a pet order from the realm's keepers (see server/gifts.js): `act` is 'seen' (the
+// pop-up was shown), 'open' (unwrap it: gives back what is inside) or 'done' (a pet order carried out)
+export async function giftAct(id, act) {
+  if (await isPreviewMode()) throw new Error('Gifts come from the Admin Board of the online game.');
+  return request('api/gifts', { method: 'POST', body: { id, act } });
+}
 export async function socialPoll(after = 0) {
   if (await isPreviewMode()) {
     await previewSocial.sync();
@@ -1392,4 +1398,19 @@ export async function presenceLeave() {
 export async function voicePass() {
   if (await isPreviewMode()) throw new Error('Voice chat works on the live game only, not in this preview.');
   return request('api/voice/pass', { method: 'POST', body: {} });
+}
+
+// ---------- the Colosseum: duels and the Weekly Championship (see server/arena.js) ----------
+// The preview page has nobody else in it: only the practice bout works there.
+export async function arenaBoard() {
+  if (await isPreviewMode()) {
+    const A = await import('./data/arena.mjs');
+    const week = A.cupStart();
+    return { ok: true, preview: true, me: { wins: 0, losses: 0, cupWins: 0, mailDuels: true, mailCup: true }, live: [], cup: { week, drawAt: week - A.CUP.drawBefore, roundMs: A.CUP.roundMs, drawn: false }, duels: [], champion: null };
+  }
+  return request('api/arena');
+}
+export async function arenaAct(body) {
+  if (await isPreviewMode()) throw new Error('Duels and the championship are between real players, on the live game. Here in the preview, try a practice bout.');
+  return request('api/arena', { method: 'POST', body });
 }

@@ -9,6 +9,7 @@ const { pickUnique, uniqueSlot, APPRAISAL_AWAY_MS, rankProofs, climbedRank, rank
 const { SKILLS } = require('../public/js/data/skills.mjs');
 const { ITEMS, EFFECTS } = require('../public/js/data/items.mjs');
 const { SPELLS } = require('../public/js/data/spells.mjs');
+const { cleanPetName } = require('../public/js/data/voicecmd.mjs');
 const { CARD_RANKS } = require('../public/js/data/guildcard.mjs');
 const { VILLAGE_RACES } = require('../public/js/data/mobvillages.mjs');
 const { LIVES, UNDYING_LEVEL, canMarry } = require('../public/js/data/life.mjs');
@@ -384,7 +385,15 @@ async function saveProgress(accountId, p) {
     ? { item: p.mount.item, x: Math.round(p.mount.x * 10) / 10, z: Math.round(p.mount.z * 10) / 10 } : null;
   // trades whose goods this game has already taken in (so a trade never lands twice)
   const tradesTaken = (Array.isArray(p.tradesTaken) ? p.tradesTaken : []).filter((id) => typeof id === 'string' && /^t[a-z0-9]{1,24}$/.test(id)).slice(-50);
-  Object.assign(character, fields, { tradesTaken, crops, mount, stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, dayPass, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages, journey });
+  // the names you gave your dragons and mounts (for voice commands), by their item id
+  const petNames = {};
+  if (p.petNames && typeof p.petNames === 'object') {
+    for (const [item, name] of Object.entries(p.petNames).slice(0, 12)) {
+      const clean = ITEMS[item]?.kind === 'mount' ? cleanPetName(name) : null;
+      if (clean) petNames[item] = clean;
+    }
+  }
+  Object.assign(character, fields, { tradesTaken, petNames, crops, mount, stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, dayPass, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages, journey });
   await store(accountId, character);
   return { ok: true };
 }

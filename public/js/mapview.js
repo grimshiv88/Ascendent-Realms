@@ -71,7 +71,7 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
   // on a portal's map: how strong the monsters are round each one (a portal won't send you where
   // they are stronger than you)
   const lvOf = new Map(reachable.map((p) => [p, portalLevel(p)]));
-  const locked = (p) => travel && (lvOf.get(p) ?? 0) > (travel.level ?? Infinity);
+  const locked = (p) => travel && ((lvOf.get(p) ?? 0) > (travel.level ?? Infinity) || !!travel.shut?.(p));
   if (travel) {
     // open on the whole continent
     const pts = [travel.from, ...reachable].map((q) => toMap(q.x, q.z));
@@ -239,7 +239,7 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
       ctx.fillStyle = shut ? 'rgba(90, 20, 20, 0.6)' : 'rgba(60, 20, 120, 0.6)';
       ctx.beginPath(); ctx.arc(x, y, travel ? 7 : 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       if ((travel && (open || here)) || view.zoom >= 4) {
-        const label = here ? 'You are here' : shut ? `🔒 Lv ${lvOf.get(pt)}` : pt.name.replace(/ Portal$/, '');
+        const label = here ? 'You are here' : shut ? (travel.shut?.(pt) ? '🔒 Private' : `🔒 Lv ${lvOf.get(pt)}`) : pt.name.replace(/ Portal$/, '');
         ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(label, x, y - 11);
         ctx.fillStyle = chosen ? '#fff' : here ? '#ffd76a' : shut ? '#ffb0a8' : '#e2d2ff'; ctx.fillText(label, x, y - 11);
       }
