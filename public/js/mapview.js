@@ -5,6 +5,7 @@ import { createTerrainPainter } from './world/terrainmap.js';
 import { toMap, toWorld, METRES_PER_PX, placesWithPositions, PLOT } from './data/world-layout.mjs';
 import { allPortals, portalsFrom, portalLevel } from './data/portals.mjs';
 import { allCastles } from './data/kings.mjs';
+import { allWonders } from './data/wonders.mjs';
 import { CITY_R } from './data/world-layout.mjs';
 import { drawCityPlan } from './world/cityplan.js';
 
@@ -256,6 +257,20 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
       ctx.fill(); ctx.stroke();
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(c.castle, x, y - 14);
       ctx.fillStyle = '#ffd76a'; ctx.fillText(c.castle, x, y - 14);
+    }
+    ctx.restore();
+    // the wonders of the realm: a star and the wonder's name
+    ctx.save();
+    ctx.font = 'italic 600 13px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
+    for (const w of allWonders()) {
+      const q = toMap(w.x, w.z);
+      const [x, y] = toCanvas(q.x, q.y);
+      ctx.fillStyle = '#bfe8ff'; ctx.strokeStyle = '#123'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, r = i % 2 ? 3.5 : 8; ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(w.name, x, y + 22);
+      ctx.fillStyle = '#bfe8ff'; ctx.fillText(w.name, x, y + 22);
     }
     ctx.restore();
     for (const m of marks) { const q = toMap(m.x, m.z); diamond(ctx, ...toCanvas(q.x, q.y), m.label); }

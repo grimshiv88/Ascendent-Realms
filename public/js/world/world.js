@@ -24,7 +24,10 @@ import { buildPortal } from './portal.js';
 import { buildPieces, pieceColliders, storeyY } from './buildings.js';
 import { allPortals, nearestPortal } from '../data/portals.mjs';
 import { allCastles, KING_RETURNS_MS } from '../data/kings.mjs';
-import { placeBuilding, CELL } from '../data/building.mjs';
+import { buildKingCastle } from './kingcastle.js';
+import { allWonders } from '../data/wonders.mjs';
+import { buildWonder } from './wonders.js';
+import { CELL } from '../data/building.mjs';
 import { caveById, THEMES, chestLoot, bossLevel, caveOres, pickOre, SIZES } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
@@ -148,15 +151,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const q of castles) {
       const d = Math.hypot(x - q.c.x, z - q.c.z);
       if (d < 1100 && !q.built) {
-        const pieces = placeBuilding('castle', q.c.cell[0], q.c.cell[1], 0);
-        const group = buildPieces(pieces, () => q.c.flat, { stone: true });
-        // the throne, in the middle of the keep
-        const throne = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.6, 1.2), new THREE.MeshStandardMaterial({ color: '#c9a03a', metalness: 0.6, roughness: 0.35 }));
-        throne.position.set(q.c.x, q.c.flat + 0.3 + 1.3, q.c.z - 1.5);
-        group.add(throne);
-        const solid = pieceColliders(pieces, () => q.c.flat);
-        scene.add(group); colliders.add(solid);
-        q.built = { group, solid };
+        // a palace the size of half a city, in the King's own style (see kingcastle.js)
+        const k = buildKingCastle(q.c);
+        scene.add(k.group); colliders.add(k.solid);
+        q.built = { group: k.group, solid: k.solid, floorAt: k.floorAt, spots: k.spots };
         q.court = null;
         seatCourt(q);
       } else if (d > 1400 && q.built) {
@@ -164,6 +162,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         creatures?.removeWhere((m) => m.site === `castle-${q.c.race}`);
         q.built = null; q.court = null;
       }
+    }
+  }
+  // The wonders of the realm (one in every land, see data/wonders.mjs), built when you come within sight
+  const wonders = allWonders().map((w) => ({ w, built: null, seen: false }));
+  function updateWonders(x, z) {
+    for (const q of wonders) {
+      const d = Math.hypot(x - q.w.x, z - q.w.z);
+      if (d < 2500 && !q.built) { q.built = buildWonder(q.w); scene.add(q.built.group); colliders.add(q.built.solid); }
+      else if (d > 3000 && q.built) { scene.remove(q.built.group); colliders.remove(q.built.solid); q.built = null; }
     }
   }
   // put the King, the Overlords and the guards in their places (once per visit)
@@ -174,19 +181,20 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const { x, z, race, title } = q.c;
     const site = `castle-${race}`;
     const extra = (more) => ({ keep: true, site, angry: false, ...more });
-    // two guards outside the gate and four in the courtyard
-    for (const [gx, gz] of [[-3, 21.5], [3, 21.5], [-10, 10], [10, 10], [-10, -10], [10, -10]]) {
+    // guards outside the gate, along the avenue and at the Throne Hall's doors
+    const S = q.built.spots;
+    for (const [gx, gz] of S.guards) {
       creatures.spawnAt(`guard_${race}`, 400 + Math.round(Math.random() * 200), x + gx, z + gz, extra({ guard: { heading: 0 }, title: 'Royal Guard' }));
     }
-    // the Overlords stand around the throne room
+    // the Overlords stand either side of the carpet before the throne
     court.overlords.forEach((o, i) => {
-      const a = Math.PI * (0.15 + (i / Math.max(1, court.overlords.length - 1)) * 0.7);
-      creatures.spawnAt(`overlord_${race}`, o.level, x + Math.cos(a) * 5, z - 1.5 + Math.sin(a) * 4, extra({ guard: { heading: 0 }, boss: true, title: o.name }));
+      const [ox, oz] = S.overlords[i] || [(i % 2 ? 1 : -1) * 6, -62 + Math.floor(i / 2) * 9];
+      creatures.spawnAt(`overlord_${race}`, o.level, x + ox, z + oz, extra({ guard: { heading: 0 }, boss: true, title: o.name }));
     });
     // the King sits the throne, unless it is empty or a player wears the crown
     if (court.king?.npc && Date.now() - (court.slainAt || 0) >= KING_RETURNS_MS) {
       const lvl = court.king.level;
-      const king = creatures.spawnAt(`king_${race}`, lvl, x, z - 0.2, extra({ guard: { heading: 0 }, boss: true, title: `${court.king.name}, ${title}`, maxHp: Math.round((8 + lvl * 3.5) * 12), hp: Math.round((8 + lvl * 3.5) * 12) }));
+      const king = creatures.spawnAt(`king_${race}`, lvl, x + S.king[0], z + S.king[1], extra({ guard: { heading: 0 }, boss: true, title: `${court.king.name}, ${title}`, maxHp: Math.round((8 + lvl * 3.5) * 12), hp: Math.round((8 + lvl * 3.5) * 12) }));
       king.onDeath = () => onEvent?.('king-slain', { race, name: court.king.name, title });
     }
   }
@@ -373,6 +381,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function updateSites(x, z) {
     updatePortals(x, z);
     updateCastles(x, z);
+    updateWonders(x, z);
     for (const s of sites) {
       const d = Math.hypot(x - s.place.x, z - s.place.z);
       if (d < 1000 && !s.built) {
@@ -458,6 +467,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (top > g && top <= Math.max(g, fromY) + 0.8) g = top;
       }
       for (const s of sites) { const top = s.built?.deckAt?.(x, z); if (top !== undefined && top > g && top <= Math.max(g, fromY) + 0.8) g = top; }
+      // the floors, galleries, stairs and wall walks of the Monster Kings' castles
+      for (const q of castles) { const top = q.built?.floorAt?.(x, z, Math.max(g, fromY) + 0.8); if (top > g) g = top; }
     }
     return g;
   }
@@ -2644,6 +2655,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
         const caveHere = sites.find((s) => s.built?.inside?.(pos.x, pos.z));
         here = caveHere ? caveById(caveHere.place.id)?.name || 'A cave' : near ? `${regionName(near.place.region)} · ${near.place.name}` : regionName(sample(pos.x, pos.z, tmpS).region);
+        // a King's castle, or one of the wonders of the realm
+        const castle = castles.find((q) => Math.abs(pos.x - q.c.x) < 125 && Math.abs(pos.z - q.c.z) < 125);
+        const wonder = wonders.find((q) => Math.hypot(pos.x - q.w.x, pos.z - q.w.z) < q.w.r + 150);
+        if (castle) here = `${regionName(sample(pos.x, pos.z, tmpS).region)} · ${castle.c.castle}`;
+        else if (wonder) {
+          here = `${regionName(wonder.w.region)} · ${wonder.w.name}`;
+          if (!wonder.seen) { wonder.seen = true; say(`You found ${wonder.w.name}`, 'note'); onEvent?.('wonder', wonder.w); }
+        }
         const nowCave = caveHere?.place.id || null;
         if (nowCave !== atCave) { atCave = nowCave; onEvent?.('cave', atCave ? caveById(atCave) : null); }
         const nowPortal = nearestPortal(pos.x, pos.z);
