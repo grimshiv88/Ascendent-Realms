@@ -99,10 +99,10 @@ async function stats() {
   const r = await db.get(`SELECT
       (SELECT COUNT(*)::int FROM accounts) AS accounts,
       (SELECT COUNT(*)::int FROM characters) AS characters,
-      (SELECT COUNT(*)::int FROM accounts WHERE last_seen > ?) AS online,
+      (SELECT COUNT(*)::int FROM presence WHERE at > ?) AS online,
       (SELECT COUNT(*)::int FROM characters WHERE updated_at > now() - interval '24 hours') AS today,
       (SELECT COUNT(*)::int FROM accounts WHERE banned_until = -1 OR banned_until > ?) AS banned,
-      (SELECT COUNT(*)::int FROM reports WHERE NOT done) AS reports`, now - S.ONLINE_MS, now);
+      (SELECT COUNT(*)::int FROM reports WHERE NOT done) AS reports`, now - require('../public/js/data/presence.mjs').GONE_MS, now);
   return { stats: r };
 }
 

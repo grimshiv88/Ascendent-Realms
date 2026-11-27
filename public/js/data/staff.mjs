@@ -18,7 +18,7 @@ export const BOARD_PERMS = [
 ];
 // Powers in the game (the owner always has all of them)
 export const GAME_POWERS = [
-  ['fly', 'Fly', 'Fly over the land. Jump goes up, the Fly down key (Ctrl) goes down.'],
+  ['fly', 'Fly', 'Fly over the land. Fly up (Space) goes up, and the Fly down key the player picks in Settings → Controls goes down (Shift until one is picked).'],
   ['nodeath', 'Can\'t die', 'Nothing can kill them: they stay on at least 1 HP and never lose a life.'],
   ['speed', 'Run fast', 'Walk and run three times as fast.'],
   ['teleport', 'Teleport', 'Tap any place on the world map to go there at once.'],
@@ -41,7 +41,7 @@ export function cleanStaff(v) {
 // (passwords, birth dates, deleting accounts, past lives, the log, and giving admin access).
 export const ROUTE_PERMS = {
   // looking
-  'GET stats': 'any', 'GET accounts': 'any', 'GET player': 'any', 'GET catalogue': 'any', 'GET me': 'any',
+  'GET stats': 'any', 'GET accounts': 'any', 'GET online': 'any', 'GET player': 'any', 'GET catalogue': 'any', 'GET me': 'any',
   'GET chat': 'chat', 'GET reports': 'reports', 'GET world': ['world', 'announce'], 'GET tuning': 'world', 'GET sects': 'world', 'GET skills': 'edit',
   // doing
   'POST mute': 'mute', 'POST ban': 'ban', 'POST signout': 'kick', 'POST chat/delete': 'chat', 'POST reports/close': 'reports',

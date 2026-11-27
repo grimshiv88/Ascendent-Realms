@@ -18,7 +18,7 @@ import { VILLAGES_AT_ONCE, VILLAGE_RETURNS_MS, VILLAGE_NEAR, VILLAGE_KIND, VILLA
 import { createSkillFx } from './skillfx.js';
 import { moveFor } from './skillmoves.js';
 import { tickWind } from './trees.js';
-import { codeFor, actionFor, keyName } from '../data/controls.mjs';
+import { codeFor, actionFor, keyName, isHeld, mouseCode } from '../data/controls.mjs';
 import { buildDepths } from './depths.js';
 import { buildPortal } from './portal.js';
 import { buildPieces, pieceColliders, storeyY } from './buildings.js';
@@ -43,7 +43,7 @@ import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
 import { ITEMS, weaponReach, weaponEffect, EFFECTS, MARKETS, stoneChance, randomStone } from '../data/items.mjs';
 import { ageOf, isChild, parentAlive, ceremonyDue, CEREMONY_SHOW_MS } from '../data/birth.mjs';
 import { mayEnter, cityPass, PASS_NAME } from '../data/citypass.mjs';
-import { rampAt, RAMP_WALL, INNER_R } from '../data/citylevels.mjs';
+import { rampAt, RAMP_WALL, INNER_R, tierAt } from '../data/citylevels.mjs';
 const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine after a new card goes up
 import { money } from '../data/money.mjs';
 import { howOf, canHarvest, harvest } from './deaths.js';
@@ -119,7 +119,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     smooth.reset();
     renderer.setPixelRatio(sharpness());
     setCrowdFar(q.crowdFar);
-    setCityDetail(q.detailFar);
+    setCityDetail(q.detailFar, q.cityFar);
     sun.castShadow = q.shadows;
     glowLights.setSize(q.lights);
     if (sun.shadow.mapSize.x !== q.shadowSize) { sun.shadow.mapSize.set(q.shadowSize, q.shadowSize); sun.shadow.map?.dispose(); sun.shadow.map = null; }
@@ -317,7 +317,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // raised ground, like a farm's fence on its levelled yard, counts when it is at that height.
   function blockedAt(x, z, r, y) {
     for (const e of colliders.near(x, z, r)) {
-      if (e.r <= 0 || e.step || e.kind === 'chest') continue;
+      if (e.r <= 0 || e.step || e.camOnly || e.kind === 'chest') continue;
       if (e.y !== undefined && (y === undefined || y >= e.y + (e.height || 8) - 0.4 || y + 1.2 < e.y)) continue;
       if (Math.hypot(e.x - x, e.z - z) < e.r + r) return e;
     }
@@ -496,10 +496,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // arms and weapon still there). Scrolling all the way in goes to first person, scrolling out comes back.
   let viewMode = view?.view === 'first' ? 'first' : 'third';
   const firstNow = () => viewMode === 'first' && !dead && !sleeping;
-  const pitchLo = () => (firstNow() ? -1.35 : -0.15), pitchHi = () => (firstNow() ? 1.35 : 1.2);
+  // (in third person you can tilt below level too: the camera drops to the ground behind you and
+  // looks up, to see the sky or a dragon overhead)
+  const pitchLo = () => (firstNow() ? -1.35 : -0.95), pitchHi = () => (firstNow() ? 1.35 : 1.2);
   function setView(mode, tell) {
     viewMode = mode === 'first' ? 'first' : 'third';
-    if (viewMode === 'third') { pitch = THREE.MathUtils.clamp(pitch, 0.1, 1.2); dist = Math.max(dist, 3); camDist = Math.min(camDist, 1.2); }
+    if (viewMode === 'third') { pitch = THREE.MathUtils.clamp(pitch, pitchLo(), 1.2); dist = Math.max(dist, 3); camDist = Math.min(camDist, 1.2); }
     if (tell) onView?.(viewMode);
   }
 
@@ -518,7 +520,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const say = (text, kind = 'note') => floatText(text, pos.clone().add(new THREE.Vector3(0, bodyH + 0.4, 0)), kind);
 
   // ---------- day and night ----------
-  // One real hour is a day. The sun crosses the sky; at night a dim moon lights the land.
+  // A day of the realm is DAY_MINUTES real minutes (data/clock.mjs). The sun crosses the sky; at night a dim moon lights the land.
   let night = false, daylight = 1;
   const SUN_COLOR = new THREE.Color('#fff0d0'), MOON_COLOR = new THREE.Color('#7f98d8');
   const lightDir = new THREE.Vector3();
@@ -1892,6 +1894,38 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       onEvent?.('citygate', { tier: G.tier, name: G.name, city: city.place.name, cityId: city.place.id });
     }
   }
+  // Beyond the gates: nobody stands on a ring their pass doesn't open, however they got there
+  // (flying over a terrace wall, slipping past a gate in a slow frame, a portal or a load that sets
+  // them down on Castle Hill). Flying up to a ring you may not enter stops you at its edge; finding
+  // yourself inside one, the guards walk you down to the checkpoint by the south gate. An admin
+  // with any of their powers switched on may go anywhere.
+  const ring = { ok: null, okAt: 0, last: null, warned: -99 };
+  function keepToPass(t) {
+    const city = builtCities().find((s) => s.built.innerGates && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < INNER_R);
+    if (!city || dead) { ring.last = null; return; }
+    const { x: cx, z: cz } = city.built.centre;
+    const T = tierAt(Math.hypot(pos.x - cx, pos.z - cz)).id;
+    if (Object.values(powers).some(Boolean) || T === 'dump') { ring.last = { x: pos.x, z: pos.z, city }; return; }
+    if (ring.ok?.T !== T || ring.ok.city !== city || t - ring.okAt > 2) {
+      const homes = passPerks.homes.filter((h) => h.city === city.place.id).map((h) => h.tier);
+      ring.ok = { T, city, may: mayEnter(character, T, { perks: { homes, crowned: passPerks.crowned }, city: city.place.id, ceremony: ceremonyDue(character) }).ok };
+      ring.okAt = t;
+    }
+    if (ring.ok.may) { ring.last = { x: pos.x, z: pos.z, city }; return; }
+    const name = PASS_NAME[T];
+    if (ring.last?.city === city && Math.hypot(ring.last.x - pos.x, ring.last.z - pos.z) < 30) {
+      // stopped at the edge, where you were a moment ago
+      pos.x = ring.last.x; pos.z = ring.last.z;
+      speedNow = 0; autoWalk = false;
+      if (t - ring.warned > 4) { ring.warned = t; say(`A guard shouts from the wall: "Halt! The ${name} is not for you without a pass. Come up through the gate."`, 'hurt'); }
+      return;
+    }
+    // already inside a ring you may not be on: walked down to the checkpoint in the Dump
+    const c = city.built.checkpoint;
+    if (c) { pos.set(c.x, groundAt(c.x, c.z, Infinity), c.z); velY = 0; speedNow = 0; autoWalk = false; snapCam = true; }
+    ring.last = null;
+    if (t - ring.warned > 4) { ring.warned = t; say(`Guards found you in the ${name} without a pass and walked you down to the gate checkpoint`, 'hurt'); }
+  }
   function passGate() {
     if (gate.leaving) {
       gate.leaving = false;
@@ -1931,6 +1965,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const fx = pos.x + Math.sin(heading) * reach * 0.6, fz = pos.z + Math.cos(heading) * reach * 0.6;
     let best = null, bestD = Infinity;
     for (const e of colliders.near(fx, fz, reach * 0.8)) {
+      if (e.camOnly) continue;
       const d = Math.hypot(e.x - pos.x, e.z - pos.z) - e.r;
       if (d < bestD && d < reach) { best = e; bestD = d; }
     }
@@ -1973,13 +2008,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (e.target.closest && e.target.closest('input, textarea')) return;
     keys.add(e.code);
     const act = actionFor(e.code);
-    if (!e.repeat && (act === 'forward' || e.code === 'ArrowUp')) {
+    // a key the game uses doesn't also do what the browser would (F5 reloading, Tab, Space scrolling...)
+    if (act && act !== 'chat' && !windowOpen?.() && !e.ctrlKey && !e.metaKey) e.preventDefault();
+    if (act === 'autowalk' && !e.repeat) { autoWalk = !autoWalk; lastForward = 0; say(autoWalk ? 'Auto-walk on' : 'Auto-walk off', 'note'); }
+    if (!e.repeat && act === 'forward') {
       const now = performance.now();
       if (autoWalk) { autoWalk = false; lastForward = 0; say('Auto-walk off', 'note'); }
       else if (now - lastForward < 320) { autoWalk = true; lastForward = 0; say('Auto-walk on: tap forward or back to stop', 'note'); }
       else lastForward = now;
     }
-    if (!e.repeat && autoWalk && (act === 'back' || e.code === 'ArrowDown')) { autoWalk = false; say('Auto-walk off', 'note'); }
+    if (!e.repeat && autoWalk && act === 'back') { autoWalk = false; say('Auto-walk off', 'note'); }
     if (act === 'attack') attack();
     if (act === 'sleep') toggleSleep();
     if (act === 'torch') placeTorch();
@@ -1988,10 +2026,23 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (act === 'mount' && !e.repeat && game) riding?.toggle();
     if (act === 'dragon' && !e.repeat) commandDragon();
     if (act === 'spell' && !e.repeat) nextSpell();
+    if ((act === 'zoomin' || act === 'zoomout') && !windowOpen?.()) zoomBy(act === 'zoomin' ? -150 : 150);
+    if (act === 'mouse' && !e.repeat) { if (locked()) { letGo = true; document.exitPointerLock(); } else lockMouse(); }
     onKey?.(e);
   };
   const up = (e) => keys.delete(e.code);
-  const held = (action) => keys.has(codeFor(action));
+  const held = (action) => isHeld(keys, action);
+  // the middle and side mouse buttons can be keys too (Settings → Controls)
+  const fakeKey = (code, repeat = false) => ({ code, key: code, repeat, target: document.body, shiftKey: false, preventDefault() {} });
+  window.addEventListener('mousedown', (e) => {
+    const code = mouseCode(e.button);
+    if (!code || (e.target.closest && e.target.closest('input, textarea, #overlay'))) return;
+    if (e.button === 1 || actionFor(code)) e.preventDefault(); // (no scroll wheel autoscroll, no browser back)
+    down(fakeKey(code, keys.has(code)));
+  });
+  window.addEventListener('mouseup', (e) => { const code = mouseCode(e.button); if (code) { keys.delete(code); if (actionFor(code)) e.preventDefault(); } });
+  // Fly down has no key until the player picks one: until then Run (Shift) dives, as it always did
+  const flyDownHeld = () => (codeFor('flydown') ? held('flydown') : held('run'));
   let jumpQueued = false; // the jump button on touch screens
   let climbFor = 0, flyDown = false; // (flying on a dragon or wyvern)
   // Let go of every key and the touch stick when the game stops hearing the keyboard (another window
@@ -2104,12 +2155,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   canvas.addEventListener('pointerup', release);
   canvas.style.touchAction = 'none'; // the game handles pinches itself (the page doesn't zoom)
   canvas.addEventListener('pointercancel', release);
-  canvas.addEventListener('wheel', (e) => {
-    if (viewMode === 'first') { if (e.deltaY > 0) setView('third', true); }
-    else if (dist <= 2 && e.deltaY < 0) setView('first', true);
-    else dist = THREE.MathUtils.clamp(dist + e.deltaY * 0.01, 2, 30);
-    e.preventDefault();
-  }, { passive: false });
+  // the mouse wheel (or the Camera closer / further keys) zooms
+  function zoomBy(deltaY) {
+    if (viewMode === 'first') { if (deltaY > 0) setView('third', true); }
+    else if (dist <= 2 && deltaY < 0) setView('first', true);
+    else dist = THREE.MathUtils.clamp(dist + deltaY * 0.01, 2, 30);
+  }
+  canvas.addEventListener('wheel', (e) => { zoomBy(e.deltaY); e.preventDefault(); }, { passive: false });
+  // catch the mouse for the camera again (after the chat, or the Free the mouse key); a key press
+  // counts as the player asking, so the browser allows it
+  function lockMouse() {
+    if (locked() || noLock || freeMouse || windowOpen?.() || !canvas.requestPointerLock) return;
+    try { const r = canvas.requestPointerLock(); r?.catch?.(() => {}); } catch { /* not allowed now */ }
+  }
 
   // ---------- loop ----------
   const clock = new THREE.Clock();
@@ -2141,6 +2199,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     game.heal(Math.min(n, cap - c.hp));
   }
   const B = WORLD_BOUNDS;
+  // does this solid stand in the camera's way at (px, py, pz)? An awning or roof (camOnly) only
+  // blocks between its underside and its top; everything else from the ground up to its height
+  const camBlocks = (px, py, pz) => (e) => {
+    if (!(e.r > 0)) return false;
+    const base = (e.y ?? groundAt(e.x, e.z)) + (e.lift || 0);
+    if (py - base >= (e.height || 8)) return false;
+    if (e.camOnly) return py > base - 0.2 && Math.hypot(px - e.x, pz - e.z) < e.r;
+    return Math.hypot(px - e.x, pz - e.z) < Math.min(e.r * (e.kind === 'wall' ? 1.2 : 4), 3.5);
+  };
   let swimming = false;
   const tmpS = {};
   const v3 = new THREE.Vector3();
@@ -2233,10 +2300,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     let fx = 0, fz = 0;
     if (dead || sleeping) autoWalk = false;
     if (!dead && !resting()) {
-      if (held('forward') || keys.has('ArrowUp') || autoWalk) fz += 1;
-      if (held('back') || keys.has('ArrowDown')) fz -= 1;
-      if (held('left') || keys.has('ArrowLeft')) fx -= 1;
-      if (held('right') || keys.has('ArrowRight')) fx += 1;
+      if (held('forward') || autoWalk) fz += 1;
+      if (held('back')) fz -= 1;
+      if (held('left')) fx -= 1;
+      if (held('right')) fx += 1;
       fx += stick.x; fz -= stick.y;
     }
     // sitting: any move gets you up; until then you stay in the chair
@@ -2258,7 +2325,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     else { backYaw = yaw; backHeading = heading; } // once round, carry on from wherever you face
     if (aboutFace) fz = -fz;
-    const running = held('run') || (codeFor('run') === 'ShiftLeft' && keys.has('ShiftRight')) || Math.hypot(stick.x, stick.y) > 0.9;
+    const running = held('run') || Math.hypot(stick.x, stick.y) > 0.9;
     runningNow = running;
     const amount = Math.min(1, Math.hypot(fx, fz));
     let target = 0;
@@ -2354,14 +2421,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (jumpQueued) climbFor = 0.7; // (a tap of the jump button on a phone climbs for a moment)
       climbFor = Math.max(0, climbFor - dt);
       const land0 = groundAt(pos.x, pos.z), g0 = Math.max(land0, water + 2.5);
-      pos.y = riding.fly(dt, held('jump') || climbFor > 0, (held('run') || flyDown) && g0 === land0, g0, pos.y); // (no landing on water)
+      pos.y = riding.fly(dt, held('flyup') || climbFor > 0, (flyDownHeld() || flyDown) && g0 === land0, g0, pos.y); // (no landing on water)
       if (riding.flying) swimming = false;
       ground = pos.y; velY = 0; airborne = false; fallFrom = pos.y;
     }
     else if (flying) {
       const climb = (running ? 18 : 7) * dt;
-      if (held('jump') || jumpQueued) pos.y += climb;
-      if (held('flydown') || flyDown) pos.y -= climb;
+      if (held('flyup') || jumpQueued) pos.y += climb;
+      if (flyDownHeld() || flyDown) pos.y -= climb;
       pos.y = Math.min(Math.max(pos.y, ground), ground + 600);
       velY = 0; airborne = pos.y > ground + 0.05; fallFrom = pos.y;
     }
@@ -2519,6 +2586,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!depth && !inside) {
       checkGates(t);
       checkInnerGates(t);
+      keepToPass(t);
       // walk into a townsperson and they talk to you
       const n = npcNear(pos.x, pos.z, bodyR + 0.55);
       if (n && n !== touched) { touched = n; talkTo(n); }
@@ -2560,19 +2628,24 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (here !== area) { area = here; onArea?.(area, { x: pos.x, z: pos.z }); }
     }
 
-    // Camera follows behind and above, pulled in so trees and cave walls don't block the view
+    // Camera follows behind and above, pulled in so trees, walls, stall awnings and cave walls don't block the view
     const focus = new THREE.Vector3(pos.x, pos.y + bodyH * 0.8 + (riding?.saddle() || 0) * 0.85, pos.z);
-    const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+    // (tilted below level in third person, the camera stays behind you at full distance and sinks
+    // towards the ground instead, then looks up: see below)
+    const up = eyes ? 0 : Math.max(0, -pitch);
+    const pp = eyes ? pitch : Math.max(0, pitch);
+    const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pp), Math.sin(pp), Math.cos(yaw) * Math.cos(pp));
     let want = dist;
     // (indoors the walls keep the camera in instead: pulling it in for every chair and table made it shake)
     for (let d = 1; d < (inside ? 0 : dist); d += 0.75) {
       const px = focus.x + dir.x * d, py = focus.y + dir.y * d, pz = focus.z + dir.z * d;
-      const hit = (depth && depth.built.shape(px, pz).d > -0.4) || colliders.near(px, pz, 0.6).some((e) => e.r > 0 && py - (e.y ?? groundAt(e.x, e.z)) < (e.height || 8) && Math.hypot(px - e.x, pz - e.z) < Math.min(e.r * (e.kind === 'wall' ? 1.2 : 4), 3.5));
+      const hit = (depth && depth.built.shape(px, pz).d > -0.4) || colliders.near(px, pz, 0.6).some(camBlocks(px, py, pz));
       if (hit) { want = Math.max(1.2, d - 0.6); break; }
     }
     camDist += (want - camDist) * Math.min(1, dt * (want < camDist ? 14 : 3));
     if (snapCam) camDist = want;
     const cam = focus.clone().addScaledVector(dir, camDist);
+    if (up > 0) cam.y -= (cam.y - heightAt(cam.x, cam.z) - 0.5) * Math.min(1, up / 0.45);
     cam.y = Math.max(cam.y, heightAt(cam.x, cam.z) + 0.5, water + 0.3);
     // (the roof over the camera, or over you where the camera is in the rock: the rock's nearest
     // chamber can be a deeper one, whose roof would drag the camera far below you)
@@ -2597,7 +2670,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     } else {
       // after going through a door (or a portal), the camera jumps with you instead of flying across
       if (snapCam) camera.position.copy(cam); else camera.position.lerp(cam, Math.min(1, dt * 10));
-      camera.lookAt(focus);
+      // looking up, the view aims above your head, so you sink to the bottom of the screen and the
+      // sky fills the rest
+      if (up > 0) {
+        // tilt up by as much as you asked (all the way up, you sink out of the bottom of the screen and
+        // see only sky, like a person looking straight up)
+        const flat = Math.max(0.5, Math.hypot(focus.x - camera.position.x, focus.z - camera.position.z));
+        const toHead = Math.atan2(focus.y + bodyH * 0.25 - camera.position.y, flat);
+        const a = Math.max(up * 1.45, toHead);
+        camera.lookAt(focus.x, camera.position.y + Math.tan(a) * flat, focus.z);
+      } else camera.lookAt(focus);
     }
     snapCam = false;
 
@@ -2766,6 +2848,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       return { x: avatar.position.x, y: avatar.position.y, z: avatar.position.z, heading, speed: speedNow, place, pose, pet };
     },
     showOthers: (list) => others.show(list),
+    moveOther: (m) => others.move(m),
     get othersNear() { return others.count(); },
     debugOthers: () => others.list(),
     // where you are out in the world (the door you came in by, while indoors)
@@ -2870,6 +2953,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugCam(at, look, showSelf = false) { camOverride = at ? [at, look, showSelf] : null; if (!at) avatar.visible = true; },
     debugMove(x, z, h) { pos.set(x, groundAt(x, z), z); if (h !== undefined) { heading = h; yaw = h + Math.PI; } },
     debugMonsters: () => creatures.list.filter((m) => !m.dead).map((m) => ({ n: m.title || m.kind.name, x: m.x, y: m.y, z: m.z, g: surfaceAt(m.x, m.z), by: m.body.position.y })),
+    debugRoofs: (r = 80) => colliders.near(pos.x, pos.z, r).filter((e) => e.camOnly).map((e) => [e.x, e.z]),
     debugState: () => ({ x: pos.x, y: pos.y, z: pos.z, heading, yaw, cam: camera.position.toArray(), inside: !!inside, sitting: !!sitting, monsters: creatures.list.filter((m) => !m.dead).map((m) => `${m.title || m.kind.name} ${m.level}`), villages: game?.villages().map((v) => ({ id: v.id, x: v.x, z: v.z, race: v.race, folk: v.folk.length, dead: v.dead.length, built: mobVillages.has(v.id) })) }),
     teleport,
     get atPortal() { return atPortal; },
@@ -2954,6 +3038,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     },
     // let the mouse go (a window is opening)
     releaseMouse() { if (locked()) { letGo = true; document.exitPointerLock(); } },
+    lockMouse,
+    get mouseLocked() { return locked(); },
     setMouseMode(mode) { freeMouse = mode === 'free'; if (freeMouse && locked()) { letGo = true; document.exitPointerLock(); } },
     setGraphics(choice) { applyQuality(pickQuality(choice)); return quality.key; },
     get graphics() { return quality.key; },
