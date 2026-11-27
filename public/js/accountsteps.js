@@ -32,8 +32,19 @@ export function accountSteps({ el, show, enter }) {
     if (r.twofa) return askSignInCode(r);
     if (r.account.needsBirthdate) return askBirthdate(r);
     if (r.account.needsEmail) return askEmail(r);
-    if (r.account.mustVerify) return askVerify(r, r);
+    if (r.account.mustVerify) return verifyNow(r);
     return enter(r);
+  }
+
+  // The confirm screen. A new account's email went out with the sign-up; any other way here (signing
+  // in later, a reload, after the 2-step code) sends one now if no working code is waiting, so the
+  // screen never says "we sent" when nothing was sent.
+  async function verifyNow(r) {
+    if (r.isNew && r.verifySent) return askVerify(r, r);
+    let s;
+    try { s = await api.sendVerify({ ifNone: true }); } catch (err) { s = { failed: err.message }; }
+    if (s.failed) return askVerify({}, r, '', s.failed);
+    return askVerify(s, r, s.waiting ? '' : 'We just sent you a new email.');
   }
 
   // accounts from before the birth date was asked
@@ -72,17 +83,18 @@ export function accountSteps({ el, show, enter }) {
     async ({ email, password }) => {
       const res = await api.setEmail(email, password);
       const now = { ...r, account: res.account };
-      if (res.account.mustVerify) askVerify(res, now); else enter(now);
+      if (!res.account.mustVerify) enter(now); else if (res.sentTo) askVerify(res, now); else verifyNow(now);
     }, { '[data-logout]': logOut, '[data-back]': () => askVerify({}, r) });
   }
 
   // `sent` is the answer of whatever sent the email (it may carry the preview code)
-  function askVerify(sent, r, message = '') {
+  // `failed` is why the email couldn't go out (then the screen says so instead of "we sent")
+  function askVerify(sent, r, message = '', failed = '') {
     const email = r.account.email;
     render(`<h2>Confirm your email</h2><form novalidate>
-      <p class="hint">Type the code from the email we sent to <b>${esc(email)}</b>, or click the button in that email. Check your spam folder too. The code works for 5 minutes. If it runs out, press Send the email again.</p>
+      <p class="hint">${failed ? `We couldn't send the email to <b>${esc(email)}</b> just now. Press Send the email again in a moment.` : `Type the code from the email we sent to <b>${esc(email)}</b>, or click the button in that email. Check your spam folder too.`} The code works for 5 minutes. If it runs out, press Send the email again.</p>
       ${previewNote(sent)}${message ? `<p class="hint"><b>${esc(message)}</b></p>` : ''}${codeInput()}
-      <p class="error" role="alert"></p>
+      <p class="error" role="alert">${esc(failed)}</p>
       <button class="gold-button" type="submit">Confirm</button>
       <button class="link-button" type="button" data-again>Send the email again</button>
       <button class="link-button" type="button" data-change>Wrong email? Change it</button>

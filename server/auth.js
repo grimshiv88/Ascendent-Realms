@@ -136,11 +136,9 @@ async function signUp({ email, password, username, country, birthdate }) {
     if (e.code === '23505') return { error: 'That username or email was just taken. Please choose another.' };
     throw e;
   }
-  if (mail.ready()) {
-    const c = await makeCode(row.id, 'verify');
-    if (c.code) await mail.verify(row.email, row.username, c.ticket, c.code);
-  }
-  return { token: await newSession(row.id), account: await publicAccount(row), isNew: true };
+  // the confirm email goes out now; if it fails, its code is dropped so the confirm screen sends a new one
+  const verify = mail.ready() ? await sendVerify(row) : null;
+  return { token: await newSession(row.id), account: await publicAccount(row), isNew: true, verifySent: !!verify?.ok, verifyError: verify?.error || null };
 }
 
 // `login` is a username or an email. With 2-step sign-in on, the answer is a ticket and the kind of
@@ -209,15 +207,25 @@ async function signOut(token) {
 }
 
 // ---------- the email ----------
-// send (again) the email with the code that confirms the address
-async function sendVerify(row) {
+// send (again) the email with the code that confirms the address.
+// `ifNone` (the confirm screen opening after a sign-in or a reload) sends only when no code that
+// still works is waiting, so a player who signs in later always gets a fresh email without asking.
+async function sendVerify(row, { ifNone = false } = {}) {
   if (!mail.ready()) return { error: 'Emails aren\'t switched on in the game yet.' };
   if (!hasEmail(row.email)) return { error: 'Please add your email first.' };
   if (row.email_verified) return { ok: true, already: true };
+  if (ifNone) {
+    const live = await db.get("SELECT 1 FROM auth_codes WHERE account_id = ? AND kind = 'verify' AND expires > ? LIMIT 1", row.id, Date.now());
+    if (live) return { ok: true, sentTo: hideEmail(row.email), waiting: true };
+  }
   const c = await makeCode(row.id, 'verify');
   if (c.error) return c;
   const sent = await mail.verify(row.email, row.username, c.ticket, c.code);
-  if (!sent.sent) return { error: 'The email couldn\'t be sent just now. Please try again in a minute.' };
+  if (!sent.sent) {
+    // never leave a code behind for an email that didn't go out: the next try sends straight away
+    await db.run('DELETE FROM auth_codes WHERE ticket = ?', c.ticket);
+    return { error: 'The email couldn\'t be sent just now. Please press Send the email again in a minute.' };
+  }
   return { ok: true, sentTo: hideEmail(row.email) };
 }
 
