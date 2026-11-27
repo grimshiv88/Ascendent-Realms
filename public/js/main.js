@@ -1566,6 +1566,7 @@ function startGame(character) {
         ui.estateMsg = ''; ui.estateRing ||= 'common';
         loadHomes().then(drawPanel);
         openPanel('estate');
+        return; // the office's own window, not a shop (it used to fall through and open a plain shop)
       }
       // the counter of a city's Bank, or a village's Bank Kiosk: the window opens only there
       if ((type === 'market' && data === BANK_ID) || type === 'kiosk') {
