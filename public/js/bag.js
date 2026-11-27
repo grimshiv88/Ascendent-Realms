@@ -132,7 +132,8 @@ export function renderBag(el, game, selected) {
     if (sel.kind === 'seed') actions.push(`<button type="button" class="gold-button small" data-plant="${e.id}">Plant in the bed beside you</button>`);
     if (sel.kind === 'mount') actions.push(`<button type="button" class="gold-button small" data-mount="${e.id}">Call it to you (H)</button>`);
     if (sel.kind === 'food') actions.push(`<button type="button" class="gold-button small" data-use="${keyOf(e)}">Use</button>`);
-    actions.push(`<button type="button" class="link-button" data-drop="${keyOf(e)}">Drop one</button>`);
+    if (sel.kind === 'gift') actions.push(`<button type="button" class="gold-button small" data-open-gift="${keyOf(e)}">🎁 Open the gift</button>`);
+    else actions.push(`<button type="button" class="link-button" data-drop="${keyOf(e)}">Drop one</button>`);
     details = `<div class="bag-detail"><span class="bag-big">${pic(e.id, e.plus, '')}</span><div><h3>${esc(nameOf(e))}</h3><p>${esc(sel.text)}</p><p class="bag-stat">${describe(sel, e.plus)}${e.coat ? `<br>${EFFECTS[e.coat.id].icon} Coated with ${EFFECTS[e.coat.id].name}: ${e.coat.hits} hits left` : ''}</p><div class="bag-actions">${actions.join('')}</div>${isGear(sel) && e.uid ? gearSkillsHtml(game, e, sel) : ''}</div></div>`;
   }
   const crafts = game.recipes.map((r) => {

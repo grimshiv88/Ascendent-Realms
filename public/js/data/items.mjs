@@ -64,6 +64,8 @@ export const ITEMS = {
   sapphire: { name: 'Sapphire', icon: '💙', kind: 'material', rank: 3, price: 110, text: 'A deep blue gem, cold to the touch.' },
   ruby: { name: 'Ruby', icon: '❤️', kind: 'material', rank: 4, price: 180, text: 'A blood-red gem that glows faintly in the dark. Found only deep in high-level Dungeons.' },
   // the Order of the Dawn's gift to those who become Light: it can't be sold or traded
+  // a gift sent by the realm's keepers (Admin Board): it waits in the bag until you open it
+  gift_box: { name: 'Gift', icon: '🎁', kind: 'gift', price: 0, bound: true, text: 'A gift from the keepers of the realm, tied with a ribbon. Open it to see what is inside.' },
   dawn_book: { name: 'Book of the Dawn', icon: '📖', kind: 'material', price: 0, bound: true, text: 'A worn holy book. Kept in your bag, it stops Dark Side spells that hit you. Its level is your Intelligence: the whole hit when that reaches the spell\'s strength, part of it otherwise.' },
   moonstone: { name: 'Moonstone', icon: '🌙', kind: 'material', rank: 5, price: 450, text: 'Found only in the deepest chambers of high-level Dungeons. Said to hold moonlight.' },
   diamond: { name: 'Diamond', icon: '💎', kind: 'material', rank: 5, price: 800, text: 'The hardest stone there is. Set into an edge, it never dulls. Found only deep in high-level Dungeons: drake lairs, warrens and glimmer caves.' },

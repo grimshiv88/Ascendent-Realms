@@ -85,6 +85,25 @@ async function online(now = Date.now()) {
   };
 }
 
+// Everyone who played today (since `since`, the admin's own midnight; the last 24 hours when not
+// given): when they were last seen in the game, and whether they are in the world now
+async function today(since, now = Date.now()) {
+  const from = Number.isFinite(since) && since > now - 3 * 86400000 && since <= now ? since : now - 86400000;
+  const rows = await db.all(`SELECT a.id, a.username, GREATEST(COALESCE(a.last_seen, 0), COALESCE(p.at, 0)) AS seen, p.at AS here, c.data
+      FROM accounts a LEFT JOIN presence p ON p.account_id = a.id LEFT JOIN characters c ON c.account_id = a.id
+      WHERE COALESCE(a.last_seen, 0) >= ? OR COALESCE(p.at, 0) >= ?
+      ORDER BY seen DESC LIMIT 500`, from, from);
+  return {
+    ok: true,
+    players: rows.map((r) => {
+      let c = null;
+      try { c = r.data ? JSON.parse(r.data) : null; } catch { /* unreadable save */ }
+      return { id: r.id, username: r.username, character: c?.name || null, level: c?.level || null, race: c?.race || null, cls: c?.cls || null,
+        seen: Number(r.seen), online: !!r.here && now - Number(r.here) < P.GONE_MS };
+    }),
+  };
+}
+
 // POST /api/presence { x, y, z, heading, speed, place, pose, body? } -> { players: [...] }
 async function report(acc, body = {}, now = Date.now(), isAdmin = false) {
   const me = P.cleanSpot(body);
@@ -120,4 +139,4 @@ async function report(acc, body = {}, now = Date.now(), isAdmin = false) {
 // Signing out or closing the game: gone at once instead of after a few seconds
 const leave = (acc) => db.run('DELETE FROM presence WHERE account_id = ?', acc.id).then(() => ({ ok: true }));
 
-module.exports = { liveConfig, report, leave, online, onlineCount, whereIs };
+module.exports = { liveConfig, report, leave, online, today, onlineCount, whereIs };

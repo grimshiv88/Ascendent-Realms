@@ -133,6 +133,28 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     mount();
     return true;
   }
+  // The realm's keepers (Admin Board) send a pet to you, or home: it comes now (unless you are on
+  // it), or it leaves the world (still yours: it comes when called). Not while you fly on it.
+  function come(item) {
+    if (!game.has(item)) return 'none';
+    if (riding && horse?.item === item) return 'riding';
+    if (riding) dismount(true);
+    call(item);
+    return 'called';
+  }
+  const flyingOn = (item) => !!(riding && flying && (!item || horse?.item === item));
+  function putAway(item) {
+    if (flyingOn(item)) return 'flying';
+    if (horse && (!item || horse.item === item)) {
+      if (riding) { riding = false; flying = false; }
+      scene.remove(horse.root);
+      horse = null;
+      remember();
+      return 'ok';
+    }
+    if (game.character.mount && (!item || game.character.mount.item === item)) { game.character.mount = null; game.touch('bag'); return 'ok'; }
+    return 'none';
+  }
   // a tamed animal becomes yours where it stands
   function adopt(item, x, z, heading) {
     if (riding) dismount(true);
@@ -206,7 +228,7 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
   }
 
   return {
-    toggle, interact, adopt, tick, restore, dismount, fly,
+    toggle, interact, adopt, tick, restore, dismount, fly, come, putAway, flyingOn,
     get riding() { return riding; },
     get flying() { return riding && flying; },
     // a dragon or wyvern (it flies)
