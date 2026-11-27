@@ -147,10 +147,11 @@
     <div class="stats" id="stats"></div>
     <nav role="tablist" id="tabs">
       <button type="button" role="tab" data-tab="players" aria-selected="true">Players</button>
-      <button type="button" role="tab" data-tab="online">Online now</button>
+      <button type="button" role="tab" data-tab="online">Online now · today</button>
       <button type="button" role="tab" data-tab="chat" data-need="chat">Chat</button>
       <button type="button" role="tab" data-tab="reports" data-need="reports">Reports</button>
       <button type="button" role="tab" data-tab="skills" data-need="edit">Skills</button>
+      <button type="button" role="tab" data-tab="gifts" data-need="edit">Gifts</button>
       <button type="button" role="tab" data-tab="world" data-need="world announce">World</button>
       <button type="button" role="tab" data-tab="admins" data-need="owner">Admins</button>
       <button type="button" role="tab" data-tab="log" data-need="owner">Log</button>
@@ -221,6 +222,28 @@
             <button type="button" id="ann-clear">Take it down</button>
           </form>
         </div>
+        <div class="card" data-need="world" style="grid-column: 1 / -1">
+          <h2>Monster attacks</h2>
+          <p class="quiet">Send monsters against a city or a village. While it lasts, a city's bridges are raised, the monsters gather round the town and fight anyone there, players close by get a warning across their screen, and players in the towns round about hear the news while the townsfolk gather in the plaza to talk about it. It ends when its time runs out, or when you drive them off.</p>
+          <form id="raidform" class="row">
+            <select name="place" aria-label="Town" required></select>
+            <select name="raiders" aria-label="Who attacks" required></select>
+            <label>Monsters <input name="n" type="number" min="3" max="40" value="12" style="width:80px"></label>
+            <label>Level <input name="level" type="number" min="1" max="1000" value="20" style="width:90px"></label>
+            <label>How long <select name="minutes"><option value="10">10 minutes</option><option value="30" selected>30 minutes</option><option value="60">1 hour</option><option value="180">3 hours</option><option value="720">12 hours</option></select></label>
+            <button class="danger" type="submit">Attack!</button>
+          </form>
+          <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Town</th><th>Attackers</th><th>When</th><th>Status</th><th></th></tr></thead><tbody id="raids"></tbody></table></div>
+        </div>
+        <div class="card" data-need="world">
+          <h2>Dragons and great beasts</h2>
+          <p class="quiet">Bring a slain dragon, wyvern or the Spirit King back to life: its empty lair has it again at once, in every game that is open (otherwise a slain beast comes back after 10 minutes, the King of the Wild Dragons after a day).</p>
+          <form id="reviveform" class="row">
+            <select name="kind" aria-label="Which beast"></select>
+            <button class="primary" type="submit">Bring back to life</button>
+          </form>
+          <p class="quiet" id="revive-last"></p>
+        </div>
         <div class="card" data-need="world">
           <h2>City bridges</h2>
           <p class="quiet">Raise a city's bridges in a war or a monster attack: they stand up and shut the inner gates.</p>
@@ -258,6 +281,26 @@
       </div>
       <p class="quiet">Everyone playing at this moment, and where they are. It refreshes by itself every 10 seconds. A player who closes the game leaves this list within about 12 seconds. Click a name to open their card.</p>
       <div class="tablewrap"><table><thead><tr><th>Player</th><th>Character</th><th>Level</th><th>Race and class</th><th>Where</th><th>Doing</th></tr></thead><tbody id="online"></tbody></table></div>
+      <h2 style="margin:22px 0 4px">Online today <span class="quiet" id="today-n"></span></h2>
+      <p class="quiet">Everyone who played since midnight (your time), the latest first, whether or not they are still on.</p>
+      <div class="tablewrap"><table><thead><tr><th>Player</th><th>Character</th><th>Level</th><th>Race and class</th><th>Last seen</th></tr></thead><tbody id="today"></tbody></table></div>
+    </div>
+
+    <div data-panel="gifts" class="card" hidden>
+      <h2>Send a gift</h2>
+      <p class="quiet">A pet, an animal or any item, with a note. It lands in their bag wrapped as a 🎁 Gift, and a pop-up tells them at once if they are playing (no reload), or the next time they come in. They open it from the bag. To send to one player you can also use their card on the Players tab.</p>
+      <form id="giftform" class="grid2" style="align-items:end">
+        <label>To <input name="to" list="usernames" placeholder="Username, or leave empty"></label>
+        <label class="perm" style="align-self:center"><input type="checkbox" name="everyone"> <span>Everyone who has a character<small>One gift each</small></span></label>
+        <label>A pet or animal <select name="pet"></select></label>
+        <label>…or another item <input name="item" list="items" placeholder="Type to search"></label>
+        <label>How many <input name="n" type="number" min="1" max="1000" value="1"></label>
+        <label>Signed <input name="from" maxlength="40" placeholder="The keepers of the realm"></label>
+        <label style="grid-column: 1 / -1">Note <textarea name="note" maxlength="400" rows="2" placeholder="A few words to go with it"></textarea></label>
+        <div class="row"><button class="primary" type="submit">Send the gift</button></div>
+      </form>
+      <h2 style="margin-top:22px">Gifts sent</h2>
+      <div class="tablewrap"><table><thead><tr><th>Sent</th><th>To</th><th>Gift</th><th>Note</th><th>Status</th><th></th></tr></thead><tbody id="giftlist"></tbody></table></div>
     </div>
 
     <div data-panel="log" class="card" hidden>
@@ -350,7 +393,7 @@ async function drawStats() {
 }
 
 // ---------- tabs ----------
-const loaders = { online: drawOnline, players: drawPlayers, chat: drawChat, reports: drawReports, skills: drawSkills, world: drawWorld, admins: drawAdmins, log: drawLog };
+const loaders = { gifts: drawGifts, online: drawOnline, players: drawPlayers, chat: drawChat, reports: drawReports, skills: drawSkills, world: drawWorld, admins: drawAdmins, log: drawLog };
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-tab]');
   if (!b) return;
@@ -363,6 +406,7 @@ $('tabs').addEventListener('click', (e) => {
 // ---------- players ----------
 async function drawPlayers() {
   accounts = (await call('api/admin/accounts')).accounts;
+  if ($('usernames')) $('usernames').innerHTML = accounts.filter((a) => a.character).map((a) => `<option value="${esc(a.username)}">`).join('');
   drawList();
 }
 function drawList() {
@@ -756,6 +800,28 @@ function drawCard(p) {
       ${itemPickerHtml()}
     </div>
 
+    <div class="grid2">
+      <div class="card" data-need="edit">
+        <h3>Pets and animals</h3>
+        ${p.pets.length ? `<div class="tablewrap"><table><tbody>${p.pets.map((x) => `<tr>
+          <td>${esc(x.icon)} <b>${esc(x.name)}</b>${x.n > 1 ? ` ×${x.n}` : ''}<br><span class="quiet">${x.out ? `Left out in the world at (${x.out.x}, ${x.out.z})` : 'Put away (comes when called)'}</span></td>
+          <td><div class="row"><button type="button" data-pet="call" data-item="${esc(x.item)}">Call it to them</button><button type="button" data-pet="home" data-item="${esc(x.item)}">Send it home</button><button type="button" class="danger" data-pet="take" data-item="${esc(x.item)}">Take it away</button></div></td></tr>`).join('')}</tbody></table></div>` : '<p class="quiet">No pets or animals of their own.</p>'}
+        ${p.petOrders.length ? `<p class="quiet">Waiting for their game: ${p.petOrders.map((o) => `${esc(PET_DO[o.action] || o.action)} (${esc(itemName(o.item))})`).join(', ')}. It happens within a few seconds while they play, or when they next come in.</p>` : ''}
+        <p class="quiet">Call: it comes to them where they stand. Send home: it leaves the world (it is still theirs, and comes when they call it). Take away: it is no longer theirs. Nothing needs a reload. While they fly on it, it waits until they land.</p>
+      </div>
+      <form class="card" data-form="gift" data-need="edit">
+        <h3>Send a gift</h3>
+        <p class="quiet">It pops up on their screen straight away if they are playing (no reload), or when they next come in, and waits in their bag as a 🎁 Gift until they open it.</p>
+        <div class="statgrid">
+          <label>A pet or animal <select name="pet">${petOptions()}</select></label>
+          <label>…or another item <input name="item" list="items" placeholder="Type to search"></label>
+          <label>How many <input name="n" type="number" min="1" max="1000" value="1"></label>
+        </div>
+        <label style="margin-top:6px">Note <textarea name="note" maxlength="400" rows="2" placeholder="A few words to go with it"></textarea></label>
+        <div class="row" style="margin-top:8px"><button class="primary" type="submit">Send the gift</button></div>
+      </form>
+    </div>
+
     <form class="card" data-form="move" data-need="move">
       <h3>Move them</h3>
       <div class="row">
@@ -837,7 +903,7 @@ async function change(path, body, done) {
   } catch (err) { say(err.message); }
 }
 $('pcard').addEventListener('click', async (e) => {
-  const b = e.target.closest('button[data-act], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore], button[data-give-skill], button[data-give-spell], button[data-give-unique], button[data-give-item]');
+  const b = e.target.closest('button[data-act], button[data-pet], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore], button[data-give-skill], button[data-give-spell], button[data-give-unique], button[data-give-item]');
   if (!b) return;
   const name = $('pcard').dataset.name;
   if (b.dataset.giveUnique) return change('api/admin/edit', { unique: { name: b.dataset.giveUnique, rank: uFilter('ugive').give || 'B' } }, `${name}'s Unique Skill is now ${b.dataset.giveUnique}.`);
@@ -848,6 +914,11 @@ $('pcard').addEventListener('click', async (e) => {
   }
   if (b.dataset.giveSkill) return change('api/admin/edit', { addSkill: b.dataset.giveSkill }, `Skill given to ${name}.`);
   if (b.dataset.giveSpell) return change('api/admin/edit', { addSpell: b.dataset.giveSpell }, `Spell given to ${name}.`);
+  if (b.dataset.pet) {
+    const what = `${PET_DO[b.dataset.pet]} (${itemName(b.dataset.item)})`;
+    if (b.dataset.pet === 'take' && !confirm(`Take ${name}'s ${itemName(b.dataset.item)} away? It won't be theirs any more.`)) return;
+    return change('api/admin/pet', { item: b.dataset.item, action: b.dataset.pet }, `Sent: ${what}. It happens in ${name}'s game within a few seconds (or when they next come in).`);
+  }
   if (b.dataset.remove) return change('api/admin/edit', { removeItem: { index: Number(b.dataset.remove) } }, 'Taken away.');
   if (b.dataset.unskill) return change('api/admin/edit', { removeSkill: b.dataset.unskill }, 'Skill taken away.');
   if (b.dataset.unspell) return change('api/admin/edit', { removeSpell: b.dataset.unspell }, 'Spell taken away.');
@@ -910,6 +981,12 @@ $('pcard').addEventListener('submit', async (e) => {
     for (const k of ['level', 'coins', 'lives']) if (v(k)) body[k] = Number(v(k));
     change('api/admin/life/edit', body, 'The past life was changed.');
   }
+  if (kind === 'gift') {
+    const it = giftItem(f);
+    if (!it) return say('Choose a pet, or type an item from the list.');
+    await change('api/admin/gift', { item: it.id, n: Number(v('n')) || 1, note: v('note') }, `Gift sent to ${name}: ${it.name}. It pops up in their game within a few seconds (or when they next come in).`);
+    return;
+  }
   if (kind === 'give') {
     const typed = v('item').toLowerCase();
     const it = catalogue.items.find((x) => x.name.toLowerCase() === typed || x.id === typed);
@@ -934,6 +1011,91 @@ $('pcard').addEventListener('submit', async (e) => {
   if (kind === 'mute') change('api/admin/mute', { minutes: Number(v('minutes')) }, `${name} is muted.`);
   if (kind === 'password') { await change('api/admin/password', { password: v('password') }, `New password saved for ${name}. Tell them to sign in with it.`); f.reset(); }
   if (kind === 'birthdate') change('api/admin/birthdate', { birthdate: v('birthdate') }, `Birth date saved for ${name}.`);
+});
+
+// ---------- gifts ----------
+const PET_DO = { call: 'Call it to them', home: 'Send it home', take: 'Take it away' };
+const itemName = (id) => catalogue.items.find((x) => x.id === id)?.name || id;
+const petOptions = () => `<option value="">— choose —</option>${catalogue.items.filter((x) => x.kind === 'mount').map((x) => `<option value="${esc(x.id)}">${esc(x.icon)} ${esc(x.name)}</option>`).join('')}`;
+// the pet picked, or else the item typed
+function giftItem(f) {
+  const pet = f.elements.pet.value;
+  if (pet) return catalogue.items.find((x) => x.id === pet);
+  const typed = f.elements.item.value.trim().toLowerCase();
+  return typed ? catalogue.items.find((x) => x.kind !== 'gift' && (x.name.toLowerCase() === typed || x.id === typed)) : null;
+}
+async function drawGifts() {
+  $('giftform').elements.pet.innerHTML = petOptions();
+  const { gifts } = await call('api/admin/gifts');
+  $('giftlist').innerHTML = gifts.map((g) => `<tr><td class="quiet">${when(g.at)}</td><td>${esc(g.to)}</td><td>${esc(g.icon)} ${esc(g.name)}${g.n > 1 ? ` ×${g.n}` : ''}</td><td>${esc(g.note || '')}${g.from ? `<br><span class="quiet">— ${esc(g.from)}</span>` : ''}</td>
+    <td>${g.opened ? `<span class="tag">Opened</span> <span class="quiet">${ago(g.opened)}</span>` : g.seen ? '<span class="tag">Seen, not opened</span>' : '<span class="quiet">Waiting for them</span>'}</td>
+    <td>${g.opened ? '' : `<button type="button" class="danger" data-unsend="${g.id}">Take back</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="quiet">No gifts sent yet.</td></tr>';
+}
+$('giftform').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target, it = giftItem(f);
+  if (!it) return say('Choose a pet, or type an item from the list.');
+  const everyone = f.elements.everyone.checked, to = f.elements.to.value.trim();
+  const body = { item: it.id, n: Number(f.elements.n.value) || 1, note: f.elements.note.value.trim(), from: f.elements.from.value.trim() };
+  try {
+    if (everyone) {
+      if (!confirm(`Send ${it.name} to every player?`)) return;
+      const r = await call('api/admin/gift', { ...body, everyone: true });
+      say(`Sent ${it.name} to ${r.sent} players.`, true);
+    } else {
+      if (!accounts.length) await drawPlayers();
+      const acc = accounts.find((x) => x.username.toLowerCase() === to.toLowerCase());
+      if (!acc) return say('Type the username of the player (or tick Everyone).');
+      await call('api/admin/gift', { ...body, id: acc.id });
+      say(`Gift sent to ${acc.username}: ${it.name}. It pops up in their game within a few seconds (or when they next come in).`, true);
+    }
+    f.elements.note.value = ''; f.elements.item.value = ''; f.elements.pet.value = '';
+    drawGifts();
+  } catch (err) { say(err.message); }
+});
+$('giftlist').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-unsend]');
+  if (!b || !confirm('Take this gift back? It disappears from their bag before they open it.')) return;
+  try { await call('api/admin/gift/unsend', { gift: Number(b.dataset.unsend) }); say('The gift was taken back.', true); drawGifts(); } catch (err) { say(err.message); }
+});
+
+// ---------- monster attacks and the great beasts (World tab) ----------
+let raidInfo = null;
+async function drawRaids() {
+  raidInfo = await call('api/admin/raids');
+  const f = $('raidform').elements;
+  if (!f.place.options.length) {
+    f.place.innerHTML = `<option value="">Which town?</option><optgroup label="Cities">${raidInfo.places.filter((p) => p.city).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</optgroup><optgroup label="Villages">${raidInfo.places.filter((p) => !p.city).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</optgroup>`;
+    f.raiders.innerHTML = raidInfo.raiders.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+    $('reviveform').elements.kind.innerHTML = `<option value="all">Every slain great beast</option>${raidInfo.beasts.map((b) => `<option value="${esc(b.id)}">${esc(b.name)}${b.king ? ' (the King of the Wild Dragons)' : ''}</option>`).join('')}`;
+  }
+  const now = Date.now();
+  $('raids').innerHTML = raidInfo.raids.slice().reverse().map((r) => {
+    const on = !r.endedAt && r.until > now;
+    return `<tr><td><b>${esc(r.placeName)}</b>${r.city ? ' <span class="quiet">(city)</span>' : ''}</td><td>${r.n} ${esc(raidInfo.raiders.find((x) => x.id === r.raiders)?.name || r.raiders)} · Lv ${r.level}</td>
+      <td class="quiet">${when(r.at)}</td><td>${on ? `<span class="tag bad">Under attack</span> <span class="quiet">until ${new Date(r.until).toLocaleTimeString()}</span>` : `<span class="tag">Over</span> <span class="quiet">${r.endedAt ? 'driven off' : 'time ran out'}</span>`}</td>
+      <td>${on ? `<button type="button" data-endraid="${r.id}">Drive them off</button>` : ''}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="quiet">No attacks lately.</td></tr>';
+  const rv = raidInfo.revive;
+  $('revive-last').textContent = rv ? `Last brought back: ${rv.kind === 'all' ? 'every great beast' : raidInfo.beasts.find((b) => b.id === rv.kind)?.name || rv.kind}, ${ago(rv.at)}.` : '';
+}
+$('raidform').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target.elements;
+  if (!f.place.value) return say('Choose a town.');
+  const town = f.place.selectedOptions[0].textContent;
+  if (!confirm(`Send ${f.n.value} ${f.raiders.selectedOptions[0].textContent} (level ${f.level.value}) against ${town}?`)) return;
+  try { await call('api/admin/raid', { place: f.place.value, raiders: f.raiders.value, n: Number(f.n.value), level: Number(f.level.value), minutes: Number(f.minutes.value) }); say(`${town} is under attack! Players see it within a few seconds.`, true); drawRaids(); drawWorld().catch(() => {}); } catch (err) { say(err.message); }
+});
+$('raids').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-endraid]');
+  if (!b) return;
+  try { await call('api/admin/raid/end', { raid: Number(b.dataset.endraid) }); say('The monsters were driven off.', true); drawRaids(); drawWorld().catch(() => {}); } catch (err) { say(err.message); }
+});
+$('reviveform').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const sel = e.target.elements.kind;
+  try { await call('api/admin/revive', { kind: sel.value }); say(`${sel.selectedOptions[0].textContent}: back to life in every open game within a few seconds.`, true); drawRaids(); } catch (err) { say(err.message); }
 });
 
 // ---------- chat ----------
@@ -968,7 +1130,7 @@ $('reports').addEventListener('click', async (e) => {
 // ---------- world ----------
 const CITIES = [['central', 'Central City'], ['emberfall', 'Emberfall'], ['ashgrave', 'Ashgrave'], ['lumenhollow', 'Lumenhollow'], ['mirehaven', 'Mirehaven']];
 async function drawWorld() {
-  if (can('world')) drawTuning().catch((err) => say(err.message));
+  if (can('world')) { drawTuning().catch((err) => say(err.message)); drawRaids().catch((err) => say(err.message)); }
   const w = await call('api/admin/world');
   $('ann-now').innerHTML = w.announcement ? `Showing now: “${esc(w.announcement.text)}” until ${when(w.announcement.until)}` : 'Nothing is showing now.';
   $('courts').innerHTML = w.courts.map((c) => `<tr><td>${esc(nice(c.race))}</td><td>${esc(c.king.name)} <span class="quiet">Lv ${c.king.level}${c.king.npc ? ' · the first King' : ' · a player'}</span></td><td>${c.king.npc ? '' : `<button type="button" class="danger" data-king="${esc(c.race)}">Put the first King back</button>`}</td></tr>`).join('');
@@ -1042,9 +1204,11 @@ $('sects').addEventListener('click', async (e) => {
 // ---------- who is online right now ----------
 const DOING = { ride: 'Riding', fly: 'Flying', sit: 'Sitting', lie: 'Lying down' };
 async function drawOnline() {
-  const { players } = await call('api/admin/online');
+  const since = new Date(); since.setHours(0, 0, 0, 0); // midnight, your time
+  const { players, today } = await call(`api/admin/online?since=${since.getTime()}`);
   const tab = document.querySelector('[data-tab="online"]');
-  tab.innerHTML = `Online now<span class="n">${players.length}</span>`;
+  tab.innerHTML = `Online now<span class="n">${players.length}</span> · today`;
+  drawToday(today || []);
   $('online').innerHTML = players.map((p) => `<tr>
       <td><button type="button" class="link" data-look="${p.id}"><span class="dot on"></span> <b>${esc(p.username)}</b></button></td>
       <td>${esc(p.character || '')}</td><td>${p.level ?? ''}</td>
@@ -1052,6 +1216,15 @@ async function drawOnline() {
       <td>${esc(p.where)} <small class="quiet">(${p.x}, ${p.z})</small></td>
       <td>${esc(DOING[p.pose] || 'Exploring')}</td></tr>`).join('') || '<tr><td colspan="6" class="quiet">Nobody is in the world right now.</td></tr>';
 }
+function drawToday(today) {
+  $('today-n').textContent = `(${today.length})`;
+  $('today').innerHTML = today.map((p) => `<tr>
+      <td><button type="button" class="link" data-look="${p.id}"><span class="dot${p.online ? ' on' : ''}"></span> <b>${esc(p.username)}</b></button></td>
+      <td>${esc(p.character || '')}</td><td>${p.level ?? ''}</td>
+      <td>${esc([nice(p.race || ''), nice(p.cls || '')].filter(Boolean).join(' '))}</td>
+      <td>${p.online ? '<span class="tag">In the world now</span>' : `${new Date(p.seen).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} <span class="quiet">(${ago(p.seen)})</span>`}</td></tr>`).join('') || '<tr><td colspan="5" class="quiet">Nobody has played yet today.</td></tr>';
+}
+$('today').addEventListener('click', (e) => { const b = e.target.closest('[data-look]'); if (b) { document.querySelector('[data-tab="players"]').click(); openPlayer(Number(b.dataset.look)); } });
 $('online-refresh').addEventListener('click', () => drawOnline().catch((err) => say(err.message)));
 $('online').addEventListener('click', (e) => { const b = e.target.closest('[data-look]'); if (b) { document.querySelector('[data-tab="players"]').click(); openPlayer(Number(b.dataset.look)); } });
 setInterval(() => {
@@ -1080,7 +1253,9 @@ async function start() {
     const ul = document.createElement('datalist');
     ul.id = 'uniques';
     ul.innerHTML = catalogue.uniques.map((n) => `<option value="${esc(n)}">`).join('');
-    document.body.append(dl, ul);
+    const un = document.createElement('datalist');
+    un.id = 'usernames';
+    document.body.append(dl, ul, un);
     await drawPlayers();
   } catch (e) {
     $('board').hidden = true; $('login').hidden = false; $('logout').hidden = true;

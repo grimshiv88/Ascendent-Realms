@@ -22,6 +22,10 @@ const STABLED = new Set(['horse', 'donkey']); // they sleep in the stable at nig
 const STABLE_SWAP = 45; // ...moved in or out only while you are this far from the farm
 const CAMPFIRE_SECS = 6 * 60, CAMPFIRES_MAX = 3;
 export const CAMPFIRE_SAFE = 9; // metres round a lit campfire where monsters won't find you at night
+// Step into a lit campfire and it burns you: within this many metres of its middle (inside its ring
+// of stones), every BURN_EVERY seconds, for this share of your full HP
+export const CAMPFIRE_BURN_R = 0.7, BURN_EVERY = 0.5, BURN_SHARE = 0.04;
+const PUT_OUT_SECS = 90; // a put-out fire's cold stones and charred logs stay this long
 const BLADES = ['sword', 'dagger', 'axe'];
 const BIRD_FOOD = ['grain', 'lettuce', 'cabbage', 'carrot'];
 // bait: how long a body set as bait lasts, how long before the first beast comes (and between
@@ -50,6 +54,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
   }
   const farms = allFarms().map((f) => ({ f, built: null }));
   const fires = []; // campfires you lit: { x, z, group, flames, light, left }
+  const ashes = []; // fires you put out: { group, left }
   let dragging = null; // the body you are dragging
   let offered = null;  // the body whose choice (drag or cut) is showing
   let lastPet = new WeakMap();
@@ -123,6 +128,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     const group = new THREE.Group();
     group.position.set(x, groundAt(x, z), z);
     const stone = new THREE.MeshStandardMaterial({ color: '#5a5650', roughness: 1 }), log = new THREE.MeshStandardMaterial({ color: '#4a3020', roughness: 1 });
+    group.userData.log = log;
     for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.16, 0), stone); r.position.set(Math.cos(a) * 0.55, 0.08, Math.sin(a) * 0.55); group.add(r); }
     for (let i = 0; i < 4; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.9, 6), log); l.rotation.set(Math.PI / 2 - 0.5, (i / 4) * Math.PI * 2, 0); l.position.y = 0.2; group.add(l); }
     const fm = new THREE.MeshStandardMaterial({ color: '#ffb347', emissive: '#ff7a1a', emissiveIntensity: 3, transparent: true, opacity: 0.9 });
@@ -130,9 +136,29 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     const light = new GlowLight('#ff9a3c', 12, 13, 1.8); light.position.y = 0.8; group.add(light);
     scene.add(group);
     fires.push({ x, z, group, flames, light, left: CAMPFIRE_SECS });
-    say('You light a campfire. Press E beside it to cook raw meat', 'note');
+    say('You light a campfire. Press E beside it to cook raw meat, or to put it out. Don\'t step in it!', 'note');
     return 'ok';
   }
+  // Put out one of your campfires: the flames die, and the cold stones and charred logs stay a
+  // little while before they are gone
+  const myFireNear = (x, z, r = 3.2) => fires.find((f) => Math.hypot(f.x - x, f.z - z) < r) || null;
+  function putOut(f) {
+    fires.splice(fires.indexOf(f), 1);
+    for (const fl of f.flames) f.group.remove(fl);
+    f.group.remove(f.light);
+    f.light.dispose?.();
+    f.group.userData.log?.color.set('#1e1a18'); // charred
+    ashes.push({ group: f.group, left: PUT_OUT_SECS });
+    say('You put out the campfire', 'note');
+  }
+  function putOutNear() {
+    const p = getPos(), f = myFireNear(p.x, p.z);
+    if (!f) return false;
+    putOut(f);
+    return true;
+  }
+  // a lit campfire (one a player lit) under your feet at (x, z), or null
+  const burningAt = (x, z, y = null) => fires.find((f) => Math.hypot(f.x - x, f.z - z) < CAMPFIRE_BURN_R && (y == null || Math.abs(y - f.group.position.y) < 0.8)) || null;
   function cookHere() {
     const out = game.cookAll();
     if (!out.length) return false;
@@ -349,6 +375,8 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     if (fireNear(p.x, p.z) && cookHere()) return true;
     const m = creatures().animalNear(p.x, p.z, 2.4);
     if (m) { feedOrPet(m); return true; }
+    // nothing raw to cook: E by a campfire you lit puts it out
+    if (putOutNear()) return true;
     if (fireNear(p.x, p.z)) { say('Nothing raw to cook. Hunt an animal and cut it up first', 'note'); return true; }
     return false;
   }
@@ -361,7 +389,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
       else if (!m.dead && !m.kind.aggressive) list.push([m.x, m.y + m.height * 0.7, m.z, 2.4, () => feedOrPet(m)]);
     }
     for (const q of builtFarms()) for (const n of q.built.npcs) list.push([n.x, groundAt(n.x, n.z) + 1.4, n.z, 3.5, () => (dragging && n.kind === 'butcher' ? toButcher(n) : onEvent?.('market', n.kind === 'butcher' ? 'butcher' : 'farm_stand'))]);
-    for (const f of allFires()) if (Math.abs(f.x - p.x) < 12 && Math.abs(f.z - p.z) < 12) list.push([f.x, groundAt(f.x, f.z) + 0.5, f.z, 3.2, () => { if (!cookHere()) say('Nothing raw to cook. Hunt an animal and cut it up first', 'note'); }]);
+    for (const f of allFires()) if (Math.abs(f.x - p.x) < 12 && Math.abs(f.z - p.z) < 12) list.push([f.x, groundAt(f.x, f.z) + 0.5, f.z, 3.2, () => { if (!cookHere() && !(fires.includes(f) && (putOut(f), true))) say('Nothing raw to cook. Hunt an animal and cut it up first', 'note'); }]);
   }
 
   // ---------- every frame ----------
@@ -375,6 +403,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
       f.light.intensity = 11 + Math.sin(t * 13) * 2;
       if (f.left <= 0) { scene.remove(f.group); fires.splice(fires.indexOf(f), 1); say('Your campfire burns out', 'note'); }
     }
+    for (const a of [...ashes]) if ((a.left -= dt) <= 0) { scene.remove(a.group); ashes.splice(ashes.indexOf(a), 1); }
     // the body you drag slides along behind you
     if (dragging) {
       if (!canHarvest(dragging) && !dragging.dragged) { dragging = null; drawRope(null); return; }
@@ -391,7 +420,7 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
   }
 
   return {
-    updateFarms, tick, interact, tapTargets, lightCampfire, drag: () => drag(), cut: () => cut(), bait: () => setBait(), stuff: (how) => stuff(how), drop,
+    updateFarms, tick, interact, tapTargets, lightCampfire, putOutNear, burningAt, drag: () => drag(), cut: () => cut(), bait: () => setBait(), stuff: (how) => stuff(how), drop,
     // (tests) the next beast comes now; bring a coming one to `d` metres from its bait
     debugBaitNow() { for (const b of baits) b.wait = 0; },
     debugPullVisitor(d = 4) { for (const b of baits) if (b.visitor) { b.visitor.x = b.x + d; b.visitor.z = b.z; } },

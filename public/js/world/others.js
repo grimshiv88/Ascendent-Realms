@@ -3,6 +3,7 @@
 // Their tamed dragon or wyvern (ridden, or at their side) and their hatchling show too.
 import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { poseSwim, endSwim } from '../characters/moves.js';
 import { wearGear } from '../characters/gear.js';
 import { ITEMS } from '../data/items.mjs';
 import { bodySig, GONE_MS } from '../data/presence.mjs';
@@ -91,11 +92,11 @@ export function createOthers(scene) {
         if (!p.body?.race) continue;
         now.add(p.id);
         let o = seen.get(p.id);
-        const sig = bodySig(p.body) + p.name;
+        const sig = bodySig(p.body) + p.name + (p.medal ? '#1' : '');
         if (o && o.sig !== sig) { drop(p.id); o = null; }
         if (!o) {
           let body;
-          try { body = makeBody(p.body, p.name); } catch (e) { console.warn('could not draw player', p.name, e); continue; } // a race this game doesn't know yet
+          try { body = makeBody(p.body, p.medal ? `🥇 ${p.name}` : p.name); } catch (e) { console.warn('could not draw player', p.name, e); continue; } // a race this game doesn't know yet
           scene.add(body);
           o = { body, sig, name: p.name, snaps: [], speed: 0, pose: '', live: 0 };
           seen.set(p.id, o);
@@ -158,6 +159,11 @@ export function createOthers(scene) {
         const lying = o.pose === 'lie';
         o.body.rotation.z = lying ? Math.PI / 2 : 0;
         animateCharacter(o.body, t, lying || o.pose === 'sit' || o.pose === 'ride' || o.pose === 'fly' ? 0 : o.speed / WALK * 1.6);
+        // swimming: the same front crawl or treading water as your own body
+        if (o.pose === 'swim') { poseSwim(o.body, x, y, z, h, t, o.speed / (WALK * 0.45)); o.swam = true; }
+        else if (o.swam) { o.swam = false; endSwim(o.body); }
+        // a blow (seen in a Colosseum fight): the weapon arm comes down from over the shoulder
+        if (o.pose === 'swing') { const arm = o.body.userData.rig?.arms?.[0]; if (arm) arm.shoulder.rotation.x = -2.4 + ((t * 5) % 1) * 2.6; }
         const q = o.pet;
         if (q) {
           const k = Math.min(1, dt * 3), was = { x: q.x, z: q.z };
@@ -179,6 +185,8 @@ export function createOthers(scene) {
       }
     },
     clear() { for (const id of [...seen.keys()]) drop(id); },
+    // one player by their account id: where they stand now (for a duel in the Colosseum)
+    get(id) { const o = seen.get(id); return o ? { x: o.x, y: o.y, z: o.z, height: o.body.userData.height || 1.8, name: o.name } : null; },
     count: () => seen.size,
     has: (id) => seen.has(id),
     list: () => [...seen.values()].map((o) => ({ name: o.name, x: o.body.position.x, z: o.body.position.z, live: nowMs() - o.live < LIVE_FRESH, snaps: o.snaps.length })),
