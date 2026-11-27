@@ -661,9 +661,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // the powers an admin turned on (see data/staff.mjs): { fly, nodeath, speed }
   let powers = {};
   let lastHurt = -99;
+  let lastFoe = null, sicOn = null, dragonCd = 0; // (your tamed dragon: what attacked you, what you set it on)
   const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
-    getPlayer: () => ({ x: pos.x, z: pos.z, y: pos.y, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, flying: !!riding?.flying, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
+    getPlayer: () => ({ x: pos.x, z: pos.z, y: pos.y, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, flying: !!riding?.flying, grudges: game?.character.grudges || null, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
     isNight: () => night,
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
@@ -692,7 +693,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // the great beasts (see beasts.js): a dragon sees you, the Spirit King rises, one is slain
     onBeast(m, what) {
       const name = m.kind.name;
-      if (what === 'notice') say(`The ${name} has seen you! ${m.kind.beast.breath ? 'Keep out of its breath' : 'It dives at you'}`, 'hurt');
+      if (what === 'grudge') say(`The ${name} knows you: you stole its egg! It will never forget, and it comes to kill you!`, 'hurt');
+      else if (what === 'notice') say(`The ${name} has seen you! ${m.kind.beast.breath ? 'Keep out of its breath' : 'It dives at you'}`, 'hurt');
       else if (what === 'rise') say('The still water of the lake begins to glow…', 'note');
       else if (what === 'greet' && !m.kind.beast.king) say('The Spirit King rises from the lake: "Walk in peace, traveller. Raise your hand against me and the lake itself will answer."', 'note');
       else if (what === 'greet' && m.kind.beast.king) say(`${name}, ${m.kind.beast.title}, comes down from the stars to look at you: "Small one. I have watched your world turn since before your cities were stone. Go in peace, or strike, and learn what the sky can do."`, 'note');
@@ -703,7 +705,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else if (what === 'wrath') say(`${name} roars, and the sky darkens: "So be it!"`, 'hurt');
       else if (what === 'starfall') say('Stars fall from the sky! Get out of the rings of light!', 'hurt');
       else if (what === 'nova') say(`${name} gathers the light of the stars… get far away before it bursts!`, 'hurt');
-      else if (what === 'slain' && m.kind.beast.king) say(`${name}, ${m.kind.beast.title}, falls from the sky! His Star Throne will stand empty for a day.`, 'exp');
+      if (what === 'slain' && m.lair && game?.character.grudges?.[m.lair.id]) { delete game.character.grudges[m.lair.id]; game.touch('bag'); }
+      if (what === 'slain' && m.kind.beast.king) say(`${name}, ${m.kind.beast.title}, falls from the sky! His Star Throne will stand empty for a day.`, 'exp');
       else if (what === 'slain') say(m.kind.beast.shape === 'spirit' ? 'The Spirit King sinks back into the lake. One day he will rise again' : `The ${name} crashes to the ground!`, 'exp');
     },
     // `breath`: fire, frost, storm or water from a great beast (half again as strong as a bite)
@@ -713,6 +716,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // (the King of the Wild Dragons: his breath of the void, falling stars, and the Supernova)
       const dmg = Math.round(monsterHit(m.atk, m.level, s.def * buffed('def')) * (breath ? ({ cosmic: 1.6, star: 1.2, nova: 2.5, tail: 1.3 }[breath] ?? 1.5) : 1));
       lastHurt = clock.elapsedTime;
+      lastFoe = { m, at: clock.elapsedTime }; // (your dragon turns on whatever attacks you)
       floatText(breath ? `${{ fire: '🔥', frost: '❄️', storm: '⚡', water: '🌊', cosmic: '🌌', star: '☄️', nova: '💥', tail: '💢' }[breath] || ''} -${dmg}` : `-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
       if (game.damage(dmg)) defeated(m);
     },
@@ -1274,6 +1278,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const ok = Math.random() < BEAST_TAME[id];
     if (creatures.tame(m, ok)) {
       const item = `tamed_${id}`;
+      if (m.lair && game.character.grudges?.[m.lair.id]) delete game.character.grudges[m.lair.id];
       game.addItem(item, 1);
       riding?.adopt(item, m.x, m.z, m.heading);
       say(`You throw the bridle over the ${name}'s head and hold on… it bows its head to you. It is yours! Press H or E beside it to climb on`, 'exp');
@@ -1416,8 +1421,62 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     showWeapon();
     if (sheathed && game?.weapon()) say('You put your weapon away: no weapons are drawn inside the city', 'note');
   }
+  // ---------- your tamed dragon or wyvern, fighting beside you (see riding.js) ----------
+  // It goes for the foe you set it on (the dragon key), or else whatever has hit you in the last
+  // little while, and breathes on it (or bites, for a Peak Wyvern, which has no breath).
+  const BREATH_HOW = { fire: 'fire', frost: 'frost', storm: 'shock' };
+  function dragonHit(foe, c, mult = 1) {
+    const b = BEASTS[c.id];
+    const lvl = b.levels[0];
+    let dmg = (10 + lvl * 1.1) * (b.boss ? 2 : 1.4) * (0.85 + Math.random() * 0.3) * mult - foe.def * 0.3;
+    dmg = Math.max(1, Math.round(dmg));
+    floatText(`${c.breath ? { fire: '🔥', frost: '❄️', storm: '⚡' }[c.breath] : '🦷'} ${dmg}`, new THREE.Vector3(foe.x, foe.y + foe.height + 0.2, foe.z), 'dmg');
+    finishHit(foe, creatures.hit(foe, dmg, c.breath ? BREATH_HOW[c.breath] : 'pierce'));
+  }
+  const alive = (m) => m && !m.dead && m.hp > 0 && creatures.list.includes(m);
+  function dragonFight(dt) {
+    dragonCd -= dt;
+    const c = riding?.companion();
+    if (!c || c.riding) { if (c) riding.setGoal(null); return; }
+    if (sicOn && (!alive(sicOn) || Math.hypot(sicOn.x - pos.x, sicOn.z - pos.z) > 120)) sicOn = null;
+    if (lastFoe && (!alive(lastFoe.m) || clock.elapsedTime - lastFoe.at > 25 || Math.hypot(lastFoe.m.x - pos.x, lastFoe.m.z - pos.z) > 60)) lastFoe = null;
+    const foe = sicOn || lastFoe?.m || null;
+    if (!foe || dead) { riding.setGoal(null); return; }
+    const reach = c.breath ? Math.max(9, c.len * 0.7) : c.reach + (foe.radius || 1);
+    const foeAir = foe.air || 0;
+    riding.setGoal({ x: foe.x, z: foe.z, r: reach - 1, air: foeAir > 4 ? foeAir : undefined });
+    const d = Math.hypot(foe.x - c.x, foe.z - c.z);
+    if (d < reach + 2 && Math.abs((foe.y + foe.height * 0.5) - (c.y + 2)) < 25 && dragonCd <= 0) {
+      dragonCd = c.breath ? 2.2 : 1.4;
+      riding.breathe(() => ({ x: foe.x, y: foe.y + foe.height * 0.5, z: foe.z }), 1.2);
+      dragonHit(foe, c);
+    }
+  }
+  // the dragon key: set your dragon on the foe in front of you, or call it back to your side;
+  // on its back, it breathes ahead of you
+  function commandDragon() {
+    if (!game || dead) return;
+    if (riding?.flyer()) { riderBreath(); return; }
+    const c = riding?.companion();
+    if (!c) { say('You have no dragon with you. Tame one (a Dragon Bridle on a worn-out one) or hatch an egg', 'note'); return; }
+    const foe = creatures.target(pos.x, pos.z, heading, 40, 0.6);
+    const name = BEASTS[c.id].name.toLowerCase();
+    if (foe && foe !== sicOn) { sicOn = foe; say(`You point at the ${foe.kind.name}. Your ${name} goes for it!`, 'note'); }
+    else { sicOn = null; lastFoe = null; say(`Your ${name} comes back to your side`, 'note'); }
+  }
+  // breath from your dragon's jaws while you ride it: it burns what is ahead of you
+  function riderBreath() {
+    const c = riding?.companion();
+    if (!c || dragonCd > 0) return;
+    dragonCd = c.breath ? 1.6 : 1;
+    const far = c.len * 1.2 + 10;
+    riding.breathe(() => ({ x: pos.x + Math.sin(heading) * far, y: pos.y - (riding.flying ? 4 : 0), z: pos.z + Math.cos(heading) * far }), 1.1);
+    const foes = creatures.targets(pos.x, pos.z, heading, far, 0.45).filter((m) => Math.abs(m.y + m.height * 0.5 - pos.y) < 20).slice(0, c.breath ? 5 : 1);
+    for (const m of foes) dragonHit(m, c, c.breath ? 1 : 0.8);
+  }
   function attack() {
     if (dead || cooldown > 0) return;
+    if (riding?.flyer()) { riderBreath(); return; } // (on a dragon's back, it breathes for you)
     if (sheathed) { sayPutAway(); return; }
     const w = game?.weapon();
     // a bow needs an arrow for every shot
@@ -1927,6 +1986,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (act === 'tent') pitchTent();
     if (act === 'interact') interact();
     if (act === 'mount' && !e.repeat && game) riding?.toggle();
+    if (act === 'dragon' && !e.repeat) commandDragon();
     if (act === 'spell' && !e.repeat) nextSpell();
     onKey?.(e);
   };
@@ -2560,7 +2620,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
     for (const q of mobVillages.values()) q.built.update(t, pos, creatures.list);
-    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); hatchery?.tick(dt, t); }
+    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); dragonFight(dt); hatchery?.tick(dt, t); }
     walkBuild?.update();
     sky.follow(camera);
 
@@ -2678,6 +2738,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     },
     // on a flying mount: the phone's dive button (held) and whether you are in the air
     flyDown(on) { flyDown = !!on; },
+    commandDragon: () => commandDragon(),
+    get hasDragon() { return !!riding?.companion(); },
     // an admin's Dragon radar: every dragon and wyvern lair, and where the beast is now if it is near
     radar() {
       const out = [];
@@ -2698,7 +2760,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     presence() {
       const place = depth ? `cave:${String(depth.cave.id).replace(/[^\w-]/g, "_").slice(0, 40)}` : inside ? `in:${String(inside.shop.id || 'room').replace(/[^\w-]/g, '_').slice(0, 40)}:${Math.round(inside.shop.x)},${Math.round(inside.shop.z)}` : 'out';
       const pose = dead || sleeping || collapsed > 0 ? 'lie' : sitting ? 'sit' : riding?.flying ? 'fly' : riding?.riding ? 'ride' : '';
-      return { x: avatar.position.x, y: avatar.position.y, z: avatar.position.z, heading, speed: speedNow, place, pose };
+      // your dragon (ridden or beside you) or your hatchling, for everyone to see
+      const c = riding?.companion(), h = hatchery?.petSpot();
+      const pet = c ? { k: c.id, x: c.x, y: c.y, z: c.z, h: c.heading, air: c.air } : h ? { k: `h:${h.kind}`, x: h.x, y: h.y, z: h.z, h: h.heading, air: h.air, s: h.scale } : null;
+      return { x: avatar.position.x, y: avatar.position.y, z: avatar.position.z, heading, speed: speedNow, place, pose, pet };
     },
     showOthers: (list) => others.show(list),
     get othersNear() { return others.count(); },
@@ -2773,6 +2838,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugInteract() { interact(); },
     debugRide() { return { mount: riding?.mount(), flying: !!riding?.flying, flyer: !!riding?.flyer(), y: pos.y, ground: groundAt(pos.x, pos.z) }; },
     debugHitBeast(dmg) { const m = creatures.list.find((q) => q.kind.beast && !q.dead); if (!m) return null; const r = creatures.hit(m, dmg, 'slash'); finishHit(m, r); return r ? { exp: r.exp, drops: r.drops } : { hp: m.hp }; },
+    debugDragon: () => ({ c: riding?.companion(), sic: sicOn ? sicOn.kind.name : null, foe: lastFoe ? lastFoe.m.kind.name : null, grudges: game?.character.grudges || null, cd: dragonCd }),
     debugSpawnAnimal(id, dx = 0, dz = 6) { return creatures.spawnAt(`a_${id}`, 1, pos.x + dx, pos.z + dz, { keep: true }); },
     debugFace(h) { heading = h; yaw = h + Math.PI; snapCam = true; },
     debugTeleport(x, z) { pos.set(x, groundAt(x, z, 1e4), z); snapCam = true; updateSites(x, z); husbandry.updateFarms(x, z); land.update(x, z, Infinity); },

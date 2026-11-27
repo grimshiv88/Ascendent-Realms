@@ -32,7 +32,7 @@ export const HEAT = {
   storm: 'the storm winds high on a mountain (above 1,200 m)',
 };
 export const NEST_EGGS = 2;            // eggs in a full nest
-export const EGG_RETURNS = 30 * 60e3;  // ms until a taken egg is laid again
+export const EGG_RETURNS = 2 * 3600e3; // ms until the beast lays again in place of a taken egg (each egg on its own)
 export const TURN_EVERY = 75;          // seconds of warming between turns (E beside it)
 export const GROW_SECS = 45 * 60;      // seconds a hatchling spends with you before it is grown
 export const EGG_NEAR = 150;           // an egg only warms while you are this close to it

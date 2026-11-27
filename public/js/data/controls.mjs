@@ -22,6 +22,7 @@ export const CONTROLS = [
   ['tent', 'Pitch / pack tent', 'KeyP', 'Doing'],
   ['portal', 'Use a portal', 'KeyG', 'Doing'],
   ['mount', 'Call / ride your horse', 'KeyH', 'Doing'],
+  ['dragon', 'Set your dragon on a foe / call it back', 'Digit7', 'Doing'],
   ['land', 'Land grid', 'KeyL', 'Doing'],
   ['builder', 'Builder View', 'KeyV', 'Doing'],
   ['chat', 'Chat', 'Enter', 'Doing'],

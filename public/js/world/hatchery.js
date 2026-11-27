@@ -140,8 +140,11 @@ export function createHatchery({ scene, game, say, onEvent, getPos, getPlayer, g
     c().nests[n.L.id] = [...taken(n.L.id), Date.now()];
     game.touch('bag');
     scanNests(getPos());
+    // if its parent is about, it sees you: from now on it hunts you down whenever it sees you
     const parent = angerParent(n.L.id);
-    say(parent ? `You take a ${EGGS[n.kind].beast} Egg… the ${parent.kind.name} sees you! It screams and dives at you!` : `You take a ${EGGS[n.kind].beast} Egg from the nest. Set it down somewhere that suits it to hatch it (from your bag)`, parent ? 'hurt' : 'exp');
+    if (parent) { (c().grudges ||= {})[n.L.id] = true; game.touch('bag'); }
+    const back = Math.round(EGG_RETURNS / 3600e3);
+    say(parent ? `You take a ${EGGS[n.kind].beast} Egg… the ${parent.kind.name} sees you! It screams and dives at you. It will never forget you now` : `You take a ${EGGS[n.kind].beast} Egg from the nest. Set it down somewhere that suits it to hatch it (from your bag). It will be ${back} hours or so before the ${EGGS[n.kind].beast.toLowerCase()} lays another`, parent ? 'hurt' : 'exp');
     onEvent?.('egg-taken', { kind: n.kind });
   }
 
@@ -304,6 +307,14 @@ export function createHatchery({ scene, game, say, onEvent, getPos, getPlayer, g
     if (e) { tendEgg(e); return true; }
     const n = nestNear(p.x, p.z);
     if (n) { takeEgg(n); return true; }
+    // an empty nest: the beast has not laid again yet
+    const empty = [...nests.values()].find((q) => !q.eggs.length && Math.hypot(q.x - p.x, q.z - p.z) < 3.5);
+    if (empty) {
+      const next = Math.min(...taken(empty.L.id)) + EGG_RETURNS - Date.now();
+      const mins = Math.max(1, Math.round(next / 60e3));
+      say(`The nest is empty. The ${EGGS[empty.kind].beast.toLowerCase()} will lay another egg in ${mins >= 90 ? `about ${Math.round(mins / 60)} hours` : `${mins} minutes`}`, 'note');
+      return true;
+    }
     return false;
   }
   function tapTargets(list) {
@@ -314,6 +325,8 @@ export function createHatchery({ scene, game, say, onEvent, getPos, getPlayer, g
 
   return {
     tick, interact, tapTargets, placeEgg,
+    // where your hatchling is (for other players to see it)
+    petSpot: () => (pet ? { kind: pet.kind, x: pet.x, y: pet.root.position.y, z: pet.z, heading: pet.heading, air: pet.air, scale: pet.root.scale.x } : null),
     clear() { for (const n of nests.values()) scene.remove(n.group); nests.clear(); for (const m of placed.values()) scene.remove(m); placed.clear(); clearPet(); },
     // (tests)
     debug: () => ({ nests: [...nests.values()].map((n) => ({ id: n.L.id, kind: n.kind, x: Math.round(n.x), z: Math.round(n.z), y: Math.round(n.y), eggs: n.eggs.length })), eggs: eggs().map((e) => ({ ...e, heat: heatOk(e) })), pet: pet ? { kind: pet.kind, x: Math.round(pet.x), z: Math.round(pet.z), air: Math.round(pet.air), grow: Math.round(c().petGrow?.[pet.kind] || 0) } : null }),

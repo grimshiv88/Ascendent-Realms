@@ -199,6 +199,8 @@ CREATE TABLE IF NOT EXISTS presence (
   at         BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS presence_place_at ON presence (place, at);
+-- the dragon, wyvern or hatchling with them (see cleanPet in public/js/data/presence.mjs)
+ALTER TABLE presence ADD COLUMN IF NOT EXISTS pet TEXT;
 
 ${TABLES.map((t) => `ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY;`).join('\n')}
 `;
