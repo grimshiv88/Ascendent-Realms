@@ -29,6 +29,7 @@ import { caveById, THEMES, chestLoot, bossLevel, caveOres, pickOre, SIZES } from
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { createOthers } from './others.js';
+import { onFloor, inColosseum as inColosseumAt, startSpots, colosseumPlace, FLOOR_R } from '../data/arena.mjs';
 import { updateCrowd, setCrowdFar } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { allLairs, BEASTS } from '../data/beasts.mjs';
@@ -203,6 +204,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const s of sites) if (s.place.city && s.built?.setOwners) s.built.setOwners(cityHomes[s.place.id] || {});
   }
   const builtCities = () => sites.filter((s) => s.place.city && s.built?.npcs);
+  // the Colosseum, once the Central City is built round you (see colosseum.js)
+  const colosseumHere = () => sites.find((s) => s.built?.colosseum)?.built.colosseum || null;
+  let arenaLock = false; // in a fight: kept on the sand
   // the cards of new Ceremonies, hanging in the sky over each city's shrine (the latest one per city)
   const skyCards = new Map(); // city id -> { at, card, place }
   let gatherAt = -1;
@@ -708,6 +712,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // `breath`: fire, frost, storm or water from a great beast (half again as strong as a bite)
     onHitPlayer(m, breath = null) {
       if (!game || dead) return;
+      if (m.practice) { const d = Math.max(1, Math.round(monsterHit(m.atk, m.level, game.stats().def * buffed('def')))); floatText(`-${d}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt'); m.onStrike?.(d); return; }
       const s = game.stats();
       // (the King of the Wild Dragons: his breath of the void, falling stars, and the Supernova)
       const dmg = Math.round(monsterHit(m.atk, m.level, s.def * buffed('def')) * (breath ? ({ cosmic: 1.6, star: 1.2, nova: 2.5, tail: 1.3 }[breath] ?? 1.5) : 1));
@@ -1275,6 +1280,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (chest) { openChest(chest); return; }
     if (inside) { useIndoors(); return; }
     if (!depth) {
+      if (sitting) { standUp(); return; }
+      const seat = colosseumHere()?.seatNear(pos.x, pos.z, pos.y);
+      if (seat) { sitDown(seat); onEvent?.('colosseum-seat'); return; }
       const took = game.takeTorch(pos.x, pos.z);
       if (took !== 'none') { say(took === 'ok' ? 'Torch picked up' : 'Your bag is full', took === 'ok' ? 'note' : 'hurt'); drawTorches(); return; }
       if (nearTent(pos.x, pos.z, TENT_IN + 1)) { pitchTent(); return; }
@@ -1389,6 +1397,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
 
   // ---------- attacking ----------
   let attackT = -1;      // time since the swing started, or -1
+  let swungAt = -10;     // when you last swung, struck with a skill or cast (others see you swing)
   let swingDone = false;
   let cooldown = 0;
   const FIST = { speed: 0.45, chop: 1 };
@@ -1398,11 +1407,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const sayPutAway = () => { if (clock.elapsedTime - sheathSaidAt > 3) { sheathSaidAt = clock.elapsedTime; say('Weapons stay put away inside the city walls', 'note'); } };
   function showWeapon() { avatar.traverse((o) => { if (o.userData.weapon) o.visible = !sheathed; }); }
   function checkSheathed() {
-    const now = !depth && builtCities().some((c) => Math.hypot(pos.x - c.place.x, pos.z - c.place.z) < CITY_R);
+    const now = !depth && builtCities().some((c) => Math.hypot(pos.x - c.place.x, pos.z - c.place.z) < CITY_R) && !onFloor(pos.x, pos.z);
     if (now === sheathed) return;
     sheathed = now;
     showWeapon();
     if (sheathed && game?.weapon()) say('You put your weapon away: no weapons are drawn inside the city', 'note');
+    if (!sheathed && !depth && onFloor(pos.x, pos.z) && game?.weapon()) say('On the Colosseum\'s sand you may draw your weapon', 'note');
   }
   function attack() {
     if (dead || cooldown > 0) return;
@@ -1413,6 +1423,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     cooldown = (w || FIST).speed;
     attackT = 0;
     swingDone = false;
+    swungAt = clock.elapsedTime;
   }
 
   // ---------- arrows ----------
@@ -1441,7 +1452,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (!game.giveAway('arrow')) { say('No arrows left', 'hurt'); return; }
     const r = weaponReach(w);
     const from = new THREE.Vector3(pos.x + Math.sin(heading) * 0.5, pos.y + bodyH * 0.78, pos.z + Math.cos(heading) * 0.5);
-    const m = creatures.target(pos.x, pos.z, heading, r.range, r.aim);
+    const m = foeAt(pos.x, pos.z, heading, r.range, r.aim);
     let to;
     if (m) to = new THREE.Vector3(m.x, m.y + m.height * 0.55, m.z);
     else to = new THREE.Vector3(pos.x + Math.sin(heading) * r.range, 0, pos.z + Math.cos(heading) * r.range);
@@ -1495,11 +1506,30 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // skill buffs and potion buffs add together
   const buffed = (stat) => 1 + ((buffs[stat] && clock.elapsedTime < buffs[stat].until ? buffs[stat].pct : 0) + (game?.boostPct(stat) || 0)) / 100;
 
+  // The other fighter in a Colosseum duel (arenaui.js tells where they are): blows, skills and
+  // spells aimed at them work as they do on monsters, but the server works out the damage
+  let duelFoe = null; // () => { x, y, z, height } or null
+  function foeProxy() {
+    const f = duelFoe?.();
+    return f ? { duel: true, x: f.x, y: f.y, z: f.z, height: f.height || 1.8, radius: 0.45, hp: 1, maxHp: 1, def: 0, level: 1, kind: { name: f.name || 'Foe' }, body: { position: new THREE.Vector3(f.x, f.y, f.z) } } : null;
+  }
+  function inArc(m, x, z, h, range, aim = 0.9) {
+    const dx = m.x - x, dz = m.z - z, d = Math.hypot(dx, dz);
+    if (d - m.radius > range) return false;
+    if (d < 0.8) return true;
+    let da = Math.atan2(dx, dz) - h; da = Math.atan2(Math.sin(da), Math.cos(da));
+    return Math.abs(da) < aim;
+  }
+  // the duel foe first (if in reach and in front), then the monsters
+  const foeAt = (x, z, h, range, aim) => { const f = foeProxy(); return f && inArc(f, x, z, h, range, aim ?? 0.9) ? f : creatures.target(x, z, h, range, aim); };
+  const foesAt = (x, z, h, range, arc) => { const f = foeProxy(); const list = creatures.targets(x, z, h, range, arc); return f && inArc(f, x, z, h, range, arc ?? 0.9) ? [f, ...list] : list; };
+
   // Hit a monster with your weapon (or fists); `mult` and `magic` come from skills
   function damageMonster(m, mult = 1, magic = null, how = null, shotWith = null) {
     const w = shotWith || game?.weapon();
     const s = game.stats();
     const useMagic = magic ?? !!w?.magic;
+    if (m.duel) { onEvent?.('duel-hit', { mult: (w || magic !== null ? 1 : 0.6) * mult, magic: !!useMagic }); return 1; }
     let dmg = (w || magic !== null ? (useMagic ? s.matk * buffed('matk') : s.atk) : s.base.atk * 0.6 + 2) * mult * buffed('atk');
     dmg = dmg * (0.9 + Math.random() * 0.2) - m.def * 0.5;
     const crit = Math.random() < 0.1 + Math.min(character.stats.dex * 0.002, 0.25);
@@ -1543,6 +1573,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
   function finishHit(m, reward) {
+    if (m.practice) { if (reward) { m.onYield?.(); setTimeout(() => creatures.removeWhere((q) => q === m), 2500); } return; }
     // a hunter says Allah's name over the animal as they strike (halal hunting)
     if (m.kind.animal?.meat && !m.named) { m.named = true; floatText('Bismillah, Allahu Akbar', new THREE.Vector3(m.x, m.y + m.height + 0.9, m.z), 'note'); }
     if (reward?.animal) {
@@ -1618,7 +1649,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (sk.type === 'strike' || sk.type === 'bolt') {
       // with nobody in reach the skill still goes off, into the air in front of you
-      const m = creatures.target(pos.x, pos.z, heading, sk.type === 'bolt' ? sk.reach : reachNear + 0.4);
+      const m = foeAt(pos.x, pos.z, heading, sk.type === 'bolt' ? sk.reach : reachNear + 0.4);
       if (m) {
         look.to = { x: m.x, y: m.y, z: m.z, h: m.height };
         hitFoe(m, sk.mult, sk.magic || null);
@@ -1629,6 +1660,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     } else if (sk.type === 'sweep') {
       const near = creatures.list.filter((m) => !m.dead && !m.farm && Math.hypot(m.x - pos.x, m.z - pos.z) - m.radius < sk.radius);
+      const f = foeProxy();
+      if (f && Math.hypot(f.x - pos.x, f.z - pos.z) - f.radius < sk.radius) near.unshift(f);
       for (const m of near) hitFoe(m, sk.mult, sk.magic || null);
     } else if (sk.type === 'dash') {
       // rush forward, stopping at the first foe in the way
@@ -1637,7 +1670,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         pos.x += Math.sin(heading) * 0.4; pos.z += Math.cos(heading) * 0.4;
         colliders.push(pos, bodyR);
         look.path.push(new THREE.Vector3(pos.x, heightAt(pos.x, pos.z) + bodyH * 0.5, pos.z));
-        const m = creatures.target(pos.x, pos.z, heading, reachNear);
+        const m = foeAt(pos.x, pos.z, heading, reachNear);
         if (m) { hitFoe(m, sk.mult, null); break; }
       }
       pos.y = Math.max(pos.y, heightAt(pos.x, pos.z));
@@ -1653,6 +1686,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // moment the blow lands: the dust flies as the stamping foot comes down
     const mv = moveFor(sk);
     attackT = -1;
+    swungAt = clock.elapsedTime;
     skillPose = { move: mv, t: 0, dur: mv.dur };
     if (mv.hit > 0) setTimeout(() => skillFx.play(sk, look), mv.dur * mv.hit * 1000);
     else skillFx.play(sk, look);
@@ -1694,17 +1728,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (sp && !SELF_KINDS.includes(sp.kind) && clock.elapsedTime >= (spellReady[sp.id] || 0) && c.sp >= cost) {
       let foes = [], to;
       if (sp.kind === 'bolt' || sp.kind === 'burst') {
-        const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
+        const m = foeAt(pos.x, pos.z, heading, SPELL_REACH);
         if (m) {
           foes = [m];
           if (sp.kind === 'burst') foes.push(...creatures.list.filter((o) => o !== m && !o.dead && !o.farm && Math.hypot(o.x - m.x, o.z - m.z) - o.radius < 3.5));
           to = at(m);
         } else to = ahead(SPELL_REACH);
       } else if (sp.kind === 'nova') {
-        foes = creatures.targets(pos.x, pos.z, heading, 6, Math.PI);
+        foes = foesAt(pos.x, pos.z, heading, 6, Math.PI);
         to = null;
       } else {
-        foes = creatures.targets(pos.x, pos.z, heading, SPELL_REACH, 0.25).slice(0, 3);
+        foes = foesAt(pos.x, pos.z, heading, SPELL_REACH, 0.25).slice(0, 3);
         to = foes.length ? at(foes[foes.length - 1]) : ahead(SPELL_REACH);
       }
       for (const m of foes) {
@@ -1726,7 +1760,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (sp && c.sp < cost && !castSpell.warned) { castSpell.warned = true; say(`Not enough SP for ${sp.name}`, 'hurt'); setTimeout(() => { castSpell.warned = false; }, 3000); }
     const element = els[spellTurn++ % els.length];
-    const m = creatures.target(pos.x, pos.z, heading, SPELL_REACH);
+    const m = foeAt(pos.x, pos.z, heading, SPELL_REACH);
     let to;
     if (m) { to = at(m); damageMonster(m, 1, true, howOf({ element })); }
     else to = ahead(SPELL_REACH);
@@ -1854,7 +1888,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const r = weaponReach(w);
     const reach = bodyR + r.reach * Math.max(0.8, bodyH / 1.8);
     // monsters first: a long or wide weapon can catch more than one
-    const foes = creatures.targets(pos.x, pos.z, heading, reach, r.arc).slice(0, r.hits);
+    const foes = foesAt(pos.x, pos.z, heading, reach, r.arc).slice(0, r.hits);
     if (foes.length) { foes.forEach((m, i) => damageMonster(m, r.sharp * (i ? 0.7 : 1))); return; }
     // then bushes and small trees in front of you
     const fx = pos.x + Math.sin(heading) * reach * 0.6, fz = pos.z + Math.cos(heading) * reach * 0.6;
@@ -2250,6 +2284,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
 
+    // in a Colosseum fight: kept on the sand (the gates are shut to the fighters)
+    if (arenaLock && !inside && !depth) {
+      const c = colosseumPlace(), dx = pos.x - c.x, dz = pos.z - c.z, d = Math.hypot(dx, dz), max = FLOOR_R - 0.7;
+      if (d > max) { pos.x = c.x + (dx / d) * max; pos.z = c.z + (dz / d) * max; }
+    }
     // The city moats are deep: those who live in the city are hauled out by the watch, and anyone
     // who doesn't belong there (a monster in a players' city, a player in a Monster City) drowns
     if (!inside && !depth && !dead && !airborne && t - moatAt > 1) {
@@ -2683,10 +2722,54 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // for seeing each other: exactly where you are and what you are doing, and which place you are in
     presence() {
       const place = depth ? `cave:${String(depth.cave.id).replace(/[^\w-]/g, "_").slice(0, 40)}` : inside ? `in:${String(inside.shop.id || 'room').replace(/[^\w-]/g, '_').slice(0, 40)}:${Math.round(inside.shop.x)},${Math.round(inside.shop.z)}` : 'out';
-      const pose = dead || sleeping || collapsed > 0 ? 'lie' : sitting ? 'sit' : riding?.flying ? 'fly' : riding?.riding ? 'ride' : '';
+      const pose = dead || sleeping || collapsed > 0 ? 'lie' : sitting ? 'sit' : riding?.flying ? 'fly' : riding?.riding ? 'ride' : clock.elapsedTime - swungAt < 0.6 ? 'swing' : '';
       return { x: avatar.position.x, y: avatar.position.y, z: avatar.position.z, heading, speed: speedNow, place, pose };
     },
     showOthers: (list) => others.show(list),
+    // ---------- the Colosseum (see arenaui.js) ----------
+    // the other fighter, for your blows to find; a fighter is kept on the sand during a fight
+    setDuelFoe(fn) { duelFoe = fn || null; },
+    otherPlayer: (id) => others.get(id),
+    lockToFloor(on) { arenaLock = !!on; },
+    colosseum: () => colosseumHere(),
+    // where you are in it: 'floor', 'stands' or null
+    inColosseum() {
+      if (inside || depth) return null;
+      if (onFloor(pos.x, pos.z)) return 'floor';
+      return inColosseumAt(pos.x, pos.z) ? 'stands' : null;
+    },
+    // summoned: straight onto the sand at this spot, facing this way
+    goTo(x, z, h) {
+      if (dead) return false;
+      if (depth) leaveDepths();
+      if (inside) leaveBuilding();
+      if (sleeping) toggleSleep();
+      if (sitting) sitting = null;
+      if (riding?.riding) riding.dismount(true);
+      pos.set(x, 0, z);
+      updateSites(pos.x, pos.z);
+      land.update(pos.x, pos.z, Infinity);
+      pos.y = groundAt(pos.x, pos.z, -1e4);
+      velY = 0; speedNow = 0; autoWalk = false;
+      if (h !== undefined) { heading = h; yaw = h + Math.PI; }
+      snapCam = true;
+      saveNow();
+      return true;
+    },
+    floatAt(text, x, y, z, kind = 'dmg') { floatText(text, new THREE.Vector3(x, y, z), kind); },
+    floatOnMe(text, kind = 'hurt') { floatText(text, pos.clone().add(new THREE.Vector3(0, bodyH + 0.2, 0)), kind); },
+    cheer(on) { colosseumHere()?.cheer(on); },
+    // a practice bout: a Gladiator of about your level on the sand (`onStrike(dmg)` when it hits you,
+    // `onYield()` when it is beaten)
+    practice(level, { onStrike, onYield }) {
+      const col = colosseumHere();
+      if (!col) return null;
+      creatures.removeWhere((q) => q.practice);
+      const spot = startSpots()[1];
+      const m = creatures.spawnAt('gladiator', level, spot.x, spot.z, { practice: true, keep: true, hurtBy: true, title: 'Gladiator', onStrike, onYield });
+      m.angry = true; m.heading = spot.heading;
+      return { stop: () => creatures.removeWhere((q) => q === m), hp: () => ({ hp: Math.max(0, Math.round(m.hp)), max: m.maxHp }) };
+    },
     get othersNear() { return others.count(); },
     debugOthers: () => others.list(),
     // where you are out in the world (the door you came in by, while indoors)

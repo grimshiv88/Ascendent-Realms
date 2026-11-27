@@ -13,8 +13,9 @@ const num = (v, lo, hi, d = 0) => { const n = Number(v); return Number.isFinite(
 const word = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
 const round = (v, k = 100) => Math.round(v * k) / k;
 
-// Where you are: 'out' in the open world, 'cave:<id>' underground, 'in:<what>:<x>,<z>' in a building
-export const placeKey = (v) => (/^(out|cave:[\w-]{1,40}|in:[\w-]{1,40}:-?\d{1,6},-?\d{1,6})$/.test(String(v || '')) ? String(v) : 'out');
+// Where you are: 'out' in the open world, 'cave:<id>' underground, 'in:<what>:<x>,<z>' in a building,
+// or 'arena:<fight>' in a Colosseum fight (the two fighters and those watching that fight)
+export const placeKey = (v) => (/^(out|cave:[\w-]{1,40}|in:[\w-]{1,40}:-?\d{1,6},-?\d{1,6}|arena:\d{1,12})$/.test(String(v || '')) ? String(v) : 'out');
 
 // A player's spot and pose, cleaned up (whatever a game sends, only these fields, in range)
 export function cleanSpot(s = {}) {
@@ -24,7 +25,8 @@ export function cleanSpot(s = {}) {
     speed: round(num(s.speed, 0, 12)),
     place: placeKey(s.place),
     // what they are doing that changes how they look: riding, sitting, lying down (asleep or knocked out)
-    pose: ['ride', 'sit', 'lie', 'fly'].includes(s.pose) ? s.pose : '',
+    // (and 'swing': a blow, seen in a Colosseum fight)
+    pose: ['ride', 'sit', 'lie', 'fly', 'swing'].includes(s.pose) ? s.pose : '',
   };
 }
 

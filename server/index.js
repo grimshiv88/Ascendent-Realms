@@ -17,6 +17,7 @@ const mail = require('./mail');
 const voice = require('./voice');
 const economy = require('./economy');
 const presence = require('./presence');
+const arena = require('./arena');
 
 const app = express();
 // (a save can carry up to 80 planted beds, so 64 kB rather than 10)
@@ -287,7 +288,22 @@ app.post('/api/voice/pass', requireAccount, async (req, res) => {
 });
 
 // Seeing other players: report where you are, hear who is close by (see server/presence.js)
-app.post('/api/presence', requireAccount, answer((body, acc) => presence.report(acc, body)));
+app.post('/api/presence', requireAccount, answer(async (body, acc) => {
+  const r = await presence.report(acc, body);
+  // and the Colosseum: your fights and challenges, a fight you watch, and who holds the No.1 medal
+  const fights = await arena.status(acc, body).catch((e) => { console.error('arena:', e); return null; });
+  if (fights?.champion) for (const p of r.players) p.medal = p.id === fights.champion.id;
+  return { ...r, arena: fights };
+}));
+
+// The Colosseum (see server/arena.js): the board, and challenging, answering, coming to fight, blows
+app.get('/api/arena', requireAccount, answer((body, acc) => arena.board(acc)));
+app.post('/api/arena', requireAccount, answer((body, acc) => arena.act(acc, body)));
+// Vercel's timer calls this at the championship's draw (see vercel.json); with CRON_SECRET set, only it may
+app.get('/api/arena/tick', async (req, res) => {
+  if (process.env.CRON_SECRET && bearer(req) !== process.env.CRON_SECRET) return res.status(401).json({ error: 'Not allowed.' });
+  res.json(await arena.tick());
+});
 app.post('/api/presence/leave', requireAccount, answer((body, acc) => presence.leave(acc)));
 
 app.post('/api/report', requireAccount, answer((body, acc) => admin.report(acc, body)));
