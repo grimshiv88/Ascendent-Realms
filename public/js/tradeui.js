@@ -17,7 +17,7 @@ export function createTrade(ctx) {
   const { game, api } = ctx;
   let view = { trade: null, asks: [], finished: [] };
   let msg = '', bad = false, busy = false, typed = '';
-  let seenAsks = new Set(), lastTrade = null, alive = true, timer = null;
+  let seenAsks = new Set(), lastTrade = null, alive = true, timer = null, shown = '';
 
   // ---------- the card for a request to trade ----------
   const card = document.createElement('div');
@@ -62,7 +62,9 @@ export function createTrade(ctx) {
     if (now && before && before.id === now.id && before.v !== now.v && now.state === 'open') { msg = `${now.with} changed the offer: confirm again if you are happy.`; bad = false; }
     lastTrade = now ? { ...now } : null;
     drawCard();
-    if (ctx.isOpen()) ctx.redraw();
+    // (redrawn only when something changed, so a box you are typing in isn't wiped by each check)
+    const sig = JSON.stringify([view, msg, bad, ctx.isOpen() ? ctx.nearby().map((p) => [p.name, Math.round(p.dist)]) : 0]);
+    if (ctx.isOpen() && sig !== shown) { shown = sig; ctx.redraw(); }
   }
   async function run(body) {
     if (busy) return null;
@@ -117,6 +119,7 @@ export function createTrade(ctx) {
 
   // ---------- the window ----------
   function render(el) {
+    shown = JSON.stringify([view, msg, bad, ctx.nearby().map((p) => [p.name, Math.round(p.dist)])]);
     const t = view.trade, c = game.character, dis = busy ? 'disabled' : '';
     let body;
     if (!t) {
