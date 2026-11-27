@@ -12,7 +12,7 @@ import { birthdateWords } from './data/birthdate.mjs';
 import { uniqueAbility, uniqueTier, TIER_NAMES, rankProofs, isAppraisal, RANK_UP_MAX, TRIALS_PER_PROOF, WORK_PER_PROOF } from './data/unique.mjs';
 import { ageOf, CEREMONY_AGE, PARENT_JOBS, parentAlive, visitDue } from './data/birth.mjs';
 import { ageYears, livesLeft, LIVES, MARRY_AGE, UNDYING_LEVEL } from './data/life.mjs';
-import { PRIVACY, privacyOf, PARTY_INVITES, partyInvitesOf } from './data/social.mjs';
+import { PRIVACY, privacyOf, PARTY_INVITES, partyInvitesOf, SHARE_LOCATION, shareLocationOf } from './data/social.mjs';
 import { gameTime, clockText } from './data/clock.mjs';
 import { SKILLS, UPGRADE_EVERY } from './data/skills.mjs';
 import { money } from './data/money.mjs';
@@ -180,6 +180,11 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
         <span>Who can invite you to a party:</span>
         ${Object.entries(PARTY_INVITES).map(([id, p]) => `<button type="button" role="radio" data-party-invites="${id}" aria-checked="${partyInvitesOf(c) === id}" title="${esc(p.text)}">${p.name}</button>`).join('')}
         <small>${esc(PARTY_INVITES[partyInvitesOf(c)].text)}</small>
+      </div>
+      <div class="sw-privacy" role="radiogroup" aria-label="Who can see where you are on the map">
+        <span>Who can see where you are on the map:</span>
+        ${Object.entries(SHARE_LOCATION).map(([id, p]) => `<button type="button" role="radio" data-share-location="${id}" aria-checked="${shareLocationOf(c) === id}" title="${esc(p.text)}">${p.name}</button>`).join('')}
+        <small>${esc(SHARE_LOCATION[shareLocationOf(c)].text)}</small>
       </div>
     </div>`;
   fillFlags(el);

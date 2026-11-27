@@ -8,6 +8,7 @@ import { allCastles } from './data/kings.mjs';
 import { allWonders } from './data/wonders.mjs';
 import { CITY_R } from './data/world-layout.mjs';
 import { drawCityPlan } from './world/cityplan.js';
+import { MAX_MAP_MARKS, MARK_NAME, MARK_COLOURS } from './data/social.mjs';
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
@@ -21,6 +22,8 @@ let view = (() => {
   try { const v = JSON.parse(localStorage.getItem(VIEW_KEY)); if (v && v.zoom) return v; } catch {}
   return { zoom: 1, cx: 800, cy: 500, follow: false };
 })();
+// friends are shown on the map unless you turn them off (the ON/OFF button on the map)
+export const mapShowsFriends = () => view.friends !== false;
 const saveView = () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)); } catch {} };
 
 // your position: a small arrow, the same size at every zoom, with a ring so it's easy to find
@@ -52,6 +55,39 @@ function diamond(ctx, x, y, label) {
   ctx.restore();
 }
 
+// one of your own marks: a pin in its colour, with its name
+function drawPin(ctx, x, y, colour, label, size = 1, picked = false) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(size, size);
+  if (picked) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, -13, 13, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.fillStyle = colour; ctx.strokeStyle = '#1a1208'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.bezierCurveTo(-3, -6, -8, -9, -8, -14); ctx.arc(0, -14, 8, Math.PI, 0); ctx.bezierCurveTo(8, -9, 3, -6, 0, 0); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#1a1208'; ctx.beginPath(); ctx.arc(0, -14, 2.8, 0, Math.PI * 2); ctx.fill();
+  if (label) {
+    ctx.font = '600 14px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(label, 0, -27);
+    ctx.fillStyle = colour; ctx.fillText(label, 0, -27);
+  }
+  ctx.restore();
+}
+
+// a friend in the game: a green dot with their username (a little house when they are indoors or underground)
+function drawFriend(ctx, x, y, f, size = 1) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(size, size);
+  ctx.shadowColor = '#3fff8a'; ctx.shadowBlur = 8;
+  ctx.fillStyle = '#3fdc7a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  if (f.inside) { ctx.beginPath(); ctx.moveTo(-6, 5); ctx.lineTo(-6, -2); ctx.lineTo(0, -8); ctx.lineTo(6, -2); ctx.lineTo(6, 5); ctx.closePath(); }
+  else { ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); }
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.font = '700 13px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'; ctx.strokeText(f.name, 0, -12);
+  ctx.fillStyle = '#a8ffc8'; ctx.fillText(f.name, 0, -12);
+  ctx.restore();
+}
+
 // A rounded distance (1, 2 or 5 × a power of ten) that fits in about `maxM` metres
 function niceMetres(maxM) {
   const p = 10 ** Math.floor(Math.log10(maxM));
@@ -65,7 +101,13 @@ const distText = (m) => (m >= 1000 ? `${m / 1000} km` : `${m} m`);
 // `travel`, when given ({ from, to, onPick }), turns the map into a portal's: tap a portal on this
 // continent to choose it
 // `warp(x, z)`, when given (an admin's Teleport power is on), is called when you tap any spot.
-export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: [] }, pick = null, travel = null, warp = null) {
+// `extra` (the plain world map only): `pins` = your own marks { list(), save(list) };
+// `friends` = where your friends are { spots(), refresh() }.
+export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: [] }, pick = null, travel = null, warp = null, extra = {}) {
+  const pins = !pick && !travel ? extra.pins : null;
+  const pals = !travel ? extra.friends : null;
+  let marking = false;   // the next tap puts a mark down
+  let picked = null;     // the id of the mark being named or moved
   const portals = allPortals();
   const reachable = travel ? portalsFrom(travel.from) : [];
   // on a portal's map: how strong the monsters are round each one (a portal won't send you where
@@ -96,8 +138,14 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
           <button type="button" data-zoom="0" aria-label="Show the whole map">⤢</button>
         </div>
         ${pick ? '<div class="map-basket" role="status" hidden></div>' : ''}
+        ${pins || pals ? `<div class="map-tools">
+          ${pins ? '<button type="button" data-map-tool="mark" aria-pressed="false" title="Tap this, then tap the map to mark a place">📍 Mark a place</button>' : ''}
+          ${pals ? `<button type="button" data-map-tool="friends" aria-pressed="${mapShowsFriends()}" title="Show or hide your friends on the map">👥 Friends: ${mapShowsFriends() ? 'ON' : 'OFF'}</button>` : ''}
+        </div>` : ''}
+        ${pins ? '<div class="map-pin-edit" hidden></div>' : ''}
       </div>
-      <p class="map-note">${warp && !pick && !travel ? '<b>Teleport is on: tap anywhere to go there.</b> ' : ''}${travel ? '' : 'Purple rings are portals. '}Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pick ? '<b>Land grid is open: zoom in and tap squares to choose them, then press Buy. The dashed square is how far you can buy (1 km across, around you).</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
+      ${pins || pals ? '<div class="map-lists"></div>' : ''}
+      <p class="map-note">${warp && !pick && !travel ? '<b>Teleport is on: tap anywhere to go there.</b> ' : ''}${travel ? '' : 'Purple rings are portals. '}Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pins ? 'Your own marks (📍) are seen only by you. ' : ''}${pals ? 'Green dots are friends who share where they are (each player chooses this in their Status window). ' : ''}${pick ? '<b>Land grid is open: zoom in and tap squares to choose them, then press Buy. The dashed square is how far you can buy (1 km across, around you).</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
     </div>`;
   // the painted map, drawn once at twice the size so it stays sharp when zoomed a little
   const full = document.createElement('canvas');
@@ -274,6 +322,8 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
     }
     ctx.restore();
     for (const m of marks) { const q = toMap(m.x, m.z); diamond(ctx, ...toCanvas(q.x, q.y), m.label); }
+    if (pins) for (const m of pins.list()) { const q = toMap(m.x, m.z); drawPin(ctx, ...toCanvas(q.x, q.y), m.colour, m.name, 1, m.id === picked); }
+    if (pals && mapShowsFriends()) for (const f of pals.spots()) { const q = toMap(f.x, f.z); drawFriend(ctx, ...toCanvas(q.x, q.y), f); }
     if (me) drawMe(ctx, ...toCanvas(me.x, me.y), p.heading, 11, t);
 
     // a scale bar for the current zoom
@@ -343,8 +393,32 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
         else zoomAt(4, x, y); // too small to tap a square: zoom in on it first
       }
     }
+    // your own marks: a tap on one opens it (rename, colour, remove); with 📍 on, a tap puts one down
+    let used = false;
+    if (pins && tap && e.type === 'pointerup' && touches.size === 1) {
+      const [x, y] = pointer(e);
+      if (Math.hypot(x - tap[0], y - tap[1]) < 6) {
+        let best = null, bd = 18;
+        for (const m of pins.list()) { const q = toMap(m.x, m.z); const [px, py] = toCanvas(q.x, q.y); const d = Math.hypot(px - x, py + 12 - y); if (d < bd) { bd = d; best = m; } }
+        if (best && !marking) { picked = best.id; used = true; drawPinEdit(); }
+        else if (marking) {
+          used = true;
+          const w = toWorld(view.cx + (x - W / 2) / view.zoom, view.cy + (y - H / 2) / view.zoom);
+          const list = pins.list();
+          if (list.length >= MAX_MAP_MARKS) note(`You already have ${MAX_MAP_MARKS} marks. Remove one first.`);
+          else {
+            const m = { id: Math.random().toString(36).slice(2, 10), x: Math.round(w.x * 10) / 10, z: Math.round(w.z * 10) / 10, name: `Mark ${list.length + 1}`, colour: MARK_COLOURS[list.length % MARK_COLOURS.length] };
+            pins.save([...list, m]);
+            picked = m.id;
+            setMarking(false);
+            drawPinEdit(true);
+            drawLists();
+          }
+        } else if (picked) { picked = null; drawPinEdit(); }
+      }
+    }
     // an admin's Teleport power: a tap anywhere goes there
-    if (warp && !pick && !travel && tap && e.type === 'pointerup' && touches.size === 1) {
+    if (warp && !used && !pick && !travel && tap && e.type === 'pointerup' && touches.size === 1) {
       const [x, y] = pointer(e);
       if (Math.hypot(x - tap[0], y - tap[1]) < 6) {
         const w = toWorld(view.cx + (x - W / 2) / view.zoom, view.cy + (y - H / 2) / view.zoom);
@@ -366,11 +440,92 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
     else if (z === 'me') { view.follow = true; if (view.zoom < 12) view.zoom = 12; saveView(); }
     else if (z === '0') { view.zoom = 1; view.follow = false; saveView(); }
   });
+  // ---- your marks and your friends ----
+  const toolsEl = el.querySelector('.map-tools');
+  const editEl = el.querySelector('.map-pin-edit');
+  const listsEl = el.querySelector('.map-lists');
+  const centreOn = (x, z) => { const q = toMap(x, z); view.follow = false; view.cx = q.x; view.cy = q.y; if (view.zoom < 12) view.zoom = 12; saveView(); };
+  let noteText = '';
+  const note = (t) => { noteText = t; drawLists(); };
+  function setMarking(on) {
+    marking = on;
+    const b = toolsEl?.querySelector('[data-map-tool="mark"]');
+    if (b) { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '📍 Tap the map…' : '📍 Mark a place'; }
+    cv.classList.toggle('marking', on);
+  }
+  function drawPinEdit(focus = false) {
+    if (!editEl) return;
+    const m = pins.list().find((q) => q.id === picked);
+    editEl.hidden = !m;
+    if (!m) { editEl.innerHTML = ''; return; }
+    editEl.innerHTML = `
+      <input type="text" maxlength="${MARK_NAME}" value="${esc(m.name)}" aria-label="Name of this mark" data-pin-name>
+      <span class="map-pin-colours" role="radiogroup" aria-label="Colour">${MARK_COLOURS.map((c) => `<button type="button" role="radio" aria-checked="${c === m.colour}" data-pin-colour="${c}" style="background:${c}" aria-label="Colour"></button>`).join('')}</span>
+      <button type="button" data-pin-act="remove">Remove</button>
+      <button type="button" data-pin-act="done">Done</button>`;
+    if (focus) { const i = editEl.querySelector('input'); i.focus(); i.select(); }
+  }
+  const change = (id, fn) => pins.save(pins.list().map((q) => (q.id === id ? { ...q, ...fn(q) } : q)));
+  function drawLists() {
+    if (!listsEl) return;
+    const list = pins ? pins.list() : [];
+    const spots = pals && mapShowsFriends() ? pals.spots() : [];
+    listsEl.innerHTML = `
+      ${noteText ? `<p class="map-tools-note">${esc(noteText)}</p>` : ''}
+      ${pins ? `<details class="map-list" ${list.length ? '' : 'open'}><summary>Your marks (${list.length}/${MAX_MAP_MARKS})</summary>
+        ${list.length ? `<ul>${list.map((m) => `<li><i style="background:${m.colour}"></i><button type="button" class="map-link" data-pin-go="${m.id}">${esc(m.name)}</button><button type="button" class="map-x" data-pin-del="${m.id}" aria-label="Remove ${esc(m.name)}">×</button></li>`).join('')}</ul>`
+        : '<p>Press 📍 Mark a place, then tap anywhere on the map. Only you can see your marks.</p>'}</details>` : ''}
+      ${pals && mapShowsFriends() ? `<details class="map-list"><summary>Friends on the map (${spots.length})</summary>
+        ${spots.length ? `<ul>${spots.map((f) => `<li><i class="pal"></i><button type="button" class="map-link" data-pal-go="${esc(f.name)}">${esc(f.name)}</button><small>${esc(f.where || '')}</small></li>`).join('')}</ul>`
+        : '<p>None of your friends are in the game right now, or they keep where they are hidden.</p>'}</details>` : ''}`;
+  }
+  // the friends list changes as they move: redraw it when the names or places change
+  let palsKey = '';
+  if (pals) {
+    const tick = setInterval(() => {
+      if (!cv.isConnected) { clearInterval(tick); return; }
+      const k = mapShowsFriends() ? pals.spots().map((f) => `${f.name}|${f.where}`).join(',') : 'off';
+      if (k !== palsKey) { palsKey = k; const openNow = [...(listsEl?.querySelectorAll('details') || [])].map((d) => d.open); drawLists(); listsEl?.querySelectorAll('details').forEach((d, i) => { if (openNow[i] != null) d.open = openNow[i]; }); }
+    }, 1000);
+    if (mapShowsFriends()) pals.refresh();
+  }
+  toolsEl?.addEventListener('click', (e) => {
+    const tool = e.target.closest('[data-map-tool]')?.dataset.mapTool;
+    if (tool === 'mark') { setMarking(!marking); if (marking) { picked = null; drawPinEdit(); } }
+    if (tool === 'friends') {
+      view.friends = !mapShowsFriends(); saveView();
+      const b = e.target.closest('button');
+      b.setAttribute('aria-pressed', String(mapShowsFriends())); b.textContent = `👥 Friends: ${mapShowsFriends() ? 'ON' : 'OFF'}`;
+      if (mapShowsFriends()) pals.refresh();
+      drawLists();
+    }
+  });
+  editEl?.addEventListener('input', (e) => {
+    if (e.target.matches('[data-pin-name]') && picked) { const v = e.target.value.slice(0, MARK_NAME); change(picked, () => ({ name: v })); clearTimeout(editEl.t); editEl.t = setTimeout(drawLists, 300); }
+  });
+  editEl?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { picked = null; drawPinEdit(); drawLists(); } });
+  editEl?.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-pin-colour]')?.dataset.pinColour;
+    if (c && picked) { change(picked, () => ({ colour: c })); drawPinEdit(); drawLists(); return; }
+    const act = e.target.closest('[data-pin-act]')?.dataset.pinAct;
+    if (act === 'remove' && picked) { pins.save(pins.list().filter((q) => q.id !== picked)); picked = null; drawPinEdit(); drawLists(); }
+    if (act === 'done') { picked = null; drawPinEdit(); drawLists(); }
+  });
+  listsEl?.addEventListener('click', (e) => {
+    const go = e.target.closest('[data-pin-go]')?.dataset.pinGo;
+    if (go) { const m = pins.list().find((q) => q.id === go); if (m) { centreOn(m.x, m.z); picked = m.id; drawPinEdit(); } return; }
+    const del = e.target.closest('[data-pin-del]')?.dataset.pinDel;
+    if (del) { pins.save(pins.list().filter((q) => q.id !== del)); if (picked === del) { picked = null; drawPinEdit(); } drawLists(); return; }
+    const pal = e.target.closest('[data-pal-go]')?.dataset.palGo;
+    if (pal) { const f = pals.spots().find((q) => q.name === pal); if (f) centreOn(f.x, f.z); }
+  });
+  drawLists();
   requestAnimationFrame(frame);
 }
 
 // The round minimap in the corner: the real ground about 400 m across, north at the top.
-export function createMinimap(el, getPlayer, onOpen) {
+// `extra` = { pins: () => your marks, friends: () => your friends' spots (when shown) }
+export function createMinimap(el, getPlayer, onOpen, extra = {}) {
   const SIZE = 180;          // canvas pixels
   const SPAN = 400;          // metres across the minimap
   el.innerHTML = `<canvas width="${SIZE}" height="${SIZE}" aria-hidden="true"></canvas><span class="mm-n">N</span>`;
@@ -412,6 +567,15 @@ export function createMinimap(el, getPlayer, onOpen) {
         ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)'; ctx.strokeText(pl.name, x, y - 8);
         ctx.fillStyle = '#f5ebd0'; ctx.fillText(pl.name, x, y - 8);
       }
+      // your marks and your friends; ones beyond the edge sit on the rim, pointing the way
+      const rim = (x, z) => {
+        let [cx, cy] = at(x, z);
+        const dx = cx - SIZE / 2, dy = cy - SIZE / 2, d = Math.hypot(dx, dy), max = SIZE / 2 - 12;
+        if (d > max) { cx = SIZE / 2 + (dx / d) * max; cy = SIZE / 2 + (dy / d) * max; }
+        return [cx, cy, d > max];
+      };
+      for (const m of extra.pins?.() || []) { const [x, y, edge] = rim(m.x, m.z); drawPin(ctx, x, y + 7, m.colour, edge ? '' : m.name, 0.7); }
+      if (mapShowsFriends()) for (const f of extra.friends?.() || []) { const [x, y, edge] = rim(f.x, f.z); drawFriend(ctx, x, y, edge ? { ...f, name: '' } : f, 0.75); }
       drawMe(ctx, SIZE / 2, SIZE / 2, p.heading, 9, t);
       ctx.restore();
     }

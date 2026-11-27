@@ -87,3 +87,31 @@ export function cleanText(text) {
 // ---------- chat channels ----------
 // 'general' for everyone; a private chat between two players is 'dm:<smaller id>:<larger id>'
 export const dmChannel = (a, b) => `dm:${Math.min(a, b)}:${Math.max(a, b)}`;
+
+// Where you are, on your friends' world maps (chosen in the Status window). Only friends can ever
+// see it, and only while you are in the game; "Nobody" hides you from every map.
+export const SHARE_LOCATION = {
+  friends: { name: 'My friends', text: 'Your friends can see where you are on their world map while you play.' },
+  off: { name: 'Nobody', text: 'Nobody can see where you are on the map.' },
+};
+export const DEFAULT_SHARE_LOCATION = 'friends';
+export const shareLocationOf = (c) => (SHARE_LOCATION[c?.shareLocation] ? c.shareLocation : DEFAULT_SHARE_LOCATION);
+export const FRIEND_SPOTS_MS = 6000; // how often the map asks where your friends are
+
+// Your own marks on the world map: a spot and a short name. Only you ever see them.
+export const MAX_MAP_MARKS = 50;
+export const MARK_NAME = 30;
+export const MARK_COLOURS = ['#ff6b5a', '#ffd23f', '#5ee07a', '#5ab4ff', '#c58cff', '#ffffff'];
+export function cleanMarks(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const m of list.slice(0, MAX_MAP_MARKS)) {
+    const x = Number(m?.x), z = Number(m?.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z) || Math.abs(x) > 1e6 || Math.abs(z) > 1e6) continue;
+    const id = typeof m.id === 'string' && /^[a-z0-9]{1,16}$/.test(m.id) ? m.id : Math.random().toString(36).slice(2, 10);
+    const name = cleanText(String(m.name || '')).slice(0, MARK_NAME) || 'Marked place';
+    const colour = MARK_COLOURS.includes(m.colour) ? m.colour : MARK_COLOURS[0];
+    out.push({ id, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, name, colour });
+  }
+  return out;
+}

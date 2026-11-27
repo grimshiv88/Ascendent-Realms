@@ -333,6 +333,8 @@ export function createSocial(host, { onError, onDone, onWorld } = {}) {
     // open a meeting room's private chat
     openRoom(label) { setOpen(true); openTab(label); },
     refresh: () => poll(true),
+    // is any of your friends in the game right now?
+    friendsOnline: () => lists.friends.some((f) => f.online),
     get typing() { return document.activeElement === input || document.activeElement === search; },
     dispose() {
       alive = false;
