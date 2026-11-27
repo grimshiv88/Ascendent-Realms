@@ -30,6 +30,8 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS muted_until BIGINT NOT NULL DEFAUL
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS admin_perms TEXT;
 -- voice chat: passed a real age check (an ID check service, for later; the birth date is used until then)
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS voice_verified BOOLEAN NOT NULL DEFAULT false;
+-- the tutorial for new players was finished or skipped (it is shown once per account)
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS tutorial_done BOOLEAN NOT NULL DEFAULT false;
 -- the player's keys (Settings → Controls): JSON { action: [main key, second key] }, so they follow the account
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS keybinds TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_email ON accounts (lower(email));
@@ -201,6 +203,8 @@ CREATE TABLE IF NOT EXISTS presence (
   at         BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS presence_place_at ON presence (place, at);
+-- the dragon, wyvern or hatchling with them (see cleanPet in public/js/data/presence.mjs)
+ALTER TABLE presence ADD COLUMN IF NOT EXISTS pet TEXT;
 
 -- what the realm's keepers send into a player's game without a reload (see server/gifts.js):
 -- gifts (kind 'gift', opened from the bag) and orders for their pets (kind 'pet')

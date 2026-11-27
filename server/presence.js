@@ -104,17 +104,18 @@ async function today(since, now = Date.now()) {
   };
 }
 
-// POST /api/presence { x, y, z, heading, speed, place, pose, body? } -> { players: [...] }
+// POST /api/presence { x, y, z, heading, speed, place, pose, body?, pet? } -> { players: [...] }
 async function report(acc, body = {}, now = Date.now(), isAdmin = false) {
   const me = P.cleanSpot(body);
   const look = P.cleanBody(body.body);
-  await db.run(`INSERT INTO presence (account_id, name, x, y, z, heading, speed, place, pose, body, at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  const pet = P.cleanPet(body.pet);
+  await db.run(`INSERT INTO presence (account_id, name, x, y, z, heading, speed, place, pose, body, pet, at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (account_id) DO UPDATE SET name = EXCLUDED.name, x = EXCLUDED.x, y = EXCLUDED.y, z = EXCLUDED.z,
         heading = EXCLUDED.heading, speed = EXCLUDED.speed, place = EXCLUDED.place, pose = EXCLUDED.pose,
-        body = COALESCE(EXCLUDED.body, presence.body), at = EXCLUDED.at`,
-  acc.id, acc.username, me.x, me.y, me.z, me.heading, me.speed, me.place, me.pose, look ? JSON.stringify(look) : null, now);
-  const rows = await db.all(`SELECT account_id, name, x, y, z, heading, speed, pose, body FROM presence
+        body = COALESCE(EXCLUDED.body, presence.body), pet = EXCLUDED.pet, at = EXCLUDED.at`,
+  acc.id, acc.username, me.x, me.y, me.z, me.heading, me.speed, me.place, me.pose, look ? JSON.stringify(look) : null, pet ? JSON.stringify(pet) : null, now);
+  const rows = await db.all(`SELECT account_id, name, x, y, z, heading, speed, pose, body, pet FROM presence
       WHERE account_id != ? AND at > ? AND place = ? AND x BETWEEN ? AND ? AND z BETWEEN ? AND ?
       ORDER BY (x - ?) * (x - ?) + (z - ?) * (z - ?) LIMIT ?`,
   acc.id, now - P.GONE_MS, me.place, me.x - P.SEE_FAR, me.x + P.SEE_FAR, me.z - P.SEE_FAR, me.z + P.SEE_FAR,
@@ -132,6 +133,7 @@ async function report(acc, body = {}, now = Date.now(), isAdmin = false) {
     players: rows.map((r) => ({
       id: r.account_id, name: r.name, x: r.x, y: r.y, z: r.z, heading: r.heading, speed: r.speed, pose: r.pose,
       body: r.body ? JSON.parse(r.body) : null,
+      pet: r.pet ? JSON.parse(r.pet) : null,
     })),
   };
 }

@@ -4,14 +4,17 @@
 // and it waits there for you (even after you log out). You get off by yourself to go indoors or
 // underground, to sit, to sleep, or when you fall.
 // A tamed dragon or wyvern flies: Space climbs (it takes off from the ground), Shift dives down, and
-// it lands when it touches the ground. You can only get off once it has landed.
+// it lands when you dive onto the ground (rising land under it just lifts it). You can only get off once it has landed.
+// Off its back, a tamed dragon or wyvern is your companion: it follows you about (on foot close by,
+// through the sky to catch up), fights whatever you set it on or whatever attacks you, and breathes
+// fire (or frost, or lightning) at it (world.js decides what it fights; this moves it and shows the breath).
 import * as THREE from 'three';
 import { ANIMALS } from '../data/animals.mjs';
 import { MOUNTS, MOUNT_ITEMS } from '../data/mounts.mjs';
 import { ITEMS } from '../data/items.mjs';
 import { buildAnimal, animateAnimal } from './animalbody.js';
 import { BEASTS } from '../data/beasts.mjs';
-import { buildBeast, animateBeast } from './beasts.js';
+import { buildBeast, animateBeast, makeBreath } from './beasts.js';
 
 const MOUNT_REACH = 3.2;  // how close you stand to get on
 const COME_FROM = 22;     // a called mount appears this far behind you (out of sight) and trots over
@@ -20,7 +23,8 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
   let horse = null;   // { item, id, a, m, root, x, z, heading, saddle, come }
   let riding = false;
   let flying = false; // (on a dragon or wyvern, up in the air)
-  let checkT = 0;
+  let checkT = 0, saveT = 0;
+  const mouthAt = new THREE.Vector3();
 
   const ownedItem = (want) => (want && game.has(want) ? want : MOUNT_ITEMS.find((id) => game.has(id)) || null);
   function remember() {
@@ -28,7 +32,7 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     game.touch('bag');
   }
   function make(item, x, z, heading = 0) {
-    if (horse) scene.remove(horse.root);
+    if (horse) { endBreath(); scene.remove(horse.root); }
     const id = ITEMS[item].mount;
     if (MOUNTS[id]?.beast) return makeBeast(item, id, x, z, heading);
     const a = ANIMALS[id];
@@ -121,7 +125,8 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     if (!riding) return;
     riding = false; flying = false;
     remember();
-    if (!quiet) say(`You get off your ${horse.a.name.toLowerCase()}. It waits here for you`, 'note');
+    if (horse.beast) horse.goal = null;
+    if (!quiet) say(horse.beast ? `You get off your ${horse.a.name.toLowerCase()}. It stays by your side and fights for you` : `You get off your ${horse.a.name.toLowerCase()}. It waits here for you`, 'note');
   }
   // E beside your mount gets you on
   function interact() {
@@ -147,7 +152,7 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     if (flyingOn(item)) return 'flying';
     if (horse && (!item || horse.item === item)) {
       if (riding) { riding = false; flying = false; }
-      scene.remove(horse.root);
+      endBreath(); scene.remove(horse.root);
       horse = null;
       remember();
       return 'ok';
@@ -165,11 +170,12 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
   // every frame; `speed` is how fast you are moving (m/s)
   function tick(dt, t, speed, airborne) {
     if (!horse) return;
+    if (horse.fx) tickBreath(dt, t);
     checkT -= dt;
     if (checkT <= 0) {
       checkT = 1;
       // sold it or gave it away: it is not yours any more
-      if (!game.has(horse.item)) { if (riding) riding = false; scene.remove(horse.root); horse = null; remember(); return; }
+      if (!game.has(horse.item)) { if (riding) riding = false; endBreath(); scene.remove(horse.root); horse = null; remember(); return; }
     }
     if (riding) {
       const p = getPos();
@@ -198,14 +204,66 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
       }
     }
     if (horse.beast) {
+      if (!horse.come) s = follow(dt);
+      horse.lunge = Math.max(0, (horse.lunge || 0) - dt);
       horse.root.position.set(horse.x, groundAt(horse.x, horse.z) + (horse.air || 0), horse.z);
       horse.root.rotation.y = horse.heading;
-      animateBeast(horse.root, t, { air: horse.air || 0, speed: horse.air > 0.8 ? 0 : s });
+      animateBeast(horse.root, t, { air: horse.air || 0, speed: horse.air > 0.8 ? 0 : s, open: !!horse.fx || horse.lunge > 0, lunge: horse.lunge });
+      saveT -= dt;
+      if (saveT <= 0) { saveT = 15; remember(); }
       return;
     }
     horse.root.position.set(horse.x, groundAt(horse.x, horse.z), horse.z);
     horse.root.rotation.y = horse.heading;
     animateAnimal(horse.root, t, s);
+  }
+
+  // Your dragon off its back: it keeps near you, or goes after the foe world.js gives it (`goal`).
+  // Close by it walks; to catch up, or to reach a foe far off, it takes to the air.
+  function follow(dt) {
+    const p = getPos(), h = getHeading();
+    if (Math.hypot(p.x - horse.x, p.z - horse.z) > 250) {
+      // left far behind: it comes after you through the sky
+      horse.x = p.x - Math.sin(h) * 60; horse.z = p.z - Math.cos(h) * 60; horse.air = Math.max(horse.air || 0, 30);
+    }
+    const g = horse.goal;
+    const gx = g ? g.x : p.x, gz = g ? g.z : p.z, stop = g ? g.r : horse.reach + 3;
+    const dx = gx - horse.x, dz = gz - horse.z, d = Math.hypot(dx, dz);
+    const wantAir = g ? (g.air ?? (d > stop + 25 ? 10 : 0)) : d > 35 ? 14 : 0;
+    horse.air = Math.max(0, (horse.air || 0) + (wantAir - (horse.air || 0)) * Math.min(1, dt * 1.5));
+    const want = Math.atan2(dx, dz);
+    const turn = Math.atan2(Math.sin(want - horse.heading), Math.cos(want - horse.heading));
+    let s = 0;
+    if (d > stop) {
+      s = horse.air > 3 ? Math.min(horse.m.fly * 0.85, (d - stop) * 1.2 + 4) : Math.min(horse.m.run, (d - stop) * 1.5 + 1);
+      horse.heading += turn * Math.min(1, dt * 4);
+      horse.x += Math.sin(horse.heading) * s * dt; horse.z += Math.cos(horse.heading) * s * dt;
+    } else if (g || d > 1) horse.heading += turn * Math.min(1, dt * (g ? 4 : 1.5)); // (it faces its foe, or you)
+    return s;
+  }
+  // its breath, from its jaws towards `to` ({ x, y, z }), for a moment; a Peak Wyvern has none and bites
+  function breathe(to, secs = 1.2) {
+    if (!horse?.beast) return false;
+    const kind = BEASTS[horse.id].breath;
+    horse.lunge = 0.35;
+    if (!kind) return false;
+    endBreath();
+    const big = BEASTS[horse.id].shape === 'dragon';
+    horse.fx = { g: makeBreath(kind, big ? 19 : 13, big ? 3 : 2), t: secs, to };
+    scene.add(horse.fx.g);
+    return true;
+  }
+  function endBreath() { if (!horse?.fx) return; scene.remove(horse.fx.g); horse.fx.g.userData.dispose(); horse.fx = null; }
+  function tickBreath(dt, t) {
+    const f = horse.fx;
+    f.t -= dt;
+    if (f.t <= 0) { endBreath(); return; }
+    horse.root.updateMatrixWorld(true);
+    horse.root.userData.beast.mouth.getWorldPosition(mouthAt);
+    f.g.position.copy(mouthAt);
+    const to = typeof f.to === 'function' ? f.to() : f.to;
+    f.g.lookAt(to.x, to.y, to.z);
+    f.g.userData.tick(t);
   }
 
   // bring back the mount you left out last time
@@ -220,10 +278,13 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     if (!riding || !horse.beast) return y;
     if (up && !flying) { flying = true; say(`Your ${horse.a.name.toLowerCase()} spreads its wings and leaps into the sky!`, 'exp'); }
     if (!flying) return ground;
-    const want = up ? 16 : down ? -22 : 0;
+    const want = up ? 18 : down ? -22 : 0;
     horse.vy = (horse.vy || 0) + (want - (horse.vy || 0)) * Math.min(1, dt * 3);
     let ny = Math.min(ground + 600, y + horse.vy * dt);
-    if (ny <= ground + 0.05) { ny = ground; if (!up) { flying = false; horse.vy = 0; say('You land', 'note'); } }
+    // it only lands when you dive down onto the ground; rising land (a slope, a crater's rim) just
+    // lifts it up, so it keeps flying over the mountains
+    if (down && ny <= ground + 0.4) { ny = ground; flying = false; horse.vy = 0; say('You land', 'note'); }
+    else if (ny < ground + 2) { ny = Math.min(ground + 2, Math.max(ny, ground) + dt * 30); if (horse.vy < 0) horse.vy = 0; }
     return ny;
   }
 
@@ -241,7 +302,11 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     // the mount's legs reach out further than yours
     radius: () => (riding ? (horse.beast ? 1.5 : 0.7) : 0),
     mount: () => (horse ? { item: horse.item, id: horse.id, x: horse.x, z: horse.z, riding, coming: horse.come } : null),
-    clear() { if (horse) scene.remove(horse.root); horse = null; riding = false; flying = false; },
+    // your dragon or wyvern, ridden or at your side (for world.js: what it fights, and what others see)
+    companion: () => (horse?.beast && game.has(horse.item) ? { id: horse.id, x: horse.x, z: horse.z, y: horse.root.position.y, air: riding ? (flying ? 6 : 0) : horse.air || 0, heading: horse.heading, riding, len: BEASTS[horse.id].len, breath: BEASTS[horse.id].breath || null, reach: horse.reach } : null),
+    setGoal(g) { if (horse?.beast) horse.goal = g; },
+    breathe, // (to, secs)
+    clear() { if (horse) { endBreath(); scene.remove(horse.root); } horse = null; riding = false; flying = false; },
   };
 }
 

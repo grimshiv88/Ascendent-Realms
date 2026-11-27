@@ -7,6 +7,7 @@
 // chop multiplies damage to trees and bushes; magic weapons use MATK instead of ATK.
 import { SKILLS } from './skills.mjs';
 import { ANIMALS } from './animals.mjs';
+import { EGG_ITEMS } from './eggs.mjs';
 
 export const ITEMS = {
   // gathered
@@ -279,6 +280,8 @@ export const ITEMS = {
   buckler: { name: 'Buckler', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 1, def: 6, price: 110, workshop: true, look: { color: '#8a6a4a' }, text: 'A small round shield for the fist.' },
   dragonscale_shield: { name: 'Dragonscale Shield', icon: '🛡️', kind: 'armour', slot: 'shield', rank: 5, def: 46, mdef: 16, price: 20000, workshop: true, look: { color: '#7a2a24', metal: true }, text: 'One great scale, rimmed in dragonite.' },
 };
+// Dragon and wyvern eggs, and the hatchlings that come out of them (see data/eggs.mjs)
+Object.assign(ITEMS, EGG_ITEMS);
 // Skill Stones: each holds one skill. Set into a Rare or better piece of gear, it lets whoever
 // wears that piece use the skill. They drop from monsters at random and can be taken out again.
 for (const [id, sk] of Object.entries(SKILLS)) {

@@ -24,7 +24,10 @@ import { buildPortal } from './portal.js';
 import { buildPieces, pieceColliders, storeyY } from './buildings.js';
 import { allPortals, nearestPortal } from '../data/portals.mjs';
 import { allCastles, KING_RETURNS_MS } from '../data/kings.mjs';
-import { placeBuilding, CELL } from '../data/building.mjs';
+import { buildKingCastle } from './kingcastle.js';
+import { allWonders } from '../data/wonders.mjs';
+import { buildWonder } from './wonders.js';
+import { CELL } from '../data/building.mjs';
 import { caveById, THEMES, chestLoot, bossLevel, caveOres, pickOre, SIZES } from '../data/depths.mjs';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
@@ -36,7 +39,7 @@ import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionNam
 import { createPlots } from './plots.js';
 import { gameTime, now as realmNow } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
-import { spellPower, spellName, darkSpells, SELF_KINDS, DARK_SPELL_POWER } from '../data/spells.mjs';
+import { SPELLS, spellPower, spellName, darkSpells, SELF_KINDS, DARK_SPELL_POWER } from '../data/spells.mjs';
 import { skyCard } from './skycard.js';
 import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
@@ -52,10 +55,12 @@ import { createOil } from './oil.js';
 import { createCrops } from './crops.js';
 import { createRiding, poseRide } from './riding.js';
 import { createRaids } from './raids.js';
+import { createHatchery } from './hatchery.js';
 import { BEAST_TAME } from '../data/mounts.mjs';
 import { RIDE_FATIGUE } from '../data/mounts.mjs';
 import { allFarms } from '../data/farms.mjs';
 import { HUNGER_DRAIN, HUNGRY, STARVE_HIT, STARVE_FLOOR } from '../data/hunger.mjs';
+import { createPractice } from './practice.js';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -147,15 +152,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     for (const q of castles) {
       const d = Math.hypot(x - q.c.x, z - q.c.z);
       if (d < 1100 && !q.built) {
-        const pieces = placeBuilding('castle', q.c.cell[0], q.c.cell[1], 0);
-        const group = buildPieces(pieces, () => q.c.flat, { stone: true });
-        // the throne, in the middle of the keep
-        const throne = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.6, 1.2), new THREE.MeshStandardMaterial({ color: '#c9a03a', metalness: 0.6, roughness: 0.35 }));
-        throne.position.set(q.c.x, q.c.flat + 0.3 + 1.3, q.c.z - 1.5);
-        group.add(throne);
-        const solid = pieceColliders(pieces, () => q.c.flat);
-        scene.add(group); colliders.add(solid);
-        q.built = { group, solid };
+        // a palace the size of half a city, in the King's own style (see kingcastle.js)
+        const k = buildKingCastle(q.c);
+        scene.add(k.group); colliders.add(k.solid);
+        q.built = { group: k.group, solid: k.solid, floorAt: k.floorAt, spots: k.spots };
         q.court = null;
         seatCourt(q);
       } else if (d > 1400 && q.built) {
@@ -163,6 +163,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         creatures?.removeWhere((m) => m.site === `castle-${q.c.race}`);
         q.built = null; q.court = null;
       }
+    }
+  }
+  // The wonders of the realm (one in every land, see data/wonders.mjs), built when you come within sight
+  const wonders = allWonders().map((w) => ({ w, built: null, seen: false }));
+  function updateWonders(x, z) {
+    for (const q of wonders) {
+      const d = Math.hypot(x - q.w.x, z - q.w.z);
+      if (d < 2500 && !q.built) { q.built = buildWonder(q.w); scene.add(q.built.group); colliders.add(q.built.solid); }
+      else if (d > 3000 && q.built) { scene.remove(q.built.group); colliders.remove(q.built.solid); q.built = null; }
     }
   }
   // put the King, the Overlords and the guards in their places (once per visit)
@@ -173,19 +182,20 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const { x, z, race, title } = q.c;
     const site = `castle-${race}`;
     const extra = (more) => ({ keep: true, site, angry: false, ...more });
-    // two guards outside the gate and four in the courtyard
-    for (const [gx, gz] of [[-3, 21.5], [3, 21.5], [-10, 10], [10, 10], [-10, -10], [10, -10]]) {
+    // guards outside the gate, along the avenue and at the Throne Hall's doors
+    const S = q.built.spots;
+    for (const [gx, gz] of S.guards) {
       creatures.spawnAt(`guard_${race}`, 400 + Math.round(Math.random() * 200), x + gx, z + gz, extra({ guard: { heading: 0 }, title: 'Royal Guard' }));
     }
-    // the Overlords stand around the throne room
+    // the Overlords stand either side of the carpet before the throne
     court.overlords.forEach((o, i) => {
-      const a = Math.PI * (0.15 + (i / Math.max(1, court.overlords.length - 1)) * 0.7);
-      creatures.spawnAt(`overlord_${race}`, o.level, x + Math.cos(a) * 5, z - 1.5 + Math.sin(a) * 4, extra({ guard: { heading: 0 }, boss: true, title: o.name }));
+      const [ox, oz] = S.overlords[i] || [(i % 2 ? 1 : -1) * 6, -62 + Math.floor(i / 2) * 9];
+      creatures.spawnAt(`overlord_${race}`, o.level, x + ox, z + oz, extra({ guard: { heading: 0 }, boss: true, title: o.name }));
     });
     // the King sits the throne, unless it is empty or a player wears the crown
     if (court.king?.npc && Date.now() - (court.slainAt || 0) >= KING_RETURNS_MS) {
       const lvl = court.king.level;
-      const king = creatures.spawnAt(`king_${race}`, lvl, x, z - 0.2, extra({ guard: { heading: 0 }, boss: true, title: `${court.king.name}, ${title}`, maxHp: Math.round((8 + lvl * 3.5) * 12), hp: Math.round((8 + lvl * 3.5) * 12) }));
+      const king = creatures.spawnAt(`king_${race}`, lvl, x + S.king[0], z + S.king[1], extra({ guard: { heading: 0 }, boss: true, title: `${court.king.name}, ${title}`, maxHp: Math.round((8 + lvl * 3.5) * 12), hp: Math.round((8 + lvl * 3.5) * 12) }));
       king.onDeath = () => onEvent?.('king-slain', { race, name: court.king.name, title });
     }
   }
@@ -291,7 +301,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       for (const it of doorsNear(pos.x, pos.z, 14)) list.push([it.d.x, it.d.y, it.d.z, 6, () => useDoor(it)]);
     }
     if (!inside) for (const m of creatures?.list || []) if (canHarvest(m) && !m.kind.animal && Math.hypot(m.x - pos.x, m.z - pos.z) < 12) list.push([m.x, m.y + 0.3, m.z, 2.6, () => harvestBody(m)]);
-    if (!inside && !depth) { husbandry?.tapTargets(list); crops?.tapTargets(list); const mt = riding?.mount(); if (mt && !mt.riding) list.push([mt.x, g(mt.x, mt.z) + 1.3, mt.z, 3.2, () => riding.toggle(mt.item)]); const worn = creatures?.downedNear(pos.x, pos.z, 40); if (worn && !riding?.riding) list.push([worn.x, worn.y + 2, worn.z, worn.radius + 2, () => (Math.hypot(worn.x - pos.x, worn.z - pos.z) - worn.radius < 4 ? tameBeast(worn) : say('Walk up to it to tame it', 'note'))]); }
+    if (!inside && !depth) { husbandry?.tapTargets(list); crops?.tapTargets(list); const mt = riding?.mount(); if (mt && !mt.riding) list.push([mt.x, g(mt.x, mt.z) + 1.3, mt.z, 3.2, () => riding.toggle(mt.item)]); hatchery?.tapTargets(list); const worn = creatures?.downedNear(pos.x, pos.z, 40); if (worn && !riding?.riding) list.push([worn.x, worn.y + 2, worn.z, worn.radius + 2, () => (Math.hypot(worn.x - pos.x, worn.z - pos.z) - worn.radius < 4 ? tameBeast(worn) : say('Walk up to it to tame it', 'note'))]); }
     for (const e of colliders.near(pos.x, pos.z, 12)) if (e.kind === 'chest') list.push([e.x, (e.y ?? g(e.x, e.z)) + 0.6, e.z, e.r + 1.6, () => openChest(e)]);
     const r = canvas.getBoundingClientRect();
     let best = null, bd = 70;
@@ -375,6 +385,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function updateSites(x, z) {
     updatePortals(x, z);
     updateCastles(x, z);
+    updateWonders(x, z);
     for (const s of sites) {
       const d = Math.hypot(x - s.place.x, z - s.place.z);
       if (d < 1000 && !s.built) {
@@ -429,7 +440,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const FALL_SAFE = 4; // metres you can drop without getting hurt
   let creatures = null; // made below; caves built before then get their guards later
   let husbandry = null; // hunting, cooking and the farms (made below, with the creatures)
-  let crops = null, riding = null; // growing your own, and your horse (made with husbandry)
+  let crops = null, riding = null, hatchery = null; // growing your own, and your horse (made with husbandry)
   let oil = null; // oil seeps, the Oil Companies' derricks and your test pits (see oil.js)
   let myFarmPlots = []; // your own plots set to Farm, where you can dig beds
   let runningNow = false; // (the run key held, for the animals to notice)
@@ -460,6 +471,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         if (top > g && top <= Math.max(g, fromY) + 0.8) g = top;
       }
       for (const s of sites) { const top = s.built?.deckAt?.(x, z); if (top !== undefined && top > g && top <= Math.max(g, fromY) + 0.8) g = top; }
+      // the floors, galleries, stairs and wall walks of the Monster Kings' castles
+      for (const q of castles) { const top = q.built?.floorAt?.(x, z, Math.max(g, fromY) + 0.8); if (top > g) g = top; }
     }
     return g;
   }
@@ -494,6 +507,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // Free camera while the mouse isn't captured (Free Move mouse, or a touch screen): as you walk,
   // the camera swings round behind you on its own, unless the player turned that off in Settings
   let camFollow = view?.camFollow !== 'off';
+  // Controls → Sensitivity: how fast the mouse, a finger and the keys turn the camera, upside-down
+  // looking, how fast the wheel zooms, and how wide the camera sees (field of view, in degrees)
+  const feel = { mouse: 1, touch: 1, invertY: false, zoom: 1, turn: 1, fov: 60 };
+  function setFeel(f = {}) {
+    const n = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
+    feel.mouse = n(f.mouse, 0.1, 4, 1); feel.touch = n(f.touch, 0.1, 4, 1); feel.zoom = n(f.zoom, 0.2, 4, 1);
+    feel.turn = n(f.turn, 0.3, 3, 1); feel.fov = n(f.fov, 45, 100, 60); feel.invertY = !!f.invertY;
+    if (camera.fov !== feel.fov) { camera.fov = feel.fov; camera.updateProjectionMatrix(); }
+  }
+  setFeel(view?.feel);
   let lookEnded = -10; // when you last let go after dragging the camera round
   // 'third': the camera is behind you. 'first': you see through your character's eyes (head hidden,
   // arms and weapon still there). Scrolling all the way in goes to first person, scrolling out comes back.
@@ -666,9 +689,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // the powers an admin turned on (see data/staff.mjs): { fly, nodeath, speed }
   let powers = {};
   let lastHurt = -99;
+  let lastFoe = null, sicOn = null, dragonCd = 0; // (your tamed dragon: what attacked you, what you set it on)
   const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
-    getPlayer: () => ({ x: pos.x, z: pos.z, y: pos.y, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, flying: !!riding?.flying, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
+    getPlayer: () => ({ x: pos.x, z: pos.z, y: pos.y, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, flying: !!riding?.flying, grudges: game?.character.grudges || null, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
     isNight: () => night,
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
     onAmbush(n) { say('Ambush!', 'hurt'); onEvent?.('ambush', { n }); },
@@ -697,7 +721,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // the great beasts (see beasts.js): a dragon sees you, the Spirit King rises, one is slain
     onBeast(m, what) {
       const name = m.kind.name;
-      if (what === 'notice') say(`The ${name} has seen you! ${m.kind.beast.breath ? 'Keep out of its breath' : 'It dives at you'}`, 'hurt');
+      if (what === 'grudge') say(`The ${name} knows you: you stole its egg! It will never forget, and it comes to kill you!`, 'hurt');
+      else if (what === 'notice') say(`The ${name} has seen you! ${m.kind.beast.breath ? 'Keep out of its breath' : 'It dives at you'}`, 'hurt');
       else if (what === 'rise') say('The still water of the lake begins to glow…', 'note');
       else if (what === 'greet' && !m.kind.beast.king) say('The Spirit King rises from the lake: "Walk in peace, traveller. Raise your hand against me and the lake itself will answer."', 'note');
       else if (what === 'greet' && m.kind.beast.king) say(`${name}, ${m.kind.beast.title}, comes down from the stars to look at you: "Small one. I have watched your world turn since before your cities were stone. Go in peace, or strike, and learn what the sky can do."`, 'note');
@@ -708,7 +733,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else if (what === 'wrath') say(`${name} roars, and the sky darkens: "So be it!"`, 'hurt');
       else if (what === 'starfall') say('Stars fall from the sky! Get out of the rings of light!', 'hurt');
       else if (what === 'nova') say(`${name} gathers the light of the stars… get far away before it bursts!`, 'hurt');
-      else if (what === 'slain' && m.kind.beast.king) say(`${name}, ${m.kind.beast.title}, falls from the sky! His Star Throne will stand empty for a day.`, 'exp');
+      if (what === 'slain' && m.lair && game?.character.grudges?.[m.lair.id]) { delete game.character.grudges[m.lair.id]; game.touch('bag'); }
+      if (what === 'slain' && m.kind.beast.king) say(`${name}, ${m.kind.beast.title}, falls from the sky! His Star Throne will stand empty for a day.`, 'exp');
       else if (what === 'slain') say(m.kind.beast.shape === 'spirit' ? 'The Spirit King sinks back into the lake. One day he will rise again' : `The ${name} crashes to the ground!`, 'exp');
     },
     // `breath`: fire, frost, storm or water from a great beast (half again as strong as a bite)
@@ -718,6 +744,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // (the King of the Wild Dragons: his breath of the void, falling stars, and the Supernova)
       const dmg = Math.round(monsterHit(m.atk, m.level, s.def * buffed('def')) * (breath ? ({ cosmic: 1.6, star: 1.2, nova: 2.5, tail: 1.3 }[breath] ?? 1.5) : 1));
       lastHurt = clock.elapsedTime;
+      lastFoe = { m, at: clock.elapsedTime }; // (your dragon turns on whatever attacks you)
       floatText(breath ? `${{ fire: '🔥', frost: '❄️', storm: '⚡', water: '🌊', cosmic: '🌌', star: '☄️', nova: '💥', tail: '💢' }[breath] || ''} -${dmg}` : `-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
       if (game.damage(dmg)) defeated(m);
     },
@@ -776,6 +803,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       canRide: () => (inside ? 'Your mount waits outside' : depth ? 'Mounts can\'t go underground' : dead ? 'You can\'t ride now' : null),
     });
     riding.restore();
+    // dragon eggs: the nests at the lairs, hatching, and the hatchling that follows you (see hatchery.js)
+    hatchery = createHatchery({
+      scene, game, say, onEvent,
+      getPos: () => pos, getPlayer: () => ({ heading, flying: !!riding?.flying }),
+      landAt: (x, z, full) => (full ? sample(x, z, {}) : groundAt(x, z, 1e4)),
+      fireNear: (x, z, r) => husbandry.fireNear(x, z, r),
+      angerParent: (lairId) => creatures.angerLair(lairId),
+      canPlace: () => (inside ? 'Set it down outdoors' : depth ? 'Not down here: eggs need the open air' : riding?.flying ? 'Land first' : null),
+      onGrown: (item, x, z, h) => riding?.adopt(item, x, z, h),
+    });
   }
   husbandry.updateFarms(pos.x, pos.z);
 
@@ -1287,6 +1324,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const ok = Math.random() < BEAST_TAME[id];
     if (creatures.tame(m, ok)) {
       const item = `tamed_${id}`;
+      if (m.lair && game.character.grudges?.[m.lair.id]) delete game.character.grudges[m.lair.id];
       game.addItem(item, 1);
       riding?.adopt(item, m.x, m.z, m.heading);
       say(`You throw the bridle over the ${name}'s head and hold on… it bows its head to you. It is yours! Press H or E beside it to climb on`, 'exp');
@@ -1307,6 +1345,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (myAnvilNear(pos.x, pos.z)) { onEvent?.('anvil'); return; }
       if (crops?.interactFirst()) return;
       if (husbandry.interact()) return;
+      if (!riding?.riding && hatchery?.interact()) return;
       const worn = !riding?.riding && creatures.downedNear(pos.x, pos.z, 4);
       if (worn) { tameBeast(worn); return; }
       if (riding?.interact()) return;
@@ -1428,8 +1467,127 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     showWeapon();
     if (sheathed && game?.weapon()) say('You put your weapon away: no weapons are drawn inside the city', 'note');
   }
+  // ---------- your tamed dragon or wyvern, fighting beside you (see riding.js) ----------
+  // It goes for the foe you set it on (the dragon key), or else whatever has hit you in the last
+  // little while, and breathes on it (or bites, for a Peak Wyvern, which has no breath).
+  const BREATH_HOW = { fire: 'fire', frost: 'frost', storm: 'shock' };
+  function dragonHit(foe, c, mult = 1) {
+    const b = BEASTS[c.id];
+    const lvl = b.levels[0];
+    let dmg = (10 + lvl * 1.1) * (b.boss ? 2 : 1.4) * (0.85 + Math.random() * 0.3) * mult - foe.def * 0.3;
+    dmg = Math.max(1, Math.round(dmg));
+    floatText(`${c.breath ? { fire: '🔥', frost: '❄️', storm: '⚡' }[c.breath] : '🦷'} ${dmg}`, new THREE.Vector3(foe.x, foe.y + foe.height + 0.2, foe.z), 'dmg');
+    finishHit(foe, creatures.hit(foe, dmg, c.breath ? BREATH_HOW[c.breath] : 'pierce'));
+  }
+  const alive = (m) => m && !m.dead && m.hp > 0 && creatures.list.includes(m);
+  function dragonFight(dt) {
+    dragonCd -= dt;
+    const c = riding?.companion();
+    if (!c || c.riding) { if (c) riding.setGoal(null); return; }
+    if (sicOn && (!alive(sicOn) || Math.hypot(sicOn.x - pos.x, sicOn.z - pos.z) > 120)) sicOn = null;
+    if (lastFoe && (!alive(lastFoe.m) || clock.elapsedTime - lastFoe.at > 25 || Math.hypot(lastFoe.m.x - pos.x, lastFoe.m.z - pos.z) > 60)) lastFoe = null;
+    const foe = sicOn || lastFoe?.m || null;
+    // told to stay (by voice): it waits on that spot unless it is set on a foe
+    if (!foe || dead) { riding.setGoal(petStay ? { x: petStay.x, z: petStay.z, r: 2, air: 0 } : null); return; }
+    const reach = c.breath ? Math.max(9, c.len * 0.7) : c.reach + (foe.radius || 1);
+    const foeAir = foe.air || 0;
+    riding.setGoal({ x: foe.x, z: foe.z, r: reach - 1, air: foeAir > 4 ? foeAir : undefined });
+    const d = Math.hypot(foe.x - c.x, foe.z - c.z);
+    if (d < reach + 2 && Math.abs((foe.y + foe.height * 0.5) - (c.y + 2)) < 25 && dragonCd <= 0) {
+      dragonCd = c.breath ? 2.2 : 1.4;
+      riding.breathe(() => ({ x: foe.x, y: foe.y + foe.height * 0.5, z: foe.z }), 1.2);
+      dragonHit(foe, c);
+    }
+  }
+  // the dragon key: set your dragon on the foe in front of you, or call it back to your side;
+  // on its back, it breathes ahead of you
+  function commandDragon() {
+    if (!game || dead) return;
+    if (riding?.flyer()) { riderBreath(); return; }
+    const c = riding?.companion();
+    if (!c) { say('You have no dragon with you. Tame one (a Dragon Bridle on a worn-out one) or hatch an egg', 'note'); return; }
+    const foe = creatures.target(pos.x, pos.z, heading, 40, 0.6);
+    const name = BEASTS[c.id].name.toLowerCase();
+    if (foe && foe !== sicOn) { sicOn = foe; say(`You point at the ${foe.kind.name}. Your ${name} goes for it!`, 'note'); }
+    else { sicOn = null; lastFoe = null; say(`Your ${name} comes back to your side`, 'note'); }
+  }
+  // ---------- orders spoken aloud (see voicecmd.js and data/voicecmd.mjs) ----------
+  // attack: the foe you face, or the nearest one whose name you said ("attack the wolf");
+  // breathe: a burst of breath at what you face; back: stop and come to you (a horse is called);
+  // stay: wait on this spot; follow: come along again. Returns what happened, as a line to show.
+  let petStay = null;
+  function petOrder(order, what = null) {
+    if (!game || dead) return null;
+    const c = riding?.companion();
+    const m = riding?.mount();
+    if (!c) {
+      // no dragon: a horse, donkey or camel can still be called over
+      if (m && (order === 'back' || order === 'follow')) { riding.toggle(m.item); return null; }
+      if (m) return `Your ${ITEMS[m.item]?.name?.toLowerCase() || 'mount'} only knows "come"`;
+      return 'You have no dragon with you to command. Tame one (a Dragon Bridle on a worn-out one) or hatch an egg';
+    }
+    const name = BEASTS[c.id].name.toLowerCase();
+    if (order === 'attack') {
+      if (what && /\bplayers?\b/.test(what)) return `Your ${name} won't attack other players outside the Colosseum`;
+      let foe = null;
+      if (what) {
+        const words = what.split(' ').filter((w) => w.length > 2);
+        const named = creatures.list.filter((o) => !o.dead && o.hp > 0 && !o.farm && Math.hypot(o.x - pos.x, o.z - pos.z) < 60 && words.some((w) => (o.title || o.kind?.name || '').toLowerCase().includes(w.replace(/s$/, ''))));
+        foe = named.sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0] || null;
+      }
+      foe ||= creatures.target(pos.x, pos.z, heading, 40, 0.6) || lastFoe?.m || null;
+      if (!foe || !alive(foe)) return `Your ${name} looks about, but sees nothing to attack. Face a foe and say it again`;
+      if (c.riding) { riderBreath(); return null; }
+      sicOn = foe; petStay = null;
+      return `Your ${name} goes for the ${foe.title || foe.kind.name}!`;
+    }
+    if (order === 'breathe') {
+      if (c.riding) { riderBreath(); return null; }
+      const foe = creatures.target(pos.x, pos.z, heading, 40, 0.6) || sicOn || lastFoe?.m || null;
+      if (foe && alive(foe)) { sicOn = foe; petStay = null; dragonCd = 0; return `Your ${name} turns on the ${foe.title || foe.kind.name} and breathes!`; }
+      if (dragonCd > 0) return null;
+      dragonCd = 1.5;
+      const far = 14;
+      riding.breathe(() => ({ x: pos.x + Math.sin(heading) * far, y: pos.y + 1, z: pos.z + Math.cos(heading) * far }), 1.1);
+      return null;
+    }
+    if (order === 'stay') {
+      if (c.riding) return `You are on your ${name}'s back`;
+      sicOn = null; lastFoe = null; petStay = { x: c.x, z: c.z };
+      return `Your ${name} stays where it is. Say "follow" to call it along`;
+    }
+    // back / follow
+    sicOn = null; lastFoe = null; petStay = null;
+    return `Your ${name} comes back to your side`;
+  }
+  // a spell said aloud: any spell on the staff in your hand, not only the chosen one
+  function castSpellNamed(id) {
+    if (!game || dead || resting()) return 'busy';
+    if (sheathed) { sayPutAway(); return 'busy'; }
+    const st = game.staff();
+    if (!st) return 'staff';
+    if (!st.spells.includes(id)) return game.character.spells.includes(id) ? 'off' : 'unknown';
+    const sp = SPELLS[id];
+    if (clock.elapsedTime < (spellReady[id] || 0)) return 'cooling';
+    const cost = Math.max(1, Math.round(sp.sp * (game.character.cls === 'mage' ? 0.9 : 1)));
+    if (game.character.sp < cost) return 'sp';
+    castSpell(sp);
+    cooldown = Math.max(cooldown, (game.weapon() || FIST).speed);
+    return 'ok';
+  }
+  // breath from your dragon's jaws while you ride it: it burns what is ahead of you
+  function riderBreath() {
+    const c = riding?.companion();
+    if (!c || dragonCd > 0) return;
+    dragonCd = c.breath ? 1.6 : 1;
+    const far = c.len * 1.2 + 10;
+    riding.breathe(() => ({ x: pos.x + Math.sin(heading) * far, y: pos.y - (riding.flying ? 4 : 0), z: pos.z + Math.cos(heading) * far }), 1.1);
+    const foes = creatures.targets(pos.x, pos.z, heading, far, 0.45).filter((m) => Math.abs(m.y + m.height * 0.5 - pos.y) < 20).slice(0, c.breath ? 5 : 1);
+    for (const m of foes) dragonHit(m, c, c.breath ? 1 : 0.8);
+  }
   function attack() {
     if (dead || cooldown > 0) return;
+    if (riding?.flyer()) { riderBreath(); return; } // (on a dragon's back, it breathes for you)
     if (sheathed) { sayPutAway(); return; }
     const w = game?.weapon();
     // a bow needs an arrow for every shot
@@ -1689,13 +1847,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let spellTurn = 0;
   const SPELL_REACH = 14;
   const spellReady = {}; // spell id -> clock time it can be cast again
-  function castSpell() {
+  function castSpell(pick = null) {
     const c = game.character;
     const els = c.elements?.length ? c.elements : [RACES[c.race].element];
     const from = new THREE.Vector3(pos.x + Math.sin(heading) * 0.5, pos.y + bodyH * 0.7, pos.z + Math.cos(heading) * 0.5);
     const ahead = (d) => new THREE.Vector3(pos.x + Math.sin(heading) * d, pos.y + bodyH * 0.6, pos.z + Math.cos(heading) * d);
     const at = (m) => new THREE.Vector3(m.x, m.y + m.height * 0.6, m.z);
-    const sp = game.chosenSpell();
+    const sp = pick || game.chosenSpell();
     const cost = sp ? Math.max(1, Math.round(sp.sp * (c.cls === 'mage' ? 0.9 : 1))) : 0;
     if (sp && SELF_KINDS.includes(sp.kind) && clock.elapsedTime >= (spellReady[sp.id] || 0) && c.sp >= cost) {
       // a spell on yourself: heal, guard (+DEF) or empower (+MATK); the Dark Side's are stronger too
@@ -1897,8 +2055,31 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const sp = game?.nextSpell();
     say(sp ? `Spell: ${sp.name}` : game?.staff() ? 'No spells on this staff yet: attach some in Skills (K)' : 'Hold a staff to cast spells', sp ? 'exp' : 'note');
   }
+  // the practice monster of the Academy you are in (made the first time it is needed)
+  function practiceHere() {
+    const p = inside?.built.practice;
+    if (!p) return null;
+    return (inside.practiceCtl ??= createPractice(p, {
+      say, float: floatText, tip: (text) => onEvent?.('practice-tip', text),
+      won() {
+        // beaten the way the school teaches: a good bit of EXP for a child of this Academy
+        if (game?.character.child?.school === p.school) {
+          let exp = 0;
+          for (let i = 0; i < 5; i++) exp += game.trainHit() || 0;
+          if (exp) floatText(`+${exp} EXP`, pos.clone().add(new THREE.Vector3(0, bodyH + 0.3, 0)), 'exp');
+        }
+        say('You beat the practice monster the way your Academy teaches!', 'exp');
+        onEvent?.('practice-win', { school: p.school });
+      },
+    }));
+  }
   function resolveSwing() {
     const w = game?.weapon();
+    // the practice monster in an Academy takes the blow if it is aimed at it
+    if (practiceHere()?.swing(pos, heading, speedNow)) {
+      if (game?.character.child && trainingAt() === game.character.child.school) { const exp = game.trainHit(); if (exp) floatText(`+${exp} EXP`, pos.clone().add(new THREE.Vector3(0, bodyH + 0.3, 0)), 'exp'); }
+      return;
+    }
     // practice on your Academy's mat: every swing earns a little EXP
     if (game?.character.child && trainingAt() === game.character.child.school) {
       const exp = game.trainHit();
@@ -1975,6 +2156,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (act === 'tent') pitchTent();
     if (act === 'interact') interact();
     if (act === 'mount' && !e.repeat && game) riding?.toggle();
+    if (act === 'dragon' && !e.repeat) commandDragon();
     if (act === 'spell' && !e.repeat) nextSpell();
     if ((act === 'zoomin' || act === 'zoomout') && !windowOpen?.()) zoomBy(act === 'zoomin' ? -150 : 150);
     if (act === 'mouse' && !e.repeat) { if (locked()) { letGo = true; document.exitPointerLock(); } else lockMouse(); }
@@ -2032,8 +2214,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   });
   document.addEventListener('mousemove', (e) => {
     if (!locked() || windowOpen?.()) return;
-    yaw -= e.movementX * 0.0025;
-    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018, pitchLo(), pitchHi());
+    yaw -= e.movementX * 0.0025 * feel.mouse;
+    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018 * feel.mouse * (feel.invertY ? -1 : 1), pitchLo(), pitchHi());
   });
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && locked()) { if (e.button === 0 && !talkAt(window.innerWidth / 2, window.innerHeight / 2)) attack(); return; }
@@ -2076,9 +2258,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     } else if (look && e.pointerId === look.id) {
       // a finger turns the camera more gently than a mouse, so small swipes are small turns
-      const k = look.mouse ? 1 : 0.55;
+      const k = look.mouse ? feel.mouse : 0.55 * feel.touch;
       yaw -= (e.clientX - look.x) * 0.006 * k;
-      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k, pitchLo(), pitchHi());
+      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k * (feel.invertY ? -1 : 1), pitchLo(), pitchHi());
       look.x = e.clientX; look.y = e.clientY;
     }
   });
@@ -2109,7 +2291,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function zoomBy(deltaY) {
     if (viewMode === 'first') { if (deltaY > 0) setView('third', true); }
     else if (dist <= 2 && deltaY < 0) setView('first', true);
-    else dist = THREE.MathUtils.clamp(dist + deltaY * 0.01, 2, 30);
+    else dist = THREE.MathUtils.clamp(dist + deltaY * 0.01 * feel.zoom, 2, 30);
   }
   canvas.addEventListener('wheel', (e) => { zoomBy(e.deltaY); e.preventDefault(); }, { passive: false });
   // catch the mouse for the camera again (after the chat, or the Free the mouse key); a key press
@@ -2282,7 +2464,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (cameraMode === 'follow' && !fp) {
       // Follow camera: left and right turn your body, forward and back walk the way you face,
       // and the camera swings round behind you
-      heading -= fx * dt * (running ? STEER_RUN : STEER);
+      heading -= fx * dt * (running ? STEER_RUN : STEER) * feel.turn;
       if (Math.abs(fz) > 0.05) {
         const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
         move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
@@ -2296,7 +2478,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // Steering: while you go forward (walking or sprinting), left and right turn you gently,
       // as much as you press, and the camera turns with you. Only sideways on its own steps sideways.
       const steering = fz > 0.1 && !look && !fp; // in first person, left and right step sideways
-      if (steering) { const turn = fx * dt * (running ? STEER_RUN : STEER); yaw -= turn; backYaw -= turn; }
+      if (steering) { const turn = fx * dt * (running ? STEER_RUN : STEER) * feel.turn; yaw -= turn; backYaw -= turn; }
       const ya = aboutFace ? backYaw : yaw; // turning round: walk the new way while the camera catches up
       const camFwd = v3.set(-Math.sin(ya), 0, -Math.cos(ya));
       const side = steering ? fx * 0.25 : fx; // a slight lean into the turn instead of a sharp angle
@@ -2320,8 +2502,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const px = pos.x, pz = pos.z;
       pos.x += move.x * speedNow * dt;
       pos.z += move.z * speedNow * dt;
-      pushOffFolk(pos, bodyR);
-      colliders.push(pos, bodyR);
+      // (flying a dragon or wyvern: over the trees, rocks and roofs, not through them)
+      const aloft = riding?.flying;
+      if (!aloft) pushOffFolk(pos, bodyR);
+      colliders.push(pos, bodyR, aloft ? (x, z) => sample(x, z, tmpS).h : null);
       if (depth) {
         // the cave walls: slide along them instead of walking in
         const open = (x, z) => depth.built.shape(x, z).d < -bodyR * 0.6;
@@ -2368,8 +2552,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // (over water it hovers just above the waves instead)
       if (jumpQueued) climbFor = 0.7; // (a tap of the jump button on a phone climbs for a moment)
       climbFor = Math.max(0, climbFor - dt);
-      const g0 = Math.max(groundAt(pos.x, pos.z), water + 2.5);
-      pos.y = riding.fly(dt, held('flyup') || climbFor > 0, flyDownHeld() || flyDown, g0, pos.y);
+      const land0 = groundAt(pos.x, pos.z), g0 = Math.max(land0, water + 2.5);
+      pos.y = riding.fly(dt, held('flyup') || climbFor > 0, (flyDownHeld() || flyDown) && g0 === land0, g0, pos.y); // (no landing on water)
       if (riding.flying) swimming = false;
       ground = pos.y; velY = 0; airborne = false; fallFrom = pos.y;
     }
@@ -2543,6 +2727,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (inside) {
       inside.built.update(t, pos);
+      // an Academy's practice monster: it turns to you, lunges now and then and knocks you back
+      const pr = practiceHere();
+      const knock = pr?.update(pos, speedNow);
+      if (knock) { pos.x += knock.x; pos.z += knock.z; inside.built.clampPos(pos); }
       checkRooms();
       checkInn();
       const d = Math.hypot(pos.x - inside.built.exit.x, pos.z - inside.built.exit.z);
@@ -2565,6 +2753,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
         const caveHere = sites.find((s) => s.built?.inside?.(pos.x, pos.z));
         here = caveHere ? caveById(caveHere.place.id)?.name || 'A cave' : near ? `${regionName(near.place.region)} · ${near.place.name}` : regionName(sample(pos.x, pos.z, tmpS).region);
+        // a King's castle, or one of the wonders of the realm
+        const castle = castles.find((q) => Math.abs(pos.x - q.c.x) < 125 && Math.abs(pos.z - q.c.z) < 125);
+        const wonder = wonders.find((q) => Math.hypot(pos.x - q.w.x, pos.z - q.w.z) < q.w.r + 150);
+        if (castle) here = `${regionName(sample(pos.x, pos.z, tmpS).region)} · ${castle.c.castle}`;
+        else if (wonder) {
+          here = `${regionName(wonder.w.region)} · ${wonder.w.name}`;
+          if (!wonder.seen) { wonder.seen = true; say(`You found ${wonder.w.name}`, 'note'); onEvent?.('wonder', wonder.w); }
+        }
         const nowCave = caveHere?.place.id || null;
         if (nowCave !== atCave) { atCave = nowCave; onEvent?.('cave', atCave ? caveById(atCave) : null); }
         const nowPortal = nearestPortal(pos.x, pos.z);
@@ -2651,7 +2847,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
     for (const q of mobVillages.values()) q.built.update(t, pos, creatures.list);
-    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); }
+    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); dragonFight(dt); hatchery?.tick(dt, t); }
     walkBuild?.update();
     sky.follow(camera);
 
@@ -2759,8 +2955,34 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     return true;
   }
 
+  // The tutorial's beam of light over the place it wants you to go (see tutorial.js): a tall soft
+  // column you can see from across the city, and a gold arrow bobbing over the spot
+  let guide = null;
+  const guideMats = {
+    beam: new THREE.MeshBasicMaterial({ color: 0xffd56a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }),
+    arrow: new THREE.MeshBasicMaterial({ color: 0xffc23a, fog: false }),
+  };
+  function setGuide(at) {
+    if (guide) { scene.remove(guide); guide = null; }
+    if (!at || !Number.isFinite(at.x) || !Number.isFinite(at.z)) return;
+    guide = new THREE.Group();
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 60, 16, 1, true), guideMats.beam);
+    beam.position.y = 30;
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.4, 4), guideMats.arrow);
+    arrow.rotation.x = Math.PI; // pointing down at the spot
+    arrow.position.y = 3.2;
+    arrow.onBeforeRender = () => { const t = performance.now() / 1000; arrow.position.y = 3.2 + Math.sin(t * 2.4) * 0.35; arrow.rotation.y = t * 1.5; };
+    guide.add(beam, arrow);
+    guide.position.set(at.x, surfaceAt(at.x, at.z), at.z);
+    scene.add(guide);
+  }
+
   return {
     rebuildAvatar,
+    setGuide,
+    // for the tutorial's arrow: where you stand, which way the camera looks, and whether you are
+    // indoors or down a cave (the arrow points outside the world then)
+    guideView: () => ({ x: pos.x, z: pos.z, yaw, inside: !!inside, depth: !!depth }),
     jump() { jumpQueued = true; },
     // an admin's powers turned on or off; landing after flying never hurts
     setPowers(p) {
@@ -2780,15 +3002,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (n) say(kind === 'all' ? 'The great beasts stir in their lairs again…' : `The ${BEASTS[kind]?.name || 'beast'} returns to its lair…`, 'note');
       return n;
     },
-    // an admin's Dragon radar: every dragon and wyvern lair, and where the beast is now if it is near
+    commandDragon: () => commandDragon(),
+    petOrder, castSpellNamed,
+    petNow: () => { const c = riding?.companion(), m = riding?.mount(); return c ? { kind: 'dragon', id: c.id, item: m?.item, name: BEASTS[c.id].name } : m ? { kind: 'mount', id: m.id, item: m.item, name: ITEMS[m.item]?.name } : null; },
+    get hasDragon() { return !!riding?.companion(); },
+    // an admin's Dragon radar: every dragon and wyvern lair and the Spirit King's lake, and where the
+    // beast is now if it is near
     radar() {
       const out = [];
       for (const L of allLairs()) {
         const b = BEASTS[L.kind];
-        if (b.shape === 'spirit') continue;
         const m = creatures.list.find((q) => q.lair === L && !q.dead);
         const x = m ? m.x : L.x, z = m ? m.z : L.z;
-        out.push({ id: L.id, name: b.name, king: !!b.king, boss: !!b.boss, wyvern: b.shape === 'wyvern', x, z, dist: Math.hypot(x - pos.x, z - pos.z),
+        out.push({ id: L.id, name: b.name, king: !!b.king, boss: !!b.boss, wyvern: b.shape === 'wyvern', spirit: b.shape === 'spirit', x, z, dist: Math.hypot(x - pos.x, z - pos.z),
           seen: !!m, air: m ? Math.round(m.air || 0) : 0, hp: m ? Math.round(100 * m.hp / m.maxHp) : null, backIn: creatures.slainIn(L.id) });
       }
       return { x: pos.x, z: pos.z, yaw, beasts: out.sort((a, b) => a.dist - b.dist) };
@@ -2800,7 +3026,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     presence() {
       const place = depth ? `cave:${String(depth.cave.id).replace(/[^\w-]/g, "_").slice(0, 40)}` : inside ? `in:${String(inside.shop.id || 'room').replace(/[^\w-]/g, '_').slice(0, 40)}:${Math.round(inside.shop.x)},${Math.round(inside.shop.z)}` : 'out';
       const pose = dead || sleeping || collapsed > 0 ? 'lie' : sitting ? 'sit' : riding?.flying ? 'fly' : riding?.riding ? 'ride' : '';
-      return { x: avatar.position.x, y: avatar.position.y, z: avatar.position.z, heading, speed: speedNow, place, pose };
+      // your dragon (ridden or beside you) or your hatchling, for everyone to see
+      const c = riding?.companion(), h = hatchery?.petSpot();
+      const pet = c ? { k: c.id, x: c.x, y: c.y, z: c.z, h: c.heading, air: c.air } : h ? { k: `h:${h.kind}`, x: h.x, y: h.y, z: h.z, h: h.heading, air: h.air, s: h.scale } : null;
+      return { x: avatar.position.x, y: avatar.position.y, z: avatar.position.z, heading, speed: speedNow, place, pose, pet };
     },
     showOthers: (list) => others.show(list),
     moveOther: (m) => others.move(m),
@@ -2851,6 +3080,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     petCome: (id) => riding?.come(id) || 'none',
     petHome: (id) => riding?.putAway(id) || 'none',
     petFlying: (id) => !!riding?.flyingOn(id),
+    placeEgg: (id) => hatchery?.placeEgg(id),
+    debugHatchery: () => hatchery?.debug(),
+    debugWarmEggs: (secs) => hatchery?.debugWarm(secs),
+    debugGrowPet: (secs) => hatchery?.debugGrow(secs),
     riding: () => !!riding?.riding,
     debugCrops: () => crops?.beds(),
     // make every bed `mins` minutes older (for tests)
@@ -2876,7 +3109,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugInteract() { interact(); },
     debugRide() { return { mount: riding?.mount(), flying: !!riding?.flying, flyer: !!riding?.flyer(), y: pos.y, ground: groundAt(pos.x, pos.z) }; },
     debugHitBeast(dmg) { const m = creatures.list.find((q) => q.kind.beast && !q.dead); if (!m) return null; const r = creatures.hit(m, dmg, 'slash'); finishHit(m, r); return r ? { exp: r.exp, drops: r.drops } : { hp: m.hp }; },
+    debugDragon: () => ({ c: riding?.companion(), sic: sicOn ? sicOn.kind.name : null, foe: lastFoe ? lastFoe.m.kind.name : null, grudges: game?.character.grudges || null, cd: dragonCd }),
     debugSpawnAnimal(id, dx = 0, dz = 6) { return creatures.spawnAt(`a_${id}`, 1, pos.x + dx, pos.z + dz, { keep: true }); },
+    debugFace(h) { heading = h; yaw = h + Math.PI; snapCam = true; },
     debugTeleport(x, z) { pos.set(x, groundAt(x, z, 1e4), z); snapCam = true; updateSites(x, z); husbandry.updateFarms(x, z); land.update(x, z, Infinity); },
     debugTalkParent() { for (const c of builtCities()) { const n = c.built.npcs.find((q) => q.kind === 'parent' && q.mine); if (n) { pos.set(n.x + 1, pos.y, n.z); talkTo(n); return true; } } return false; },
     // for testing: what a frame draws, grouped by what it is
@@ -2958,6 +3193,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugDeaths: () => creatures.list.filter((m) => m.death).map((m) => m.death.t),
     debugLeave() { if (inside) leaveBuilding(); },
     debugCounter() { const c = inside?.built?.counter; if (!c) return false; pos.set(c.x, c.y, c.z); useIndoors(); return true; },
+    // for testing: the Academy's practice monster (where it is) and a swing
+    debugPractice() { const p = inside?.built.practice; practiceHere(); return p ? { x: p.ox + p.body.position.x, z: p.oz + p.body.position.z, school: p.school, facing: p.body.rotation.y, lying: p.body.rotation.z } : null; },
+    debugSwing: () => resolveSwing(),
     debugEnter(id) { for (const c of builtCities()) { const sh = c.built.shops.find((q) => q.id === id); if (sh) { pos.set(sh.x, pos.y, sh.z); enterBuilding(sh); return true; } } return false; },
     refreshHelper,
     refreshGuard,
@@ -2999,6 +3237,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debug: { scene, renderer, camera }, // (tests: what is drawn, and how much)
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     setCameraFollow(on) { camFollow = on !== 'off' && on !== false; },
+    setFeel,
     setView(mode) { setView(mode); },
     // order a drink in the tavern: `served` runs when the waiter brings it to you (wherever you are inside)
     tavernOrder(served) { if (inside?.built.order) inside.built.order(() => ({ x: pos.x, z: pos.z }), served); },

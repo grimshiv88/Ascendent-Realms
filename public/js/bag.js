@@ -41,6 +41,8 @@ function describeGear(it, plus = 0) {
   if (it.kind === 'furniture') return '🏠 Furniture for a home';
   if (it.kind === 'seed') return '🌱 Plants one bed (E by an empty bed)';
   if (it.kind === 'mount') return `${MOUNTS[it.mount]?.beast ? '🐉 Yours to fly' : '🐎 Yours to ride'} · ${MOUNTS[it.mount]?.about || ''}`;
+  if (it.kind === 'egg') return '🥚 Set it down to hatch it (it needs the right place, and turning now and then)';
+  if (it.kind === 'pet') return '🐣 Follows you everywhere while it is in your bag, and grows up into a beast you can fly';
   if (it.kind === 'stone') return `💠 Skill Stone · set it into Rare or better gear`;
   if (it.kind === 'coating') return `${EFFECTS[it.coat].icon} Coats a weapon for ${it.hits} hits (Blacksmith)`;
   if (it.kind === 'armour') return `${rankTag(it, plus)} ${SLOTS.find(([s]) => s === it.slot)[1]} · DEF +${upgraded(it.def || 0, plus)}${it.mdef ? ` · MDEF +${upgraded(it.mdef, plus)}` : ''}`;
@@ -130,6 +132,7 @@ export function renderBag(el, game, selected) {
     if (e.id === 'shovel') actions.push(`<button type="button" class="gold-button small" data-dig>Dig a test pit here (for oil)</button>`);
     if (e.id === 'firewood') actions.push(`<button type="button" class="gold-button small" data-campfire>Light a campfire here</button>`);
     if (sel.kind === 'seed') actions.push(`<button type="button" class="gold-button small" data-plant="${e.id}">Plant in the bed beside you</button>`);
+    if (sel.kind === 'egg') actions.push(`<button type="button" class="gold-button small" data-egg="${e.id}">Set it down here to hatch</button>`);
     if (sel.kind === 'mount') actions.push(`<button type="button" class="gold-button small" data-mount="${e.id}">Call it to you (H)</button>`);
     if (sel.kind === 'food') actions.push(`<button type="button" class="gold-button small" data-use="${keyOf(e)}">Use</button>`);
     if (sel.kind === 'gift') actions.push(`<button type="button" class="gold-button small" data-open-gift="${keyOf(e)}">🎁 Open the gift</button>`);
