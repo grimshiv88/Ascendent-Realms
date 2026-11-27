@@ -375,19 +375,19 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
     ctx.restore();
     // caves (once zoomed in), dungeons, Monster Towers and Monster Camps, with names and levels close up
     ctx.save();
-    ctx.font = '600 12px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
+    ctx.font = '600 14px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
     for (const m of siteMarks()) {
       const show = m.kind === 'tower' ? 1 : m.kind === 'dungeon' || m.kind === 'camp' ? 2 : 4;
       if (view.zoom < show) continue;
       const q = toMap(m.x, m.z);
       const [x, y] = toCanvas(q.x, q.y);
       if (x < -80 || y < -30 || x > W + 80 || y > H + 30) continue;
-      siteMark(ctx, x, y, m.kind, m.lv, view.zoom < 2 ? 0.75 : 1);
+      siteMark(ctx, x, y, m.kind, m.lv, view.zoom < 2 ? 1.1 : 1.6);
       const named = m.kind === 'cave' ? view.zoom >= 8 : m.kind === 'tower' ? view.zoom >= 3 : view.zoom >= 5;
       if (!named) continue;
       const label = `${m.name}${m.floors ? ` (${m.floors} floors)` : ''} · Lv ${m.lv}`;
-      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(label, x, y - 15);
-      ctx.fillStyle = '#f5ebd0'; ctx.fillText(label, x, y - 15);
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(label, x, y - 21);
+      ctx.fillStyle = '#f5ebd0'; ctx.fillText(label, x, y - 21);
     }
     ctx.restore();
     for (const m of marks) { const q = toMap(m.x, m.z); diamond(ctx, ...toCanvas(q.x, q.y), m.label); }

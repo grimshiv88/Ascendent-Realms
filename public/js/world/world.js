@@ -3456,6 +3456,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugDragon: () => ({ c: riding?.companion(), sic: sicOn ? sicOn.kind.name : null, foe: lastFoe ? lastFoe.m.kind.name : null, grudges: game?.character.grudges || null, cd: dragonCd }),
     debugSpawnAnimal(id, dx = 0, dz = 6) { return creatures.spawnAt(`a_${id}`, 1, pos.x + dx, pos.z + dz, { keep: true }); },
     debugFace(h) { heading = h; yaw = h + Math.PI; snapCam = true; },
+    // the Monster Towers and Camps: whether one is built and manned, and who is in it
+    debugHold(id) { const q = holds.find((h) => h.s.id === id); if (!q) return null; return { built: !!q.built, manned: q.manned, home: holdHome(id), monsters: (creatures?.list || []).filter((m) => m.site === id).map((m) => ({ kind: m.kind.name, level: m.level, y: Math.round(m.y * 10) / 10, dead: !!m.dead })) }; },
+    debugGround: (x, z, fromY) => groundAt(x, z, fromY),
+    debugPos: () => ({ x: pos.x, y: pos.y, z: pos.z }),
     debugTeleport(x, z) { pos.set(x, groundAt(x, z, 1e4), z); snapCam = true; updateSites(x, z); husbandry.updateFarms(x, z); land.update(x, z, Infinity); },
     debugTalkParent() { for (const c of builtCities()) { const n = c.built.npcs.find((q) => q.kind === 'parent' && q.mine); if (n) { pos.set(n.x + 1, pos.y, n.z); talkTo(n); return true; } } return false; },
     // for testing: what a frame draws, grouped by what it is

@@ -97,9 +97,11 @@ export function buildTower(site) {
   const plinthLow = Math.min(-1, ground.low - F - 1);
   B.box(wall2M, 0, plinthLow, 0, 2 * S + 2, -plinthLow, 2 * S + 2);
   B.floor(-S - 1, S + 1, -S - 1, S + 1, 0);
-  const outside = heightAt(cx, cz + S + 6) - F;
+  let outside = heightAt(cx, cz + S + 6) - F;
   if (outside < -0.3) {
+    // (measured again where the steps end, so their foot meets the ground there)
     const len = Math.max(3, -outside * 1.6);
+    outside = Math.min(-0.3, heightAt(cx, cz + S + 1 + len) - F);
     const n = Math.ceil(-outside / 0.4);
     for (let i = 0; i < n; i++) {
       const y = outside + ((i + 1) * -outside) / n;
@@ -247,6 +249,7 @@ export function buildCamp(site) {
   fire.position.set(0, at(0, 0) + 1, 0);
   for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; const s = add(new THREE.Mesh(new THREE.DodecahedronGeometry(0.4, 0), stoneM)); s.position.set(Math.cos(a) * 1.5, at(0, 0) + 0.2, Math.sin(a) * 1.5); }
   for (const s of [-1, 1]) { const p = add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.2, 5), poleM)); p.position.set(s * 1.7, at(0, 0) + 1.1, 0); }
+  const bar = add(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.8, 5), poleM)); bar.rotation.z = Math.PI / 2; bar.position.set(0, at(0, 0) + 2.1, 0);
   solids.push({ x: cx, z: cz, r: 1.6, kind: 'wall', height: 1.5 });
   const l = new GlowLight(T.fire, 50, 30, 1.5); l.position.set(0, at(0, 0) + 2.5, 0); lights.push(l);
   // a broken fence of sharpened stakes round it, with gaps
