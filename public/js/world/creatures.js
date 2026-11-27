@@ -778,7 +778,9 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       if (m.nid && folk.length && !m.kind.animal) {
         for (const o of folk) { if (o.dead) continue; const d = Math.hypot(o.x - m.x, o.z - m.z); if (d < dist - 1) { dist = d; dx = o.x - m.x; dz = o.z - m.z; other = o; } }
       }
-      const hidden = p.safe && !m.hurtBy && !m.raid && !other; // a torch or a campfire keeps you hidden (but not from monsters attacking a town)
+      // (a monster on a tower's floor only comes for you when you're on the same floor)
+      const otherFloor = m.storey && !other && Math.abs((p.y ?? m.y) - m.y) > 3.5;
+      const hidden = (p.safe && !m.hurtBy && !m.raid && !other) || otherFloor; // a torch or a campfire keeps you hidden (but not from monsters attacking a town)
       // lurkers wait without moving until you walk into them (or hit one)
       if (m.state === 'lurk') {
         if (!p.dead && (dist < 13 || m.hurtBy)) spring(m.pack);

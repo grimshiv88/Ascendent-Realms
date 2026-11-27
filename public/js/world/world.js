@@ -29,7 +29,9 @@ import { buildKingCastle } from './kingcastle.js';
 import { allWonders } from '../data/wonders.mjs';
 import { buildWonder } from './wonders.js';
 import { CELL } from '../data/building.mjs';
-import { caveById, THEMES, chestLoot, bossLevel, caveOres, pickOre, SIZES } from '../data/depths.mjs';
+import { caveById, THEMES, chestLoot, bossLevel, caveOres, pickOre, SIZES, caveFloorLevel } from '../data/depths.mjs';
+import { allSites, floorLevel, wardenLevel, lootCave, SITE_RETURNS_MS } from '../data/sites.mjs';
+import { buildTower, buildCamp } from './strongholds.js';
 import { BREAKABLE, breakNeeds } from './scenery.js';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { COMBOS, COMBO_WINDOW, poseCombo, poseSwim, endSwim } from '../characters/moves.js';
@@ -178,6 +180,73 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const d = Math.hypot(x - q.w.x, z - q.w.z);
       if (d < 2500 && !q.built) { q.built = buildWonder(q.w); scene.add(q.built.group); colliders.add(q.built.solid); }
       else if (d > 3000 && q.built) { scene.remove(q.built.group); colliders.remove(q.built.solid); q.built = null; }
+    }
+  }
+  // The far wilds' Monster Towers and Monster Camps (data/sites.mjs), built when you come near and
+  // manned when you come close. A beaten Warden or chief (and its treasure) comes back after a day.
+  const holds = allSites().map((s) => ({ s, built: null, manned: false }));
+  const BEATEN_KEY = 'ar-strongholds-beaten';
+  const beaten = (() => { try { return JSON.parse(localStorage.getItem(BEATEN_KEY) || '{}') || {}; } catch { return {}; } })();
+  const holdHome = (id) => !(beaten[id] > Date.now() - SITE_RETURNS_MS);
+  function beatHold(id) { beaten[id] = Date.now(); try { localStorage.setItem(BEATEN_KEY, JSON.stringify(beaten)); } catch { /* (kept for this visit only) */ } }
+  function updateStrongholds(x, z) {
+    for (const q of holds) {
+      const d = Math.hypot(x - q.s.x, z - q.s.z);
+      const near = q.s.kind === 'tower' ? 1600 : 700, gone = q.s.kind === 'tower' ? 2000 : 900;
+      if (d < near && !q.built) {
+        q.built = q.s.kind === 'tower' ? buildTower(q.s) : buildCamp(q.s);
+        scene.add(q.built.group); colliders.add(q.built.solid);
+        q.manned = false;
+      } else if (d > gone && q.built) {
+        scene.remove(q.built.group); colliders.remove(q.built.solid);
+        creatures?.removeWhere((m) => m.site === q.s.id);
+        q.built = null; q.manned = false;
+      }
+      if (!q.built || !creatures || !game) continue;
+      if (!q.manned && d < (q.s.kind === 'tower' ? 140 : 120)) { q.manned = true; manHold(q); }
+      else if (q.manned && d > 450) { q.manned = false; creatures.removeWhere((m) => m.site === q.s.id); }
+    }
+  }
+  // fill a tower's floors (or a camp's fireside) with its monsters, and its Warden (or chief)
+  function manHold(q) {
+    const { s, built } = q;
+    const extra = (more) => ({ keep: true, site: s.id, angry: true, ...more });
+    const put = (kind, level, x, y, z, more = {}) => {
+      const m = creatures.spawnAt(kind, level, x, z, extra(more));
+      if (y !== null) { m.y = y; m.storey = true; m.body.position.y = y; }
+      return m;
+    };
+    const reward = (title) => () => {
+      beatHold(s.id);
+      const c = game.character;
+      const loot = chestLoot(lootCave(s), c.cls, c.level);
+      const coins = Math.round(loot.coins * (s.kind === 'tower' ? 1 + s.floors * 0.25 : 1));
+      for (const [id, n] of loot.items) game.addItem(id, n);
+      game.gainCoins(coins);
+      say(`${title} is beaten! You take the treasure: +${money(coins)}`, 'exp');
+      onEvent?.('chest', { coins, items: loot.items.map(([id, n]) => `${n > 1 ? `${n} ` : ''}${ITEMS[id].name}`) });
+    };
+    if (s.kind === 'tower') {
+      const T = s.theme;
+      built.spots.forEach((floor, f) => {
+        const kinds = T.floors[Math.min(T.floors.length - 1, Math.floor((f / s.floors) * T.floors.length))];
+        const lvl = floorLevel(s, f);
+        floor.forEach(([x, y, z], k) => { if (k < 2 || f >= s.floors / 2) put(kinds[k % kinds.length], lvl + Math.round(Math.random() * 4 - 2), x, y, z, { title: `${s.name} · Floor ${f + 1}` }); });
+      });
+      if (holdHome(s.id)) {
+        const [x, y, z] = built.warden;
+        const lvl = wardenLevel(s);
+        const w = put(T.warden, lvl, x, y, z, { boss: true, title: `Warden of the ${s.name}`, maxHp: Math.round((8 + lvl * 3.5) * 4), hp: Math.round((8 + lvl * 3.5) * 4) });
+        w.onDeath = reward(`The Warden of the ${s.name}`);
+      }
+    } else {
+      const T = s.theme;
+      built.spots.forEach(([x, z], k) => put(T.kinds[k % T.kinds.length], s.level + Math.round(Math.random() * 6 - 1), x, null, z));
+      if (holdHome(s.id)) {
+        const [x, z] = built.chief;
+        const c = put(T.chief, s.level + 12, x, null, z, { boss: true, title: `Chief of the ${s.name}` });
+        c.onDeath = reward(`The chief of the ${s.name}`);
+      }
     }
   }
   // put the King, the Overlords and the guards in their places (once per visit)
@@ -397,6 +466,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     updatePortals(x, z);
     updateCastles(x, z);
     updateWonders(x, z);
+    updateStrongholds(x, z);
     for (const s of sites) {
       const d = Math.hypot(x - s.place.x, z - s.place.z);
       if (d < 1000 && !s.built) {
@@ -422,7 +492,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const cave = caveById(s.place.id);
     const kind = cave && THEMES[cave.theme].guards;
     if (!kind || !creatures || !game?.bossHome(cave.id)) return;
-    const lvl = game.character.level;
+    const lvl = Math.max(game.character.level, caveFloorLevel(cave));
     s.built.guardSpots.forEach((g, i) => {
       if (i === 2 && Math.random() < 0.5) return;
       creatures.spawnAt(kind, lvl + Math.round(Math.random() * 2 - 1), g.x, g.z, { guard: { heading: g.heading }, keep: true, site: s.place.id, angry: true, title: `${KINDS[kind].name} Guard` });
@@ -492,6 +562,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       for (const s of sites) { const top = s.built?.deckAt?.(x, z); if (top !== undefined && top > g && top <= Math.max(g, fromY) + 0.8) g = top; }
       // the floors, galleries, stairs and wall walks of the Monster Kings' castles
       for (const q of castles) { const top = q.built?.floorAt?.(x, z, Math.max(g, fromY) + 0.8); if (top > g) g = top; }
+      // the floors and stairs of the Monster Towers
+      for (const q of holds) { const top = q.built?.floorAt?.(x, z, Math.max(g, fromY) + 0.8); if (top > g) g = top; }
     }
     return g;
   }
@@ -1052,7 +1124,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     safeAt = null; pitTime = 0;
     pos.set(built.start.x, built.floorAt(built.start.x, built.start.z), built.start.z);
     heading = built.start.heading; yaw = heading + Math.PI; velY = 0; speedNow = 0; snapCam = true;
-    const lvl = game.character.level;
+    const lvl = Math.max(game.character.level, caveFloorLevel(cave)); // (far from Central City, the monsters are strong whoever you are)
     const T = built.theme;
     for (const n of built.nests) { n.hp = n.maxHp = Math.round(30 + lvl * 8); }
     built.layout.chambers.forEach((c, i) => {
