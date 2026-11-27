@@ -19,7 +19,7 @@ import { renderLand, renderCave, renderEstate } from './landui.js';
 import { renderBank, renderDerrick, renderOilSpot } from './bankui.js';
 import { depositById, BANK_ID, bankPlace } from './data/economy.mjs';
 import { caveById } from './data/depths.mjs';
-import { portalFee, portalKm, portalLevel } from './data/portals.mjs';
+import { portalFee, portalKm, portalLevel, portalShut } from './data/portals.mjs';
 import { openBuilder as openBuilderView } from './builder.js';
 import { loadSculpts } from './characters/sculpt.js';
 
@@ -308,9 +308,12 @@ function startGame(character) {
     if (overlay.dataset.panel === 'groups' && !overlay.classList.contains('hidden') && !ui.groupBusy) drawPanel();
   }
   // who may walk into the Emperors' Castle today
+  const castleRights = () => ({ emperor: !!ui.groups?.nation, guildMaster: !!ui.groups?.guild?.mine, guest: (ui.rentals || []).some((r) => r.room.startsWith('castle') && r.allowed && !r.mine) });
   function castleAccess() {
-    world?.setCastleAccess({ emperor: !!ui.groups?.nation, guildMaster: !!ui.groups?.guild?.mine, guest: (ui.rentals || []).some((r) => r.room.startsWith('castle') && r.allowed && !r.mine) });
+    world?.setCastleAccess(castleRights());
   }
+  // who may use the castle's private portal: the castle's own people, and admins
+  const portalRights = () => ({ ...castleRights(), admin: !!ui.isAdmin || !!(myAccount?.powers || []).length });
   function loadGroups() { api.groupsList().then(takeGroups).catch(() => {}); }
   // ---------- cults and the Order of the Dawn ----------
   // Missions are counted here (kills near towns, kills by night, a night visit to a village waystone)
@@ -681,7 +684,7 @@ function startGame(character) {
     else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
     else if (name === 'welcome') renderWelcome(overlay, character.name, !(character.level === 1 && !character.exp));
     else if (name === 'portal' && world?.atPortal) {
-      ui.trip = { from: world.atPortal, to: null, onPick: showTrip, level: character.level };
+      ui.trip = { from: world.atPortal, to: null, onPick: showTrip, level: character.level, shut: (p) => portalShut(p, portalRights()) };
       renderMap(overlay, () => world?.position(), [], { plots: ui.myPlots || [], caves: [] }, null, ui.trip);
     }
     else if (name === 'rankings') renderRankings(overlay, ui.top, character.name, ui.courts || []);
@@ -736,6 +739,7 @@ function startGame(character) {
     const what = cause === 'age' ? 'Your body gave out to old age.'
       : cause === 'fall' ? 'You fell from too high.'
       : cause === 'drown' ? 'You drowned.'
+      : cause === 'fire' ? 'You burned to death in a campfire.'
       : `You were killed by ${cause === 'monster' && !/^the /i.test(by) ? 'a ' : ''}${esc(by)}.`;
     const lives = out.free
       ? (out.renewed ? `Past level ${UNDYING_LEVEL}, death cannot hold you: the shrine renews you at the age of ${RENEW_AGE}.` : `Past level ${UNDYING_LEVEL}, death cannot hold you. <b>No life lost.</b>`)
@@ -987,6 +991,7 @@ function startGame(character) {
   const ORE_COLORS = { iron_ore: '#5a5a60', silver_ore: '#c8ccd4', gold_ore: '#e0b040', ruby: '#c0202a', dragonite: '#7a2a24' };
   const SMITH_SAYS = { ok: 'Merged! The item is stronger.', evolved: 'Merged, and the weapon evolved! It climbed a rank.', coins: 'Not enough coins to pay for the merge.', parts: 'You need more monster parts for this merge.', class: 'Only a Blacksmith can merge.', pick: 'Pick two items.', kind: 'Those two are different kinds.', max: 'That item is already at its strongest.' };
   // Portals: after picking where to go on the portal's map, the fee shows before you pay
+  const PRIVATE_PORTAL_SAYS = 'This is the castle\'s private portal. Only Emperors, Guild Masters on council days and an Emperor\'s invited guests on trade days may use it. The public portal stands outside the south gate.';
   function showTrip(to, message = '') {
     const box = overlay.querySelector('.portal-pick');
     if (!box) return;
@@ -997,15 +1002,20 @@ function startGame(character) {
         <p class="error">🔒 Monsters there are up to level ${lv}. The portal won't send you until you are level ${lv}.</p>`;
       return;
     }
+    if (portalShut(to, portalRights())) {
+      box.innerHTML = `<p><b>${to.name}</b></p><p class="error">🔒 Private: only the castle's own people may travel there.</p>`;
+      return;
+    }
     const fee = portalFee(ui.trip.from, to);
     box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away · monsters up to Lv ${lv}</p>
-      <p>Fee: <b>${money(fee)}</b> <small>(you have ${money(character.coins)})</small></p>
+      <p>Fee: <b>${fee ? money(fee) : 'free (the castle\'s own portal)'}</b> <small>(you have ${money(character.coins)})</small></p>
       ${message ? `<p class="error">${message}</p>` : ''}
-      <button type="button" class="gold-button" data-portal-go="${to.id}">Pay ${money(fee)} and travel</button>`;
+      <button type="button" class="gold-button" data-portal-go="${to.id}">${fee ? `Pay ${money(fee)} and travel` : 'Travel'}</button>`;
   }
   function openPortal() {
     if (world?.underground) { showArea(world.indoors ? 'Go outside to use a portal.' : 'There are no portals underground.'); return; }
     if (!world?.atPortal) { showArea('Stand on a portal stone to use it. The map (M) shows them as purple rings.'); return; }
+    if (portalShut(world.atPortal, portalRights())) { showArea(PRIVATE_PORTAL_SAYS); return; }
     openPanel('portal');
   }
 
@@ -1088,13 +1098,13 @@ function startGame(character) {
       if (v === 'controls' && tab) { ui.ctlTab = tab; ui.bindingControl = null; ui.clash = null; ui.controlMsg = ''; } overlay.dataset.panel = ''; if (v === 'portal') { closePanel(); openPortal(); } else openPanel(v); return; }
     if ((v = t('data-portal-go')) != null) {
       const to = ui.trip?.to;
-      const r = to ? game.usePortal(ui.trip.from.id, v) : 'pick';
+      const r = to ? game.usePortal(ui.trip.from.id, v, portalRights()) : 'pick';
       if (r === 'ok') {
         closePanel();
         world.teleport(to.x, to.z);
         showArea(`The portal hums and you step out at ${to.name}.`);
         drawHud();
-      } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : r === 'level' ? 'The monsters there are stronger than you.' : 'That portal is across the sea.');
+      } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : r === 'level' ? 'The monsters there are stronger than you.' : r === 'private' ? 'That is the castle\'s private portal.' : 'That portal is across the sea.');
       return;
     }
     if (t('data-treat') != null) {
@@ -1639,7 +1649,7 @@ function startGame(character) {
       }
       if (type === 'chest') showArea(`The chest held ${money(data.coins)}, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();
-      if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
+      if (type === 'portal' && data) showArea(portalShut(data, portalRights()) ? `${data.name}: private, for the castle's own people. The public portal stands outside the south gate.` : `${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
       if (type === 'wonder' && data) showArea(`${data.name}: ${data.text}`);
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
@@ -1800,6 +1810,7 @@ function startGame(character) {
   // The private preview page belongs to the owner, so there every power is there to switch on.
   api.isPreviewMode().then((preview) => {
     const radar = (preview || (myAccount?.powers || []).includes('radar')) ? createRadar($('game'), { read: () => world?.radar(), onOpen: () => world?.releaseMouse() }) : null;
+    ui.isAdmin = preview || !!(myAccount?.powers || []).length;
     ui.adminPowers = createPowers($('game'), preview ? POWER_IDS : myAccount?.powers || [], {
       apply(p, down) {
         world?.setPowers(p);
