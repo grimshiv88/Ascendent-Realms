@@ -925,6 +925,13 @@ function startGame(character) {
     dive.addEventListener('pointerdown', set(true));
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) dive.addEventListener(ev, set(false));
     setInterval(() => { const on = !!world?.flying; if (dive.classList.contains('hidden') === on) dive.classList.toggle('hidden', !on); if (!on) world?.flyDown?.(false); }, 400);
+    // your tamed dragon: tap to set it on the foe in front of you (or call it back); on its back, it breathes
+    const drag = document.createElement('button');
+    drag.type = 'button'; drag.id = 'dragon-btn'; drag.className = 'hidden'; drag.setAttribute('aria-label', 'Your dragon: attack or come back');
+    drag.textContent = '🐉';
+    dive.after(drag);
+    drag.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.commandDragon?.(); });
+    setInterval(() => { const on = !!world?.hasDragon; if (drag.classList.contains('hidden') === on) drag.classList.toggle('hidden', !on); }, 600);
   }
 
   const SHOP_SAYS = { ok: 'Bought. It is in your bag.', locked: 'You need a higher level for that.', coins: 'Not enough coins.', full: 'Your bag is full.' };
@@ -1267,6 +1274,7 @@ function startGame(character) {
     if (t('data-campfire') != null) { closePanel(); world?.lightCampfire(); return; }
     if ((v = t('data-plant')) != null) { closePanel(); world?.plantSeed(v); return; }
     if ((v = t('data-mount')) != null) { closePanel(); world?.callMount(v); return; }
+    if ((v = t('data-egg')) != null) { closePanel(); world?.placeEgg(v); return; }
     if ((v = t('data-cult')) != null) {
       const btn = e.target.closest('[data-cult]');
       const body = { action: v };
