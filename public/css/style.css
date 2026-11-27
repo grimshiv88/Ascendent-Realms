@@ -675,6 +675,9 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .sk-icon { font-size: 1.5rem; width: 34px; text-align: center; }
 .sk-cost { display: block; color: #8fb7ff; }
 .sk-desc { display: block; margin-top: 2px; font-style: italic; color: #d8cba8; line-height: 1.35; }
+.sk-desc[hidden] { display: none; }
+.sk-name:has([data-desc]), .power-card:has([data-desc]) { cursor: pointer; }
+.sk-more { display: block; margin-top: 2px; color: #e6c46a; font-size: 0.8rem; letter-spacing: 0.02em; }
 .sk-key { min-width: 92px; padding: 6px 10px; border-radius: 4px; border: 1px solid #c8921a; background: #2a2010; color: #f2b51e; font: 600 0.85rem 'Oswald', sans-serif; cursor: pointer; }
 .sk-key.waiting { background: #f2b51e; color: #1a1206; }
 .pw-buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }

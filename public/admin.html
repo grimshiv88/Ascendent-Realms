@@ -114,6 +114,9 @@
     .pick .ic { font-size: 1.3rem; text-align: center; }
     .pick small { display: block; color: var(--quiet); font-size: 0.8rem; }
     small.desc { display: block; font-style: italic; font-size: 0.82rem; margin: 2px 0; opacity: 0.92; }
+    small.desc[hidden] { display: none; }
+    small.more { display: block; color: var(--gold-2); font-size: 0.78rem; cursor: pointer; }
+    .pick:has([data-desc]) { cursor: pointer; }
     .rk { display: inline-block; font-size: 0.7rem; padding: 0 6px; border-radius: 3px; border: 1px solid currentColor; margin-left: 4px; }
     .rk-F, .rk-E { color: #b8c0c8; } .rk-D, .rk-C { color: #7fc8ff; } .rk-B, .rk-A { color: #c48aff; } .rk-S { color: #ffb347; } .rk-SS, .rk-SSS { color: #ff6a5a; }
     form.signin { max-width: 360px; display: grid; gap: 10px; }
@@ -426,7 +429,7 @@ function pickListHtml(kind, owned = []) {
   const kindOf = (id) => catalogue.categories.find((k) => k.id === id);
   const rows = list.map((x) => { const k = kindOf(x.category); return `<div class="pick"><span class="ic">${esc(spells ? '✨' : x.icon)}</span>
     <span><b>${esc(x.name)}</b>${rankTag(x.rank)} <span class="tag">${esc(k?.icon || '')} ${esc(k?.name || '')}</span>${x.element ? ` <span class="tag">${esc(x.element)}</span>` : ''}
-      ${x.desc ? `<small class="desc">${esc(x.desc)}</small>` : ''}<small>${esc(x.text)} · ${x.sp} SP · ${x.cd}s rest${spells ? ` · from Lv ${x.level}` : x.classes.length ? ` · ${esc(x.classes.map((id) => catalogue.classes.find((k) => k.id === id)?.name || id).join(', '))}${x.general ? ', anyone' : ''}` : ' · anyone'}</small></span>
+      ${descHtml(x.desc)}<small>${esc(x.text)} · ${x.sp} SP · ${x.cd}s rest${spells ? ` · from Lv ${x.level}` : x.classes.length ? ` · ${esc(x.classes.map((id) => catalogue.classes.find((k) => k.id === id)?.name || id).join(', '))}${x.general ? ', anyone' : ''}` : ' · anyone'}</small></span>
     ${give ? `<button type="button" class="primary" data-give-${kind}="${esc(x.id)}">Give</button>` : '<span></span>'}</div>`; }).join('');
   return `<p class="quiet" style="margin:0 0 4px">${list.length} of ${all.length - owned.length} shown${owned.length ? ` (${owned.length} already known are left out)` : ''}</p>${rows || '<p class="quiet">Nothing matches. Try another kind or rank.</p>'}`;
 }
@@ -458,6 +461,18 @@ function wirePickers(root) {
 // the list of holders also filters by rank. Ranks belong to a holder, not to the skill itself.
 const U_SHOW = 60;
 const uFilter = (key) => (pickState[key] ||= { cat: 'all', kind: 'all', el: 'all', fit: 'all', rank: 'all', give: 'B', q: '' });
+// A description stays folded until its row is clicked; what is open stays open while the board is
+const openDesc = new Set();
+const descHtml = (d) => (d ? `<small class="more" data-desc="${esc(d)}">${openDesc.has(d) ? '▾ Hide description' : '▸ Description'}</small><small class="desc"${openDesc.has(d) ? '' : ' hidden'}>${esc(d)}</small>` : '');
+document.addEventListener('click', (e) => {
+  if (e.target.closest('button, select, input, a')) return;
+  const more = e.target.closest('.pick, td')?.querySelector('[data-desc]');
+  if (!more) return;
+  const d = more.dataset.desc, open = !openDesc.has(d);
+  if (open) openDesc.add(d); else openDesc.delete(d);
+  more.textContent = open ? '▾ Hide description' : '▸ Description';
+  more.nextElementSibling.hidden = !open;
+});
 // a Unique Skill's description, written the same way as data/descriptions.mjs uniqueDescription
 function uDesc(name, kind, el) {
   const d = catalogue.uniqueDesc;
@@ -522,7 +537,7 @@ function uniqueListHtml(mine) {
   const heldTag = (name) => { const h = holders.get(name.toLowerCase()) || [];
     return h.length ? ` <span class="tag rk rk-${esc(h[0].rank)}">Held at ${esc(h[0].rank)} by ${esc(h[0].name)}${h.length > 1 ? ` +${h.length - 1}` : ''}</span>` : ' <span class="tag">Free</span>'; };
   const rows = list.slice(0, U_SHOW).map(([name, kind, el, fit]) => { const k = catalogue.categories.find((x) => x.id === uCat(kind)); return `<div class="pick"><span class="ic">${esc(k?.icon || '✦')}</span>
-    <span><b>${esc(name)}</b> <span class="tag">${esc(k?.name || '')}</span> <span class="tag">${esc(kindName(kind))}</span>${el ? ` <span class="tag">${esc(el)}</span>` : ''}${heldTag(name)}<small class="desc">${esc(uDesc(name, kind, el))}</small><small>${fit ? `Suits a ${esc(clsName(fit))}` : ''}</small></span>
+    <span><b>${esc(name)}</b> <span class="tag">${esc(k?.name || '')}</span> <span class="tag">${esc(kindName(kind))}</span>${el ? ` <span class="tag">${esc(el)}</span>` : ''}${heldTag(name)}${descHtml(uDesc(name, kind, el))}<small>${fit ? `Suits a ${esc(clsName(fit))}` : ''}</small></span>
     <button type="button" class="primary" data-give-unique="${esc(name)}">Give</button></div>`; }).join('');
   return `<p class="quiet" style="margin:0 0 4px">${list.length} match${list.length === 1 ? '' : 'es'}${list.length > U_SHOW ? `, showing the first ${U_SHOW}: narrow the filters or type a name` : ''}</p>${rows || '<p class="quiet">Nothing matches.</p>'}`;
 }
@@ -534,7 +549,7 @@ function heldHtml() {
     .sort((a, b) => order.indexOf(b.rank) - order.indexOf(a.rank) || b.level - a.level);
   return `<p class="quiet" style="margin:0 0 4px">${list.length} of ${heldUniques.length} held</p>
     <div class="tablewrap"><table><thead><tr><th>Rank</th><th>Unique Skill</th><th>Kind</th><th>Suits</th><th>Held by</th></tr></thead><tbody>
-    ${list.map((u) => { const k = catalogue.categories.find((x) => x.id === uCat(u.kind)); return `<tr><td><span class="tag">${esc(u.rank)}</span></td><td>${esc(u.skill)} <span class="quiet">${esc(u.element)}</span><small class="desc">${esc(uDesc(u.skill, u.kind, u.element))}</small></td><td>${esc(k?.icon || '')} ${esc(k?.name || '')} <span class="quiet">${esc(kindName(u.kind))}</span></td><td>${esc(clsName(u.fit))}</td><td><button type="button" data-look="${u.id}">${esc(u.name)}</button> <span class="quiet">Lv ${u.level}</span></td></tr>`; }).join('') || '<tr><td colspan="5" class="quiet">Nobody holds one that matches.</td></tr>'}
+    ${list.map((u) => { const k = catalogue.categories.find((x) => x.id === uCat(u.kind)); return `<tr><td><span class="tag">${esc(u.rank)}</span></td><td>${esc(u.skill)} <span class="quiet">${esc(u.element)}</span>${descHtml(uDesc(u.skill, u.kind, u.element))}</td><td>${esc(k?.icon || '')} ${esc(k?.name || '')} <span class="quiet">${esc(kindName(u.kind))}</span></td><td>${esc(clsName(u.fit))}</td><td><button type="button" data-look="${u.id}">${esc(u.name)}</button> <span class="quiet">Lv ${u.level}</span></td></tr>`; }).join('') || '<tr><td colspan="5" class="quiet">Nobody holds one that matches.</td></tr>'}
     </tbody></table></div>`;
 }
 // filter changes redraw only the list under them

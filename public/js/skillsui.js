@@ -7,8 +7,23 @@ import { keyName, codeFor } from './data/controls.mjs';
 import { uniqueAbility, nextTierLevel, TIER_NAMES, UNBOUND_LEVEL } from './data/unique.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-// the longer description (what it looks like, when to use it), under the numbers
-const descHtml = (d) => (d ? ` <span class="sk-desc">${esc(d)}</span>` : '');
+// the longer description (what it looks like, when to use it): hidden under the numbers until you
+// click or tap the skill, and it stays open while the game runs (data/descriptions.mjs)
+const openDesc = new Set();
+const descHtml = (d) => (d ? ` <span class="sk-more" data-desc="${esc(d)}">${openDesc.has(d) ? '▾ Hide description' : '▸ Description'}</span><span class="sk-desc"${openDesc.has(d) ? '' : ' hidden'}>${esc(d)}</span>` : '');
+// one listener for every window: a click on a skill's name or text (not its buttons) opens or closes it
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('button, select, input, a')) return;
+    const box = e.target.closest('.sk-name, .power-card');
+    const more = box?.querySelector('[data-desc]');
+    if (!more) return;
+    const d = more.dataset.desc, open = !openDesc.has(d);
+    if (open) openDesc.add(d); else openDesc.delete(d);
+    more.textContent = open ? '▾ Hide description' : '▸ Description';
+    more.nextElementSibling.hidden = !open;
+  });
+}
 const what = (sk) => `${esc(sk.text)}${descHtml(sk.desc)} <span class="sk-cost">${sk.sp} SP · ${sk.cd}s rest</span>`;
 // the kind of a skill, from defence to attack (data/skills.mjs SKILL_CATEGORIES)
 const kindTag = (sk) => { const k = SKILL_CATEGORIES.find((x) => x.id === skillCategory(sk)); return k ? ` <em class="forged-tag">${k.icon} ${esc(k.name)}</em>` : ''; };
