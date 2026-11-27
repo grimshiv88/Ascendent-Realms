@@ -1,10 +1,23 @@
 // Other players close by: drawn with their own body, colours and gear, walking smoothly between
 // the spots their games report (see data/presence.mjs), with their username above their head.
+// Their tamed dragon or wyvern (ridden, or at their side) and their hatchling show too.
 import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { wearGear } from '../characters/gear.js';
 import { ITEMS } from '../data/items.mjs';
 import { bodySig, GONE_MS } from '../data/presence.mjs';
+import { BEASTS } from '../data/beasts.mjs';
+import { buildBeast, animateBeast } from './beasts.js';
+
+// a player's dragon, wyvern or hatchling ('h:<kind>'), drawn like the real thing
+function makePet(k) {
+  const kind = k.replace(/^h:/, ''), def = BEASTS[kind];
+  if (!def || def.king || def.shape === 'spirit') return null;
+  const root = buildBeast(def);
+  const hatch = k.startsWith('h:');
+  return { k, root, hatch, base: hatch ? (kind.endsWith('dragon') ? 2.2 : 1.5) / def.len : 1 };
+}
+const turnTo = (a, b, k) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return a + d * k; };
 
 const WALK = 3.4; // (the walking speed the leg swing is timed to, as in world.js)
 
@@ -52,9 +65,11 @@ export function createOthers(scene) {
   const seen = new Map();
   const nowMs = () => performance.now();
 
+  function dropPet(o) { if (o.pet) { scene.remove(o.pet.root); o.pet = null; } }
   function drop(id) {
     const o = seen.get(id);
     if (!o) return;
+    dropPet(o);
     scene.remove(o.body);
     o.body.traverse((m) => { if (m.userData.nameTag) { m.material.map.dispose(); m.material.dispose(); } });
     seen.delete(id);
@@ -87,6 +102,17 @@ export function createOthers(scene) {
         }
         o.heard = Date.now();
         if (nowMs() - o.live > LIVE_FRESH) { addSnap(o, p.x, p.y, p.z, p.heading); o.speed = p.speed; o.pose = p.pose; }
+        // their pet
+        const pt = p.pet;
+        if (o.pet && o.pet.k !== pt?.k) dropPet(o);
+        if (pt && !o.pet) {
+          try { o.pet = makePet(pt.k); } catch (e) { console.warn('could not draw pet', pt.k, e); }
+          if (o.pet) { scene.add(o.pet.root); Object.assign(o.pet, { x: pt.x, y: pt.y, z: pt.z, h: pt.h, air: pt.air || 0 }); }
+        }
+        if (o.pet) {
+          if (Math.hypot(pt.x - o.pet.x, pt.z - o.pet.z) > 40) Object.assign(o.pet, { x: pt.x, y: pt.y, z: pt.z });
+          o.pet.to = pt;
+        }
       }
       for (const id of [...seen.keys()]) if (!now.has(id)) drop(id);
     },
@@ -131,7 +157,25 @@ export function createOthers(scene) {
         o.body.rotation.y = h;
         const lying = o.pose === 'lie';
         o.body.rotation.z = lying ? Math.PI / 2 : 0;
-        animateCharacter(o.body, t, lying || o.pose === 'sit' || o.pose === 'ride' ? 0 : o.speed / WALK * 1.6);
+        animateCharacter(o.body, t, lying || o.pose === 'sit' || o.pose === 'ride' || o.pose === 'fly' ? 0 : o.speed / WALK * 1.6);
+        const q = o.pet;
+        if (q) {
+          const k = Math.min(1, dt * 3), was = { x: q.x, z: q.z };
+          if (o.pose === 'ride' || o.pose === 'fly') {
+            // under its rider (they are drawn in the saddle)
+            q.x = x; q.z = z; q.h = h;
+            q.y += ((q.to?.y ?? y) - q.y) * k;
+          } else if (q.to) {
+            q.x += (q.to.x - q.x) * k; q.y += (q.to.y - q.y) * k; q.z += (q.to.z - q.z) * k;
+            q.h = turnTo(q.h, q.to.h, k);
+          }
+          q.air += ((q.to?.air || 0) - q.air) * k;
+          if (q.hatch) q.root.scale.setScalar(q.to?.s || q.base);
+          q.root.position.set(q.x, q.y, q.z);
+          q.root.rotation.y = q.h;
+          const v = Math.hypot(q.x - was.x, q.z - was.z) / Math.max(dt, 1e-3);
+          animateBeast(q.root, t, { air: o.pose === 'fly' ? 6 : o.pose === 'ride' ? 0 : q.air, speed: q.air > 0.8 ? 0 : v });
+        }
       }
     },
     clear() { for (const id of [...seen.keys()]) drop(id); },
