@@ -1472,3 +1472,21 @@ body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: fil
 #trade-ask p { margin: 0 0 8px; }
 #trade-ask div { display: flex; gap: 8px; justify-content: center; }
 @media (max-width: 560px) { .trade-sides { grid-template-columns: 1fr; } }
+
+/* On-screen messages (notices.js): a stack at the top, one panel per message, never on top of each other */
+.notices { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 3; width: min(520px, calc(100% - 32px)); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+.notice { pointer-events: auto; cursor: pointer; display: flex; align-items: baseline; gap: 8px; max-width: 100%; box-sizing: border-box; padding: 8px 14px; background: rgba(12, 9, 5, 0.86); border: 1px solid rgba(245, 200, 76, 0.35); border-left: 4px solid #f5e6c0; border-radius: 6px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); color: #f5e6c0; font: 600 0.98rem/1.4 Georgia, serif; text-align: left; animation: notice-in 0.3s ease-out; transition: opacity 0.4s, transform 0.4s; }
+.notice .notice-count { flex: none; font: 700 0.8rem 'Oswald', sans-serif; color: #f5c84c; }
+.notice .notice-count:empty { display: none; }
+.notice.note { border-left-color: #f5e6c0; }
+.notice.area { border-left-color: #f5c84c; color: #fbe7a8; }
+.notice.exp { border-left-color: #8ccf3a; color: #d6f7a8; }
+.notice.hurt { border-left-color: #e5483a; color: #ffc4bc; }
+.notice.dmg, .notice.crit { border-left-color: #ff9a2a; color: #ffe0b0; }
+.notice.out { opacity: 0; transform: translateY(-6px); }
+.notice.bump { animation: notice-bump 0.3s ease-out; }
+@keyframes notice-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes notice-bump { 50% { transform: scale(1.04); } }
+@media (max-width: 700px) { .notices { top: 190px; } .notice { font-size: 0.9rem; padding: 7px 12px; } }
+@media (max-height: 500px) { .notices { top: 96px; width: min(460px, calc(100% - 240px)); } .notice { font-size: 0.85rem; padding: 5px 10px; } }
+@media (prefers-reduced-motion: reduce) { .notice, .notice.bump { animation: none; transition: opacity 0.4s; } .notice.out { transform: none; } }
