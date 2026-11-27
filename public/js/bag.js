@@ -7,6 +7,7 @@ import { codeFor, keyName } from './data/controls.mjs';
 import { subOf, LADDERS, MERGES, MERGE_COUNT, mergesWith, ladderName } from './data/merges.mjs';
 import { money, MINT } from './data/money.mjs';
 import { DAY_TEXT } from './data/clock.mjs';
+import { ITEM_GROUPS, ITEM_RANKS, ITEM_TYPES, STONE_RANKS, itemInfo, itemMatches, emptyItemFilter } from './data/itemfilter.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const keyOf = (e) => e.uid || e.id;
@@ -17,6 +18,71 @@ let wearerForm = null;
 const nameOf = (e) => `${ITEMS[e.id] ? evolvedName({ ...ITEMS[e.id], name: formName(ITEMS[e.id], wearerForm) }, e.plus || 0) : e.id}${e.plus ? ` +${e.plus}` : ''}`;
 // A weapon's rank as a coloured tag
 const rankTag = (it, plus = 0) => { const r = RANKS[rankOf(it, plus)]; return `<span class="rank-tag" style="--rank:${r.color}">${r.name}</span>`; };
+
+// ---------- searching the Bag and the Shop ----------
+// A filter bar over the items: the kind of item, its rank (Basic to Mythic, or the F to SSS of the
+// skill in a Skill Stone), its type for weapons and armour, a name, and in the Shop only what you
+// can afford. Each window keeps its own filter while the game is open (data/itemfilter.mjs).
+const ifilt = { bag: emptyItemFilter(), shop: { ...emptyItemFilter(), afford: false } };
+function itemFilterHtml(which, ids) {
+  const f = ifilt[which];
+  const have = new Set(ids.map((id) => itemInfo(id)?.group));
+  if (f.group !== 'all' && !have.has(f.group)) { f.group = 'all'; f.sub = 'all'; }
+  const ranks = new Set(ids.map((id) => itemInfo(id)?.rank)), stones = new Set(ids.map((id) => itemInfo(id)?.skillRank).filter(Boolean));
+  const opt = (v, label) => `<option value="${esc(v)}"${String(f.rank) === String(v) ? ' selected' : ''}>${esc(label)}</option>`;
+  const chip = (id, label) => `<button type="button" class="sk-chip${f.group === id ? ' on' : ''}" data-if-group="${id}">${label}</button>`;
+  const types = ITEM_TYPES[f.group];
+  return `<div class="sk-filter item-filter" role="search" data-if="${which}">
+    <div class="sk-chips">${chip('all', 'All')}${ITEM_GROUPS.filter((g) => have.has(g.id)).map((g) => chip(g.id, `${g.icon} ${esc(g.name)}`)).join('')}</div>
+    <div class="sk-filter-row">
+      <select data-if-rank aria-label="Rank">${opt('all', 'Every rank')}${ITEM_RANKS.filter((r) => ranks.has(Number(r.id))).map((r) => opt(r.id, r.name)).join('')}${stones.size ? `<optgroup label="Skill Stones">${STONE_RANKS.filter((r) => stones.has(r)).map((r) => opt(`stone:${r}`, `Stone ${r}`)).join('')}</optgroup>` : ''}</select>
+      ${types ? `<select data-if-sub aria-label="Type"><option value="all">Every type</option>${Object.values(types).map((t) => `<option${f.sub === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>` : ''}
+      <input type="search" data-if-q placeholder="Search items" value="${esc(f.q)}" aria-label="Search items by name">
+      ${which === 'shop' ? `<label class="if-afford"><input type="checkbox" data-if-afford${f.afford ? ' checked' : ''}> Only what I can afford</label>` : ''}
+    </div>
+    <p class="bag-hint sk-filter-none" hidden>Nothing matches. Try another kind or rank.</p>
+  </div>`;
+}
+// grey out (Bag) or hide (Shop) what doesn't match; hide a Shop heading with nothing left under it
+function applyItemFilter(el, which, coins = Infinity) {
+  const f = ifilt[which];
+  let rows = 0, shown = 0;
+  for (const r of el.querySelectorAll('[data-fid]')) {
+    rows++;
+    const ok = itemMatches(itemInfo(r.dataset.fid), f) && (!f.afford || r.dataset.fprice == null || Number(r.dataset.fprice) <= coins);
+    if (which === 'bag') r.classList.toggle('f-off', !ok); else r.hidden = !ok;
+    if (ok) shown++;
+  }
+  for (const g of el.querySelectorAll('.sys-group')) g.hidden = !g.querySelector('[data-fid]:not([hidden])');
+  const none = el.querySelector('.item-filter .sk-filter-none');
+  if (none) none.hidden = !rows || shown > 0;
+  for (const b of el.querySelectorAll('[data-if-group]')) b.classList.toggle('on', b.dataset.ifGroup === f.group);
+}
+function wireItemFilter(el, which, coins) {
+  const box = el.querySelector(`[data-if="${which}"]`);
+  if (!box) return;
+  const f = ifilt[which];
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-if-group]');
+    if (!b) return;
+    e.stopPropagation();
+    const changed = f.group !== b.dataset.ifGroup;
+    f.group = b.dataset.ifGroup;
+    if (changed) { f.sub = 'all'; const ids = [...el.querySelectorAll('[data-fid]')].map((x) => x.dataset.fid); box.outerHTML = itemFilterHtml(which, ids); wireItemFilter(el, which, coins); }
+    applyItemFilter(el, which, coins);
+  });
+  box.addEventListener('change', (e) => {
+    if (e.target.matches('[data-if-rank]')) f.rank = e.target.value;
+    if (e.target.matches('[data-if-sub]')) f.sub = e.target.value;
+    if (e.target.matches('[data-if-afford]')) f.afford = e.target.checked;
+    applyItemFilter(el, which, coins);
+  });
+  const q = box.querySelector('[data-if-q]');
+  q.addEventListener('input', () => { f.q = q.value; applyItemFilter(el, which, coins); });
+  // typing a name mustn't move you or open other windows
+  for (const t of ['keydown', 'keyup']) q.addEventListener(t, (e) => e.stopPropagation());
+  applyItemFilter(el, which, coins);
+}
 
 // Only a Potion Maker sees the Potion-Maker tab (main.js says which class is playing)
 let playingClass = null;
@@ -99,7 +165,7 @@ function slotButton(e, game, selected) {
   const it = ITEMS[e.id] || { name: e.id, icon: '?' };
   const on = game.isEquipped(e);
   const ranked = it.kind === 'weapon' && rankOf(it, e.plus || 0) > 0;
-  return `<button type="button" class="bag-slot${on ? ' equipped' : ''}${ranked ? ' ranked' : ''}"${ranked ? ` style="--rank:${RANKS[rankOf(it, e.plus || 0)].color}"` : ''} data-item="${keyOf(e)}" aria-pressed="${selected === keyOf(e)}" title="${esc(nameOf(e))}">
+  return `<button type="button" class="bag-slot${on ? ' equipped' : ''}${ranked ? ' ranked' : ''}"${ranked ? ` style="--rank:${RANKS[rankOf(it, e.plus || 0)].color}"` : ''} data-item="${keyOf(e)}" data-fid="${esc(e.id)}" aria-pressed="${selected === keyOf(e)}" title="${esc(nameOf(e))}">
     ${pic(e.id, e.plus)}${e.n > 1 ? `<span class="bag-n">${e.n}</span>` : ''}${e.plus ? `<span class="bag-plus">+${e.plus}</span>` : ''}${on ? '<span class="bag-eq">E</span>' : ''}</button>`;
 }
 
@@ -158,13 +224,14 @@ export function renderBag(el, game, selected) {
           <div class="gear-slots">${gear.join('')}</div>
         </div>
         <div class="bag-side">
+          ${loose.length > 1 ? itemFilterHtml('bag', loose.map((x) => x.id)) : ''}
           <div class="bag-grid">${slots.join('')}</div>
           ${details}
         </div>
       </div>
       <h3 class="bag-sub">Crafting</h3>
       ${crafts}
-    </div>`;
+    </div>`;  wireItemFilter(el, 'bag');
 }
 
 // The shop, styled like a Solo Leveling system window. It only shows what your level can buy;
@@ -182,17 +249,17 @@ export function renderShop(el, game, message = '', market = null) {
       const it = ITEMS[id];
       const price = mk ? marketPrice(market, id) : it.price;
       const poor = c.coins < price;
-      return `<div class="sys-card sys-item${poor ? ' poor' : ''}" data-info="${id}" title="Touch to see what it does">
+      return `<div class="sys-card sys-item${poor ? ' poor' : ''}" data-info="${id}" data-fid="${id}" data-fprice="${price}" title="Touch to see what it does">
         <div class="sys-pic">${pic(id, 0, 'sys-emoji')}</div>
         <div class="sys-side"><b>${esc(formName(it, c.form))}</b><span class="sys-price">${money(price)}</span>
         <button type="button" class="sys-button" data-buy="${id}">${poor ? 'Not enough' : 'Buy'}</button></div></div>`;
     }).join('');
-    return cards ? `<h3 class="sys-sub">${title}</h3><div class="sys-grid">${cards}</div>` : '';
+    return cards ? `<div class="sys-group"><h3 class="sys-sub">${title}</h3><div class="sys-grid">${cards}</div></div>` : '';
   };
   const sellable = c.inventory.filter((e) => !game.isEquipped(e) && !ITEMS[e.id]?.bound);
   const sell = sellable.length ? sellable.map((e) => {
     const it = ITEMS[e.id];
-    return `<div class="sys-row" data-info-entry="${keyOf(e)}"><span class="sys-mini">${pic(e.id, e.plus)}</span><span class="sys-name"><b>${esc(nameOf(e))}</b><small>You have ${e.n} · shop price ${money(it.price)}</small></span>
+    return `<div class="sys-row" data-info-entry="${keyOf(e)}" data-fid="${esc(e.id)}"><span class="sys-mini">${pic(e.id, e.plus)}</span><span class="sys-name"><b>${esc(nameOf(e))}</b><small>You have ${e.n} · shop price ${money(it.price)}</small></span>
       <span class="sys-price">${money(game.sellPrice(e, market))}</span><span class="sys-sell-btns"><button type="button" class="sys-button ghost" data-sell="${keyOf(e)}">Sell one</button>${e.n > 1 ? `<button type="button" class="sys-button" data-sell-all="${keyOf(e)}">Sell all ${e.n} · ${money(game.sellPrice(e, market) * e.n)}</button>` : ''}</span></div>`;
   }).join('') : '<p class="sys-hint">Nothing to sell yet. Gather wood and berries, or defeat monsters for their drops. Take gear off before selling it.</p>';
   const bad = /\bnot\b|\bneed|bag is full/i.test(message);
@@ -206,6 +273,7 @@ export function renderShop(el, game, message = '', market = null) {
       <p class="sys-top">Coins <b>${money(c.coins)}</b> <span>·</span> Level <b>${c.level}</b>${next < Infinity ? ` <span>·</span> New items at level <b>${next}</b>` : ''}</p>
       <p class="sys-msg${bad ? ' bad' : ''}" role="status">${esc(message)}</p>
       <p class="sys-hint">Touch an item to see what it does.</p>
+      ${itemFilterHtml('shop', [...open.map(([id]) => id), ...sellable.map((e) => e.id)])}
       ${market === 'tavern' ? roomHtml(game) : ''}
       ${market === 'city_potions' ? treatHtml(game) : ''}
       ${group('Weapons', 'weapon')}
@@ -216,7 +284,7 @@ export function renderShop(el, game, message = '', market = null) {
       ${group('Tools', 'material')}
       <h3 class="sys-sub">Sell <small>for less than the shop price</small></h3>
       ${sell}
-    </div>`;
+    </div>`;  wireItemFilter(el, 'shop', c.coins);
 }
 
 // Broken bones from a bad fall are set and treated here, once a day until they mend

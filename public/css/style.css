@@ -1343,3 +1343,12 @@ body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: fil
 @keyframes jt-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (max-width: 700px) { .journey-goal { bottom: 132px; } .journey-toast { bottom: 190px; } }
 @media (prefers-reduced-motion: reduce) { .journey-toast { animation: none; } }
+
+/* searching the Bag and the Shop: chips, rank, type and a name (bag.js itemFilterHtml) */
+.item-filter .if-afford { display: flex; align-items: center; gap: 5px; font-size: 0.85rem; white-space: nowrap; }
+.system-window .item-filter select, .system-window .item-filter input[type="search"] { border-color: rgba(61, 155, 255, 0.5); background: #050b16; color: #dcecff; }
+.bag-slot.f-off { opacity: 0.18; filter: grayscale(1); }
+.sys-group[hidden], .sys-card[hidden], .sys-row[hidden], .item-filter .sk-filter-none[hidden] { display: none; }
+.item-filter .if-afford input { flex: none; width: auto; padding: 0; }
+.system-window .item-filter .sk-chip { border-color: rgba(61, 155, 255, 0.5); background: #050b16; color: #cfe4ff; font-family: 'Oswald', sans-serif; }
+.system-window .item-filter .sk-chip.on { background: linear-gradient(180deg, #7fc1ff, #2f7fd6); color: #04101f; border-color: #7fc1ff; }

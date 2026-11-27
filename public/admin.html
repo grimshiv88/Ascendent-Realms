@@ -455,6 +455,66 @@ function wirePickers(root) {
   root.addEventListener('change', onField);
 }
 
+// ---------- items: find one to give with filters ----------
+// Filters: the kind of item (chips), its rank (Basic to Mythic, or the F to SSS rank of the skill in
+// a Skill Stone), its type (sword, helmet...), where it comes from, the levels it is sold or forged
+// from, and a name. The matching and the groups come from js/data/itemfilter.mjs, shared with the game.
+let IF = null; // the item filter module (loaded as the board opens)
+import('./js/data/itemfilter.mjs').then((m) => { IF = m; }).catch(() => {});
+const ITEM_SHOW = 80;
+const itemFilter = () => (pickState.items ||= IF ? IF.emptyItemFilter() : {});
+function itemPickerHtml() {
+  if (!IF) return '';
+  const f = itemFilter();
+  const opt = (v, label, cur) => `<option value="${esc(v)}"${String(cur) === String(v) ? ' selected' : ''}>${esc(label)}</option>`;
+  const types = IF.ITEM_TYPES[f.group];
+  return `<div class="picker" data-ipicker>
+    <p class="quiet" style="margin:0 0 6px">Or find an item with the filters and press Give (it gives the number typed above).</p>
+    <div class="chips">${[{ id: 'all', name: 'All', icon: '' }, ...IF.ITEM_GROUPS].map((g) => `<button type="button" data-i-group="${g.id}" class="${f.group === g.id ? 'on' : ''}">${esc(g.icon)} ${esc(g.name)}</button>`).join('')}</div>
+    <div class="filters">
+      <select data-i="rank" aria-label="Rank">${opt('all', 'Every rank', f.rank)}<optgroup label="Item rank">${IF.ITEM_RANKS.map((r) => opt(r.id, r.name, f.rank)).join('')}</optgroup><optgroup label="Skill Stone rank">${IF.STONE_RANKS.map((r) => opt(`stone:${r}`, `Stone ${r}`, f.rank)).join('')}</optgroup></select>
+      <select data-i="sub" aria-label="Type"${types ? '' : ' disabled'}>${opt('all', types ? 'Every type' : 'Type (weapons, armour)', f.sub)}${types ? Object.values(types).map((t) => opt(t, t, f.sub)).join('') : ''}</select>
+      <select data-i="from" aria-label="Where from">${opt('all', 'From anywhere', f.from)}${Object.entries(IF.ITEM_SOURCES).map(([k, v]) => opt(k, v, f.from)).join('')}</select>
+      <input type="number" data-i="min" min="0" placeholder="From level" value="${esc(f.min)}" aria-label="From level">
+      <input type="number" data-i="max" min="0" placeholder="Up to level" value="${esc(f.max)}" aria-label="Up to level">
+      <select data-i="sort" aria-label="Sort">${opt('rank', 'Highest rank first', f.sort)}${opt('name', 'By name', f.sort)}${opt('price', 'Dearest first', f.sort)}${opt('level', 'Lowest level first', f.sort)}</select>
+      <input type="search" data-i="q" placeholder="Search by name" value="${esc(f.q)}" aria-label="Search items by name">
+    </div>
+    <div class="pick-list">${itemListHtml()}</div>
+  </div>`;
+}
+const itemRankTag = (x) => { const r = IF.ITEM_RANKS[x.rank]; return `<span class="rk" style="color:${r.color}">${esc(r.name)}</span>`; };
+function itemListHtml() {
+  const f = itemFilter();
+  const all = catalogue.items.map((x) => IF.itemInfo(x.id)).filter(Boolean);
+  const list = IF.sortItems(all.filter((x) => IF.itemMatches(x, f)), f.sort);
+  const group = (id) => IF.ITEM_GROUPS.find((g) => g.id === id);
+  const lvl = (x) => [x.shop != null && `shop from Lv ${x.shop}`, x.forge != null && `forged from Lv ${x.forge}`].filter(Boolean).join(', ') || 'found only';
+  const rows = list.slice(0, ITEM_SHOW).map((x) => `<div class="pick"><span class="ic">${esc(x.icon)}</span>
+    <span><b>${esc(x.name)}</b>${itemRankTag(x)}${x.skillRank ? `<span class="rk rk-${esc(x.skillRank)}">${esc(x.skillRank)}</span>` : ''} <span class="tag">${esc(group(x.group)?.icon || '')} ${esc(x.sub || group(x.group)?.name || '')}</span>
+      <small>${esc(x.text)}</small><small>${esc(lvl(x))} · ${esc(IF.moneyWords ? IF.moneyWords(x.price) : x.price)}</small></span>
+    <button type="button" class="primary" data-give-item="${esc(x.id)}">Give</button></div>`).join('');
+  return `<p class="quiet" style="margin:0 0 4px">${list.length} of ${all.length} items match${list.length > ITEM_SHOW ? `, showing the first ${ITEM_SHOW}: narrow the filters or type a name` : ''}</p>${rows || '<p class="quiet">Nothing matches. Try another kind or rank.</p>'}`;
+}
+function wireItems(root) {
+  const redraw = (box) => { box.querySelector('.pick-list').innerHTML = itemListHtml(); };
+  root.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-i-group]');
+    if (!b) return;
+    const box = b.closest('[data-ipicker]'), f = itemFilter();
+    f.group = b.dataset.iGroup; f.sub = 'all';
+    box.outerHTML = itemPickerHtml(); // the Type list changes with the kind
+  });
+  const onField = (e) => {
+    const el = e.target.closest('[data-i]');
+    if (!el) return;
+    itemFilter()[el.dataset.i] = el.value;
+    redraw(el.closest('[data-ipicker]'));
+  };
+  root.addEventListener('input', onField);
+  root.addEventListener('change', onField);
+}
+
 // ---------- Unique Skills: the picker that gives one, and the filter over those held ----------
 // There are thousands, so the picker shows the first matches only. Filters: kind (Attack,
 // Defence, ...), the power it is (a blow, a shot, a ward...), element, the class it suits, a name;
@@ -693,6 +753,7 @@ function drawCard(p) {
         <input name="n" type="number" min="1" value="1" style="flex:0 0 80px" aria-label="How many">
         <button class="primary" type="submit">Give</button>
       </form>
+      ${itemPickerHtml()}
     </div>
 
     <form class="card" data-form="move" data-need="move">
@@ -776,10 +837,15 @@ async function change(path, body, done) {
   } catch (err) { say(err.message); }
 }
 $('pcard').addEventListener('click', async (e) => {
-  const b = e.target.closest('button[data-act], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore], button[data-give-skill], button[data-give-spell], button[data-give-unique]');
+  const b = e.target.closest('button[data-act], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore], button[data-give-skill], button[data-give-spell], button[data-give-unique], button[data-give-item]');
   if (!b) return;
   const name = $('pcard').dataset.name;
   if (b.dataset.giveUnique) return change('api/admin/edit', { unique: { name: b.dataset.giveUnique, rank: uFilter('ugive').give || 'B' } }, `${name}'s Unique Skill is now ${b.dataset.giveUnique}.`);
+  if (b.dataset.giveItem) {
+    const n = Math.max(1, Number($('pcard').querySelector('form[data-form="give"] [name="n"]')?.value) || 1);
+    const it = catalogue.items.find((x) => x.id === b.dataset.giveItem);
+    return change('api/admin/edit', { addItem: { id: b.dataset.giveItem, n } }, `Gave ${n > 1 ? `${n} × ` : ''}${it?.name || 'the item'} to ${name}.`);
+  }
   if (b.dataset.giveSkill) return change('api/admin/edit', { addSkill: b.dataset.giveSkill }, `Skill given to ${name}.`);
   if (b.dataset.giveSpell) return change('api/admin/edit', { addSpell: b.dataset.giveSpell }, `Spell given to ${name}.`);
   if (b.dataset.remove) return change('api/admin/edit', { removeItem: { index: Number(b.dataset.remove) } }, 'Taken away.');
@@ -936,6 +1002,7 @@ async function drawSkills() {
   $('skillbook').innerHTML = fold('book-skills', `Skills <span class="quiet">(${catalogue.skills.length})</span>`, pickerHtml('book')) + fold('book-spells', `Spells <span class="quiet">(${catalogue.spells.length})</span>`, pickerHtml('spellbook'));
 }
 wirePickers($('pcard'));
+wireItems($('pcard'));
 wireUnique($('pcard'));
 wireUnique($('skillboard'));
 wirePickers($('skillbook'));
