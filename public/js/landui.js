@@ -98,7 +98,9 @@ export function renderEstate(el, game, { city, homes = [], ring = 'common', mess
     const own = here.get(h.id);
     const what = `${KIND[h.style]}, ${h.floors} floor${h.floors > 1 ? 's' : ''}, ${Math.round(h.w)} m wide <span>·</span> ${side(h.a)} side`;
     const act = own ? (own.mine ? '<b>✓ Yours</b>' : `Owned by <b>${esc(own.owner)}</b>`)
-      : `<button type="button" class="sys-button" data-home-buy="${h.id}" ${busy || c.coins < h.price || mineCount >= max ? 'disabled' : ''}>Buy</button>`;
+      : mineCount >= max ? `<button type="button" class="sys-button" disabled>You own ${max} already</button>`
+      : c.coins < h.price ? `<button type="button" class="sys-button" disabled>Needs ${money(h.price)}</button>`
+      : `<button type="button" class="sys-button" data-home-buy="${h.id}" ${busy ? 'disabled' : ''}>Buy for ${money(h.price)}</button>`;
     return `<div class="estate-row${own?.mine ? ' mine' : ''}"><span>No. ${h.i + 1} <span>·</span> ${what}</span><span>${act}</span></div>`;
   }).join('');
   const tabs = TIERS.filter((t) => HOUSE_PRICE[t.id]).reverse().map((t) => `<button type="button" class="sys-tab${t.id === ring ? ' on' : ''}" data-estate-ring="${t.id}">${esc(t.name)} · ${money(HOUSE_PRICE[t.id])}</button>`).join('');
