@@ -8,6 +8,7 @@ export const CATEGORIES = [
   ['move', 'Movement'],
   ['combat', 'Combat'],
   ['camera', 'Camera'],
+  ['feel', 'Sensitivity'],
   ['fly', 'Flying & riding'],
   ['world', 'Actions'],
   ['windows', 'Windows'],
