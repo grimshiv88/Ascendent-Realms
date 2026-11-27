@@ -56,6 +56,7 @@ import { BEAST_TAME } from '../data/mounts.mjs';
 import { RIDE_FATIGUE } from '../data/mounts.mjs';
 import { allFarms } from '../data/farms.mjs';
 import { HUNGER_DRAIN, HUNGRY, STARVE_HIT, STARVE_FLOOR } from '../data/hunger.mjs';
+import { createPractice } from './practice.js';
 
 const WALK = 3.4;   // metres per second, a brisk game walking pace
 const RUN = 8;
@@ -1946,8 +1947,31 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const sp = game?.nextSpell();
     say(sp ? `Spell: ${sp.name}` : game?.staff() ? 'No spells on this staff yet: attach some in Skills (K)' : 'Hold a staff to cast spells', sp ? 'exp' : 'note');
   }
+  // the practice monster of the Academy you are in (made the first time it is needed)
+  function practiceHere() {
+    const p = inside?.built.practice;
+    if (!p) return null;
+    return (inside.practiceCtl ??= createPractice(p, {
+      say, float: floatText, tip: (text) => onEvent?.('practice-tip', text),
+      won() {
+        // beaten the way the school teaches: a good bit of EXP for a child of this Academy
+        if (game?.character.child?.school === p.school) {
+          let exp = 0;
+          for (let i = 0; i < 5; i++) exp += game.trainHit() || 0;
+          if (exp) floatText(`+${exp} EXP`, pos.clone().add(new THREE.Vector3(0, bodyH + 0.3, 0)), 'exp');
+        }
+        say('You beat the practice monster the way your Academy teaches!', 'exp');
+        onEvent?.('practice-win', { school: p.school });
+      },
+    }));
+  }
   function resolveSwing() {
     const w = game?.weapon();
+    // the practice monster in an Academy takes the blow if it is aimed at it
+    if (practiceHere()?.swing(pos, heading, speedNow)) {
+      if (game?.character.child && trainingAt() === game.character.child.school) { const exp = game.trainHit(); if (exp) floatText(`+${exp} EXP`, pos.clone().add(new THREE.Vector3(0, bodyH + 0.3, 0)), 'exp'); }
+      return;
+    }
     // practice on your Academy's mat: every swing earns a little EXP
     if (game?.character.child && trainingAt() === game.character.child.school) {
       const exp = game.trainHit();
@@ -2594,6 +2618,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     if (inside) {
       inside.built.update(t, pos);
+      // an Academy's practice monster: it turns to you, lunges now and then and knocks you back
+      const pr = practiceHere();
+      const knock = pr?.update(pos, speedNow);
+      if (knock) { pos.x += knock.x; pos.z += knock.z; inside.built.clampPos(pos); }
       checkRooms();
       checkInn();
       const d = Math.hypot(pos.x - inside.built.exit.x, pos.z - inside.built.exit.z);
@@ -2810,8 +2838,34 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     return true;
   }
 
+  // The tutorial's beam of light over the place it wants you to go (see tutorial.js): a tall soft
+  // column you can see from across the city, and a gold arrow bobbing over the spot
+  let guide = null;
+  const guideMats = {
+    beam: new THREE.MeshBasicMaterial({ color: 0xffd56a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }),
+    arrow: new THREE.MeshBasicMaterial({ color: 0xffc23a, fog: false }),
+  };
+  function setGuide(at) {
+    if (guide) { scene.remove(guide); guide = null; }
+    if (!at || !Number.isFinite(at.x) || !Number.isFinite(at.z)) return;
+    guide = new THREE.Group();
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 60, 16, 1, true), guideMats.beam);
+    beam.position.y = 30;
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.4, 4), guideMats.arrow);
+    arrow.rotation.x = Math.PI; // pointing down at the spot
+    arrow.position.y = 3.2;
+    arrow.onBeforeRender = () => { const t = performance.now() / 1000; arrow.position.y = 3.2 + Math.sin(t * 2.4) * 0.35; arrow.rotation.y = t * 1.5; };
+    guide.add(beam, arrow);
+    guide.position.set(at.x, surfaceAt(at.x, at.z), at.z);
+    scene.add(guide);
+  }
+
   return {
     rebuildAvatar,
+    setGuide,
+    // for the tutorial's arrow: where you stand, which way the camera looks, and whether you are
+    // indoors or down a cave (the arrow points outside the world then)
+    guideView: () => ({ x: pos.x, z: pos.z, yaw, inside: !!inside, depth: !!depth }),
     jump() { jumpQueued = true; },
     // an admin's powers turned on or off; landing after flying never hurts
     setPowers(p) {
@@ -3005,6 +3059,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debugDeaths: () => creatures.list.filter((m) => m.death).map((m) => m.death.t),
     debugLeave() { if (inside) leaveBuilding(); },
     debugCounter() { const c = inside?.built?.counter; if (!c) return false; pos.set(c.x, c.y, c.z); useIndoors(); return true; },
+    // for testing: the Academy's practice monster (where it is) and a swing
+    debugPractice() { const p = inside?.built.practice; practiceHere(); return p ? { x: p.ox + p.body.position.x, z: p.oz + p.body.position.z, school: p.school, facing: p.body.rotation.y, lying: p.body.rotation.z } : null; },
+    debugSwing: () => resolveSwing(),
     debugEnter(id) { for (const c of builtCities()) { const sh = c.built.shops.find((q) => q.id === id); if (sh) { pos.set(sh.x, pos.y, sh.z); enterBuilding(sh); return true; } } return false; },
     refreshHelper,
     refreshGuard,

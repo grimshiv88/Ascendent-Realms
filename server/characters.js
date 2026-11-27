@@ -319,6 +319,9 @@ async function saveProgress(accountId, p) {
   const children = (Array.isArray(p.children) ? p.children : character.children || []).slice(0, MAX_CHILDREN)
     .filter((k) => okStr(k?.name, 24) && RACES[k.race] && (k.school == null || SCHOOLS[k.school]))
     .map((k) => ({ name: k.name, race: k.race, plan: { a: CLASSES[k.plan?.a] ? k.plan.a : null, b: CLASSES[k.plan?.b] ? k.plan.b : null }, school: k.school || null, born: int(k.born, 0, 1e15) ?? 0 }));
+  // a newcomer's first journey: which steps are done, and whether it was hidden
+  const journey = p.journey === undefined ? (character.journey || null) : p.journey && Array.isArray(p.journey.seen)
+    ? { seen: [...new Set(p.journey.seen.filter((s) => typeof s === 'string' && /^[a-z_]{1,20}$/.test(s)))].slice(0, 40), off: p.journey.off === true } : null;
   const lastChildPlay = int(p.lastChildPlay ?? character.lastChildPlay ?? 0, 0, 1e15) ?? 0;
   const storedLives = Number.isInteger(character.livesLeft) ? character.livesLeft : LIVES;
   const livesLeft = Math.min(storedLives, int(p.livesLeft ?? storedLives, 0, 1e9) ?? storedLives); // (an admin may give more than 3)
@@ -379,7 +382,7 @@ async function saveProgress(accountId, p) {
   const crops = cleanBeds(p.crops);
   const mount = p.mount && ITEMS[p.mount.item]?.kind === 'mount' && Number.isFinite(p.mount.x) && Number.isFinite(p.mount.z)
     ? { item: p.mount.item, x: Math.round(p.mount.x * 10) / 10, z: Math.round(p.mount.z * 10) / 10 } : null;
-  Object.assign(character, fields, { crops, mount, stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, dayPass, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages });
+  Object.assign(character, fields, { crops, mount, stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, dayPass, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages, journey });
   await store(accountId, character);
   return { ok: true };
 }

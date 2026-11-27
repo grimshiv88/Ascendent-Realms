@@ -54,6 +54,8 @@ document.addEventListener('contextmenu', (e) => { if (!typing(e)) e.preventDefau
 document.addEventListener('selectstart', (e) => { if (!typing(e)) e.preventDefault(); });
 document.addEventListener('dragstart', (e) => { if (!typing(e)) e.preventDefault(); });
 import { actionFor, setKey, resetKeys, resetKey, clearKey, clashFor, CONTROL, FIXED_KEYS, codeFor, keyName, mouseCode, useAccountKeys } from './data/controls.mjs';
+import { startTutorial } from './tutorial.js';
+import { startJourney } from './journey.js';
 import { ageOf, isChild, ceremonyDue, SCHOOLS, PARENT_JOBS } from './data/birth.mjs';
 import { UNDYING_LEVEL, RENEW_AGE, MARRY_AGE, diedOfAge } from './data/life.mjs';
 import { BODYGUARDS } from './data/hire.mjs';
@@ -177,6 +179,8 @@ function openCreation(username) {
 }
 
 let world = null;
+let tutorial = null; // the guide for new players, while it runs (see tutorial.js)
+let journey = null; // a newcomer's first journey: goals with arrows and notices (see journey.js)
 let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
@@ -698,6 +702,7 @@ function startGame(character) {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
     world?.releaseMouse();
     overlay.dataset.panel = name;
+    tutorial?.saw('panel', name);
     if (name !== 'power') ui.powers = [];
     ui.workshop = false;
     ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.acct = {}; ui.skillMsg = ''; ui.binding = null; ui.bindingControl = null; ui.clash = null; ui.controlMsg = '';
@@ -797,7 +802,13 @@ function startGame(character) {
     overlay.querySelector('[data-begin-again]').addEventListener('click', () => location.reload());
     for (const b of overlay.querySelectorAll('[data-rebirth]')) b.addEventListener('click', () => { try { sessionStorage.setItem('ar.rebirth', b.dataset.rebirth); } catch { /* blocked */ } location.reload(); });
   }
-  const closePanel = () => { if (overlay.dataset.panel === 'power') ui.powers = []; overlay.classList.add('hidden'); overlay.dataset.shown = ''; preview.unmount(); };
+  const closePanel = () => {
+    const was = overlay.classList.contains('hidden') ? '' : overlay.dataset.panel;
+    if (overlay.dataset.panel === 'power') ui.powers = [];
+    overlay.classList.add('hidden'); overlay.dataset.shown = ''; preview.unmount();
+    // the tutorial starts when a newcomer closes the welcome
+    if (was === 'welcome' && ui.tutorialDue) { ui.tutorialDue = false; runTutorial(); }
+  };
 
   // Your character in the bag, turning slowly, wearing what you have on
   const preview = (() => {
@@ -1349,6 +1360,7 @@ function startGame(character) {
     if ((v = t('data-view')) != null) { settings.view = v; saveSettings(); world?.setView(v); drawPanel(); return; }
     if ((v = t('data-graphics')) != null) { settings.graphics = v; saveSettings(); settings.graphicsNow = world?.setGraphics(v); drawPanel(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
+    if (e.target.closest('[data-tutorial-replay]')) { closePanel(); runTutorial(true); return; }
     if ((v = t('data-cam-follow')) != null) { settings.camFollow = v; saveSettings(); world?.setCameraFollow(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if ((v = t('data-party-invites')) != null) {
@@ -1472,6 +1484,8 @@ function startGame(character) {
     onMouseFreed: () => { ui.freedAt = performance.now(); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
+      tutorial?.saw(type, data);
+      journey?.saw(type, data);
       // the phone took the graphics away for a moment (see world.js): wait, or reload if they don't come back
       if (type === 'graphicsLost') { showArea('Getting the graphics back...'); return; }
       if (type === 'graphicsBack') { showArea('Graphics are back'); return; }
@@ -1494,6 +1508,7 @@ function startGame(character) {
       }
       if (type === 'depths') $('minimap').classList.add('hidden'); // no map underground
       if (type === 'depths') showArea(`${data.cave.name}: ${{ small: 'a small', medium: 'a winding', deep: 'a deep' }[data.cave.size]} ${data.cave.dungeon ? 'dungeon in the mountain' : 'cave'}. Not every tunnel leads down to the boss: some are false routes that go deep and end in rock. ${world?.holding ? '' : 'Pitch dark: light a torch (T). '}Mine glowing ore veins, break nests, and find the boss at the bottom.`);
+      if (type === 'practice-tip') { showArea(data); return; }
       if (type === 'surface') { ui.atCave = null; drawHud(); $('minimap').classList.remove('hidden'); }
       if (type === 'cave') {
         ui.atCave = data; ui.caveMsg = '';
@@ -1767,6 +1782,34 @@ function startGame(character) {
   }, 1000);
   // the minimap in the corner follows you; tap it for the world map
   createMinimap($('minimap'), () => world?.position(), () => openPanel('map'));
+  // The tutorial: shown once per account to a newcomer (a child just born, or a brand-new
+  // character), after the welcome. It can be skipped, and played again from Settings.
+  const who = (myAccount?.username || character.name || '').toLowerCase();
+  const tutDoneHere = () => { try { return localStorage.getItem(`ar-tut-done:${who}`) === '1'; } catch { return false; } };
+  function runTutorial(fromStart = false) {
+    tutorial?.stop();
+    const storeKey = `ar-tut-step:${who}`;
+    if (fromStart) try { localStorage.removeItem(storeKey); } catch { /* private window */ }
+    // the first journey follows the tutorial (played again from Settings, it starts over if it was hidden)
+    if (fromStart && character.journey?.off) { game.setJourney({ ...character.journey, off: false }); runJourney(); }
+    tutorial = startTutorial($('game'), {
+      character, getWorld: () => world, storeKey,
+      onEnd() {
+        tutorial = null;
+        try { localStorage.setItem(`ar-tut-done:${who}`, '1'); } catch { /* private window */ }
+        if (myAccount && !myAccount.tutorialDone) { myAccount.tutorialDone = true; api.setTutorialDone().catch(() => {}); }
+      },
+    });
+  }
+  const newcomer = !!character.child || (character.level <= 1 && !character.exp);
+  ui.tutorialDue = newcomer && !myAccount?.tutorialDone && !tutDoneHere();
+  // a newcomer's first journey (kept on the character, so it carries on after a reload)
+  function runJourney() {
+    journey?.stop();
+    journey = startJourney($('game'), { character, game, getWorld: () => world, paused: () => !!tutorial?.running });
+  }
+  if (ui.tutorialDue && !character.journey) game.setJourney({ seen: [], off: false });
+  runJourney();
   openPanel('welcome');
 }
 
