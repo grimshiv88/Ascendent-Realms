@@ -18,7 +18,7 @@ import { VILLAGES_AT_ONCE, VILLAGE_RETURNS_MS, VILLAGE_NEAR, VILLAGE_KIND, VILLA
 import { createSkillFx } from './skillfx.js';
 import { moveFor } from './skillmoves.js';
 import { tickWind } from './trees.js';
-import { codeFor, actionFor, keyName } from '../data/controls.mjs';
+import { codeFor, actionFor, keyName, isHeld, mouseCode } from '../data/controls.mjs';
 import { buildDepths } from './depths.js';
 import { buildPortal } from './portal.js';
 import { buildPieces, pieceColliders, storeyY } from './buildings.js';
@@ -1937,13 +1937,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (e.target.closest && e.target.closest('input, textarea')) return;
     keys.add(e.code);
     const act = actionFor(e.code);
-    if (!e.repeat && (act === 'forward' || e.code === 'ArrowUp')) {
+    // a key the game uses doesn't also do what the browser would (F5 reloading, Tab, Space scrolling...)
+    if (act && act !== 'chat' && !windowOpen?.() && !e.ctrlKey && !e.metaKey) e.preventDefault();
+    if (act === 'autowalk' && !e.repeat) { autoWalk = !autoWalk; lastForward = 0; say(autoWalk ? 'Auto-walk on' : 'Auto-walk off', 'note'); }
+    if (!e.repeat && act === 'forward') {
       const now = performance.now();
       if (autoWalk) { autoWalk = false; lastForward = 0; say('Auto-walk off', 'note'); }
       else if (now - lastForward < 320) { autoWalk = true; lastForward = 0; say('Auto-walk on: tap forward or back to stop', 'note'); }
       else lastForward = now;
     }
-    if (!e.repeat && autoWalk && (act === 'back' || e.code === 'ArrowDown')) { autoWalk = false; say('Auto-walk off', 'note'); }
+    if (!e.repeat && autoWalk && act === 'back') { autoWalk = false; say('Auto-walk off', 'note'); }
     if (act === 'attack') attack();
     if (act === 'sleep') toggleSleep();
     if (act === 'torch') placeTorch();
@@ -1951,10 +1954,23 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (act === 'interact') interact();
     if (act === 'mount' && !e.repeat && game) riding?.toggle();
     if (act === 'spell' && !e.repeat) nextSpell();
+    if ((act === 'zoomin' || act === 'zoomout') && !windowOpen?.()) zoomBy(act === 'zoomin' ? -150 : 150);
+    if (act === 'mouse' && !e.repeat) { if (locked()) { letGo = true; document.exitPointerLock(); } else lockMouse(); }
     onKey?.(e);
   };
   const up = (e) => keys.delete(e.code);
-  const held = (action) => keys.has(codeFor(action));
+  const held = (action) => isHeld(keys, action);
+  // the middle and side mouse buttons can be keys too (Settings → Controls)
+  const fakeKey = (code, repeat = false) => ({ code, key: code, repeat, target: document.body, shiftKey: false, preventDefault() {} });
+  window.addEventListener('mousedown', (e) => {
+    const code = mouseCode(e.button);
+    if (!code || (e.target.closest && e.target.closest('input, textarea, #overlay'))) return;
+    if (e.button === 1 || actionFor(code)) e.preventDefault(); // (no scroll wheel autoscroll, no browser back)
+    down(fakeKey(code, keys.has(code)));
+  });
+  window.addEventListener('mouseup', (e) => { const code = mouseCode(e.button); if (code) { keys.delete(code); if (actionFor(code)) e.preventDefault(); } });
+  // Fly down has no key until the player picks one: until then Run (Shift) dives, as it always did
+  const flyDownHeld = () => (codeFor('flydown') ? held('flydown') : held('run'));
   let jumpQueued = false; // the jump button on touch screens
   let climbFor = 0, flyDown = false; // (flying on a dragon or wyvern)
   // Let go of every key and the touch stick when the game stops hearing the keyboard (another window
@@ -2067,12 +2083,19 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   canvas.addEventListener('pointerup', release);
   canvas.style.touchAction = 'none'; // the game handles pinches itself (the page doesn't zoom)
   canvas.addEventListener('pointercancel', release);
-  canvas.addEventListener('wheel', (e) => {
-    if (viewMode === 'first') { if (e.deltaY > 0) setView('third', true); }
-    else if (dist <= 2 && e.deltaY < 0) setView('first', true);
-    else dist = THREE.MathUtils.clamp(dist + e.deltaY * 0.01, 2, 30);
-    e.preventDefault();
-  }, { passive: false });
+  // the mouse wheel (or the Camera closer / further keys) zooms
+  function zoomBy(deltaY) {
+    if (viewMode === 'first') { if (deltaY > 0) setView('third', true); }
+    else if (dist <= 2 && deltaY < 0) setView('first', true);
+    else dist = THREE.MathUtils.clamp(dist + deltaY * 0.01, 2, 30);
+  }
+  canvas.addEventListener('wheel', (e) => { zoomBy(e.deltaY); e.preventDefault(); }, { passive: false });
+  // catch the mouse for the camera again (after the chat, or the Free the mouse key); a key press
+  // counts as the player asking, so the browser allows it
+  function lockMouse() {
+    if (locked() || noLock || freeMouse || windowOpen?.() || !canvas.requestPointerLock) return;
+    try { const r = canvas.requestPointerLock(); r?.catch?.(() => {}); } catch { /* not allowed now */ }
+  }
 
   // ---------- loop ----------
   const clock = new THREE.Clock();
@@ -2205,10 +2228,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     let fx = 0, fz = 0;
     if (dead || sleeping) autoWalk = false;
     if (!dead && !resting()) {
-      if (held('forward') || keys.has('ArrowUp') || autoWalk) fz += 1;
-      if (held('back') || keys.has('ArrowDown')) fz -= 1;
-      if (held('left') || keys.has('ArrowLeft')) fx -= 1;
-      if (held('right') || keys.has('ArrowRight')) fx += 1;
+      if (held('forward') || autoWalk) fz += 1;
+      if (held('back')) fz -= 1;
+      if (held('left')) fx -= 1;
+      if (held('right')) fx += 1;
       fx += stick.x; fz -= stick.y;
     }
     // sitting: any move gets you up; until then you stay in the chair
@@ -2230,7 +2253,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
     else { backYaw = yaw; backHeading = heading; } // once round, carry on from wherever you face
     if (aboutFace) fz = -fz;
-    const running = held('run') || (codeFor('run') === 'ShiftLeft' && keys.has('ShiftRight')) || Math.hypot(stick.x, stick.y) > 0.9;
+    const running = held('run') || Math.hypot(stick.x, stick.y) > 0.9;
     runningNow = running;
     const amount = Math.min(1, Math.hypot(fx, fz));
     let target = 0;
@@ -2324,14 +2347,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (jumpQueued) climbFor = 0.7; // (a tap of the jump button on a phone climbs for a moment)
       climbFor = Math.max(0, climbFor - dt);
       const g0 = Math.max(groundAt(pos.x, pos.z), water + 2.5);
-      pos.y = riding.fly(dt, held('jump') || climbFor > 0, held('run') || flyDown, g0, pos.y);
+      pos.y = riding.fly(dt, held('flyup') || climbFor > 0, flyDownHeld() || flyDown, g0, pos.y);
       if (riding.flying) swimming = false;
       ground = pos.y; velY = 0; airborne = false; fallFrom = pos.y;
     }
     else if (flying) {
       const climb = (running ? 18 : 7) * dt;
-      if (held('jump') || jumpQueued) pos.y += climb;
-      if (held('flydown') || flyDown) pos.y -= climb;
+      if (held('flyup') || jumpQueued) pos.y += climb;
+      if (flyDownHeld() || flyDown) pos.y -= climb;
       pos.y = Math.min(Math.max(pos.y, ground), ground + 600);
       velY = 0; airborne = pos.y > ground + 0.05; fallFrom = pos.y;
     }
@@ -2930,6 +2953,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     },
     // let the mouse go (a window is opening)
     releaseMouse() { if (locked()) { letGo = true; document.exitPointerLock(); } },
+    lockMouse,
+    get mouseLocked() { return locked(); },
     setMouseMode(mode) { freeMouse = mode === 'free'; if (freeMouse && locked()) { letGo = true; document.exitPointerLock(); } },
     setGraphics(choice) { applyQuality(pickQuality(choice)); return quality.key; },
     get graphics() { return quality.key; },

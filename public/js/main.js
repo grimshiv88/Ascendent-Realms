@@ -8,7 +8,7 @@ import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
 import { villageName } from './data/mobvillages.mjs';
-import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, renderChallenge, HELP_HTML } from './status.js';
+import { renderHud, renderStatus, renderSettings, renderControlsWindow, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, renderChallenge, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass, itemInfoHtml } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
@@ -53,7 +53,7 @@ const typing = (e) => e.target.closest?.('input, textarea, select, [contentedita
 document.addEventListener('contextmenu', (e) => { if (!typing(e)) e.preventDefault(); });
 document.addEventListener('selectstart', (e) => { if (!typing(e)) e.preventDefault(); });
 document.addEventListener('dragstart', (e) => { if (!typing(e)) e.preventDefault(); });
-import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } from './data/controls.mjs';
+import { actionFor, setKey, resetKeys, resetKey, clearKey, clashFor, CONTROL, FIXED_KEYS, codeFor, keyName, mouseCode, useAccountKeys } from './data/controls.mjs';
 import { ageOf, isChild, ceremonyDue, SCHOOLS, PARENT_JOBS } from './data/birth.mjs';
 import { UNDYING_LEVEL, RENEW_AGE, MARRY_AGE, diedOfAge } from './data/life.mjs';
 import { BODYGUARDS } from './data/hire.mjs';
@@ -139,8 +139,12 @@ async function cloudTransition(loadNext) {
 
 // After signing in: character creation for a new account, otherwise straight into the world.
 let myAccount = null; // the signed-in account (its email and 2-step sign-in, for Settings)
+// the keys are saved with the account a moment after the last change
+let keysTimer = 0;
+const sendKeys = (k) => { clearTimeout(keysTimer); keysTimer = setTimeout(() => api.saveKeys(k).catch(() => {}), 800); };
 function enterRealm({ account }) {
   myAccount = account;
+  useAccountKeys(account.keys, sendKeys);
   return cloudTransition(async () => {
     await sculptsReady; // the sculpted bodies, so characters are built from them
     intro.stop();
@@ -416,29 +420,43 @@ function startGame(character) {
     if (got.length) world?.say(`Brewed: ${got.join(', ')}`, 'exp');
     if (overlay.dataset.panel === 'potions' && !overlay.classList.contains('hidden')) drawPanel();
   }, 1000);
-  // choosing a key for a skill: the next key pressed is the one
+  // choosing a key for a skill or an action: the next key pressed is the one
+  // (in Settings → Controls a key another action uses asks first: swap, take it, or keep both)
+  const chooseControlKey = (code, label) => {
+    const [id, slot] = ui.bindingControl.split(':');
+    ui.bindingControl = null;
+    const name = CONTROL[id].name;
+    if (code === 'Escape') ui.controlMsg = '';
+    else if (FIXED_KEYS.includes(code)) ui.controlMsg = `${label} can't be used: it always frees the mouse and closes windows. Pick another key.`;
+    else {
+      const skill = CONTROL[id].tab !== 'build' && character.skillBar.find((b) => b.key === code);
+      const clash = clashFor(id, code, Number(slot));
+      if (skill || clash) ui.clash = { id, slot: Number(slot), code, skill: skill?.id || null, other: clash?.id || null };
+      else { setKey(id, code, Number(slot)); ui.controlMsg = `${name} is now on ${keyName(code)}.`; }
+    }
+    drawPanel();
+  };
   window.addEventListener('keydown', (e) => {
-    // choosing a key for an action in Settings → Controls
     if (ui.bindingControl) {
       e.preventDefault(); e.stopImmediatePropagation();
-      const id = ui.bindingControl;
-      ui.bindingControl = null;
-      const name = CONTROLS.find((x) => x[0] === id)[1];
-      if (e.code === 'Escape') ui.controlMsg = '';
-      else if (FIXED_KEYS.includes(e.code)) ui.controlMsg = `${e.key} can't be used. Pick another key.`;
-      else if (character.skillBar.some((b) => b.key === e.code)) ui.controlMsg = `${e.key.toUpperCase()} is on one of your skills. Change that skill's key first (Skills window).`;
-      else { setKey(id, e.code); ui.controlMsg = `${name} is now on ${e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key}.`; }
-      drawPanel();
+      chooseControlKey(e.code, keyName(e.code));
       return;
     }
     if (!ui.binding) return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (e.code !== 'Escape') {
       const r = game.setSkillKey(ui.binding, e.code);
-      ui.skillMsg = r === 'reserved' ? `${e.key.toUpperCase()} is already used by the game. Pick another key.` : r === 'ok' ? `${SKILLS[ui.binding].name} is now on ${e.key.toUpperCase()}.` : '';
+      ui.skillMsg = r === 'reserved' ? `${keyName(e.code)} is already used by the game (Settings → Controls). Pick another key.` : r === 'ok' ? `${SKILLS[ui.binding].name} is now on ${keyName(e.code)}.` : '';
     }
     ui.binding = null;
     drawPanel();
+  }, true);
+  // the middle and side mouse buttons can be chosen too
+  window.addEventListener('mousedown', (e) => {
+    const code = mouseCode(e.button);
+    if (!ui.bindingControl || !code) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    chooseControlKey(code, keyName(code));
   }, true);
 
   // Land: L shows the grid of plots around you; tap one to see it in the Land window
@@ -647,7 +665,8 @@ function startGame(character) {
         // an admin's Teleport power: tap the map to go there
         if (world?.teleport(x, z - 5)) { closePanel(); showArea('Teleported.'); } else showArea('You can\'t teleport from in here.');
       } : null);
-    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '', country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
+    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
+    else if (name === 'controls') renderControlsWindow(overlay, { binding: ui.bindingControl, message: ui.controlMsg || '', tab: ui.ctlTab || 'move', clash: ui.clash, skillBar: character.skillBar, admin: !!ui.adminPowers || !!(myAccount?.powers || []).length });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
     else if (name === 'options') renderOptions(overlay);
@@ -681,7 +700,7 @@ function startGame(character) {
     overlay.dataset.panel = name;
     if (name !== 'power') ui.powers = [];
     ui.workshop = false;
-    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.acct = {}; ui.skillMsg = ''; ui.binding = null;
+    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.acct = {}; ui.skillMsg = ''; ui.binding = null; ui.bindingControl = null; ui.clash = null; ui.controlMsg = '';
     if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
     if (name === 'cult') { ui.cultMsg = ''; loadCult(); }
     if (name === 'family') { ui.familyMsg = ''; loadFamily(); }
@@ -1303,8 +1322,21 @@ function startGame(character) {
       world?.say(r === 'ok' ? `${SKILLS[id].name} Stone back in your bag` : r === 'full' ? 'Your bag is full' : 'Nothing to take out', r === 'ok' ? 'note' : 'hurt');
       drawPanel(); return;
     }
-    if ((v = t('data-control')) != null) { ui.bindingControl = v; ui.controlMsg = ''; drawPanel(); return; }
-    if (e.target.closest('[data-controls-reset]')) { resetKeys(); ui.controlMsg = 'Every key is back to how it started.'; drawPanel(); return; }
+    // Settings → Controls
+    if ((v = t('data-ctl-tab')) != null) { ui.ctlTab = v; ui.bindingControl = null; ui.clash = null; ui.controlMsg = ''; drawPanel(); return; }
+    if ((v = t('data-control')) != null) { ui.bindingControl = ui.bindingControl === v ? null : v; ui.clash = null; ui.controlMsg = ''; drawPanel(); return; }
+    if ((v = t('data-control-clear')) != null) { const [id, sl] = v.split(':'); clearKey(id, Number(sl)); ui.clash = null; ui.controlMsg = `${CONTROL[id].name}: that key is now empty.`; drawPanel(); return; }
+    if ((v = t('data-control-default')) != null) { resetKey(v); ui.clash = null; ui.controlMsg = `${CONTROL[v].name} is back on its first key.`; drawPanel(); return; }
+    if ((v = t('data-clash')) != null) {
+      const c = ui.clash; ui.clash = null;
+      if (c && v !== 'cancel') {
+        if (c.skill) { const b = character.skillBar.find((x) => x.id === c.skill); if (b) { b.key = null; game.touch('skills'); } }
+        setKey(c.id, c.code, c.slot, v);
+        ui.controlMsg = `${CONTROL[c.id].name} is now on ${keyName(c.code)}.${v === 'both' ? ' Both actions are on it: they happen together.' : ''}`;
+      }
+      drawPanel(); return;
+    }
+    if ((v = t('data-controls-reset')) != null) { resetKeys(v || undefined); ui.clash = null; ui.controlMsg = v ? 'The keys on this tab are back to how they started.' : 'Every key is back to how it started.'; drawPanel(); return; }
     if ((v = t('data-mouse')) != null) { settings.mouse = v; saveSettings(); world?.setMouseMode(v); drawPanel(); return; }
     if ((v = t('data-view')) != null) { settings.view = v; saveSettings(); world?.setView(v); drawPanel(); return; }
     if ((v = t('data-graphics')) != null) { settings.graphics = v; saveSettings(); settings.graphicsNow = world?.setGraphics(v); drawPanel(); return; }
@@ -1428,7 +1460,8 @@ function startGame(character) {
     },
     // the player pressed Esc while the mouse was captured
     windowOpen: () => !overlay.classList.contains('hidden') || !!social?.typing,
-    onMouseFreed: () => { if (overlay.classList.contains('hidden')) openPanel('settings'); },
+    // Esc while the mouse turns the camera only lets the mouse go (no window opens)
+    onMouseFreed: () => { ui.freedAt = performance.now(); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       // the phone took the graphics away for a moment (see world.js): wait, or reload if they don't come back
@@ -1565,16 +1598,20 @@ function startGame(character) {
     },
     onKey(e) {
       const act = actionFor(e.code);
-      const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', rankings: 'rankings', skills: 'skills', groups: 'groups' }[act];
+      const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', controls: 'controls', rankings: 'rankings', skills: 'skills', groups: 'groups' }[act];
       if (open) openPanel(open);
       if (act === 'builder' && !ui.builder) { if (e.shiftKey && !ui.walk) walkBuild(); else openBuilder(); }
+      if (act === 'walkbuild' && !ui.builder && !ui.walk) walkBuild();
+      if (act === 'powers') document.querySelector('#game .pw-toggle')?.click();
+      if (act === 'radar') document.querySelector('#game .rd:not([hidden]) .rd-disc')?.click();
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); else if (act === 'unique') trySkill('unique'); else if (act === 'mythic') trySkill('mythic'); }
       if (act === 'land') toggleLand();
       if (act === 'view') { e.preventDefault(); if (!e.repeat) world?.toggleView(); }
       if (act === 'chat') { e.preventDefault(); world?.releaseMouse(); social?.focusChat(); }
-      // Esc opens the options; Esc again (or on any window) closes it
-      if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }
+      // Esc closes the window that is open, and frees the mouse. It never opens a window by itself
+      // (the ☰ button opens the menu), so pressing it to let the mouse go doesn't fill the screen.
+      if (e.code === 'Escape' && !overlay.classList.contains('hidden')) closePanel();
     },
   });
   settings.graphicsNow = world.graphics; // what "Automatic" chose for this device
@@ -1583,7 +1620,7 @@ function startGame(character) {
 
   window.addEventListener('pagehide', () => game.saveNow());
   // Friends and chat: search at the top right, chat at the bottom left
-  social = createSocial($('game'));
+  social = createSocial($('game'), { onDone: () => world?.lockMouse() });
   // Other players close by: every second or so the game says where you are and draws who is near
   // (every few seconds while nobody is). Your body is sent again whenever it or your gear changes.
   if (!presenceOn) (async () => {

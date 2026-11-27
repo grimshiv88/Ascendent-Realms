@@ -1,7 +1,7 @@
 // The in-game HUD and the Status Window (laid out like Mohammed's black-and-gold design).
 import { HUNGRY, hungerWord } from './data/hunger.mjs';
 import { CASTLES, castleOf, KING_RETURNS_MS, CHALLENGE_ANSWER_MS } from './data/kings.mjs';
-import { CONTROLS, codeFor, keyName } from './data/controls.mjs';
+import { CONTROLS, CATEGORIES, CONTROL, codeFor, codesFor, keyName, clashes, isDefault } from './data/controls.mjs';
 import {
   RACES, CLASSES, CLASS_GUIDE, ADVANCEMENTS, EVOLUTIONS, KEY_LEVELS, derivedStats, expToNext, rankFor, mayChangeForm, FORM_SWITCH_LEVEL,
 } from './data/game-data.mjs';
@@ -221,11 +221,63 @@ function accountSettings(a, st) {
     <p class="shop-msg" role="status">${esc(st.msg || '')}</p>`;
 }
 
+// Settings → Controls: a row of icons across the top, one for each kind of action; pick one to see
+// its actions and their keys. Every action has a main key and a second key, and either can be left
+// empty. (The icons are drawn here, simple line pictures in the game's gold.)
+const CTL_ICONS = {
+  move: '<path d="M13 4a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM10 8l-3 5 3 1 1 6M13 8l3 4 3 1M10 8h3l-1 6 4 6"/>',
+  combat: '<path d="M5 19l9-9M14 10l4-6 2 2-6 4M8 14l2 2M4 20l2-2M19 19l-9-9M10 10L6 4 4 6l6 4M16 14l-2 2M20 20l-2-2"/>',
+  camera: '<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>',
+  fly: '<path d="M2 14c3-1 5-4 6-8 1 3 2 5 4 6 2-1 3-3 4-6 1 4 3 7 6 8-4 0-6 2-8 5-1-2-1-3-2-3s-1 1-2 3c-2-3-4-5-8-5z"/>',
+  world: '<path d="M8 13V5a1.5 1.5 0 0 1 3 0v6M11 11V4a1.5 1.5 0 0 1 3 0v7M14 11V5.5a1.5 1.5 0 0 1 3 0V14c0 4-2 7-6 7-3 0-4-1-6-4l-2-4a1.5 1.5 0 0 1 2.5-1.5L8 14"/>',
+  windows: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 8h18M7 12h6M7 16h10"/>',
+  build: '<path d="M14 6l4 4-9 9H5v-4zM12 8l4 4M15 3l6 6-2 2-6-6z"/>',
+  admin: '<path d="M3 18h18M4 18l-1-10 5 4 4-7 4 7 5-4-1 10"/>',
+};
+export function renderControlsWindow(el, keys = {}) {
+  el.innerHTML = `
+    <div class="status-window settings-window controls-window" role="dialog" aria-label="Controls">
+      <button type="button" class="sw-close" data-close aria-label="Close">×</button>
+      <h2>Controls</h2>
+      ${renderControls(keys)}
+      <p class="bag-hint"><button type="button" class="link-button" data-open="settings">Back to Settings</button></p>
+    </div>`;
+}
+export function renderControls(keys = {}) {
+  const tabs = CATEGORIES.filter(([id]) => id !== 'admin' || keys.admin);
+  const tab = tabs.some(([id]) => id === keys.tab) ? keys.tab : 'move';
+  const bad = clashes();
+  const badTabs = new Set(Object.keys(bad).map((k) => CONTROL[k.split(':')[0]].tab));
+  const slot = (id, i) => {
+    const code = codesFor(id)[i], waiting = keys.binding === `${id}:${i}`;
+    return `<span class="ctl-slot${bad[`${id}:${i}`] ? ' clash' : ''}"><button type="button" class="sk-key${waiting ? ' waiting' : ''}${code ? '' : ' empty'}" data-control="${id}:${i}" aria-label="${i ? 'Second key' : 'Key'} for ${esc(CONTROL[id].name)}: ${esc(code ? keyName(code) : 'none')}">${waiting ? 'Press a key…' : code ? esc(keyName(code)) : 'No key'}</button>${code && !waiting ? `<button type="button" class="ctl-x" data-control-clear="${id}:${i}" aria-label="Leave it with no key" title="Leave it with no key">×</button>` : ''}</span>`;
+  };
+  const rows = CONTROLS.filter((c) => c[3] === tab).map(([id, name, , , about]) => `
+    <div class="ctl-row"><span class="ctl-name"><b>${esc(name)}</b>${about ? `<small>${esc(about)}</small>` : ''}</span>${slot(id, 0)}${slot(id, 1)}
+      <button type="button" class="ctl-undo" data-control-default="${id}" aria-label="Back to the first key" title="Back to the first key"${isDefault(id) ? ' disabled' : ''}>↺</button></div>`).join('');
+  const skills = tab === 'combat' && keys.skillBar?.length ? `<h4 class="ctl-group">Skill bar</h4><div class="ctl-table">${keys.skillBar.map((b) => `
+    <div class="ctl-row"><span class="ctl-name"><b>${esc(SKILLS[b.id]?.icon || '')} ${esc(SKILLS[b.id]?.name || b.id)}</b></span><span class="ctl-slot"><button type="button" class="sk-key${b.key ? '' : ' empty'}" data-open="skills">${b.key ? esc(keyName(b.key)) : 'No key'}</button></span></div>`).join('')}</div>
+    <p class="bag-hint">Skill keys are changed in the Skills window (tap a key to go there).</p>` : '';
+  const c = keys.clash;
+  const ask = c ? `<div class="ctl-ask" role="alertdialog" aria-label="That key is taken">
+      <p><b>${esc(keyName(c.code))}</b> is already on <b>${esc(c.skill ? `your skill ${SKILLS[c.skill]?.name || c.skill}` : CONTROL[c.other].name)}</b>.</p>
+      <div class="ctl-ask-btns">
+        ${c.skill ? '' : `<button type="button" class="gold-button" data-clash="swap">Swap them</button>`}
+        <button type="button" class="${c.skill ? 'gold-button' : 'ghost'}" data-clash="take">Take it (${c.skill ? 'the skill' : esc(CONTROL[c.other].name)} gets no key)</button>
+        ${c.skill ? '' : '<button type="button" class="ghost" data-clash="both">Keep both on it</button>'}
+        <button type="button" class="ghost" data-clash="cancel">Cancel</button>
+      </div></div>` : '';
+  return `<div class="ctl-tabs" role="tablist">${tabs.map(([id, name]) => `<button type="button" role="tab" class="ctl-tab${badTabs.has(id) ? ' clash' : ''}" data-ctl-tab="${id}" aria-selected="${id === tab}" title="${esc(name)}"><svg viewBox="0 0 24 24" aria-hidden="true">${CTL_ICONS[id]}</svg><span>${esc(name)}</span></button>`).join('')}</div>
+    <p class="bag-hint">Click a key, then press the key (or mouse side button) you want. × leaves it with no key, ↺ puts it back. Esc always frees the mouse and closes windows.</p>
+    ${ask}
+    <p class="shop-msg" role="status">${esc(keys.message || '')}${Object.keys(bad).length ? `${keys.message ? ' ' : ''}<span class="ctl-warn">Keys in red are on two actions at once.</span>` : ''}</p>
+    <div class="ctl-table" role="tabpanel">${rows}</div>
+    ${skills}
+    <div class="ctl-foot"><button type="button" class="link-button" data-controls-reset="${tab}">Put this tab's keys back</button><button type="button" class="link-button" data-controls-reset="">Put every key back</button></div>`;
+}
+
 // Player settings, kept in this browser
 export function renderSettings(el, settings, accounts = null, cloud = false, passwordMsg = '', keys = {}) {
-  const groups = [...new Set(CONTROLS.map((x) => x[3]))];
-  const controls = groups.map((g) => `<h4 class="ctl-group">${g}</h4><div class="ctl-list">${CONTROLS.filter((x) => x[3] === g).map(([id, name]) => `
-    <div class="ctl-row"><span>${esc(name)}</span><button type="button" class="sk-key${keys.binding === id ? ' waiting' : ''}" data-control="${id}" aria-label="Change the key for ${esc(name)}">${keys.binding === id ? 'Press a key…' : esc(keyName(codeFor(id)))}</button></div>`).join('')}</div>`).join('');
   const opt = (value, title, text) => `<button type="button" class="setting-opt" data-camera="${value}" aria-pressed="${settings.camera === value}"><b>${title}</b><span>${text}</span></button>`;
   el.innerHTML = `
     <div class="status-window settings-window" role="dialog" aria-label="Settings">
@@ -261,10 +313,8 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
         <button type="button" class="setting-opt" data-cam-follow="off" aria-pressed="${settings.camFollow === 'off'}"><b>Stays put</b><span>The camera stays where you point it until you drag it round yourself.</span></button>
       </div>
       <h3 class="bag-sub">Controls</h3>
-      <p class="bag-hint">Click an action, then press the key you want for it. If another action had that key, they swap. The arrow keys always move you and Esc always opens the options.</p>
-      <p class="shop-msg" role="status">${esc(keys.message || '')}</p>
-      ${controls}
-      <button type="button" class="link-button" data-controls-reset>Put every key back to how it started</button>
+      <p class="bag-hint">Put any action on any key, give it a second key, or leave it with no key.</p>
+      <button type="button" class="gold-button" data-open="controls">Change keys</button>
       <h3 class="bag-sub">Account</h3>
       ${keys.country !== undefined ? `<label class="country-setting">Where you are from <small>(its flag is on your ID)</small><span class="country-field"><select data-country>${countryOptions(keys.country || '')}</select><span data-country-flag>${flagHtml(keys.country)}</span></span></label>` : ''}
       ${keys.account ? accountSettings(keys.account, keys.acct || {}) : ''}
@@ -355,14 +405,15 @@ const OPTIONS = [
   ['Torch', 'torch', 'act:torch', 'Place a torch, or pick one back up'],
   ['Top players', 'rankings', 'rankings', 'The highest-level characters'],
   ['Settings', 'settings', 'settings', 'Camera, keys, password and accounts'],
+  ['Controls', 'controls', 'controls', 'Change any key, or leave it empty'],
   ['Key guide', 'help', 'help', 'How to move, fight and more'],
 ];
 export function renderOptions(el) {
   el.innerHTML = `
-    <div class="status-window options-window" role="dialog" aria-label="Controls">
+    <div class="status-window options-window" role="dialog" aria-label="Menu">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
-      <h2>Controls</h2>
-      <p class="bag-hint">Press a key to open a window from anywhere, or tap it here. You can change any key in Settings.</p>
+      <h2>Menu</h2>
+      <p class="bag-hint">Press a key to open a window from anywhere, or tap it here. You can change any key in Settings → Controls.</p>
       <div class="options-grid">
         ${OPTIONS.map(([label, action, go, what]) => `<button type="button" class="option-btn" ${go.startsWith('act:') ? `data-act="${go.slice(4)}"` : `data-open="${go}"`}><kbd>${esc(keyName(codeFor(action)))}</kbd><b>${label}</b><small>${what}</small></button>`).join('')}
         <button type="button" class="option-btn" data-switch><kbd>&nbsp;</kbd><b>Switch account</b><small>Sign in as someone else</small></button>
@@ -378,7 +429,7 @@ export function renderWelcome(el, name, back = true) {
       <p>The realm awaits you.</p>
       <button type="button" class="gold-button" data-close>Start</button>
       <p class="welcome-warn">Be careful out there: <b>death is final</b>. If you die, you start again from nothing and choose a new race and class. Only your Unique Skill stays with you.</p>
-      <p class="bag-hint">All the controls are under <b>Controls</b> in the ☰ menu at the top of the screen (or press Esc).</p>
+      <p class="bag-hint">Every window is in the ☰ menu at the top of the screen, and every key can be changed in Settings → Controls.</p>
     </div>`;
 }
 
@@ -395,7 +446,8 @@ export const HELP_HTML = `
       <div class="sw-row"><dt>Attack / punch</dt><dd>Click, or F (touch: the fist button)</dd></div>
       <div class="sw-row"><dt>Open / pick up</dt><dd>E opens a chest in front of you, picks up a torch, or packs up your tent</dd></div>
       <div class="sw-row"><dt>Trees</dt><dd>Young and dead trees, bushes: by hand. Pines: an axe and 15 STR (or 40 STR). Oaks: an axe and 22 STR (or 50). Swamp and fae trees: an axe and 28 to 32 STR. Great trees: a War Axe and 60 STR. Hitting a tree also tells you what it needs.</dd></div>
-      <div class="sw-row"><dt>Controls</dt><dd>Esc shows every window and its key (also frees the mouse)</dd></div>
+      <div class="sw-row"><dt>Esc</dt><dd>Frees the mouse and closes the window that is open. The ☰ button at the top shows every window and its key</dd></div>
+      <div class="sw-row"><dt>Chat</dt><dd>Enter opens the chat even while the mouse turns the camera; send or press Esc to go back to the game</dd></div>
       <div class="sw-row"><dt>Status</dt><dd>C</dd></div>
       <div class="sw-row"><dt>Bag and shop</dt><dd>I and B</dd></div>
       <div class="sw-row"><dt>Quests</dt><dd>Q</dd></div>

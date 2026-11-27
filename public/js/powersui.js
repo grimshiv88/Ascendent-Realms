@@ -2,6 +2,7 @@
 // crown button on the left, under the voice button, opens switches for each power the account has.
 // Which ones are on is remembered in this browser.
 import { GAME_POWERS } from './data/staff.mjs';
+import { codeFor, keyName } from './data/controls.mjs';
 
 const STORE = 'ar.powers.on';
 const load = () => { try { return JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch { return {}; } };
@@ -38,7 +39,7 @@ export function createPowers(host, have, { apply, say }) {
     keep(on);
     show();
     const name = list.find(([p]) => p === id)[1];
-    say(`${name}: ${on[id] ? 'on' : 'off'}${id === 'fly' && on.fly ? '. Jump to rise, Ctrl to go down.' : id === 'teleport' && on.teleport ? '. Open the map (M) and tap where to go.' : id === 'radar' && on.radar ? '. Tap the radar to change its range.' : ''}`);
+    say(`${name}: ${on[id] ? 'on' : 'off'}${id === 'fly' && on.fly ? `. ${keyName(codeFor('flyup'))} to rise, ${codeFor('flydown') ? keyName(codeFor('flydown')) : `${keyName(codeFor('run'))} (pick a Fly down key in Settings → Controls)`} to go down.` : id === 'teleport' && on.teleport ? '. Open the map (M) and tap where to go.' : id === 'radar' && on.radar ? '. Tap the radar to change its range.' : ''}`);
   });
   const hold = (v) => (e) => { e.preventDefault(); apply({ ...on }, v); };
   down.addEventListener('pointerdown', hold(true));
