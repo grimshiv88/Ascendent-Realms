@@ -229,7 +229,13 @@ export function scenery() {
   const s = {};
 
   // `isBroken(key)` says whether something here was already broken, so it stays gone
+  // (built a few rows at a time: a generator, see forTileSteps; forTile builds it all at once)
   function forTile(cx, cz, size, isBroken = () => false) {
+    const it = forTileSteps(cx, cz, size, isBroken);
+    let r; do r = it.next(); while (!r.done);
+    return r.value;
+  }
+  function* forTileSteps(cx, cz, size, isBroken = () => false) {
     const rand = rng(cx * 73856093 ^ cz * 19349663);
     const cell = 9;
     const per = size / cell;
@@ -259,7 +265,9 @@ export function scenery() {
           break;
         }
       }
+      if (j % 4 === 3) yield;
     }
+    yield;
     const group = new THREE.Group();
     const meshes = [];
     const pairs = []; // the meshes of each kind in each quarter
@@ -304,10 +312,12 @@ export function scenery() {
           solid.push(...roots); // (felled, the tree takes its roots with it)
           Object.assign(e, { roots, kind, mesh, index: i, y: p.y, hp: BREAKABLE[kind].hp, key: spotKey(kind, p.x, p.z), height: kind === 'young' ? 3.5 * sc : BREAKABLE[kind].needs ? 5 * sc : 1.2 * sc });
           solid.push(e);
+          p.ents = [e, ...roots];
         } else if (entry) {
           entry.kind = kind;
           entry.height = kind === 'rock' ? sc * 0.55 : 10 * sc;
           solid.push(entry);
+          p.ents = [entry];
         }
       });
       mesh.castShadow = true;
@@ -387,12 +397,43 @@ export function scenery() {
           } else P.lo.visible = true;
         }
       },
+      // the ground changed inside `box` (a plot was cleared or levelled): what stands on cleared land
+      // goes, and the rest there moves up or down onto the new ground. Returns the blockers taken away.
+      refresh(box) {
+        const gone = [];
+        for (const P of pairs) {
+          const a = P.mesh.instanceMatrix.array;
+          let moved = false;
+          P.list.forEach((p, i) => {
+            if (p.x < box.x0 || p.x > box.x1 || p.z < box.z0 || p.z > box.z1 || p.gone) return;
+            moved = true;
+            if (isPrepared(p.x, p.z)) {
+              p.gone = true;
+              a.fill(0, i * 16, i * 16 + 15); // (scaled to nothing)
+              if (p.ents) { gone.push(...p.ents); for (const e of p.ents) { const k = solid.indexOf(e); if (k >= 0) solid.splice(k, 1); } }
+              return;
+            }
+            const y = surfaceAt(p.x, p.z), dy = y - p.y;
+            if (!dy) return;
+            p.y = y;
+            a[i * 16 + 13] += dy;
+            for (const e of p.ents || []) if (e.y !== undefined) e.y += dy;
+          });
+          if (moved) P.mesh.instanceMatrix.needsUpdate = true; // (the bump in its version shares it out again)
+        }
+        return gone;
+      },
       dispose() { for (const m of meshes) m.dispose(); },
     };
   }
 
   // Grass only near the player: a few thousand tufts per tile where grass grows.
   function grassForTile(cx, cz, size) {
+    const it = grassSteps(cx, cz, size);
+    let r; do r = it.next(); while (!r.done);
+    return r.value;
+  }
+  function* grassSteps(cx, cz, size) {
     const rand = rng((cx * 92837111) ^ (cz * 689287499) ^ 7);
     const list = [];
     for (let n = 0; n < 2600 * grassDensity; n++) {
@@ -403,7 +444,9 @@ export function scenery() {
       if (s.region !== 'heart' && s.region !== 'fae' && s.region !== 'mire') continue;
       if (rand() > 0.85 - s.forest * 0.5) continue;
       list.push([x, surfaceAt(x, z) - 0.05, z, s.biome === 'plains' ? 1 : s.dark > 0.4 ? 2 : 0]); // (the drawn land, so tufts never hover on ridges)
+      if (n % 250 === 249) yield;
     }
+    yield;
     if (!list.length) return null;
     const mesh = new THREE.InstancedMesh(grass, grassMat, list.length);
     list.forEach(([x, y, z, look], i) => {
@@ -418,8 +461,22 @@ export function scenery() {
     });
     mesh.receiveShadow = true;
     mesh.computeBoundingSphere();
+    mesh.userData.tufts = list;
     return mesh;
   }
+  // the ground changed inside `box`: tufts on cleared land go, the rest move onto the new ground
+  function refreshGrass(mesh, box) {
+    const list = mesh.userData.tufts, a = mesh.instanceMatrix.array;
+    let moved = false;
+    list?.forEach((t, i) => {
+      if (t[0] < box.x0 || t[0] > box.x1 || t[2] < box.z0 || t[2] > box.z1 || t[4]) return;
+      moved = true;
+      if (isPrepared(t[0], t[2])) { t[4] = 1; a.fill(0, i * 16, i * 16 + 15); return; }
+      const y = surfaceAt(t[0], t[2]) - 0.05;
+      a[i * 16 + 13] += y - t[1]; t[1] = y;
+    });
+    if (moved) mesh.instanceMatrix.needsUpdate = true;
+  }
 
-  return { forTile, grassForTile };
+  return { forTile, forTileSteps, grassForTile, grassSteps, refreshGrass };
 }

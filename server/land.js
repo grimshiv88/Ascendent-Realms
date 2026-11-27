@@ -3,7 +3,7 @@ const db = require('./db');
 const { underColosseum } = require('../public/js/data/arena.mjs');
 const { moneyWords } = require('../public/js/data/money.mjs');
 const characters = require('./characters');
-const { PURPOSES, PURPOSE_FEE, checkPurchase, prepareCost, levelHeight, clearCost } = require('../public/js/data/land.mjs');
+const { PURPOSES, PURPOSE_FEE, checkPurchase, prepareCost, levelHeight, clearCost, planPrepare } = require('../public/js/data/land.mjs');
 const { setPreparedPlots } = require('../public/js/data/world-layout.mjs');
 const { caveById, cavePrice } = require('../public/js/data/depths.mjs');
 const B = require('../public/js/data/building.mjs');
@@ -81,6 +81,24 @@ async function setPurpose(accountId, body) {
 }
 
 async function prepare(accountId, body) {
+  // several plots at once: { plots: [{ ix, iz }], how }
+  if (Array.isArray(body.plots)) {
+    const wanted = body.plots.map(plotArgs);
+    if (wanted.some((p) => !p)) return { error: 'Choose some of your land.' };
+    const c = await characters.load(accountId);
+    const everyone = await all();
+    const plan = planPrepare(wanted, body.how === 'clear' ? 'clear' : 'flatten', everyone, (p) => p.accountId === accountId, c?.cls);
+    if (plan.error) return plan;
+    const paid = await spend(accountId, plan.cost);
+    if (paid.error) return paid;
+    await db.tx(async (t) => {
+      for (const p of plan.done) {
+        if (p.flat === null) await t.run('UPDATE lands SET cleared = 1 WHERE ix = ? AND iz = ? AND account_id = ?', p.ix, p.iz, accountId);
+        else await t.run('UPDATE lands SET flat = ?, cleared = 1 WHERE ix = ? AND iz = ? AND account_id = ?', p.flat, p.ix, p.iz, accountId);
+      }
+    });
+    return { ok: true, coins: paid.coins, done: plan.done.length, ...(await list(accountId)) };
+  }
   const at = plotArgs(body);
   const plot = at && await ownPlot(accountId, at.ix, at.iz);
   if (!plot) return { error: 'That is not your plot.' };

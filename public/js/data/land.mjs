@@ -1,6 +1,6 @@
 // Land you can buy: square plots of the Heartland (the central forest continent).
 // Shared by the game and the server, so both agree on what can be bought and what it costs.
-import { PLOT, sample, placesWithPositions, riverDistance, plotLevel, CITY_R } from './world-layout.mjs';
+import { PLOT, sample, placesWithPositions, riverDistance, plotLevel, CITY_R, setPreparedPlots } from './world-layout.mjs';
 
 export { PLOT };
 export const PURPOSE_FEE = 50; // to change what a plot is for
@@ -119,3 +119,39 @@ export function levelHeight(ix, iz) {
 }
 // Clearing (trees, rocks and grass only; the ground keeps its shape) costs a little
 export const clearCost = (cls) => (cls === 'builder' ? 15 : 30);
+
+// Clear or flatten several of your plots at once (`how` 'clear' or 'flatten'). `all` is every plot
+// ({ ix, iz, flat, cleared, ... }), `mine(p)` says whether one is yours. Plots already done are skipped.
+// Each is priced as the ground is now; they are levelled one after another, so plots side by side
+// take the same level. Returns { cost, done: [{ ix, iz, flat }] } or { error }.
+export function planPrepare(wanted, how, all, mine, cls) {
+  if (!Array.isArray(wanted) || !wanted.length) return { error: 'Choose some of your land first.' };
+  if (wanted.length > MAX_AT_ONCE) return { error: `You can do up to ${MAX_AT_ONCE} plots at once.` };
+  const byKey = new Map(all.map((p) => [`${p.ix},${p.iz}`, p]));
+  const todo = [];
+  const seen = new Set();
+  for (const w of wanted) {
+    const k = `${w.ix},${w.iz}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const p = byKey.get(k);
+    if (!p || !mine(p)) return { error: 'That is not your plot.' };
+    if (Number.isFinite(p.flat) || (how === 'clear' && p.cleared)) continue;
+    todo.push(p);
+  }
+  if (!todo.length) return { error: how === 'clear' ? 'Those plots are already cleared.' : 'Those plots are already cleared and level.' };
+  const cost = todo.reduce((a, p) => a + (how === 'clear' ? clearCost(cls) : prepareCost(p.ix, p.iz, cls)), 0);
+  if (how === 'clear') return { cost, done: todo.map((p) => ({ ix: p.ix, iz: p.iz, flat: null })) };
+  const work = all.map((p) => ({ ...p }));
+  const wk = new Map(work.map((p) => [`${p.ix},${p.iz}`, p]));
+  const done = [];
+  try {
+    for (const p of todo) {
+      const flat = levelHeight(p.ix, p.iz);
+      wk.get(`${p.ix},${p.iz}`).flat = flat;
+      setPreparedPlots(work); // (the next one beside it takes the same level)
+      done.push({ ix: p.ix, iz: p.iz, flat });
+    }
+  } finally { setPreparedPlots(all); }
+  return { cost, done };
+}
