@@ -96,10 +96,11 @@ async function requireAccount(req, res, next) {
 
 // The account itself: its email, password and 2-step sign-in
 app.post('/api/email/send', requireSession, async (req, res) => {
-  const result = await auth.sendVerify(req.account);
+  const result = await auth.sendVerify(req.account, { ifNone: !!req.body?.ifNone });
   res.status(result.error ? 400 : 200).json(result);
 });
 app.post('/api/birthdate', requireSession, answer((body, acc) => auth.setBirthdate(acc, body)));
+app.post('/api/tutorial', requireSession, answer((body, acc) => auth.setTutorialDone(acc)));
 app.post('/api/keys', requireSession, answer((body, acc) => auth.setKeys(acc, body)));
 app.post('/api/email/set', requireSession, answer((body, acc) => auth.setEmail(acc, body)));
 app.post('/api/password', requireSession, async (req, res) => {
