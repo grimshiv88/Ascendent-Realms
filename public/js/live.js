@@ -93,7 +93,7 @@ export function startLive({ url, key }, myId, onMove, onState = () => {}, onAct 
     act(a) {
       if (!lastSpot || !near || ws?.readyState !== 1 || !a) return;
       // (monster updates have their own pace: see world.js)
-      if (a.k !== 'mobs' && a.k !== 'mobhit') {
+      if (a.k !== 'mobs' && a.k !== 'mobhit' && a.k !== 'mobwon') {
         const now = performance.now();
         acts = acts.filter((t) => now - t < 1000);
         if (acts.length >= 8) return;

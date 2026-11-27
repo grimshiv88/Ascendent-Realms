@@ -145,7 +145,7 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
         <dl>
           ${row('Strength', stat('str'))}
           ${row('Agility', stat('agi'))}
-          ${row('Dex', stat('dex'))}
+          ${row('Dex <small>(AIM)</small>', stat('dex'))}
         </dl>
         <dl>
           ${row('Stamina', stat('sta'))}
@@ -155,6 +155,9 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
           ${c.injury ? row('Injury', `${INJURY[c.injury.part].name} (${c.injury.left} treatment${c.injury.left > 1 ? 's' : ''} left)`) : ''}
         </dl>
       </div>
+      ${placed ? `<p class="sw-confirm">Points left to place: <b>${left}</b>. Points can't be taken back once confirmed.
+        <button type="button" class="gold-button small" data-confirm-points>Confirm</button>
+        <button type="button" class="link-button" data-reset-points>Undo</button></p>` : ''}
       <hr>
       <div class="sw-grid">
         <dl>${row('ATK', trained('atk', d.atk + plus('atk')))}${row('DEF', trained('def', d.def + plus('def')))}</dl>
@@ -178,9 +181,6 @@ export function renderStatus(el, c, pending = {}, d = derivedStats(c.stats, c.le
         ${Object.entries(PARTY_INVITES).map(([id, p]) => `<button type="button" role="radio" data-party-invites="${id}" aria-checked="${partyInvitesOf(c) === id}" title="${esc(p.text)}">${p.name}</button>`).join('')}
         <small>${esc(PARTY_INVITES[partyInvitesOf(c)].text)}</small>
       </div>
-      ${placed ? `<p class="sw-confirm">Points can't be taken back once confirmed.
-        <button type="button" class="gold-button small" data-confirm-points>Confirm</button>
-        <button type="button" class="link-button" data-reset-points>Undo</button></p>` : ''}
     </div>`;
   fillFlags(el);
 }

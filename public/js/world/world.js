@@ -1855,7 +1855,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function actOther(m) {
     // their monsters, and their blows on yours
     if (m.k === 'mobs') { if (!inside) creatures.netApply(m.i, m.l); return; }
-    if (m.k === 'mobhit') { creatures.netHit(m.n, Number(m.d), m.how); return; }
+    // another player's blow killed one of your monsters: the kill is theirs, so tell their game
+    if (m.k === 'mobhit') { if (creatures.netHit(m.n, Number(m.d), m.how)) share({ k: 'mobwon', o: m.i, n: m.n }); return; }
+    // your blow killed another player's monster in their game (yours had not caught up yet): your EXP and loot
+    if (m.k === 'mobwon') { const won = creatures.netWon(m.i, m.n); if (won) finishHit(won.m, won.reward); return; }
     const o = others.entry(m.i);
     if (!o || !o.body.visible) return;
     const b = o.body, p = b.position.clone(), h = b.userData.height || 1.8, hd = b.rotation.y;
@@ -2058,8 +2061,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     share({ k: 'spell', el: element, f: vec(from), t: vec(to), plain: true });
   }
   // ---------- the city gates: the guards check your ID on the way in ----------
-  // Walking in from outside stops you at the gate until you show your ID; once let in you can come
-  // and go freely until you wander far off. Arriving by waystone or portal needs no check.
+  // Everyone carries an ID, so the guards glance at it and wave you through, in and out, with no
+  // ID screen. Only those they turn away are stopped: a monster at the Central City (or a player at
+  // a Monster City), and children leaving before their Ceremony. Arriving by waystone or portal
+  // needs no check.
   const gate = { cleared: null, prev: null, asked: 0, out: false, leaving: false };
   function checkGates(t) {
     // the nearest city (the Central City, or a Monster City)
@@ -2074,6 +2079,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     gate.prev = d;
     // going out through the outer gate: the guards check your ID, and children may not leave at all
     if (prev !== null && gate.cleared && !gate.out && prev < CITY_R - 1 && d >= CITY_R - 1 && d - prev < 3) {
+      if (!isChild(character)) {
+        gate.out = true;
+        if (t - gate.asked > 4) { gate.asked = t; say('Guard: "ID checked. Safe travels."', 'exp'); }
+        return;
+      }
       const k = (CITY_R - 1.8) / d;
       pos.x = cx + (pos.x - cx) * k; pos.z = cz + (pos.z - cz) * k;
       gate.prev = CITY_R - 1.8;
@@ -2092,7 +2102,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (prev !== null && prev - d > 3 && d < CITY_R) gate.cleared = true; // came in by magic
       return;
     }
-    // stopped at the gate: back a step, and the guard asks for your ID
+    // at the gate: the guard checks your ID as you walk past, unless you are not allowed in
+    const monster = RACES[character.race].side === 'monster';
+    const barred = monster !== !!city.place.monster;
+    if (!barred) {
+      gate.cleared = true;
+      gate.city = city.place;
+      if (t - gate.asked > 4) { gate.asked = t; say(`Guard: "ID checked. Welcome to ${city.place.name}."`, 'exp'); }
+      return;
+    }
+    // turned away: back a step, and the guard says why
     const k = (CITY_R + 1.6) / d;
     pos.x = cx + (pos.x - cx) * k; pos.z = cz + (pos.z - cz) * k;
     gate.prev = CITY_R + 1.6;
@@ -2100,8 +2119,6 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (t - gate.asked > 4) {
       gate.asked = t;
       // monsters may not enter the Central City, and players may not enter a Monster City
-      const monster = RACES[character.race].side === 'monster';
-      const barred = monster !== !!city.place.monster;
       gate.city = city.place;
       gate.leaving = false;
       say(barred ? (monster ? 'Guard: "Halt, monster! You may not enter."' : 'Guard: "Halt, outsider! This city is for monsters."') : 'Guard: "Halt! Show your ID."', 'hurt');
@@ -2350,11 +2367,18 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   const locked = () => document.pointerLockElement === canvas;
   let letGo = false; // the game released the mouse itself (a window opened), not the player's Esc
   let noLock = false; // some pages can't capture the mouse: then you drag to look, as before
+  // A refused capture used to switch to drag-to-look for good. Browsers also refuse it for about a
+  // second after Esc, so one quick click after Esc left the mouse free (moving with the view) until
+  // the page was reloaded. Now the game only gives up on capturing after 3 refusals in a row on a
+  // page where it never worked, and otherwise tries again on the next click.
+  let lockEver = false, lockFails = 0;
+  const lockRefused = () => { lockFails++; if (!lockEver && lockFails >= 3) noLock = true; };
   let freeMouse = view?.mouse === 'free'; // Settings: the mouse stays free (drag to look) instead of being captured
   const fingers = new Map(); // fingers on the screen (not the walking stick), for pinch-to-zoom
   let pinch = null;
-  document.addEventListener('pointerlockerror', () => { noLock = true; });
+  document.addEventListener('pointerlockerror', lockRefused);
   document.addEventListener('pointerlockchange', () => {
+    if (locked()) { lockEver = true; lockFails = 0; }
     if (!locked() && !letGo) onMouseFreed?.();
     letGo = false;
   });
@@ -2366,8 +2390,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && locked()) { if (e.button === 0 && !talkAt(window.innerWidth / 2, window.innerHeight / 2)) attack(); return; }
     if (e.pointerType === 'mouse' && e.button === 0 && !plots.on && !noLock && !freeMouse && !windowOpen?.() && canvas.requestPointerLock) {
-      try { const r = canvas.requestPointerLock(); r?.catch?.(() => { noLock = true; }); } catch { noLock = true; }
-      if (!noLock) return;
+      let refused = false;
+      try { const r = canvas.requestPointerLock(); r?.catch?.(() => {}); } catch { refused = true; lockRefused(); }
+      if (!refused) return;
     }
     if (e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45) {
       stick.id = e.pointerId; stick.x0 = e.clientX; stick.y0 = e.clientY; stick.x = 0; stick.y = 0;
@@ -2405,8 +2430,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     } else if (look && e.pointerId === look.id) {
       // a finger turns the camera more gently than a mouse, so small swipes are small turns
       const k = look.mouse ? feel.mouse : 0.55 * feel.touch;
-      yaw -= (e.clientX - look.x) * 0.006 * k;
-      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k * (feel.invertY ? -1 : 1), pitchLo(), pitchHi());
+      // a mouse drag turns by how far the mouse moved (movementX/Y), so the view keeps turning even
+      // when the pointer reaches the edge of the screen; the pointer is hidden while it turns the
+      // view, so it no longer slides across the screen with the camera
+      const dx = look.mouse && e.movementX != null ? e.movementX : e.clientX - look.x;
+      const dy = look.mouse && e.movementY != null ? e.movementY : e.clientY - look.y;
+      if (look.mouse && !look.hid && Math.hypot(e.clientX - look.sx, e.clientY - look.sy) >= 8) { look.hid = true; canvas.style.cursor = 'none'; }
+      yaw -= dx * 0.006 * k;
+      pitch = THREE.MathUtils.clamp(pitch + dy * 0.004 * k * (feel.invertY ? -1 : 1), pitchLo(), pitchHi());
       look.x = e.clientX; look.y = e.clientY;
     }
   });
@@ -2414,6 +2445,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (fingers.delete(e.pointerId) && fingers.size < 2) pinch = null;
     if (e.pointerId === stick.id) { stick.id = null; stick.x = 0; stick.y = 0; stickEl.classList.add('hidden'); }
     if (look && e.pointerId === look.id) {
+      if (look.hid) canvas.style.cursor = '';
       // a quick click without dragging is an attack, or picks a plot while the land grid is showing
       const tap = e.type === 'pointerup' && Math.hypot(e.clientX - look.sx, e.clientY - look.sy) < 8 && performance.now() - look.t < 350;
       if (tap && plots.on) {
