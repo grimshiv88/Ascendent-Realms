@@ -143,6 +143,7 @@
     <div class="stats" id="stats"></div>
     <nav role="tablist" id="tabs">
       <button type="button" role="tab" data-tab="players" aria-selected="true">Players</button>
+      <button type="button" role="tab" data-tab="online">Online now</button>
       <button type="button" role="tab" data-tab="chat" data-need="chat">Chat</button>
       <button type="button" role="tab" data-tab="reports" data-need="reports">Reports</button>
       <button type="button" role="tab" data-tab="skills" data-need="edit">Skills</button>
@@ -246,6 +247,15 @@
       <div class="tablewrap"><table><thead><tr><th>Admin</th><th>On the board</th><th>In the game</th><th></th></tr></thead><tbody id="admins"></tbody></table></div>
     </div>
 
+    <div data-panel="online" class="card" hidden>
+      <div class="row" style="justify-content: space-between; margin-bottom: 8px">
+        <h2 style="margin:0">In the world right now</h2>
+        <button type="button" id="online-refresh">Refresh</button>
+      </div>
+      <p class="quiet">Everyone playing at this moment, and where they are. It refreshes by itself every 10 seconds. A player who closes the game leaves this list within about 12 seconds. Click a name to open their card.</p>
+      <div class="tablewrap"><table><thead><tr><th>Player</th><th>Character</th><th>Level</th><th>Race and class</th><th>Where</th><th>Doing</th></tr></thead><tbody id="online"></tbody></table></div>
+    </div>
+
     <div data-panel="log" class="card" hidden>
       <h2>Admin log</h2>
       <p class="quiet">Everything done from this board, newest first.</p>
@@ -336,7 +346,7 @@ async function drawStats() {
 }
 
 // ---------- tabs ----------
-const loaders = { players: drawPlayers, chat: drawChat, reports: drawReports, skills: drawSkills, world: drawWorld, admins: drawAdmins, log: drawLog };
+const loaders = { online: drawOnline, players: drawPlayers, chat: drawChat, reports: drawReports, skills: drawSkills, world: drawWorld, admins: drawAdmins, log: drawLog };
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-tab]');
   if (!b) return;
@@ -937,6 +947,27 @@ $('sects').addEventListener('click', async (e) => {
 });
 
 // ---------- log ----------
+// ---------- who is online right now ----------
+const DOING = { ride: 'Riding', fly: 'Flying', sit: 'Sitting', lie: 'Lying down' };
+async function drawOnline() {
+  const { players } = await call('api/admin/online');
+  const tab = document.querySelector('[data-tab="online"]');
+  tab.innerHTML = `Online now<span class="n">${players.length}</span>`;
+  $('online').innerHTML = players.map((p) => `<tr>
+      <td><button type="button" class="link" data-look="${p.id}"><span class="dot on"></span> <b>${esc(p.username)}</b></button></td>
+      <td>${esc(p.character || '')}</td><td>${p.level ?? ''}</td>
+      <td>${esc([nice(p.race || ''), nice(p.cls || '')].filter(Boolean).join(' '))}</td>
+      <td>${esc(p.where)} <small class="quiet">(${p.x}, ${p.z})</small></td>
+      <td>${esc(DOING[p.pose] || 'Exploring')}</td></tr>`).join('') || '<tr><td colspan="6" class="quiet">Nobody is in the world right now.</td></tr>';
+}
+$('online-refresh').addEventListener('click', () => drawOnline().catch((err) => say(err.message)));
+$('online').addEventListener('click', (e) => { const b = e.target.closest('[data-look]'); if (b) { document.querySelector('[data-tab="players"]').click(); openPlayer(Number(b.dataset.look)); } });
+setInterval(() => {
+  if (document.hidden || $('board').hidden) return;
+  if (!document.querySelector('[data-panel="online"]').hidden) drawOnline().catch(() => {});
+  drawStats().catch(() => {});
+}, 10000);
+
 async function drawLog() {
   const { log } = await call('api/admin/log');
   $('log').innerHTML = log.map((l) => `<tr><td class="quiet">${when(l.at)}</td><td>${esc(l.admin)}</td><td>${esc(l.action)}</td><td>${esc(l.target || '')}</td><td>${esc(l.detail || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="quiet">Nothing done yet.</td></tr>';

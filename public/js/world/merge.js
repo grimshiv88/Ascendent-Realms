@@ -56,6 +56,7 @@ export function mergeStill(group, { cell = 0 } = {}) {
     const mesh = new THREE.Mesh(join(geos, !!mat.map, tints), mat);
     mesh.castShadow = !det; mesh.receiveShadow = true;
     if (det) mesh.userData.detailFar = true;
+    else if (cell) mesh.userData.cellFar = true; // a whole patch of the city: hidden when far (showDetail)
     group.add(mesh);
   }
   for (const mv of movers) joinInto(mv);
@@ -85,13 +86,15 @@ function joinInto(mover) {
 }
 
 // Show the detail meshes under `group` only when (x, z) is within `far` metres of them
-export function showDetail(group, x, z, far = 90) {
+// cellFar: the city's patches (cells) further than this aren't drawn at all (quality.js)
+export function showDetail(group, x, z, far = 90, cellFar = Infinity) {
   const p = new THREE.Vector3();
   for (const m of group.children) {
-    if (!m.userData.detailFar) continue;
+    const lim = m.userData.detailFar ? far : m.userData.cellFar ? cellFar : 0;
+    if (!lim) continue;
     const s = m.geometry.boundingSphere;
     p.copy(s.center).applyMatrix4(group.matrixWorld);
-    m.visible = Math.hypot(p.x - x, p.z - z) - s.radius < far;
+    m.visible = Math.hypot(p.x - x, p.z - z) - s.radius < lim;
   }
 }
 

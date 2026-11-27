@@ -36,11 +36,21 @@ function makeBody(b, name) {
   return body;
 }
 
-// turn the shortest way round from a to b
-const turn = (a, b, k) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return a + d * k; };
+// the shortest way round from heading a to heading b, as a signed angle
+const angleTo = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+
+// Each player is drawn a moment in the past (DELAY), between the two updates either side of that
+// moment, so they move smoothly even though updates come in steps. With live updates (10 a second)
+// that moment is a tenth of a second ago; with only the slower server checks it has to be longer.
+const DELAY_LIVE = 130, DELAY_SLOW = 1300; // milliseconds
+const LIVE_FRESH = 1500; // live updates this recent mean the slower server spots are not needed
+const KEEP = 24; // updates kept per player
+const EXTRAPOLATE = 250; // past the newest update, carry on along their path for at most this long
 
 export function createOthers(scene) {
-  const seen = new Map(); // account id -> { body, sig, name, x, y, z, heading, to: {...}, speed, pose }
+  // account id -> { body, sig, name, snaps: [{ t, x, y, z, h }], speed, pose, heard, live }
+  const seen = new Map();
+  const nowMs = () => performance.now();
 
   function drop(id) {
     const o = seen.get(id);
@@ -49,9 +59,17 @@ export function createOthers(scene) {
     o.body.traverse((m) => { if (m.userData.nameTag) { m.material.map.dispose(); m.material.dispose(); } });
     seen.delete(id);
   }
+  function addSnap(o, x, y, z, h, t = nowMs()) {
+    const last = o.snaps[o.snaps.length - 1];
+    // a big jump (a portal, a fast mount): there at once rather than sliding across the land
+    if (last && Math.hypot(x - last.x, z - last.z) > 30) o.snaps.length = 0;
+    o.snaps.push({ t, x, y, z, h });
+    if (o.snaps.length > KEEP) o.snaps.shift();
+  }
 
   return {
-    // the latest list from the server
+    // the latest list from the server: who is near, their body and name (and their spot, when no
+    // live updates are coming from them)
     show(list) {
       const now = new Set();
       for (const p of list || []) {
@@ -64,29 +82,53 @@ export function createOthers(scene) {
           let body;
           try { body = makeBody(p.body, p.medal ? `🥇 ${p.name}` : p.name); } catch (e) { console.warn('could not draw player', p.name, e); continue; } // a race this game doesn't know yet
           scene.add(body);
-          o = { body, sig, name: p.name, x: p.x, y: p.y, z: p.z, heading: p.heading };
+          o = { body, sig, name: p.name, snaps: [], speed: 0, pose: '', live: 0 };
           seen.set(p.id, o);
         }
-        // a big jump (a portal, a fast mount): there at once rather than sliding across the land
-        if (Math.hypot(p.x - o.x, p.z - o.z) > 30) { o.x = p.x; o.y = p.y; o.z = p.z; }
-        o.to = { x: p.x, y: p.y, z: p.z, heading: p.heading };
-        o.speed = p.speed; o.pose = p.pose; o.heard = Date.now();
+        o.heard = Date.now();
+        if (nowMs() - o.live > LIVE_FRESH) { addSnap(o, p.x, p.y, p.z, p.heading); o.speed = p.speed; o.pose = p.pose; }
       }
       for (const id of [...seen.keys()]) if (!now.has(id)) drop(id);
     },
-    // every frame: glide towards the reported spot and move the legs
+    // a live update from a player close by (see live.js); players the server hasn't told us about are ignored
+    move(m) {
+      const o = seen.get(m.i);
+      if (!o) return;
+      const t = nowMs();
+      o.live = t; o.heard = Date.now();
+      addSnap(o, m.x, m.y, m.z, m.h, t);
+      o.speed = m.s; o.pose = m.p || '';
+    },
+    // every frame: where each one was a moment ago, and their legs moving
     tick(dt, t) {
-      const k = Math.min(1, dt * 6);
       // nothing new about them for a while (your connection dropped): not left standing there frozen
       const stale = Date.now() - GONE_MS * 1.5;
       for (const [id, o] of seen) if (o.heard < stale) drop(id);
+      const now = nowMs();
       for (const o of seen.values()) {
-        if (o.to) {
-          o.x += (o.to.x - o.x) * k; o.y += (o.to.y - o.y) * k; o.z += (o.to.z - o.z) * k;
-          o.heading = turn(o.heading, o.to.heading, k);
+        const s = o.snaps;
+        if (!s.length) continue;
+        const at = now - (now - o.live < LIVE_FRESH ? DELAY_LIVE : DELAY_SLOW);
+        let x, y, z, h;
+        if (at <= s[0].t) ({ x, y, z, h } = s[0]);
+        else {
+          let i = s.length - 1;
+          while (i > 0 && s[i - 1].t > at) i--;
+          const b = s[i], a = s[i - 1] || b;
+          if (at <= b.t && a !== b) {
+            const k = (at - a.t) / (b.t - a.t || 1);
+            x = a.x + (b.x - a.x) * k; y = a.y + (b.y - a.y) * k; z = a.z + (b.z - a.z) * k; h = a.h + angleTo(a.h, b.h) * k;
+          } else {
+            // past the newest update: keep going the way they were for a moment
+            const last = s[s.length - 1], prev = s[s.length - 2];
+            const ahead = Math.min(at - last.t, EXTRAPOLATE);
+            const span = prev ? last.t - prev.t : 0;
+            const v = prev && span > 0 && span < 600 ? ahead / span : 0;
+            x = last.x + (prev ? (last.x - prev.x) * v : 0); y = last.y; z = last.z + (prev ? (last.z - prev.z) * v : 0); h = last.h;
+          }
         }
-        o.body.position.set(o.x, o.y, o.z);
-        o.body.rotation.y = o.heading;
+        o.body.position.set(x, y, z);
+        o.body.rotation.y = h;
         const lying = o.pose === 'lie';
         o.body.rotation.z = lying ? Math.PI / 2 : 0;
         animateCharacter(o.body, t, lying || o.pose === 'sit' || o.pose === 'ride' ? 0 : o.speed / WALK * 1.6);
@@ -98,6 +140,7 @@ export function createOthers(scene) {
     // one player by their account id: where they stand now (for a duel in the Colosseum)
     get(id) { const o = seen.get(id); return o ? { x: o.x, y: o.y, z: o.z, height: o.body.userData.height || 1.8, name: o.name } : null; },
     count: () => seen.size,
-    list: () => [...seen.values()].map((o) => ({ name: o.name, x: o.x, z: o.z })),
+    has: (id) => seen.has(id),
+    list: () => [...seen.values()].map((o) => ({ name: o.name, x: o.body.position.x, z: o.body.position.z, live: nowMs() - o.live < LIVE_FRESH, snaps: o.snaps.length })),
   };
 }

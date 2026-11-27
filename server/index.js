@@ -46,7 +46,7 @@ function checkAppraisalNow() {
   characters.keepAppraisalHeld().catch((e) => console.error('appraisal check:', e));
 }
 
-app.get('/api/health', async (req, res) => res.json({ ok: true, now: Date.now(), mail: mail.ready(), voice: voice.ready() }));
+app.get('/api/health', async (req, res) => res.json({ ok: true, now: Date.now(), mail: mail.ready(), voice: voice.ready(), live: !!presence.liveConfig() }));
 
 app.post('/api/signup', async (req, res) => {
   const result = await auth.signUp(req.body || {});
@@ -101,6 +101,7 @@ app.post('/api/email/send', requireSession, async (req, res) => {
   res.status(result.error ? 400 : 200).json(result);
 });
 app.post('/api/birthdate', requireSession, answer((body, acc) => auth.setBirthdate(acc, body)));
+app.post('/api/keys', requireSession, answer((body, acc) => auth.setKeys(acc, body)));
 app.post('/api/email/set', requireSession, answer((body, acc) => auth.setEmail(acc, body)));
 app.post('/api/password', requireSession, async (req, res) => {
   const result = await auth.changePassword(req.account, req.body || {}, bearer(req));
@@ -255,6 +256,8 @@ const adminGate = (method, route) => async (req, res, next) => {
   next();
 };
 app.get('/api/admin/accounts', adminGate('GET', 'accounts'), async (req, res) => res.json(await admin.accounts()));
+// who is in the world right now, and where (see server/presence.js)
+app.get('/api/admin/online', adminGate('GET', 'online'), async (req, res) => res.json(await presence.online()));
 app.post('/api/admin/gates', adminGate('POST', 'gates'), async (req, res) => {
   const { city, raised } = req.body || {};
   if (!['central', 'emberfall', 'ashgrave', 'lumenhollow', 'mirehaven'].includes(city)) return res.status(400).json({ error: 'No such city.' });
@@ -289,7 +292,7 @@ app.post('/api/voice/pass', requireAccount, async (req, res) => {
 
 // Seeing other players: report where you are, hear who is close by (see server/presence.js)
 app.post('/api/presence', requireAccount, answer(async (body, acc) => {
-  const r = await presence.report(acc, body);
+  const r = await presence.report(acc, body, Date.now(), require('./staff').canBoard(require('./staff').access(acc)));
   // and the Colosseum: your fights and challenges, a fight you watch, and who holds the No.1 medal
   const fights = await arena.status(acc, body).catch((e) => { console.error('arena:', e); return null; });
   if (fights?.champion) for (const p of r.players) p.medal = p.id === fights.champion.id;

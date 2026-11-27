@@ -10,6 +10,7 @@ import {
 } from '../data/building.mjs';
 import { buildPieces } from './buildings.js';
 import { money } from '../data/money.mjs';
+import { actionFor, codeFor, keyName } from '../data/controls.mjs';
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const ghost = (color, opacity = 0.5) => new THREE.MeshStandardMaterial({ color, transparent: true, opacity, depthWrite: false });
@@ -108,7 +109,7 @@ export function startWalkBuild(scene, host, opts) {
       <p class="wb-msg" role="status">${esc(msg)}</p>
       ${offerHtml || `<div class="wb-secs">${sections}</div><div class="wb-chips">${chips}</div>
       <div class="wb-tools">
-        <button type="button" class="gold-button" data-wb="place">Place <kbd>E</kbd></button>
+        <button type="button" class="gold-button" data-wb="place">Place <kbd>${keyName(codeFor('b_place'))}</kbd></button>
         <button type="button" data-wb="turn">Turn <kbd>R</kbd></button>
         ${mode === 'pieces' ? `<span class="wb-level">Storey <button type="button" data-wb="down" ${level ? '' : 'disabled'}>−</button> <b>${level + 1}</b> <button type="button" data-wb="up" ${level < MAX_LEVEL ? '' : 'disabled'}>+</button></span>` : ''}
         ${plan.length ? `<button type="button" data-wb="undo">Undo</button>
@@ -160,10 +161,11 @@ export function startWalkBuild(scene, host, opts) {
     if ((v = t('data-wb-pick'))) { choice = v; hover = null; draw(); return; }
     if ((v = t('data-wb'))) act(v);
   });
-  // a few keys change meaning while you build: E places, R turns, PageUp/PageDown change storey
+  // a few keys change meaning while you build (Settings → Controls → Building): E places, R turns,
+  // PageUp/PageDown change storey
   const onKey = (e) => {
     if (e.target.closest?.('input, textarea')) return;
-    const k = { KeyE: 'place', KeyR: 'turn', PageUp: 'up', PageDown: 'down', Escape: 'close' }[e.code];
+    const k = e.code === 'Escape' ? 'close' : { b_place: 'place', b_turn: 'turn', b_up: 'up', b_down: 'down' }[actionFor(e.code, { building: true })];
     if (!k) return;
     e.preventDefault(); e.stopImmediatePropagation();
     act(k);

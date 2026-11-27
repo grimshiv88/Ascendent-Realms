@@ -5,7 +5,8 @@
 export const SEE_FAR = 160;        // metres: players further away than this are not sent to you
 export const MAX_SEEN = 40;        // at most this many other players are sent at once
 export const GONE_MS = 12000;      // a player not heard from for this long has left (closed the game)
-export const POLL_MS = 1200;       // how often the game reports in while someone is near
+export const POLL_MS = 1200;        // how often the game reports in while someone is near (without live movement)
+export const POLL_LIVE_MS = 2500;  // ...and with live movement, which moves them in between
 export const POLL_ALONE_MS = 4000; // ...and while nobody is
 export const SLOTS = ['weapon', 'head', 'body', 'legs', 'feet', 'shield'];
 

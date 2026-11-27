@@ -277,7 +277,7 @@ function pen(g, solid, toW, P, coop = false) {
 // shows the words mirrored from behind)
 // (one material for each wording: a city's many stalls of the same kind then merge into one mesh)
 const signMats = new Map();
-function twoFacedSign(text, w, h) {
+export function twoFacedSign(text, w, h) {
   if (!signMats.has(text)) signMats.set(text, new THREE.MeshBasicMaterial({ map: textTexture(text, { board: true }), transparent: true }));
   const signMat = signMats.get(text);
   const g = new THREE.Group();
@@ -327,13 +327,16 @@ export function marketStall(label, colors, goods) {
   sign.position.set(0, signY, front); s.add(sign);
   box(half * 2 + 0.2, 0.1, 0.14, dark, s, 0, postTop + 0.05, front);
   for (const x of [-1.2, 0, 1.2]) out.push([x, 0.6, 0.6, 1]);
-  for (const x of [-half, half]) out.push([x, back, 0.15, 2.9]);
+  for (const x of [-half, half]) out.push([x, back, 0.15, 2.9], [x, front, 0.15, postTop]);
+  // the awning, for the camera only (you walk under it, but the camera stops short of it instead
+  // of cutting through it): [x, z, r, height, lift above the ground]
+  for (const x of [-1.2, 0, 1.2]) for (const z of [front, (front + back) / 2, back]) out.push([x, z, 0.95, 0.9, STALL.yFront - 0.25]);
   return { group: s, solid: out };
 }
 function stall(g, solid, toW, S, label, colors, goods) {
   const { group: s, solid: parts } = marketStall(label, colors, goods);
   s.position.set(S.x, 0, S.z); g.add(s);
-  for (const [x, z, r, height] of parts) { const p = toW(S.x + x, S.z + z); solid.push({ x: p.x, z: p.z, r, kind: 'wall', height }); }
+  for (const [x, z, r, height, lift] of parts) { const p = toW(S.x + x, S.z + z); solid.push({ x: p.x, z: p.z, r, kind: 'wall', height, ...(lift ? { lift, camOnly: true } : {}) }); }
   return s;
 }
 

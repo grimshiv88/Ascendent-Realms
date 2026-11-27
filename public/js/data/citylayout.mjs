@@ -30,12 +30,19 @@ export const PORTAL_CLEAR = { x: 56, z: -52, r: 14 }; // the city's portal stand
 // ---------- the ring roads ----------
 // [radius of the middle, width]; the Dump's is a dirt track
 export const RING_ROADS = [
-  { tier: 'noble', r: 113, w: 7 },
-  { tier: 'common', r: 153, w: 6 },
-  { tier: 'common', r: 179.5, w: 5 },
-  { tier: 'dump', r: 208, w: 4, dirt: true },
-  { tier: 'dump', r: 243, w: 4, dirt: true },  // the outer Dump (added when the Dump grew, 2026-11-24)
+// (made wider 2026-11-26: the rows of houses either side were moved back to make room)
+  { tier: 'noble', r: 113, w: 10 },
+  { tier: 'common', r: 154, w: 9 },
+  { tier: 'common', r: 181, w: 7 },
+  { tier: 'dump', r: 208, w: 8, dirt: true },
+  { tier: 'dump', r: 243, w: 8, dirt: true },  // the outer Dump (added when the Dump grew, 2026-11-24)
 ];
+// Where each row of houses was first laid out (the radius its houses are counted along, so every
+// house keeps its number) -> where it stands now, moved back from the widened streets
+const ROW_MOVED = { 161: 163, 171: 173, 102: 101, 123: 125, 201: 199.5, 215: 216.5, 236: 234.5, 250: 251.5 };
+const placed = (r) => ROW_MOVED[r] ?? r;
+// a building laid out along the row at radius r, standing where that row stands now
+const onRow = (r, jr, a, w, d, face, extra) => ({ ...onRing(jr - r + placed(r), a, w, d, face, extra), row: r });
 
 // ---------- the markets ----------
 // Open-air stalls lining the main roads, either side, their fronts to the road: the Common
@@ -47,6 +54,10 @@ const MARKET_RUNS = [
   ['common', 'west', 158, 176, ['stall_grill', 'stall_bread', 'stall_drinks', 'stall_greens', 'stall_herbs', 'stall_cloth', 'stall_bread', 'stall_tools']],
   ['dump', 'south', 212, 239, ['stall_soup', 'stall_scrap', 'stall_greens', 'stall_bread', 'stall_drinks', 'stall_scrap', 'stall_tools', 'stall_soup', 'stall_greens', 'stall_cloth']],
 ];
+// Market Street: the Common Quarter's outer ring road, either side of the south road (where
+// everyone comes in), lined with stalls on its outer side, their fronts to the street and the
+// town houses' doors across it. [ring road radius, how far it runs each way (metres), stall ids]
+const MARKET_STREET = { r: 181, w: 7, reach: 66, gap: 4.3, ids: ['stall_bread', 'stall_greens', 'stall_sweets', 'stall_grill', 'stall_drinks', 'stall_cloth', 'stall_roast', 'stall_herbs', 'stall_tools', 'stall_greens', 'stall_bread', 'stall_drinks'] };
 export const STALL_LAT = ROAD_HALF + 2.1; // a stall's middle, this far from the road's middle
 // The spot where you rise again after a death in a great city: a waystone checkpoint in the Dump
 // beside the south road, just inside the inner south gate, far below the castle
@@ -151,7 +162,7 @@ export function cityPlan() {
       if (!clearOfRoads(r, mid, w, 8) || !free(r, mid, w + 1)) { t += 1 / r; continue; }
       const floors = rnd() < 0.3 ? 3 : 2;
       const doorX = w >= 8.4 && rnd() < 0.4 ? 0 : (rnd() < 0.5 ? -1 : 1) * Math.round((w / 2 - 1.5) * 10) / 10;
-      addHome(onRing(r, mid, w, 8, face, { floors, doorX, tier: 'common', style: 'house' }), rnd);
+      addHome(onRow(r, r, mid, w, 8, face, { floors, doorX, tier: 'common', style: 'house' }), rnd);
       t += (w + 0.25) / r; // side by side, a hand's width apart
     }
   });
@@ -164,16 +175,16 @@ export function cityPlan() {
       const w = Math.round((14 + rnd() * 3) * 10) / 10;
       const mid = t + w / 2 / r;
       if (!clearOfRoads(r, mid, w + 4, 12)) { t += 1 / r; continue; }
-      addHome(onRing(r, mid, w, 12, face, { floors: 3, doorX: 0, tier: 'noble', style: 'manor' }), rnd);
+      addHome(onRow(r, r, mid, w, 12, face, { floors: 3, doorX: 0, tier: 'noble', style: 'manor' }), rnd);
       t += (w + 7 + rnd() * 3) / r; // a garden between
     }
   });
   // the fine furniture shop, on the Noble Quarter's ring road by the east road
   {
     const r = 123, fa = ROAD_ANGLES.east - (CLEAR + 9) / r;
-    const i = homes.findIndex((h) => h.tier === 'noble' && h.r === r && Math.abs(Math.atan2(Math.sin(h.a - fa), Math.cos(h.a - fa))) < 14 / r);
+    const i = homes.findIndex((h) => h.tier === 'noble' && h.row === r && Math.abs(Math.atan2(Math.sin(h.a - fa), Math.cos(h.a - fa))) < 14 / r);
     if (i >= 0) homes.splice(i, 1);
-    shops.push(onRing(r, fa, 13, 10, -1, { id: 'furniture_noble', h: 7, tier: 'noble' }));
+    shops.push(onRing(placed(r), fa, 13, 10, -1, { id: 'furniture_noble', h: 7, tier: 'noble' }));
   }
 
   // shacks in the Dump, crooked and uneven, along the dirt track; junk piled in the gaps
@@ -185,9 +196,9 @@ export function cityPlan() {
       const mid = t + w / 2 / r;
       if (!clearOfRoads(r, mid, w, d)) { t += 1 / r; continue; }
       const jr = r + (rnd() - 0.5) * 1.6;
-      addHome(onRing(jr, mid, w, d, face, { floors: 1, doorX: (rnd() - 0.5) * (w - 2), tier: 'dump', style: 'shack', tilt: (rnd() - 0.5) * 0.16 }), rnd);
+      addHome(onRow(r, jr, mid, w, d, face, { floors: 1, doorX: (rnd() - 0.5) * (w - 2), tier: 'dump', style: 'shack', tilt: (rnd() - 0.5) * 0.16 }), rnd);
       const gap = 2 + rnd() * 5;
-      if (gap > 4.5) junk.push({ x: Math.sin(mid + (w / 2 + gap / 2) / r) * r, z: Math.cos(mid + (w / 2 + gap / 2) / r) * r, size: 0.8 + rnd(), seed: junk.length });
+      if (gap > 4.5) junk.push({ x: Math.sin(mid + (w / 2 + gap / 2) / r) * placed(r), z: Math.cos(mid + (w / 2 + gap / 2) / r) * placed(r), size: 0.8 + rnd(), seed: junk.length });
       t += (w + gap) / r;
     }
   });
@@ -202,9 +213,9 @@ export function cityPlan() {
       const mid = t + w / 2 / r;
       if (!clearOfRoads(r, mid, w, d)) { t += 1 / r; continue; }
       const jr = r + (rnd() - 0.5) * 1.6;
-      extra.push(onRing(jr, mid, w, d, face, { floors: 1, doorX: (rnd() - 0.5) * (w - 2), tier: 'dump', style: 'shack', tilt: (rnd() - 0.5) * 0.16 }));
+      extra.push(onRow(r, jr, mid, w, d, face, { floors: 1, doorX: (rnd() - 0.5) * (w - 2), tier: 'dump', style: 'shack', tilt: (rnd() - 0.5) * 0.16 }));
       const gap = 2 + rnd() * 5;
-      if (gap > 4.5) junk.push({ x: Math.sin(mid + (w / 2 + gap / 2) / r) * r, z: Math.cos(mid + (w / 2 + gap / 2) / r) * r, size: 0.8 + rnd(), seed: junk.length });
+      if (gap > 4.5) junk.push({ x: Math.sin(mid + (w / 2 + gap / 2) / r) * placed(r), z: Math.cos(mid + (w / 2 + gap / 2) / r) * placed(r), size: 0.8 + rnd(), seed: junk.length });
       t += (w + gap) / r;
     }
   });
@@ -237,15 +248,28 @@ export function cityPlan() {
       stalls.push({ id, x, z, rot: Math.atan2(fx, fz), fx, fz, tier: tierId, road, along, lat });
     });
   }
+  // Market Street, curving away either side of the south road
+  {
+    const { r: rr, w, reach, gap, ids } = MARKET_STREET, r = rr + w / 2 + 2.1;
+    let n = 0;
+    for (const dir of [-1, 1]) {
+      for (let d = gap / 2; d <= reach; d += gap) {
+        const a = ROAD_ANGLES.south + dir * (d / r);
+        if (!clearOfRoads(r, a, 3.8, 2.6)) continue;
+        const fx = -Math.sin(a), fz = -Math.cos(a);
+        stalls.push({ id: ids[n++ % ids.length], x: Math.sin(a) * r, z: Math.cos(a) * r, rot: Math.atan2(fx, fz), fx, fz, tier: 'common', road: 'market_street', a, r });
+      }
+    }
+  }
   // the checkpoint where you rise again
   const cp = (() => { const ra = ROAD_ANGLES[CHECKPOINT.road], { along, lat } = CHECKPOINT; const sd = -Math.sign(lat), fx = Math.cos(ra) * sd, fz = -Math.sin(ra) * sd; return { x: Math.sin(ra) * along + Math.cos(ra) * lat, z: Math.cos(ra) * along - Math.sin(ra) * lat, a: ra, fx, fz, rot: Math.atan2(fx, fz), tier: 'dump' }; })();
 
   // the junk dealer, by the south road
   {
     const r = 201, ja = ROAD_ANGLES.south - (CLEAR + 6) / r;
-    const i = homes.findIndex((h) => h.tier === 'dump' && Math.abs(h.r - r) < 2 && Math.abs(Math.atan2(Math.sin(h.a - ja), Math.cos(h.a - ja))) < 8 / r);
+    const i = homes.findIndex((h) => h.tier === 'dump' && h.row === r && Math.abs(h.r - placed(r)) < 2 && Math.abs(Math.atan2(Math.sin(h.a - ja), Math.cos(h.a - ja))) < 8 / r);
     if (i >= 0) homes.splice(i, 1);
-    shops.push(onRing(r, ja, 8, 6, 1, { id: 'furniture_dump', h: 3.5, tier: 'dump' }));
+    shops.push(onRing(placed(r), ja, 8, 6, 1, { id: 'furniture_dump', h: 3.5, tier: 'dump' }));
   }
 
   // the Mages' Academy, the tenth, added after the others (when the Mage became a class like any
@@ -263,7 +287,7 @@ export function cityPlan() {
   { const rnd = seeded('dumpout-sale'); for (const b of extra) addHome(b, rnd); }
   const family = homes.filter((h) => !h.sale).map((h, i) => ({ ...h, i, h: h.floors * 3.1 }));
   const sale = homes.filter((h) => h.sale).map((h, i) => ({ ...h, i, h: h.floors * 3.1, id: `${h.tier}${i}`, price: HOUSE_PRICE[h.tier] })).filter((h) => !h.gone);
-  PLAN = { family, sale, shops, academies, lots, junk, playground, stalls, yards, idlers, checkpoint: cp };
+  PLAN = { family, sale, shops, academies, lots, junk, playground, stalls, marketStreet: MARKET_STREET, yards, idlers, checkpoint: cp };
   return PLAN;
 }
 // the height of a ring above the city's foot

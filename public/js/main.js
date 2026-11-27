@@ -8,7 +8,7 @@ import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
 import { villageName } from './data/mobvillages.mjs';
-import { renderHud, renderStatus, renderSettings, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, renderChallenge, HELP_HTML } from './status.js';
+import { renderHud, renderStatus, renderSettings, renderControlsWindow, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, renderChallenge, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass, itemInfoHtml } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
@@ -40,7 +40,7 @@ import { uniqueAbility, uniqueTier } from './data/unique.mjs';
 import { challengeBar } from './data/kings.mjs';
 import { renderCult } from './cultui.js';
 import { GATES_R } from './data/cults.mjs';
-import { gameTime as realmTime } from './data/clock.mjs';
+import { gameTime as realmTime, DAY_TEXT } from './data/clock.mjs';
 import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
 import { createVoice } from './voice.js';
@@ -54,7 +54,7 @@ const typing = (e) => e.target.closest?.('input, textarea, select, [contentedita
 document.addEventListener('contextmenu', (e) => { if (!typing(e)) e.preventDefault(); });
 document.addEventListener('selectstart', (e) => { if (!typing(e)) e.preventDefault(); });
 document.addEventListener('dragstart', (e) => { if (!typing(e)) e.preventDefault(); });
-import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } from './data/controls.mjs';
+import { actionFor, setKey, resetKeys, resetKey, clearKey, clashFor, CONTROL, FIXED_KEYS, codeFor, keyName, mouseCode, useAccountKeys } from './data/controls.mjs';
 import { ageOf, isChild, ceremonyDue, SCHOOLS, PARENT_JOBS } from './data/birth.mjs';
 import { UNDYING_LEVEL, RENEW_AGE, MARRY_AGE, diedOfAge } from './data/life.mjs';
 import { BODYGUARDS } from './data/hire.mjs';
@@ -140,8 +140,12 @@ async function cloudTransition(loadNext) {
 
 // After signing in: character creation for a new account, otherwise straight into the world.
 let myAccount = null; // the signed-in account (its email and 2-step sign-in, for Settings)
+// the keys are saved with the account a moment after the last change
+let keysTimer = 0;
+const sendKeys = (k) => { clearTimeout(keysTimer); keysTimer = setTimeout(() => api.saveKeys(k).catch(() => {}), 800); };
 function enterRealm({ account }) {
   myAccount = account;
+  useAccountKeys(account.keys, sendKeys);
   return cloudTransition(async () => {
     await sculptsReady; // the sculpted bodies, so characters are built from them
     intro.stop();
@@ -418,29 +422,43 @@ function startGame(character) {
     if (got.length) world?.say(`Brewed: ${got.join(', ')}`, 'exp');
     if (overlay.dataset.panel === 'potions' && !overlay.classList.contains('hidden')) drawPanel();
   }, 1000);
-  // choosing a key for a skill: the next key pressed is the one
+  // choosing a key for a skill or an action: the next key pressed is the one
+  // (in Settings → Controls a key another action uses asks first: swap, take it, or keep both)
+  const chooseControlKey = (code, label) => {
+    const [id, slot] = ui.bindingControl.split(':');
+    ui.bindingControl = null;
+    const name = CONTROL[id].name;
+    if (code === 'Escape') ui.controlMsg = '';
+    else if (FIXED_KEYS.includes(code)) ui.controlMsg = `${label} can't be used: it always frees the mouse and closes windows. Pick another key.`;
+    else {
+      const skill = CONTROL[id].tab !== 'build' && character.skillBar.find((b) => b.key === code);
+      const clash = clashFor(id, code, Number(slot));
+      if (skill || clash) ui.clash = { id, slot: Number(slot), code, skill: skill?.id || null, other: clash?.id || null };
+      else { setKey(id, code, Number(slot)); ui.controlMsg = `${name} is now on ${keyName(code)}.`; }
+    }
+    drawPanel();
+  };
   window.addEventListener('keydown', (e) => {
-    // choosing a key for an action in Settings → Controls
     if (ui.bindingControl) {
       e.preventDefault(); e.stopImmediatePropagation();
-      const id = ui.bindingControl;
-      ui.bindingControl = null;
-      const name = CONTROLS.find((x) => x[0] === id)[1];
-      if (e.code === 'Escape') ui.controlMsg = '';
-      else if (FIXED_KEYS.includes(e.code)) ui.controlMsg = `${e.key} can't be used. Pick another key.`;
-      else if (character.skillBar.some((b) => b.key === e.code)) ui.controlMsg = `${e.key.toUpperCase()} is on one of your skills. Change that skill's key first (Skills window).`;
-      else { setKey(id, e.code); ui.controlMsg = `${name} is now on ${e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key}.`; }
-      drawPanel();
+      chooseControlKey(e.code, keyName(e.code));
       return;
     }
     if (!ui.binding) return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (e.code !== 'Escape') {
       const r = game.setSkillKey(ui.binding, e.code);
-      ui.skillMsg = r === 'reserved' ? `${e.key.toUpperCase()} is already used by the game. Pick another key.` : r === 'ok' ? `${SKILLS[ui.binding].name} is now on ${e.key.toUpperCase()}.` : '';
+      ui.skillMsg = r === 'reserved' ? `${keyName(e.code)} is already used by the game (Settings → Controls). Pick another key.` : r === 'ok' ? `${SKILLS[ui.binding].name} is now on ${keyName(e.code)}.` : '';
     }
     ui.binding = null;
     drawPanel();
+  }, true);
+  // the middle and side mouse buttons can be chosen too
+  window.addEventListener('mousedown', (e) => {
+    const code = mouseCode(e.button);
+    if (!ui.bindingControl || !code) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    chooseControlKey(code, keyName(code));
   }, true);
 
   // Land: L shows the grid of plots around you; tap one to see it in the Land window
@@ -650,7 +668,8 @@ function startGame(character) {
         // an admin's Teleport power: tap the map to go there
         if (world?.teleport(x, z - 5)) { closePanel(); showArea('Teleported.'); } else showArea('You can\'t teleport from in here.');
       } : null);
-    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { binding: ui.bindingControl, message: ui.controlMsg || '', country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
+    else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
+    else if (name === 'controls') renderControlsWindow(overlay, { binding: ui.bindingControl, message: ui.controlMsg || '', tab: ui.ctlTab || 'move', clash: ui.clash, skillBar: character.skillBar, admin: !!ui.adminPowers || !!(myAccount?.powers || []).length });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
     else if (name === 'options') renderOptions(overlay);
@@ -684,7 +703,7 @@ function startGame(character) {
     overlay.dataset.panel = name;
     if (name !== 'power') ui.powers = [];
     ui.workshop = false;
-    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.acct = {}; ui.skillMsg = ''; ui.binding = null;
+    ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.acct = {}; ui.skillMsg = ''; ui.binding = null; ui.bindingControl = null; ui.clash = null; ui.controlMsg = '';
     if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
     if (name === 'cult') { ui.cultMsg = ''; loadCult(); }
     if (name === 'family') { ui.familyMsg = ''; loadFamily(); }
@@ -1052,14 +1071,14 @@ function startGame(character) {
     }
     if ((v = t('data-room')) != null) {
       const r = v === 'rent' ? game.rentRoom() : game.sleepInRoom();
-      ui.shopMsg = { ok: v === 'rent' ? 'The room is yours for a day of the realm (one real hour).' : 'You sleep in your room and wake fully rested.', coins: 'Not enough coins.', have: 'You already have a room.', none: 'Rent a room first.' }[r];
+      ui.shopMsg = { ok: v === 'rent' ? `The room is yours for a day of the realm (${DAY_TEXT}).` : 'You sleep in your room and wake fully rested.', coins: 'Not enough coins.', have: 'You already have a room.', none: 'Rent a room first.' }[r];
       if (v === 'sleep' && r === 'ok') { world?.say('Fully rested', 'exp'); drawHud(); }
       drawPanel(); return;
     }
     const board = t('data-board') || 'quests';
     if ((v = t('data-quest-accept')) != null) {
       const r = game.questAccept(Number(v), board);
-      ui.questMsg = { ok: board === 'guild' ? 'Guild request accepted.' : 'Quest accepted.', limit: 'You have taken on 3 quests today. Come back tomorrow (a day of the realm is one real hour).', one: 'You can hold only one guild request at a time.', card: 'You need a Hunter\'s Guild Card first. Ask for one at the counter.', rank: 'That request is above your card\'s rank.', pick: '' }[r];
+      ui.questMsg = { ok: board === 'guild' ? 'Guild request accepted.' : 'Quest accepted.', limit: `You have taken on 3 quests today. Come back tomorrow (a day of the realm is ${DAY_TEXT}).`, one: 'You can hold only one guild request at a time.', card: 'You need a Hunter\'s Guild Card first. Ask for one at the counter.', rank: 'That request is above your card\'s rank.', pick: '' }[r];
       drawPanel(); return;
     }
     if ((v = t('data-quest-drop')) != null) { game.questDrop(Number(v), here(), board); ui.questMsg = 'Given up. A new one is posted every 20 minutes.'; drawPanel(); return; }
@@ -1306,8 +1325,21 @@ function startGame(character) {
       world?.say(r === 'ok' ? `${SKILLS[id].name} Stone back in your bag` : r === 'full' ? 'Your bag is full' : 'Nothing to take out', r === 'ok' ? 'note' : 'hurt');
       drawPanel(); return;
     }
-    if ((v = t('data-control')) != null) { ui.bindingControl = v; ui.controlMsg = ''; drawPanel(); return; }
-    if (e.target.closest('[data-controls-reset]')) { resetKeys(); ui.controlMsg = 'Every key is back to how it started.'; drawPanel(); return; }
+    // Settings → Controls
+    if ((v = t('data-ctl-tab')) != null) { ui.ctlTab = v; ui.bindingControl = null; ui.clash = null; ui.controlMsg = ''; drawPanel(); return; }
+    if ((v = t('data-control')) != null) { ui.bindingControl = ui.bindingControl === v ? null : v; ui.clash = null; ui.controlMsg = ''; drawPanel(); return; }
+    if ((v = t('data-control-clear')) != null) { const [id, sl] = v.split(':'); clearKey(id, Number(sl)); ui.clash = null; ui.controlMsg = `${CONTROL[id].name}: that key is now empty.`; drawPanel(); return; }
+    if ((v = t('data-control-default')) != null) { resetKey(v); ui.clash = null; ui.controlMsg = `${CONTROL[v].name} is back on its first key.`; drawPanel(); return; }
+    if ((v = t('data-clash')) != null) {
+      const c = ui.clash; ui.clash = null;
+      if (c && v !== 'cancel') {
+        if (c.skill) { const b = character.skillBar.find((x) => x.id === c.skill); if (b) { b.key = null; game.touch('skills'); } }
+        setKey(c.id, c.code, c.slot, v);
+        ui.controlMsg = `${CONTROL[c.id].name} is now on ${keyName(c.code)}.${v === 'both' ? ' Both actions are on it: they happen together.' : ''}`;
+      }
+      drawPanel(); return;
+    }
+    if ((v = t('data-controls-reset')) != null) { resetKeys(v || undefined); ui.clash = null; ui.controlMsg = v ? 'The keys on this tab are back to how they started.' : 'Every key is back to how it started.'; drawPanel(); return; }
     if ((v = t('data-mouse')) != null) { settings.mouse = v; saveSettings(); world?.setMouseMode(v); drawPanel(); return; }
     if ((v = t('data-view')) != null) { settings.view = v; saveSettings(); world?.setView(v); drawPanel(); return; }
     if ((v = t('data-graphics')) != null) { settings.graphics = v; saveSettings(); settings.graphicsNow = world?.setGraphics(v); drawPanel(); return; }
@@ -1431,7 +1463,8 @@ function startGame(character) {
     },
     // the player pressed Esc while the mouse was captured
     windowOpen: () => !overlay.classList.contains('hidden') || !!social?.typing,
-    onMouseFreed: () => { if (overlay.classList.contains('hidden')) openPanel('settings'); },
+    // Esc while the mouse turns the camera only lets the mouse go (no window opens)
+    onMouseFreed: () => { ui.freedAt = performance.now(); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       // the Colosseum's board, blows in a duel, sitting in the stands (see arenaui.js)
@@ -1570,16 +1603,20 @@ function startGame(character) {
     },
     onKey(e) {
       const act = actionFor(e.code);
-      const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', rankings: 'rankings', skills: 'skills', groups: 'groups' }[act];
+      const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', controls: 'controls', rankings: 'rankings', skills: 'skills', groups: 'groups' }[act];
       if (open) openPanel(open);
       if (act === 'builder' && !ui.builder) { if (e.shiftKey && !ui.walk) walkBuild(); else openBuilder(); }
+      if (act === 'walkbuild' && !ui.builder && !ui.walk) walkBuild();
+      if (act === 'powers') document.querySelector('#game .pw-toggle')?.click();
+      if (act === 'radar') document.querySelector('#game .rd:not([hidden]) .rd-disc')?.click();
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); else if (act === 'unique') trySkill('unique'); else if (act === 'mythic') trySkill('mythic'); }
       if (act === 'land') toggleLand();
       if (act === 'view') { e.preventDefault(); if (!e.repeat) world?.toggleView(); }
       if (act === 'chat') { e.preventDefault(); world?.releaseMouse(); social?.focusChat(); }
-      // Esc opens the options; Esc again (or on any window) closes it
-      if (e.code === 'Escape') { if (overlay.classList.contains('hidden')) openPanel('options'); else closePanel(); }
+      // Esc closes the window that is open, and frees the mouse. It never opens a window by itself
+      // (the ☰ button opens the menu), so pressing it to let the mouse go doesn't fill the screen.
+      if (e.code === 'Escape' && !overlay.classList.contains('hidden')) closePanel();
     },
   });
   settings.graphicsNow = world.graphics; // what "Automatic" chose for this device
@@ -1588,17 +1625,48 @@ function startGame(character) {
 
   window.addEventListener('pagehide', () => game.saveNow());
   // Friends and chat: search at the top right, chat at the bottom left
-  social = createSocial($('game'));
+  social = createSocial($('game'), { onDone: () => world?.lockMouse() });
   // Other players close by: every second or so the game says where you are and draws who is near
   // (every few seconds while nobody is). Your body is sent again whenever it or your gear changes.
   if (!presenceOn) (async () => {
     presenceOn = true;
     const P = await import('./data/presence.mjs');
     let sentSig = '', sentAt = 0, busy = false;
+    // live movement: about 10 updates a second between players close by (see live.js)
+    let live = null, liveAsked = false;
+    const startLiveMoves = async (r) => {
+      if (!r.live || !r.me || typeof WebSocket === 'undefined') return;
+      const { startLive } = await import('./live.js');
+      live = startLive(r.live, r.me, (m) => world?.moveOther(m), (state, why) => { if (state === 'refused') console.warn('live movement refused', why); });
+      setInterval(() => { if (world && document.visibilityState !== 'hidden') live.update(world.presence(), world.othersNear > 0); }, 50);
+    };
     const myBody = () => {
       const gear = {};
       for (const [slot, g] of Object.entries(game.worn())) gear[slot] = { id: g.entry?.id || g.id, plus: g.plus || 0 };
       return { race: character.race, form: character.form, stage: character.stage || 0, look: character.look || {}, age: ageOf(character), gear };
+    };
+    // admins: how many are in the world right now; tap it for who and where
+    let onlineBtn = null, onlineList = null;
+    const showOnline = (n) => {
+      if (!onlineBtn) {
+        onlineBtn = document.createElement('button');
+        onlineBtn.type = 'button'; onlineBtn.id = 'online-now'; onlineBtn.setAttribute('aria-expanded', 'false');
+        onlineList = document.createElement('div');
+        onlineList.id = 'online-list'; onlineList.hidden = true;
+        $('game').append(onlineBtn, onlineList);
+        onlineBtn.addEventListener('click', async () => {
+          onlineList.hidden = !onlineList.hidden;
+          onlineBtn.setAttribute('aria-expanded', String(!onlineList.hidden));
+          if (onlineList.hidden) return;
+          onlineList.innerHTML = '<p>Looking…</p>';
+          try {
+            const { players } = await api.onlineNow();
+            const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+            onlineList.innerHTML = `<h3>In the world now (${players.length})</h3><ul>${players.map((p) => `<li><b>${esc(p.username)}</b>${p.level ? ` <span>Lv ${p.level} ${esc(p.race || '')}</span>` : ''}<small>${esc(p.where)}</small></li>`).join('')}</ul>`;
+          } catch (e) { onlineList.innerHTML = `<p>${e.message}</p>`; }
+        });
+      }
+      onlineBtn.innerHTML = `<span class="on-dot"></span>${n} online`;
     };
     const tick = async () => {
       let wait = P.POLL_ALONE_MS;
@@ -1613,12 +1681,15 @@ function startGame(character) {
           const body = myBody(), sig = P.bodySig(body);
           // the body goes with the first report, when it changes, and once a minute in case the server forgot it
           if (sig !== sentSig || Date.now() - sentAt > 60000) { spot.body = body; sentSig = sig; sentAt = Date.now(); }
+          if (!liveAsked) spot.wantLive = true;
           const r = await api.presence(spot);
           if (r.preview) return; // the preview page has nobody else in it
           world.showOthers(r.players || []);
-          if (r.players?.length) wait = P.POLL_MS;
+          if (!liveAsked) { liveAsked = true; startLiveMoves(r); }
+          if (r.players?.length) wait = live?.on ? P.POLL_LIVE_MS : P.POLL_MS;
+          if (r.online != null) showOnline(r.online);
           arena?.take(r.arena);
-          if (arena?.fast()) wait = 450; // a fight on: the other fighter's moves and both HP bars keep up
+          if (arena?.fast()) wait = 600; // a fight on: both HP bars keep up
         } catch (e) { sentSig = ''; console.warn('presence', e); } finally { busy = false; }
       }
       setTimeout(tick, wait);

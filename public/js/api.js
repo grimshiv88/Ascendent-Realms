@@ -174,7 +174,7 @@ const hideEmail = (email) => email.replace(/^(.{1,2})[^@]*(@.*)$/, (m, a, b) => 
 const previewAccount = (a) => ({
   email: realEmail(a), username: a.username, character: a.character, emailVerified: !!a.verified, needsEmail: !realEmail(a),
   mustVerify: !realEmail(a) || (!a.verified && !a.welcomed), twofa: a.twofa || null, mail: true, preview: true,
-  birthdate: a.birthdate || null, age: ageOf(a.birthdate), needsBirthdate: !a.birthdate,
+  birthdate: a.birthdate || null, age: ageOf(a.birthdate), needsBirthdate: !a.birthdate, keys: a.keys || null,
 });
 
 // Authenticator-app codes (TOTP, the same as server/totp.js), for the preview
@@ -405,6 +405,12 @@ export async function setBirthdate(birthdate) {
     });
   }
   return request('api/birthdate', { method: 'POST', body: { birthdate } });
+}
+
+// the player's keys (Settings → Controls), kept with the account
+export async function saveKeys(keys) {
+  if (await isPreviewMode()) return updatePreviewAccount((acc) => { acc.keys = keys; return { ok: true }; });
+  return request('api/keys', { method: 'POST', body: { keys } });
 }
 
 // a signed-in player changes the password: the current one is needed
@@ -1305,6 +1311,11 @@ export async function setPrivacy(privacy) {
 export async function presence(spot) {
   if (await isPreviewMode()) return { players: [], preview: true };
   return request('api/presence', { method: 'POST', body: spot });
+}
+// For admins: everyone in the world right now, and where they are
+export async function onlineNow() {
+  if (await isPreviewMode()) return { players: [] };
+  return request('api/admin/online');
 }
 export async function presenceLeave() {
   if (await isPreviewMode()) return { ok: true };
