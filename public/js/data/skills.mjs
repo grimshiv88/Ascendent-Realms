@@ -11,6 +11,7 @@
 // an EFFECTS id), stun (seconds a foe is pinned in place and can't strike; half as long on bosses),
 // hold (seconds it is slowed to half speed), drain (the share of the damage healed back to you),
 // and stat 'matk' for buffs to magic.
+import { SKILL_DESC } from './descriptions.mjs';
 const EFFECT_WORDS = { burn: 'set it burning', poison: 'poison it', bleed: 'make it bleed', frost: 'slow it', drain: 'drain its life' };
 const STAT_WORDS = { atk: 'ATK', def: 'DEF', matk: 'MATK' };
 export const SKILLS = {
@@ -160,6 +161,8 @@ add('abyssal_chains', 'Abyssal Chains', '⛓️', 'master', ['assassin', 'tank']
 for (const [id, s] of Object.entries(SKILLS)) {
   s.id = id;
   if (!s.text) s.text = `${s.about} ${skillDetails(s)}.`;
+  // the longer description: what it looks like and when to use it (data/descriptions.mjs)
+  s.desc = SKILL_DESC[id] || s.about || '';
 }
 
 // ---------- ranks ----------

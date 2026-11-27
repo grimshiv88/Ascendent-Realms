@@ -7,6 +7,7 @@
 //
 // kind: bolt (one foe at range), burst (a foe and those around it), nova (everything round you),
 // beam (up to three foes in a line). power multiplies MATK; effect is a chance of an EFFECTS id.
+import { SPELL_DESC } from './descriptions.mjs';
 export const SPELLS = {
   fire_bolt: { name: 'Fire Bolt', element: 'Fire', level: 1, kind: 'bolt', power: 1.3, sp: 4, cd: 1.2, effect: { id: 'burn', chance: 0.2 } },
   flame_burst: { name: 'Flame Burst', element: 'Fire', level: 20, kind: 'burst', power: 1.5, sp: 10, cd: 4, effect: { id: 'burn', chance: 0.35 } },
@@ -91,7 +92,8 @@ export const SPELLS = {
   blood_ritual: { name: 'Blood Ritual', element: 'Dark', level: 90, kind: 'heal', pct: 45, sp: 26, cd: 35 },
   the_abyss: { name: 'The Abyss', element: 'Dark', level: 200, kind: 'nova', power: 6, sp: 70, cd: 32, effect: { id: 'drain', chance: 0.8 } },
 };
-for (const [id, s] of Object.entries(SPELLS)) s.id = id;
+// desc: what it looks like and when to use it (data/descriptions.mjs)
+for (const [id, s] of Object.entries(SPELLS)) { s.id = id; s.desc = SPELL_DESC[id] || ''; }
 
 // the Dark Side casts the same spells, dark and stronger
 export const DARK_SPELL_POWER = 1.35;

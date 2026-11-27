@@ -7,7 +7,9 @@ import { keyName, codeFor } from './data/controls.mjs';
 import { uniqueAbility, nextTierLevel, TIER_NAMES, UNBOUND_LEVEL } from './data/unique.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const what = (sk) => `${esc(sk.text)} <span class="sk-cost">${sk.sp} SP · ${sk.cd}s rest</span>`;
+// the longer description (what it looks like, when to use it), under the numbers
+const descHtml = (d) => (d ? ` <span class="sk-desc">${esc(d)}</span>` : '');
+const what = (sk) => `${esc(sk.text)}${descHtml(sk.desc)} <span class="sk-cost">${sk.sp} SP · ${sk.cd}s rest</span>`;
 // the kind of a skill, from defence to attack (data/skills.mjs SKILL_CATEGORIES)
 const kindTag = (sk) => { const k = SKILL_CATEGORIES.find((x) => x.id === skillCategory(sk)); return k ? ` <em class="forged-tag">${k.icon} ${esc(k.name)}</em>` : ''; };
 
@@ -107,7 +109,7 @@ export function uniqueHtml(c) {
   const u = uniqueAbility(c), next = nextTierLevel(c.level);
   return `<h3 class="bag-sub">Unique Skill <b class="u-rank u-${esc(u.rank)}">${esc(u.rank)}-Rank</b> <small>(${esc(TIER_NAMES[u.tier])})</small></h3>
     <div class="sk-row sk-unique-row"><span class="sk-icon">${u.icon}</span><span class="sk-name"><b>${esc(u.name)}${kindTag(u)}</b>
-      <small>${esc(u.element)} · ${esc(u.text)} <span class="sk-cost">No SP · key ${esc(keyName(codeFor('unique')))}</span></small></span></div>
+      <small>${esc(u.element)} · ${esc(u.text)}${descHtml(u.desc)} <span class="sk-cost">No SP · key ${esc(keyName(codeFor('unique')))}</span></small></span></div>
     <p class="bag-hint">${next ? `It is held back. Each evolution lets out more of it${next === UNBOUND_LEVEL ? '' : ` (next at level ${next})`}, and at level ${UNBOUND_LEVEL} it is Unbound, used to the full.` : 'Unbound: nothing holds it back any more.'} It stays yours even if you fall and begin again.</p>`;
 }
 
@@ -130,7 +132,7 @@ function spellsHtml(game) {
       : `<button type="button" class="gold-button small" data-spell="${id}" ${st.spells.length >= st.slots ? 'disabled title="Your staff is full: detach one first"' : ''}>Attach</button>`;
     const k = SKILL_CATEGORIES.find((x) => x.id === spellCategory(sp));
     return `<div class="sk-row" ${rowTags(k.id, spellRank(sp), sp.element, spellName(sp, c))}><span class="sk-icon">${dark ? '🌑' : '✨'}</span><span class="sk-name"><b>${esc(spellName(sp, c))}${chosen?.id === id ? ' · chosen' : ''} <em class="forged-tag">${k.icon} ${esc(k.name)}</em>${rankTag(spellRank(sp))}</b>
-      <small>${esc(sp.element)}${dark ? ' (dark)' : ''} · ${esc(spellText(sp))} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span></small></span>${btn}</div>`;
+      <small>${esc(sp.element)}${dark ? ' (dark)' : ''} · ${esc(spellText(sp))}${descHtml(sp.desc)} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span></small></span>${btn}</div>`;
   }).join('');
 }
 
@@ -188,14 +190,14 @@ export function renderPower(el, game, power, { binding = null, message = '', mor
     const st = game.staff();
     const on = st?.spells.includes(power.id);
     name = spellName(sp, c); kind = `New ${rankInfo(spellRank(sp)).name} spell`;
-    does = `${esc(sp.element)} · ${esc(spellText(sp))} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span>`;
+    does = `${esc(sp.element)} · ${esc(spellText(sp))}${descHtml(sp.desc)} <span class="sk-cost">${sp.sp} SP · ${sp.cd}s rest</span>`;
     where = on ? `It is attached to your staff. The attack key casts the chosen spell; ${esc(keyName(codeFor('spell')))} changes spell.` : st ? 'It is not on your staff yet.' : 'Hold a staff to cast it: attach it in Skills (K).';
     if (st && !on) buttons = `<button type="button" class="gold-button small" data-spell="${power.id}" ${st.spells.length >= st.slots ? 'disabled' : ''}>Attach it to your staff</button>`;
     else if (on) buttons = `<button type="button" class="gold-button small" data-unspell="${power.id}">Detach it</button>`;
   } else {
     const u = uniqueAbility(c);
     icon = u.icon; name = u.name; kind = `Unique Skill · ${TIER_NAMES[u.tier]}`;
-    does = esc(u.text);
+    does = `${esc(u.text)}${descHtml(u.desc)}`;
     where = `It needs no SP and is always on key <kbd>${esc(keyName(codeFor('unique')))}</kbd> (the first button on your skill bar).`;
   }
   el.innerHTML = `
