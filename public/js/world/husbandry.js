@@ -16,6 +16,7 @@ import { ITEMS, TAXIDERMY, trophyId, limbWord } from '../data/items.mjs';
 import { buildFarm } from './farms.js';
 import { canHarvest } from './deaths.js';
 import { TAMEABLE, TAME_FEEDS } from '../data/mounts.mjs';
+import { bestBlade, meatCut, butcherMeat, fullMeat, sizeWord } from '../data/butchery.mjs';
 
 const FARM_BUILD = 650, FARM_DROP = 850;
 const STABLED = new Set(['horse', 'donkey']); // they sleep in the stable at night
@@ -26,7 +27,6 @@ export const CAMPFIRE_SAFE = 9; // metres round a lit campfire where monsters wo
 // of stones), every BURN_EVERY seconds, for this share of your full HP
 export const CAMPFIRE_BURN_R = 0.7, BURN_EVERY = 0.5, BURN_SHARE = 0.04;
 const PUT_OUT_SECS = 90; // a put-out fire's cold stones and charred logs stay this long
-const BLADES = ['sword', 'dagger', 'axe'];
 const BIRD_FOOD = ['grain', 'lettuce', 'cabbage', 'carrot'];
 // bait: how long a body set as bait lasts, how long before the first beast comes (and between
 // them), how many come to one bait, and how near you must stay for them to come
@@ -172,15 +172,17 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     for (const m of creatures().list) if (m.kind.animal && m !== dragging && canHarvest(m)) { const d = Math.hypot(m.x - x, m.z - z); if (d < bd) { bd = d; best = m; } }
     return best;
   };
-  function hasBlade() {
-    if (game.has('hunting_knife')) return true;
-    const w = game.weapon();
-    return !!w && BLADES.includes(w.type);
-  }
+  // the best tool you have to cut up a body (a knife in the bag, or the blade in your hand):
+  // { share of the meat it keeps, name } or null (data/butchery.mjs)
+  const blade = () => bestBlade((id) => game.has(id), game.weapon(), { hunting_knife: ITEMS.hunting_knife.name, butcher_knife: ITEMS.butcher_knife.name });
+  const hasBlade = () => !!blade();
   function offer(m) {
     offered = m;
     const a = m.kind.animal;
-    onEvent?.('carcass', { name: a.name, meat: !!a.meat, blade: hasBlade(), size: a.len, snare: game.has('bait_trap'), baited: !!m.bait,
+    const b = blade(), grow = m.grow || 1;
+    onEvent?.('carcass', { name: a.name, meat: !!a.meat, blade: !!b, size: a.len, sizeWord: sizeWord(grow),
+      full: butcherMeat(a, grow), keep: b && a.meat ? Math.round(fullMeat(a, grow) * b.share * 10) / 10 : 0, share: b ? Math.round(b.share * 100) : 0, tool: b?.name || null,
+      meatName: a.meat ? ITEMS[`raw_${a.meat}`]?.name : null, snare: game.has('bait_trap'), baited: !!m.bait,
       trophy: m.trophy || null, kits: game.count ? game.count('taxidermy_kit') : (game.has('taxidermy_kit') ? 1 : 0), limbs: limbWord(a),
       canStuff: !!ITEMS[trophyId('head', m.kind.animalId)] });
   }
@@ -198,9 +200,10 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
   }
   // what a body gives: [[item, n]]
   // (a body whose head went for a trophy has no fangs left; one whose paws went too has less hide)
-  function partsOf(a, cooked, trophy = null) {
+  // `meat`: how many cuts of meat (by the body's size and the blade, data/butchery.mjs)
+  function partsOf(a, cooked, trophy = null, meat = a.cuts || 1) {
     const out = [];
-    if (a.meat) out.push([cooked ? `cooked_${a.meat}` : `raw_${a.meat}`, a.cuts || 1]);
+    if (a.meat && meat > 0) out.push([cooked ? `cooked_${a.meat}` : `raw_${a.meat}`, meat]);
     const hide = (a.hide || 0) - (trophy === 'paws' ? 1 : 0);
     if (hide > 0) out.push(['animal_hide', hide]);
     if (a.fang && !trophy) out.push(['animal_fang', a.fang]);
@@ -209,22 +212,27 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
   }
   function cut(m = offered) {
     if (!m || !canHarvest(m)) return;
-    if (!hasBlade()) { say('You need a blade to cut it up: a Hunting Knife, or a sword, dagger or axe in your hand', 'hurt'); return; }
-    const a = m.kind.animal;
+    const b = blade();
+    if (!b) { say('You need a blade to cut it up: a Hunting Knife, or a sword, dagger or axe in your hand', 'hurt'); return; }
+    const a = m.kind.animal, grow = m.grow || 1;
     if (m === dragging) dragging = null;
     m.death.harvested = true; offered = null;
-    const got = partsOf(a, false, m.trophy);
+    const meat = meatCut(a, grow, b.share), full = butcherMeat(a, grow);
+    const got = partsOf(a, false, m.trophy, meat);
     for (const [id, n] of got) game.addItem(id, n);
-    say(got.length ? `You cut up the ${a.name}: ${got.map(([id, n]) => `${n} ${ITEMS[id].name}`).join(', ')}${a.meat ? '. Cook the meat by a fire (E)' : ''}` : `There is nothing on the ${a.name} worth keeping`, 'exp');
+    const lost = a.meat ? Math.max(0, full - meat) : 0;
+    say(got.length ? `You cut up the ${sizeWord(grow).toLowerCase()} ${a.name} with your ${b.name}: ${got.map(([id, n]) => `${n} ${ITEMS[id].name}`).join(', ')}${a.meat ? '. Cook the meat by a fire (E)' : ''}` : `There is nothing on the ${a.name} worth keeping`, 'exp');
+    if (lost > 0) say(`Your ${b.name} spoilt about ${lost} cut${lost > 1 ? 's' : ''} of meat. A sharper blade, a Butcher's Knife or a Halal Butcher wastes less`, 'note');
     if (!a.meat) say(`${a.name} meat is not halal, so it is not eaten`, 'note');
   }
   function toButcher(n) {
     const m = dragging, a = m.kind.animal;
-    const fee = a.meat ? 2 * (a.cuts || 1) : 0;
+    const meat = butcherMeat(a, m.grow || 1); // a butcher wastes nothing
+    const fee = a.meat ? 2 * meat : 0;
     if (fee && !game.pay(fee)) { say(`The butcher asks ${fee} Copper to prepare it`, 'hurt'); return; }
     dragging = null;
     m.death.harvested = true;
-    const got = partsOf(a, true, m.trophy);
+    const got = partsOf(a, true, m.trophy, meat);
     for (const [id, k] of got) game.addItem(id, k);
     floatText(fee ? `-${fee} Copper` : 'Thank you', new THREE.Vector3(n.x, groundAt(n.x, n.z) + 2.2, n.z), 'note');
     say(a.meat

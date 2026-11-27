@@ -153,7 +153,8 @@ export const ITEMS = {
   // a trap you set with a hunted animal's body as bait (see world/husbandry.js)
   taxidermy_kit: { name: 'Taxidermy Kit', icon: '🧰', kind: 'material', price: 12, text: 'Salt, wire, stuffing and glass eyes, to keep a hunted animal as a trophy (E beside the body, then Taxidermy). A head takes 1 kit, a head with paws 2, the full body 3.' },
   bait_trap: { name: 'Hunter\'s Snare Trap', icon: '🪤', kind: 'material', price: 25, text: 'Set it under a hunted animal\'s body (E beside the body). The smell of the meat draws a bigger animal, and the snare holds it fast while you shoot or strike it.' },
-  hunting_knife: { name: 'Hunting Knife', icon: '🔪', kind: 'material', price: 15, text: 'For cutting up a hunted animal. (A sword, dagger or axe in your hand works too.)' },
+  hunting_knife: { name: 'Hunting Knife', icon: '🔪', kind: 'material', price: 15, text: 'For cutting up a hunted animal. Keeps about three quarters of the meat. (A sword, dagger or axe in your hand works too, but a poor blade spoils more.)' },
+  butcher_knife: { name: 'Butcher\'s Knife', icon: '🔪', kind: 'material', price: 80, text: 'A long, keen knife made for cutting up game. Almost nothing is wasted, nearly as clean as a butcher\'s own work.' },
   firewood: { name: 'Firewood', icon: '🔥', kind: 'material', price: 4, text: 'A bundle of dry wood. Light a campfire with it to cook and keep warm (from your bag).' },
   // from the farms: vegetables you can eat raw, or feed to the animals (E beside one)
   carrot: { name: 'Carrot', icon: '🥕', kind: 'food', heal: 8, fill: 8, feed: true, price: 2, text: 'Crunchy and sweet. Horses and rabbits love them.' },
@@ -567,14 +568,14 @@ Object.assign(MARKETS, {
   stall_grill: { bot: true, name: 'Kebab Grill', text: 'Halal grilled meat and wraps, hot off the coals.', items: ['lamb_kebab', 'falafel_wrap', 'chicken_rice'] },
   stall_drinks: { bot: true, name: 'Drinks', text: 'Mint tea, juice and ayran. No alcohol, ever.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask'] },
   stall_cloth: { bot: true, name: 'Cloth Stall', text: 'Plain clothes at market prices.', items: ['linen_shirt', 'wide_trousers', 'felt_hat', 'sandals', 'turban'] },
-  stall_tools: { bot: true, name: 'Tools', text: 'Torches, firewood, knives and tools.', items: ['torch', 'firewood', 'hunting_knife', 'hoe', 'tent'] },
+  stall_tools: { bot: true, name: 'Tools', text: 'Torches, firewood, knives and tools.', items: ['torch', 'firewood', 'hunting_knife', 'butcher_knife', 'hoe', 'tent'] },
   stall_herbs: { bot: true, name: 'Herbalist', text: 'Herbs, teas and small potions.', items: ['herb', 'herbal_tea', 'potion', 'sp_potion'] },
   stall_soup: { bot: true, name: 'Soup Pot', text: 'A cheap hot meal for anyone.', items: ['lentil_soup', 'stew', 'bread', 'water_flask'] },
   stall_sweets: { bot: true, name: 'Sweets & Dates', text: 'Honey cakes, dates and fresh berries.', items: ['honey_cake', 'date_bowl', 'berries', 'fruit_juice'] },
   stall_roast: { bot: true, name: 'Halal Roast', text: 'Halal roast meat and cooked poultry, with bread.', items: ['roast_meat', 'cooked_poultry', 'cooked_mutton', 'bread'] },
   stall_scrap: { bot: true, name: 'Second-hand', text: 'Old things, mended and sold again.', items: ['stool', 'rag_rug', 'candle_stub', 'crate_table', 'straw_bed', 'torch', 'firewood'] },
   farm_stand: { name: 'Farm Stand', text: 'Fresh vegetables, hay and grain straight from the fields, seeds and tools to grow your own, and horses and donkeys to ride.', items: ['carrot', 'cabbage', 'lettuce', 'turnip', 'potato', 'onion', 'pumpkin', 'apple', 'hay', 'grain', 'seed_carrot', 'seed_cabbage', 'seed_lettuce', 'seed_turnip', 'seed_potato', 'seed_onion', 'seed_pumpkin', 'seed_wheat', 'hoe', 'shovel', 'watering_can', 'riding_donkey', 'riding_horse', 'dragon_bridle'] },
-  butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you. Snare traps, arrows and taxidermy kits for hunters.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'firewood', 'bait_trap', 'arrow_bundle', 'taxidermy_kit'] },
+  butcher: { name: 'Halal Butcher', text: 'Halal meat, cut and cooked. Bring a hunted animal (drag it here) and he will prepare it for you. Snare traps, arrows and taxidermy kits for hunters.', items: ['cooked_poultry', 'cooked_mutton', 'cooked_beef', 'cooked_venison', 'raw_mutton', 'raw_beef', 'raw_poultry', 'hunting_knife', 'butcher_knife', 'firewood', 'bait_trap', 'arrow_bundle', 'taxidermy_kit'] },
   tavern: { bot: true, name: 'Tavern', text: 'Halal food, fresh drinks and rooms to rent. No alcohol is served here.', items: ['mint_tea', 'fruit_juice', 'ayran', 'water_flask', 'herbal_tea', 'lentil_soup', 'bread'] },
 });
 // what a market charges for an item, and pays for one
