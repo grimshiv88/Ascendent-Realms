@@ -1391,6 +1391,26 @@ export async function setPrivacy(privacy) {
   return request('api/privacy', { method: 'POST', body: { privacy } });
 }
 
+// Who can see where you are on their world map: 'friends' or 'off'
+export async function setShareLocation(shareLocation) {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => { acc.character.shareLocation = shareLocation; return { ok: true, shareLocation }; });
+  }
+  return request('api/share-location', { method: 'POST', body: { shareLocation } });
+}
+// Your own marks on the world map, kept with your character
+export async function saveMapMarks(marks) {
+  if (await isPreviewMode()) {
+    return updatePreviewAccount((acc) => { acc.character.mapMarks = marks; return { ok: true, marks }; });
+  }
+  return request('api/map-marks', { method: 'POST', body: { marks } });
+}
+// Where your friends are right now (those who share it). The preview page is yours alone.
+export async function friendSpots() {
+  if (await isPreviewMode()) return { friends: [], preview: true };
+  return request('api/friends/where');
+}
+
 // Seeing other players: say where you are, hear who is close by. The preview page is yours alone.
 export async function presence(spot) {
   if (await isPreviewMode()) return { players: [], preview: true };

@@ -607,6 +607,31 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .map-frame canvas { touch-action: none; cursor: grab; }
 .map-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .map-zoom button { width: 36px; height: 36px; font: 700 1.3rem/1 'Oswald', sans-serif; color: #f5c84c; background: rgba(8, 6, 3, 0.8); border: 1px solid #c8921a; border-radius: 4px; cursor: pointer; }
+/* your own marks and your friends on the world map */
+.map-frame canvas.marking { cursor: crosshair; }
+.map-tools { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; flex-wrap: wrap; max-width: calc(100% - 70px); }
+.map-tools button { min-height: 34px; padding: 4px 10px; font: 600 0.85rem Georgia, serif; color: #f5ebd0; background: rgba(8, 6, 3, 0.82); border: 1px solid #c8921a; border-radius: 4px; cursor: pointer; }
+.map-tools button[aria-pressed="true"] { color: #1a1208; background: #f5c84c; }
+.map-pin-edit { position: absolute; left: 10px; right: 64px; bottom: 34px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: rgba(8, 6, 3, 0.88); border: 1px solid #c8921a; border-radius: 4px; }
+.map-pin-edit[hidden] { display: none; }
+.map-pin-edit input { flex: 1; min-width: 140px; padding: 6px 8px; font: 0.95rem Georgia, serif; color: #f5ebd0; background: #1c150b; border: 1px solid #8a6a2a; }
+.map-pin-edit > button { min-height: 32px; padding: 4px 12px; font: 600 0.85rem Georgia, serif; color: #f5c84c; background: transparent; border: 1px solid #c8921a; border-radius: 4px; cursor: pointer; }
+.map-pin-colours { display: flex; gap: 4px; }
+.map-pin-colours button { width: 24px; height: 24px; border: 2px solid #1a1208; border-radius: 50%; cursor: pointer; }
+.map-pin-colours button[aria-checked="true"] { outline: 2px solid #fff; }
+.map-lists { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.map-tools-note { width: 100%; margin: 0; color: #ffb0a8; font: 0.85rem Georgia, serif; }
+.map-list { flex: 1; min-width: 220px; padding: 6px 10px; background: rgba(8, 6, 3, 0.5); border: 1px solid rgba(200, 146, 26, 0.4); border-radius: 4px; font: 0.85rem Georgia, serif; color: #d8cba8; }
+.map-list summary { cursor: pointer; color: #f5c84c; font-weight: 600; }
+.map-list ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: 160px; overflow-y: auto; }
+.map-list li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.map-list li i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.map-list li i.pal { background: #3fdc7a; }
+.map-list li small { color: #9a8d6c; margin-left: auto; text-align: right; }
+.map-list p { margin: 6px 0 2px; }
+.map-link { padding: 2px 0; font: inherit; color: #f5ebd0; background: none; border: 0; text-decoration: underline dotted; cursor: pointer; text-align: left; }
+.map-x { margin-left: auto; width: 26px; height: 26px; font: 700 1rem/1 Georgia, serif; color: #ffb0a8; background: none; border: 1px solid rgba(255, 176, 168, 0.4); border-radius: 4px; cursor: pointer; }
+@media (max-width: 700px) { .map-tools button { min-height: 30px; padding: 2px 8px; font-size: 0.78rem; } .map-pin-edit { right: 10px; bottom: 10px; } }
 
 /* Land window */
 .land-window { width: min(760px, 100%); }

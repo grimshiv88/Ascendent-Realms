@@ -235,8 +235,10 @@ app.get('/api/players/:name', requireAccount, async (req, res) => {
   const result = await social.profile(req.account.id, req.params.name);
   res.status(result.error ? 404 : 200).json(result);
 });
+// where your friends are, for the world map (only those who share it with friends)
+app.get('/api/friends/where', requireAccount, async (req, res) => res.json(await social.friendSpots(req.account.id)));
 app.get('/api/social', requireAccount, async (req, res) => res.json(await social.poll(req.account.id, req.query.after)));
-for (const [route, fn] of [['friends/request', social.request], ['friends/respond', social.respond], ['friends/remove', social.remove], ['chat', social.send], ['privacy', social.setPrivacy], ['party-invites', social.setPartyInvites]]) {
+for (const [route, fn] of [['friends/request', social.request], ['friends/respond', social.respond], ['friends/remove', social.remove], ['chat', social.send], ['privacy', social.setPrivacy], ['party-invites', social.setPartyInvites], ['share-location', social.setShareLocation], ['map-marks', social.saveMarks]]) {
   app.post(`/api/${route}`, requireAccount, async (req, res) => {
     const result = await fn(req.account.id, req.body || {});
     res.status(result.error ? 400 : 200).json(result);

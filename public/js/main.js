@@ -7,7 +7,8 @@ import * as api from './api.js';
 import { paintCloudBanks } from './clouds.js';
 import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
-import { renderMap, createMinimap } from './mapview.js';
+import { renderMap, createMinimap, mapShowsFriends } from './mapview.js';
+import { FRIEND_SPOTS_MS, cleanMarks } from './data/social.mjs';
 import { villageName } from './data/mobvillages.mjs';
 import { renderHud, renderStatus, renderSettings, renderControlsWindow, renderRankings, toggleMenu, renderWelcome, FEEL_DEFAULT, feelShown, bindHud, renderChallenge, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
@@ -191,6 +192,7 @@ let journey = null; // a newcomer's first journey: goals with arrows and notices
 let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
+let friendSpotsTimer = null; // asks where your friends are (one at a time, whatever character is playing)
 let trade = null; // trading with other players (see tradeui.js)
 let gifts = null; // gifts and pet orders from the realm's keepers (gifts.js)
 const settings = (() => {
@@ -204,6 +206,35 @@ function startGame(character) {
   $('game').classList.remove('hidden');
   const overlay = $('overlay');
   const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '', plot: null, landChoice: 'house', landMsg: '', landBusy: false, basket: [] };
+  // Your own marks on the world map (kept with your character) and where your friends are (asked for
+  // every few seconds while friends are shown on the map and you have a friend in the game)
+  const friendSpots = { list: [], at: 0, busy: false };
+  async function refreshFriendSpots(force = false) {
+    if (friendSpots.busy || !mapShowsFriends()) return;
+    if (!force && Date.now() - friendSpots.at < FRIEND_SPOTS_MS) return;
+    friendSpots.busy = true; friendSpots.at = Date.now();
+    try { friendSpots.list = (await api.friendSpots()).friends || []; } catch { /* try again in a moment */ }
+    friendSpots.busy = false;
+  }
+  clearInterval(friendSpotsTimer);
+  friendSpotsTimer = setInterval(() => {
+    if (!mapShowsFriends()) { friendSpots.list = []; return; }
+    const mapOpen = overlay && !overlay.classList.contains('hidden') && overlay.dataset.panel === 'map';
+    // with the map shut, only bother when one of your friends is online
+    if (mapOpen || (social?.friendsOnline?.() ?? true)) refreshFriendSpots();
+  }, 1000);
+  let marksTimer = null;
+  const mapExtra = {
+    pins: {
+      list: () => character?.mapMarks || [],
+      save(list) {
+        character.mapMarks = cleanMarks(list);
+        clearTimeout(marksTimer);
+        marksTimer = setTimeout(() => api.saveMapMarks(character.mapMarks).catch((err) => showArea(err.message)), 700);
+      },
+    },
+    friends: { spots: () => friendSpots.list, refresh: () => refreshFriendSpots(true) },
+  };
   // what lifts your City Pass besides birth and level (see data/citypass.mjs): houses you own, a crown
   const passPerks = () => {
     const homes = (ui.homes || []).filter((h) => h.mine).map((h) => ({ city: h.city, tier: String(h.house).replace(/\d+$/, '') }));
@@ -681,7 +712,7 @@ function startGame(character) {
       } : null, null, ui.adminPowers?.on('teleport') ? (x, z) => {
         // an admin's Teleport power: tap the map to go there
         if (world?.teleport(x, z - 5)) { closePanel(); showArea('Teleported.'); } else showArea('You can\'t teleport from in here.');
-      } : null);
+      } : null, mapExtra);
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
     else if (name === 'controls') renderControlsWindow(overlay, { binding: ui.bindingControl, message: ui.controlMsg || '', tab: ui.ctlTab || 'move', settings, clash: ui.clash, skillBar: character.skillBar, admin: !!ui.adminPowers || !!(myAccount?.powers || []).length });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
@@ -1407,6 +1438,12 @@ function startGame(character) {
       api.setPartyInvites(v).catch((err) => { character.partyInvites = before; drawPanel(); showArea(err.message); });
       return;
     }
+    if ((v = t('data-share-location')) != null) {
+      const before = character.shareLocation;
+      character.shareLocation = v; drawPanel();
+      api.setShareLocation(v).catch((err) => { character.shareLocation = before; drawPanel(); showArea(err.message); });
+      return;
+    }
     if ((v = t('data-privacy')) != null) {
       const before = character.privacy;
       character.privacy = v; drawPanel();
@@ -1901,7 +1938,7 @@ function startGame(character) {
     if (hp > 0 && hp < max * 0.25 && Date.now() - warnedAt > 60000) { warnedAt = Date.now(); world?.say('Low HP! Death is final: heal or run', 'hurt'); }
   }, 1000);
   // the minimap in the corner follows you; tap it for the world map
-  createMinimap($('minimap'), () => world?.position(), () => openPanel('map'));
+  createMinimap($('minimap'), () => world?.position(), () => openPanel('map'), { pins: () => character?.mapMarks || [], friends: () => friendSpots.list });
   // The tutorial: shown once per account to a newcomer (a child just born, or a brand-new
   // character), after the welcome. It can be skipped, and played again from Settings.
   const who = (myAccount?.username || character.name || '').toLowerCase();

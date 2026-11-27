@@ -186,5 +186,53 @@ async function setPartyInvites(me, body) {
   return { ok: true, partyInvites: c.partyInvites };
 }
 
+async function setShareLocation(me, body) {
+  if (!S.SHARE_LOCATION[body.shareLocation]) return { error: 'Choose My friends or Nobody.' };
+  const c = await characters.load(me);
+  if (!c) return { error: 'No character yet.' };
+  c.shareLocation = body.shareLocation;
+  await characters.store(me, c);
+  return { ok: true, shareLocation: c.shareLocation };
+}
+
+// Your own marks on the world map (only you see them)
+async function saveMarks(me, body) {
+  if (!Array.isArray(body.marks) || body.marks.length > S.MAX_MAP_MARKS) return { error: `You can keep up to ${S.MAX_MAP_MARKS} marks.` };
+  const c = await characters.load(me);
+  if (!c) return { error: 'No character yet.' };
+  c.mapMarks = S.cleanMarks(body.marks);
+  await characters.store(me, c);
+  return { ok: true, marks: c.mapMarks };
+}
+
+// Where your friends are right now, for your world map. Only friends (accepted both ways) who are in
+// the game and who let their friends see them; a friend who chose Nobody is never sent.
+async function friendSpots(me, now = Date.now()) {
+  const P = require('../public/js/data/presence.mjs');
+  const { whereIs } = require('./presence');
+  const { caveById } = require('../public/js/data/depths.mjs');
+  const rows = await db.all(`SELECT p.account_id, p.name, p.x, p.z, p.place, p.heading, c.data
+      FROM friends f
+      JOIN presence p ON p.account_id = CASE WHEN f.a = ? THEN f.b ELSE f.a END
+      LEFT JOIN characters c ON c.account_id = p.account_id
+      WHERE (f.a = ? OR f.b = ?) AND f.accepted = 1 AND p.at > ?`, me, me, me, now - P.GONE_MS);
+  const spots = [];
+  for (const r of rows) {
+    let c = null;
+    try { c = r.data ? JSON.parse(r.data) : null; } catch { /* unreadable save */ }
+    if (!c || S.shareLocationOf(c) !== 'friends') continue;
+    let x = r.x, z = r.z;
+    // underground: the cave's mouth; in a building: the building's door; a Colosseum fight: not shown
+    if (r.place.startsWith('cave:')) { const cv = caveById(r.place.slice(5)); if (!cv) continue; x = cv.place.x; z = cv.place.z; }
+    else if (r.place.startsWith('in:')) { const m = /:(-?\d+),(-?\d+)$/.exec(r.place); if (m) { x = Number(m[1]); z = Number(m[2]); } }
+    else if (r.place !== 'out') continue;
+    spots.push({ name: r.name, character: c.name || null, x: Math.round(x), z: Math.round(z), heading: r.place === 'out' ? r.heading : null,
+      where: whereIs(r.place, x, z), inside: r.place !== 'out' });
+  }
+  spots.sort((a, b) => a.name.localeCompare(b.name));
+  return { ok: true, friends: spots };
+}
+
 module.exports = {
+  setShareLocation, saveMarks, friendSpots,
   setPartyInvites, appraise, search, profile, request, respond, remove, friends, poll, send, setPrivacy };
