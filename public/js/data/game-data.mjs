@@ -4,7 +4,7 @@ import { STARTER_ITEMS } from './items.mjs';
 import { pickUnique, uniqueByName, uniqueSlot } from './unique.mjs';
 
 export const MAIN_STATS = ['str', 'agi', 'dex', 'sta', 'int'];
-export const STAT_NAMES = { str: 'Strength', agi: 'Agility', dex: 'Dexterity', sta: 'Stamina', int: 'Intelligence' };
+export const STAT_NAMES = { str: 'Strength', agi: 'Agility', dex: 'Dexterity (AIM)', sta: 'Stamina', int: 'Intelligence' };
 
 // Every race totals 50 base points.
 // skillGift (Elves): skills are ready 20% sooner and cost 15% less SP (magic belongs to the Dark Side)

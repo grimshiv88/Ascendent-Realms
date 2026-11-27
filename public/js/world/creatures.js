@@ -601,6 +601,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   let nextNid = 1;
   const ghosts = new Map(); // 'owner:nid' -> monster
   const fallen = new Set(); // copies that died here: not brought back by a late update
+  const claimed = new Set(); // copies whose kill was rewarded here (so a late 'mobwon' can't pay twice)
+  const claim = (key) => { claimed.add(key); if (claimed.size > 300) claimed.delete(claimed.values().next().value); };
   function share(m) { if (m) m.nid = nextNid++; return m; }
   function netState(me) {
     const out = [];
@@ -652,7 +654,20 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     m.hurt = 0.25; m.angry = true; m.hurtBy = true;
     if (m.state === 'lurk') spring(m.pack);
     m.tag.draw(m.hp / m.maxHp);
-    if (m.hp <= 0) { m.dead = 0.001; m.lastHow = String(how || 'blunt').slice(0, 12); startDeath(m, m.lastHow, scene, {}); }
+    if (m.hp <= 0) { m.dead = 0.001; m.lastHow = String(how || 'blunt').slice(0, 12); startDeath(m, m.lastHow, scene, {}); return true; }
+    return false;
+  }
+  // The owner's game says your blow killed its monster. Your copy may not have died yet (its health
+  // here had not caught up with the owner's), or died here from the owner's update with nothing for
+  // you: either way the kill is yours. Returns the copy and its reward, once.
+  function netWon(owner, nid) {
+    const key = `${owner}:${nid}`;
+    if (claimed.has(key)) return null;
+    const m = list.find((q) => q.ghost?.key === key);
+    if (!m) return null;
+    claim(key);
+    if (!m.dead) { m.hp = 0; m.tag.draw(0); m.dead = 0.001; startDeath(m, m.lastHow || 'blunt', scene, {}); }
+    return { m, reward: rewardFor(m) };
   }
   // a copy, every frame: walks to where its owner's game says it is, and bites you if you are in reach
   function stepGhost(m, dt, t, p, dist) {
@@ -948,7 +963,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   // of its health), for what it does to the body
   function hit(m, dmg, how = 'blunt', strong = false) {
     if (m.dead) return null;
-    if (m.ghost) onNet?.('mobhit', { o: m.ghost.owner, n: m.ghost.nid, d: Math.round(dmg), how: String(how || 'blunt') });
+    if (m.ghost) { onNet?.('mobhit', { o: m.ghost.owner, n: m.ghost.nid, d: Math.round(dmg), how: String(how || 'blunt') }); m.lastHow = String(how || 'blunt').slice(0, 12); }
     if (m.nid && !m.ghost) m.lastHow = String(how || 'blunt').slice(0, 12);
     const before = m.hp;
     m.hp = Math.max(0, m.hp - dmg);
@@ -987,6 +1002,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     if (m.hp > 0) { const lost = maim(m, how, dmg, scene); return lost ? { maimed: lost } : null; }
     m.dead = 0.001;
     startDeath(m, how, scene, { strong: strong || dmg >= before * 1.5 || dmg >= m.maxHp * 0.5 });
+    if (m.ghost) claim(m.ghost.key);
+    return rewardFor(m);
+  }
+  // what a fallen monster gives: EXP, coins and its drops
+  function rewardFor(m) {
     const drops = [];
     for (const [id, chance, min, max] of m.kind.drops) {
       if (Math.random() < chance) drops.push([id, min + Math.floor(Math.random() * (max - min + 1))]);
@@ -995,7 +1015,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   }
 
   return {
-    update, target, targets, hit, netState, netApply, netHit,
+    update, target, targets, hit, netState, netApply, netHit, netWon,
     // how many seconds until a slain great beast's lair has a new one (0: it is there)
     slainIn: (lairId) => Math.max(0, (slain.get(lairId) || 0) - nowT),
     // the realm's keepers bring slain great beasts back: their empty lairs have them again at once

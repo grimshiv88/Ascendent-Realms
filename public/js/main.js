@@ -1727,7 +1727,7 @@ function startGame(character) {
     const startLiveMoves = async (r) => {
       if (!r.live || !r.me || typeof WebSocket === 'undefined') return;
       const { startLive } = await import('./live.js');
-      live = startLive(r.live, r.me, (m) => world?.moveOther(m), (state, why) => { if (state === 'refused') console.warn('live movement refused', why); }, (m) => { if (m.k !== 'mobhit' || m.o === r.me) world?.actOther(m); });
+      live = startLive(r.live, r.me, (m) => world?.moveOther(m), (state, why) => { if (state === 'refused') console.warn('live movement refused', why); }, (m) => { if ((m.k !== 'mobhit' && m.k !== 'mobwon') || m.o === r.me) world?.actOther(m); });
       liveRef = live;
       setInterval(() => { if (world && document.visibilityState !== 'hidden') live.update(world.presence(), world.othersNear > 0); }, 50);
     };
