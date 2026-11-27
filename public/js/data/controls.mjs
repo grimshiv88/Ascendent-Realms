@@ -23,6 +23,7 @@ export const CONTROLS = [
   ['portal', 'Use a portal', 'KeyG', 'Doing'],
   ['mount', 'Call / ride your horse', 'KeyH', 'Doing'],
   ['dragon', 'Set your dragon on a foe / call it back', 'Digit7', 'Doing'],
+  ['voicecmd', 'Voice commands on/off', 'Digit8', 'Doing'],
   ['land', 'Land grid', 'KeyL', 'Doing'],
   ['builder', 'Builder View', 'KeyV', 'Doing'],
   ['chat', 'Chat', 'Enter', 'Doing'],

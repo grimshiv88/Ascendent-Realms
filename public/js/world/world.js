@@ -36,7 +36,7 @@ import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionNam
 import { createPlots } from './plots.js';
 import { gameTime, now as realmNow } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
-import { spellPower, spellName, darkSpells, SELF_KINDS, DARK_SPELL_POWER } from '../data/spells.mjs';
+import { SPELLS, spellPower, spellName, darkSpells, SELF_KINDS, DARK_SPELL_POWER } from '../data/spells.mjs';
 import { skyCard } from './skycard.js';
 import { BODYGUARDS, guardHit } from '../data/hire.mjs';
 import { setSettledLand, wildLevelAt } from '../data/wilds.mjs';
@@ -1441,7 +1441,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (sicOn && (!alive(sicOn) || Math.hypot(sicOn.x - pos.x, sicOn.z - pos.z) > 120)) sicOn = null;
     if (lastFoe && (!alive(lastFoe.m) || clock.elapsedTime - lastFoe.at > 25 || Math.hypot(lastFoe.m.x - pos.x, lastFoe.m.z - pos.z) > 60)) lastFoe = null;
     const foe = sicOn || lastFoe?.m || null;
-    if (!foe || dead) { riding.setGoal(null); return; }
+    // told to stay (by voice): it waits on that spot unless it is set on a foe
+    if (!foe || dead) { riding.setGoal(petStay ? { x: petStay.x, z: petStay.z, r: 2, air: 0 } : null); return; }
     const reach = c.breath ? Math.max(9, c.len * 0.7) : c.reach + (foe.radius || 1);
     const foeAir = foe.air || 0;
     riding.setGoal({ x: foe.x, z: foe.z, r: reach - 1, air: foeAir > 4 ? foeAir : undefined });
@@ -1463,6 +1464,70 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const name = BEASTS[c.id].name.toLowerCase();
     if (foe && foe !== sicOn) { sicOn = foe; say(`You point at the ${foe.kind.name}. Your ${name} goes for it!`, 'note'); }
     else { sicOn = null; lastFoe = null; say(`Your ${name} comes back to your side`, 'note'); }
+  }
+  // ---------- orders spoken aloud (see voicecmd.js and data/voicecmd.mjs) ----------
+  // attack: the foe you face, or the nearest one whose name you said ("attack the wolf");
+  // breathe: a burst of breath at what you face; back: stop and come to you (a horse is called);
+  // stay: wait on this spot; follow: come along again. Returns what happened, as a line to show.
+  let petStay = null;
+  function petOrder(order, what = null) {
+    if (!game || dead) return null;
+    const c = riding?.companion();
+    const m = riding?.mount();
+    if (!c) {
+      // no dragon: a horse, donkey or camel can still be called over
+      if (m && (order === 'back' || order === 'follow')) { riding.toggle(m.item); return null; }
+      if (m) return `Your ${ITEMS[m.item]?.name?.toLowerCase() || 'mount'} only knows "come"`;
+      return 'You have no dragon with you to command. Tame one (a Dragon Bridle on a worn-out one) or hatch an egg';
+    }
+    const name = BEASTS[c.id].name.toLowerCase();
+    if (order === 'attack') {
+      if (what && /\bplayers?\b/.test(what)) return `Your ${name} won't attack other players outside the Colosseum`;
+      let foe = null;
+      if (what) {
+        const words = what.split(' ').filter((w) => w.length > 2);
+        const named = creatures.list.filter((o) => !o.dead && o.hp > 0 && !o.farm && Math.hypot(o.x - pos.x, o.z - pos.z) < 60 && words.some((w) => (o.title || o.kind?.name || '').toLowerCase().includes(w.replace(/s$/, ''))));
+        foe = named.sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0] || null;
+      }
+      foe ||= creatures.target(pos.x, pos.z, heading, 40, 0.6) || lastFoe?.m || null;
+      if (!foe || !alive(foe)) return `Your ${name} looks about, but sees nothing to attack. Face a foe and say it again`;
+      if (c.riding) { riderBreath(); return null; }
+      sicOn = foe; petStay = null;
+      return `Your ${name} goes for the ${foe.title || foe.kind.name}!`;
+    }
+    if (order === 'breathe') {
+      if (c.riding) { riderBreath(); return null; }
+      const foe = creatures.target(pos.x, pos.z, heading, 40, 0.6) || sicOn || lastFoe?.m || null;
+      if (foe && alive(foe)) { sicOn = foe; petStay = null; dragonCd = 0; return `Your ${name} turns on the ${foe.title || foe.kind.name} and breathes!`; }
+      if (dragonCd > 0) return null;
+      dragonCd = 1.5;
+      const far = 14;
+      riding.breathe(() => ({ x: pos.x + Math.sin(heading) * far, y: pos.y + 1, z: pos.z + Math.cos(heading) * far }), 1.1);
+      return null;
+    }
+    if (order === 'stay') {
+      if (c.riding) return `You are on your ${name}'s back`;
+      sicOn = null; lastFoe = null; petStay = { x: c.x, z: c.z };
+      return `Your ${name} stays where it is. Say "follow" to call it along`;
+    }
+    // back / follow
+    sicOn = null; lastFoe = null; petStay = null;
+    return `Your ${name} comes back to your side`;
+  }
+  // a spell said aloud: any spell on the staff in your hand, not only the chosen one
+  function castSpellNamed(id) {
+    if (!game || dead || resting()) return 'busy';
+    if (sheathed) { sayPutAway(); return 'busy'; }
+    const st = game.staff();
+    if (!st) return 'staff';
+    if (!st.spells.includes(id)) return game.character.spells.includes(id) ? 'off' : 'unknown';
+    const sp = SPELLS[id];
+    if (clock.elapsedTime < (spellReady[id] || 0)) return 'cooling';
+    const cost = Math.max(1, Math.round(sp.sp * (game.character.cls === 'mage' ? 0.9 : 1)));
+    if (game.character.sp < cost) return 'sp';
+    castSpell(sp);
+    cooldown = Math.max(cooldown, (game.weapon() || FIST).speed);
+    return 'ok';
   }
   // breath from your dragon's jaws while you ride it: it burns what is ahead of you
   function riderBreath() {
@@ -1736,13 +1801,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let spellTurn = 0;
   const SPELL_REACH = 14;
   const spellReady = {}; // spell id -> clock time it can be cast again
-  function castSpell() {
+  function castSpell(pick = null) {
     const c = game.character;
     const els = c.elements?.length ? c.elements : [RACES[c.race].element];
     const from = new THREE.Vector3(pos.x + Math.sin(heading) * 0.5, pos.y + bodyH * 0.7, pos.z + Math.cos(heading) * 0.5);
     const ahead = (d) => new THREE.Vector3(pos.x + Math.sin(heading) * d, pos.y + bodyH * 0.6, pos.z + Math.cos(heading) * d);
     const at = (m) => new THREE.Vector3(m.x, m.y + m.height * 0.6, m.z);
-    const sp = game.chosenSpell();
+    const sp = pick || game.chosenSpell();
     const cost = sp ? Math.max(1, Math.round(sp.sp * (c.cls === 'mage' ? 0.9 : 1))) : 0;
     if (sp && SELF_KINDS.includes(sp.kind) && clock.elapsedTime >= (spellReady[sp.id] || 0) && c.sp >= cost) {
       // a spell on yourself: heal, guard (+DEF) or empower (+MATK); the Dark Side's are stronger too
@@ -2739,6 +2804,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     // on a flying mount: the phone's dive button (held) and whether you are in the air
     flyDown(on) { flyDown = !!on; },
     commandDragon: () => commandDragon(),
+    petOrder, castSpellNamed,
+    petNow: () => { const c = riding?.companion(), m = riding?.mount(); return c ? { kind: 'dragon', id: c.id, item: m?.item, name: BEASTS[c.id].name } : m ? { kind: 'mount', id: m.id, item: m.item, name: ITEMS[m.item]?.name } : null; },
     get hasDragon() { return !!riding?.companion(); },
     // an admin's Dragon radar: every dragon and wyvern lair, and where the beast is now if it is near
     radar() {

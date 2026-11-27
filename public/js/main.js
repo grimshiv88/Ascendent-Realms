@@ -30,7 +30,7 @@ import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
 import { fillIcons, warmIcons } from './characters/icons.js';
 import { warmWorldMap } from './world/mapdraw.js';
-import { SPELLS } from './data/spells.mjs';
+import { SPELLS, spellName } from './data/spells.mjs';
 import { renderIdCard } from './idcard.js';
 import { renderRooms } from './roomsui.js';
 import { renderGroups } from './groupsui.js';
@@ -44,6 +44,7 @@ import { gameTime as realmTime } from './data/clock.mjs';
 import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
 import { createVoice } from './voice.js';
+import { createVoiceCommands } from './voicecmd.js';
 import { createPowers } from './powersui.js';
 import { createRadar } from './radarui.js';
 import { POWER_IDS } from './data/staff.mjs';
@@ -1579,6 +1580,7 @@ function startGame(character) {
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); else if (act === 'unique') trySkill('unique'); else if (act === 'mythic') trySkill('mythic'); }
       if (act === 'land') toggleLand();
+      if (act === 'voicecmd' && !e.repeat) ui.voiceCmd?.toggle();
       if (act === 'view') { e.preventDefault(); if (!e.repeat) world?.toggleView(); }
       if (act === 'chat') { e.preventDefault(); world?.releaseMouse(); social?.focusChat(); }
       // Esc opens the options; Esc again (or on any window) closes it
@@ -1624,6 +1626,38 @@ function startGame(character) {
   })();
   // Voice chat (16+): a mic button under the chat button; voices fade with distance
   createVoice($('game'), { position: () => world?.position() });
+  // Voice commands: your pet's name and an order, or a skill or spell name, said aloud
+  ui.voiceCmd ||= createVoiceCommands($('game'), {
+    say: (t, k) => world?.say(t, k),
+    inParty: async () => !!(await api.groupsList())?.party,
+    pet: () => world?.petNow() || null,
+    petName: (item) => (item && game.character.petNames?.[item]) || null,
+    setPetName(item, name) {
+      if (!item) return;
+      const c = game.character;
+      c.petNames = { ...(c.petNames || {}) };
+      if (name) c.petNames[item] = name; else delete c.petNames[item];
+      game.touch('bag');
+    },
+    order: (o, what) => world?.petOrder(o, what),
+    skills: () => {
+      const out = game.knownSkills().filter((id) => SKILLS[id]).map((id) => ({ id, name: SKILLS[id].name }));
+      const u = uniqueAbility(character);
+      if (u?.name) out.push({ id: 'unique', name: u.name });
+      if (game.mythic()?.name) out.push({ id: 'mythic', name: game.mythic().name });
+      return out;
+    },
+    spells: () => (game.character.spells || []).filter((id) => SPELLS[id]).map((id) => ({ id, name: SPELLS[id].name })),
+    useSkill: (id) => trySkill(id),
+    castSpell(id) {
+      const r = world?.castSpellNamed(id);
+      const sp = SPELLS[id], n = sp ? spellName(sp, game.character) : 'That spell';
+      const why = { staff: `${n}: hold a staff to cast spells`, off: `${n} is not on your staff. Put it on in the Skills window (K)`, unknown: `You don't know ${n}`, cooling: `${n} is not ready yet`, sp: `Not enough SP for ${n}` }[r];
+      if (why) world.say(why, 'hurt');
+    },
+    onOpen: () => world?.releaseMouse(),
+  });
+  if (/[?&]debug\b/.test(location.search)) window.__voice = ui.voiceCmd; // (for tests: __voice.hear('dragon attack'))
   // An admin's powers (fly, can't die, run fast, teleport), given by the owner on the Admin Board.
   // The private preview page belongs to the owner, so there every power is there to switch on.
   api.isPreviewMode().then((preview) => {
