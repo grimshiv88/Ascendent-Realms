@@ -50,7 +50,7 @@ import { rampAt, RAMP_WALL, INNER_R, tierAt } from '../data/citylevels.mjs';
 const GATHER_MS = 3 * 60 * 1000; // how long the townsfolk stay round the shrine after a new card goes up
 import { money } from '../data/money.mjs';
 import { howOf, canHarvest, harvest } from './deaths.js';
-import { createHusbandry } from './husbandry.js';
+import { createHusbandry, BURN_EVERY, BURN_SHARE } from './husbandry.js';
 import { createOil } from './oil.js';
 import { createCrops } from './crops.js';
 import { createRiding, poseRide } from './riding.js';
@@ -886,6 +886,23 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (powers.nodeath) { game?.heal(1); if (cause === 'drown' || cause === 'fall') say('Death passes you by.', 'note'); return; }
     dead = true;
     onEvent?.('defeated', { by: m.kind.name, cause });
+  }
+  // Standing in a lit campfire burns you, a little every half second, until you step out (jump over
+  // it and it can't). Inside a city's walls it can't kill you: it leaves you at 1 HP at worst.
+  let burnFor = 0;
+  function stepInFire(dt) {
+    if (!game || dead || airborne || riding?.riding || !husbandry.burningAt(pos.x, pos.z, pos.y)) { burnFor = 0; return; }
+    if (burnFor === 0) say('You stepped in the fire!', 'hurt');
+    burnFor -= dt;
+    if (burnFor > 0) return;
+    burnFor = BURN_EVERY;
+    const full = game.stats().hp;
+    let dmg = Math.max(1, Math.round(full * BURN_SHARE));
+    floatText(`-${dmg}`, pos.clone().add(new THREE.Vector3(0, bodyH, 0)), 'hurt');
+    lastHurt = clock.elapsedTime;
+    const inCity = builtCities().some((c) => Math.hypot(pos.x - c.place.x, pos.z - c.place.z) < CITY_R);
+    if (inCity) dmg = Math.min(dmg, Math.max(0, Math.ceil(game.character.hp) - 1));
+    if (game.damage(dmg)) defeated({ kind: { name: 'campfire' } }, 'fire');
   }
   // Rise again at the nearest shrine (a city's plaza, a village's waystone or a waypoint)
   function riseAtShrine() {
@@ -2749,7 +2766,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     }
     for (const q of mobVillages.values()) q.built.update(t, pos, creatures.list);
-    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); dragonFight(dt); hatchery?.tick(dt, t); }
+    if (!depth && !inside) { husbandry.tick(dt, t); crops?.tick(t); riding?.tick(dt, t, speedNow, airborne); dragonFight(dt); hatchery?.tick(dt, t); stepInFire(dt); }
     walkBuild?.update();
     sky.follow(camera);
 
