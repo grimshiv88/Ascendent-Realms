@@ -339,6 +339,10 @@ export function renderSettings(el, settings, accounts = null, cloud = false, pas
     <div class="status-window settings-window" role="dialog" aria-label="Settings">
       <button type="button" class="sw-close" data-close aria-label="Close">×</button>
       <h2>Settings</h2>
+      <h3 class="bag-sub">Tutorial</h3>
+      <div class="setting-opts">
+        <button type="button" class="setting-opt" data-tutorial-replay><b>Play the tutorial again</b><span>The step-by-step guide for new players, with arrows to where to go. Skip it any time.</span></button>
+      </div>
       <h3 class="bag-sub">View</h3>
       <div class="setting-opts">
         <button type="button" class="setting-opt" data-view="third" aria-pressed="${settings.view !== 'first'}"><b>Third person</b><span>The camera is behind your character, so you see yourself and what is around you.</span></button>
