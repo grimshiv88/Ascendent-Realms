@@ -135,6 +135,8 @@ async function player({ id }) {
         cityAccess: c.cityAccess || null, cityPass: P.cityPass(c), lives: c.lives || 1,
       },
       pastLives: await pastLives(a.id),
+      pets: c ? await gifts.pets(c) : [],
+      petOrders: await gifts.petOrders(a.id),
       leads: c ? CU.leads(await cultsState(), c.name) : null,
     },
   };
@@ -608,9 +610,63 @@ async function setStaff(body, me) {
   return { ok: true, ...(await player({ id: acc.id })) };
 }
 
+// ---------- gifts, pets, monster attacks and the great beasts (see server/gifts.js) ----------
+const gifts = require('./gifts');
+const { BEASTS } = require('../public/js/data/beasts.mjs');
+const R = require('../public/js/data/raids.mjs');
+async function gift(body, me) {
+  const r = await gifts.send(body, me);
+  if (r.error) return r;
+  await log(me, 'send gift', r.to, `${r.what}${body.note ? `: "${short(body.note, 80)}"` : ''}${body.everyone ? ` (${r.sent} players)` : ''}`);
+  return { ok: true, sent: r.sent, ...(body.everyone ? {} : await player({ id: body.id })) };
+}
+async function unsendGift(body, me) {
+  const r = await gifts.unsend(body);
+  if (r.error) return r;
+  await log(me, 'take back gift', null, `gift #${int(body.gift, 1, 2e9)}`);
+  return { ok: true };
+}
+async function giftsSent() { return gifts.sent(); }
+async function pet(body, me) {
+  const acc = await accountById(body.id);
+  if (!acc) return { error: 'No such account.' };
+  const r = await gifts.orderPet(body, acc.id);
+  if (r.error) return r;
+  await log(me, 'pet order', acc.username, r.said);
+  return { ok: true, ...(await player({ id: acc.id })) };
+}
+async function raidsBoard() {
+  return {
+    raids: await gifts.raids(),
+    places: PLACES.filter(R.raidable).map((p) => ({ id: p.id, name: p.name, city: !!p.city })),
+    raiders: Object.entries(R.RAIDERS).map(([id, r]) => ({ id, name: r.name })),
+    beasts: Object.entries(BEASTS).map(([id, b]) => ({ id, name: b.name, king: !!b.king })),
+    revive: await gifts.lastRevive(),
+  };
+}
+async function raid(body, me) {
+  const r = await gifts.startRaid(body, me);
+  if (r.error) return r;
+  await log(me, 'monster attack', r.raid.placeName, `${r.raid.n} ${R.RAIDERS[r.raid.raiders].name}, Lv ${r.raid.level}, ${Math.round((r.raid.until - r.raid.at) / 60000)} min`);
+  return { ok: true, ...(await raidsBoard()) };
+}
+async function endRaid(body, me) {
+  const r = await gifts.endRaid(body);
+  if (r.error) return r;
+  await log(me, 'end monster attack', r.raid.placeName);
+  return { ok: true, ...(await raidsBoard()) };
+}
+async function revive(body, me) {
+  const r = await gifts.revive(body);
+  if (r.error) return r;
+  await log(me, 'bring back', null, r.name);
+  return { ok: true, ...(await raidsBoard()) };
+}
+
 module.exports = {
   me, staffList, setStaff,
   pastLives, editPastLife, restoreLife, appointLeader, tuning, setTuning, skillsBoard, leaders: async () => ({ leaders: await cults.leaders() }),
   isAdmin, accounts, setPassword, setBirthdate, signOutEverywhere, remove, log,
+  gift, unsendGift, giftsSent, pet, raidsBoard, raid, endRaid, revive,
   stats, player, catalogue, edit, move, ban, mute, chat, deleteMessage, reports, closeReport, announce, announcement, world, take, resetKing, adminLog, skipChildhood, report,
 };

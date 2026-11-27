@@ -43,6 +43,7 @@ import { GATES_R } from './data/cults.mjs';
 import { gameTime as realmTime, DAY_TEXT } from './data/clock.mjs';
 import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
+import { createGifts } from './gifts.js';
 import { createVoice } from './voice.js';
 import { createVoiceCommands } from './voicecmd.js';
 import { createPowers } from './powersui.js';
@@ -187,6 +188,7 @@ let journey = null; // a newcomer's first journey: goals with arrows and notices
 let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
+let gifts = null; // gifts and pet orders from the realm's keepers (gifts.js)
 const settings = (() => {
   try { return { camera: 'free', ...JSON.parse(localStorage.getItem('ar-settings') || '{}') }; } catch { return { camera: 'free' }; }
 })();
@@ -1320,6 +1322,7 @@ function startGame(character) {
     if (t('data-campfire') != null) { closePanel(); world?.lightCampfire(); return; }
     if ((v = t('data-plant')) != null) { closePanel(); world?.plantSeed(v); return; }
     if ((v = t('data-mount')) != null) { closePanel(); world?.callMount(v); return; }
+    if ((v = t('data-open-gift')) != null) { gifts?.open(v); return; }
     if ((v = t('data-egg')) != null) { closePanel(); world?.placeEgg(v); return; }
     if ((v = t('data-cult')) != null) {
       const btn = e.target.closest('[data-cult]');
@@ -1596,6 +1599,9 @@ function startGame(character) {
         return;
       }
       if (type === 'npc' && data.kind === 'stall') { ui.market = data.market; openPanel('market'); return; }
+      // a town near a monster attack talks of nothing else (see world/raids.js)
+      const news = type === 'npc' && !(data.kind === 'parent' && data.mine) && data.kind !== 'teacher' && data.kind !== 'child' ? world?.raidTalk(data, String(data.name || '').length) : null;
+      if (news) { showArea(`${data.name}: "${news}"`); return; }
       if (type === 'npc') {
         const job = PARENT_JOBS[data.job]?.name;
         const line = data.kind === 'parent'
@@ -1665,7 +1671,21 @@ function startGame(character) {
 
   window.addEventListener('pagehide', () => game.saveNow());
   // Friends and chat: search at the top right, chat at the bottom left
-  social = createSocial($('game'), { onDone: () => world?.lockMouse() });
+  // gifts and pet orders from the realm's keepers, monster attacks on the towns, and great beasts
+  // brought back to life: they come with the chat's check every few seconds (no reload needed)
+  gifts?.dispose();
+  gifts = createGifts({ game, world: () => world, say: (t) => world?.say(t, 'note'), onBag: () => { if (overlay.dataset.panel === 'bag' && !overlay.classList.contains('hidden')) drawPanel(); } });
+  let reviveSeen = null;
+  const onWorld = (r) => {
+    if (r.deliveries) gifts.take(r.deliveries);
+    if (r.raids) world?.setRaids(r.raids);
+    if (r.revive !== undefined) {
+      const at = r.revive?.at || 0;
+      if (reviveSeen !== null && at > reviveSeen) world?.reviveBeasts(r.revive.kind);
+      reviveSeen = at;
+    }
+  };
+  social = createSocial($('game'), { onDone: () => world?.lockMouse(), onWorld });
   // Other players close by: every second or so the game says where you are and draws who is near
   // (every few seconds while nobody is). Your body is sent again whenever it or your gear changes.
   if (!presenceOn) (async () => {

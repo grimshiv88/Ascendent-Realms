@@ -1,7 +1,7 @@
 // Every table the game keeps (Postgres). Run on start; safe to run again and again.
 // Row Level Security is switched on for every table with no rules, so the public Supabase web API
 // can't read or change anything: only the game's own server (which connects as the owner) can.
-const TABLES = ['admin_log', 'reports', 'accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes', 'past_lives', 'oil_wells', 'presence', 'duels', 'arena_players'];
+const TABLES = ['admin_log', 'reports', 'accounts', 'sessions', 'characters', 'fallen', 'world_state', 'lands', 'cave_owners', 'city_homes', 'courts', 'friends', 'chat', 'rentals', 'bounties', 'auth_codes', 'past_lives', 'oil_wells', 'presence', 'deliveries', 'duels', 'arena_players'];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS accounts (
@@ -248,6 +248,18 @@ CREATE TABLE IF NOT EXISTS arena_players (
   mail_duels BOOLEAN NOT NULL DEFAULT true,
   mail_cup   BOOLEAN NOT NULL DEFAULT true
 );
+-- what the realm's keepers send into a player's game without a reload (see server/gifts.js):
+-- gifts (kind 'gift', opened from the bag) and orders for their pets (kind 'pet')
+CREATE TABLE IF NOT EXISTS deliveries (
+  id         SERIAL PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  data       TEXT NOT NULL,
+  at         BIGINT NOT NULL,
+  seen_at    BIGINT,
+  done_at    BIGINT
+);
+CREATE INDEX IF NOT EXISTS deliveries_waiting ON deliveries (account_id, done_at);
 
 ${TABLES.map((t) => `ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY;`).join('\n')}
 `;

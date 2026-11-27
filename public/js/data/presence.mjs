@@ -27,7 +27,7 @@ export function cleanSpot(s = {}) {
     place: placeKey(s.place),
     // what they are doing that changes how they look: riding, sitting, lying down (asleep or knocked out)
     // (and 'swing': a blow, seen in a Colosseum fight)
-    pose: ['ride', 'sit', 'lie', 'fly', 'swing'].includes(s.pose) ? s.pose : '',
+    pose: ['ride', 'sit', 'lie', 'fly', 'swim', 'swing'].includes(s.pose) ? s.pose : '',
   };
 }
 
