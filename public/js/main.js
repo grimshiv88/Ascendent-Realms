@@ -177,6 +177,7 @@ function openCreation(username) {
 }
 
 let world = null;
+let liveRef = null; // the live link to nearby players (live.js), once it is running
 let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
@@ -1464,6 +1465,8 @@ function startGame(character) {
     onMouseFreed: () => { ui.freedAt = performance.now(); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
+      // an attack or spell you did: players close by see it (live.js)
+      if (type === 'act') { liveRef?.act(data); return; }
       // the phone took the graphics away for a moment (see world.js): wait, or reload if they don't come back
       if (type === 'graphicsLost') { showArea('Getting the graphics back...'); return; }
       if (type === 'graphicsBack') { showArea('Graphics are back'); return; }
@@ -1632,7 +1635,8 @@ function startGame(character) {
     const startLiveMoves = async (r) => {
       if (!r.live || !r.me || typeof WebSocket === 'undefined') return;
       const { startLive } = await import('./live.js');
-      live = startLive(r.live, r.me, (m) => world?.moveOther(m), (state, why) => { if (state === 'refused') console.warn('live movement refused', why); });
+      live = startLive(r.live, r.me, (m) => world?.moveOther(m), (state, why) => { if (state === 'refused') console.warn('live movement refused', why); }, (m) => { if (m.k !== 'mobhit' || m.o === r.me) world?.actOther(m); });
+      liveRef = live;
       setInterval(() => { if (world && document.visibilityState !== 'hidden') live.update(world.presence(), world.othersNear > 0); }, 50);
     };
     const myBody = () => {

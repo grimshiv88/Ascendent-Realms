@@ -47,7 +47,8 @@ const LIVE_FRESH = 1500; // live updates this recent mean the slower server spot
 const KEEP = 24; // updates kept per player
 const EXTRAPOLATE = 250; // past the newest update, carry on along their path for at most this long
 
-export function createOthers(scene) {
+// hooks.pose(o, act): bends their body for an attack or spell they did (world.js knows the moves)
+export function createOthers(scene, hooks = {}) {
   // account id -> { body, sig, name, snaps: [{ t, x, y, z, h }], speed, pose, heard, live }
   const seen = new Map();
   const nowMs = () => performance.now();
@@ -123,7 +124,7 @@ export function createOthers(scene) {
             const last = s[s.length - 1], prev = s[s.length - 2];
             const ahead = Math.min(at - last.t, EXTRAPOLATE);
             const span = prev ? last.t - prev.t : 0;
-            const v = prev && span > 0 && span < 600 ? ahead / span : 0;
+            const v = prev && span > 40 && span < 600 ? ahead / span : 0; // (two updates that came in together say nothing about speed)
             x = last.x + (prev ? (last.x - prev.x) * v : 0); y = last.y; z = last.z + (prev ? (last.z - prev.z) * v : 0); h = last.h;
           }
         }
@@ -132,11 +133,32 @@ export function createOthers(scene) {
         const lying = o.pose === 'lie';
         o.body.rotation.z = lying ? Math.PI / 2 : 0;
         animateCharacter(o.body, t, lying || o.pose === 'sit' || o.pose === 'ride' ? 0 : o.speed / WALK * 1.6);
+        // a swing or spell they did: their arms and body act it out over its own time
+        if (o.act) {
+          o.act.t += dt;
+          try { hooks.pose?.(o, o.act); } catch { o.act = null; }
+          if (o.act && o.act.t >= o.act.dur) o.act = null;
+        }
       }
     },
+    // they attacked or cast: show the move on their body (a newer one replaces it)
+    act(id, a) { const o = seen.get(id); if (o) o.act = { t: 0, dur: 0.6, ...a }; },
+    get: (id) => seen.get(id),
+    // where the players standing within r metres of (x, z) are, to bump into (not ones lying down or riding)
+    near(x, z, r) {
+      const out = [];
+      for (const o of seen.values()) {
+        const b = o.body.position;
+        if (o.pose === 'lie' || o.pose === 'ride' || o.pose === 'fly' || !o.snaps.length) continue;
+        if (Math.abs(b.x - x) < r && Math.abs(b.z - z) < r) out.push(b);
+      }
+      return out;
+    },
+    // where every player close by is (monsters may go for them too: see creatures.js)
+    spots: () => [...seen.values()].filter((o) => o.snaps.length).map((o) => ({ x: o.body.position.x, z: o.body.position.z, dead: o.pose === 'lie' })),
     clear() { for (const id of [...seen.keys()]) drop(id); },
     count: () => seen.size,
     has: (id) => seen.has(id),
-    list: () => [...seen.values()].map((o) => ({ name: o.name, x: o.body.position.x, z: o.body.position.z, live: nowMs() - o.live < LIVE_FRESH, snaps: o.snaps.length })),
+    list: () => [...seen.values()].map((o) => ({ name: o.name, x: o.body.position.x, z: o.body.position.z, live: nowMs() - o.live < LIVE_FRESH, snaps: o.snaps.length, act: o.act ? o.act.kind || o.act.move?.name : '' })),
   };
 }
