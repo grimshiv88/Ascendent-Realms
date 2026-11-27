@@ -58,9 +58,9 @@ import { createCrops } from './crops.js';
 import { createRiding, poseRide } from './riding.js';
 import { createRaids } from './raids.js';
 import { createHatchery } from './hatchery.js';
-import { BEAST_TAME } from '../data/mounts.mjs';
+import { BEAST_TAME, MOUNT_ITEMS } from '../data/mounts.mjs';
 import { RIDE_FATIGUE } from '../data/mounts.mjs';
-import { allFarms } from '../data/farms.mjs';
+import { allFarms, nearestStand } from '../data/farms.mjs';
 import { HUNGER_DRAIN, HUNGRY, STARVE_HIT, STARVE_FLOOR } from '../data/hunger.mjs';
 import { createPractice } from './practice.js';
 
@@ -2318,7 +2318,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (act === 'torch') placeTorch();
     if (act === 'tent') pitchTent();
     if (act === 'interact') interact();
-    if (act === 'mount' && !e.repeat && game) riding?.toggle();
+    if (act === 'mount' && !e.repeat && game && riding?.toggle() === 'none') guideToStand();
     if (act === 'dragon' && !e.repeat) commandDragon();
     if (act === 'spell' && !e.repeat) nextSpell();
     if ((act === 'zoomin' || act === 'zoomout') && !windowOpen?.()) zoomBy(act === 'zoomin' ? -150 : 150);
@@ -2945,6 +2945,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       else {
         updateSites(pos.x, pos.z);
         husbandry.updateFarms(pos.x, pos.z);
+        checkHorseGuide();
         oil?.update(pos.x, pos.z);
         tendVillages();
         const near = sites.find((s) => !s.place.cave && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 400);
@@ -3159,7 +3160,31 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     beam: new THREE.MeshBasicMaterial({ color: 0xffd56a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }),
     arrow: new THREE.MeshBasicMaterial({ color: 0xffc23a, fog: false }),
   };
+  // The journey's guide (setGuide), and for a while instead of it the way to the nearest Farm
+  // Stand when you press H with no mount (horseGuide, gone once you get there or own a mount)
+  let journeyGuide = null, horseGuide = null;
   function setGuide(at) {
+    journeyGuide = at || null;
+    if (!horseGuide) showGuide(journeyGuide);
+  }
+  function guideToStand() {
+    const st = nearestStand(pos.x, pos.z);
+    if (!st) { say('You have no mount. Buy a horse or a donkey at a Farm Stand (on the farm outside every town), or tame a wild horse', 'note'); return; }
+    horseGuide = { x: st.x, z: st.z, farm: st.farm };
+    showGuide(horseGuide);
+    const d = st.d < 1000 ? `${Math.round(st.d)} m` : `${(st.d / 1000).toFixed(1)} km`;
+    say(`You have no mount yet. Follow the gold beam to the Farm Stand at ${st.farm.name} (${d}): it sells a Riding Horse for ${money(ITEMS.riding_horse.price)} and a Riding Donkey for ${money(ITEMS.riding_donkey.price)}. Or tame a wild horse: stand still with a carrot or an apple in your bag and feed it 3 times`, 'note');
+  }
+  function checkHorseGuide() {
+    if (!horseGuide) return;
+    const owned = MOUNT_ITEMS.some((id) => game?.has(id));
+    if (owned || Math.hypot(pos.x - horseGuide.x, pos.z - horseGuide.z) < 5) {
+      if (!owned) say('This is the Farm Stand. Press E to buy a Riding Horse or a Riding Donkey, then H to call it', 'note');
+      horseGuide = null;
+      showGuide(journeyGuide);
+    }
+  }
+  function showGuide(at) {
     if (guide) { scene.remove(guide); guide = null; }
     if (!at || !Number.isFinite(at.x) || !Number.isFinite(at.z)) return;
     guide = new THREE.Group();
@@ -3320,7 +3345,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     },
     digPit: (x, z) => oil?.pit(x, z, heading),
     plantSeed: (id) => (!inside && !depth ? crops?.plantSeed(id) : 'inside'),
-    callMount: (id) => riding?.toggle(id),
+    callMount: (id) => { const r = riding?.toggle(id); if (r === 'none') guideToStand(); return r; },
     // the realm's keepers move a pet (see gifts.js): to you, home, and whether you are flying on it
     petCome: (id) => riding?.come(id) || 'none',
     petHome: (id) => riding?.putAway(id) || 'none',
