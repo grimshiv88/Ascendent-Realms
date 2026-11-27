@@ -234,7 +234,7 @@ const preview = {
     this.save(list, acc);
     token.set(`preview:${email}`, remember);
     const c = previewCode(acc, 'verify');
-    return { account: previewAccount(acc), isNew: true, previewCode: c.code, sentTo: hideEmail(email) };
+    return { account: previewAccount(acc), isNew: true, verifySent: true, previewCode: c.code, sentTo: hideEmail(email) };
   },
   find(login) {
     login = (login || '').trim().toLowerCase();
@@ -351,15 +351,21 @@ export async function mailOn() {
 }
 
 // the email that confirms the address: send it (again), or confirm with its code (or its link's ticket)
-export async function sendVerify() {
+// `ifNone`: only send when no code that still works is waiting (the confirm screen opening after a sign-in)
+export async function sendVerify({ ifNone = false } = {}) {
   if (await isPreviewMode()) {
     return updatePreviewAccount((acc) => {
       if (!realEmail(acc)) throw new Error('Please add your email first.');
+      if (ifNone) {
+        for (const c of previewCodes.values()) {
+          if (c.email === acc.email && c.kind === 'verify' && c.expires > Date.now()) return { ok: true, sentTo: hideEmail(realEmail(acc)), waiting: true, previewCode: c.code };
+        }
+      }
       const c = previewCode(acc, 'verify');
       return { ok: true, sentTo: hideEmail(realEmail(acc)), previewCode: c.code };
     });
   }
-  return request('api/email/send', { method: 'POST' });
+  return request('api/email/send', { method: 'POST', body: { ifNone } });
 }
 export async function verifyEmail({ ticket = null, code }) {
   if (await isPreviewMode()) {
