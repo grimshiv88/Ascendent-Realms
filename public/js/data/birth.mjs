@@ -205,6 +205,10 @@ export function houseDoor(city, house) {
   const out = h.d / 2 + 2; // just in front of the door, on the street
   return { x: c.x + h.x + (h.door?.x || 0) + h.fx * out, z: c.z + h.z + (h.door?.z || 0) + h.fz * out, heading: h.rot, area: place.name };
 }
+// The money a newborn's family sends them out with, by the ring of the city they are born on (in
+// Copper): a child of the Dump starts with 100 Copper, and each ring further up with more.
+export const STARTING_MONEY = { dump: 100, common: 500, noble: 3000, castle: 10000 };
+export const startingMoney = (tier) => STARTING_MONEY[tier] ?? STARTING_MONEY.common;
 // A newborn: a Child of 4 in their family's house. `home` is { city, house } (the server finds a
 // house with room); the rest as newCharacter. Returns { character } or { error }.
 export function bornCharacter(name, birth, home, opts = {}) {
@@ -214,6 +218,7 @@ export function bornCharacter(name, birth, home, opts = {}) {
   const door = houseDoor(home.city, home.house);
   if (door) c.location = { area: door.area, x: door.x, y: 0, z: door.z, heading: door.heading };
   c.child = { born: new Date().toISOString(), bornPlay: 0, family: familyOf(home.city, home.house, birth.race), school: null, train: {} };
+  c.coins = startingMoney(cityHouses(home.city)[home.house]?.tier);
   // a child carries no starting kit of a class yet: just food from home
   c.inventory = [['bread', 3], ['water_flask', 3], ['herbal_tea', 2]].map(([id, n]) => ({ id, n }));
   return r;

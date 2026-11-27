@@ -8,8 +8,15 @@
 //     The only charge is one small, fixed service fee for the paperwork, the same for any amount
 //     and any length of time, and a late loan never costs extra;
 //   - changing money is hand to hand, at today's rate, on the spot.
-import { sample, safeZoneAt, plotOf, CITY_R, placesWithPositions } from './world-layout.mjs';
-import { moneyWords } from './money.mjs';
+//
+// Money is cash: the Crown of the Heartland is paper Crown notes with Copper, Silver and Gold coins as
+// small change, and every other land prints banknotes of its own at its city's Bank. What a land's
+// notes are worth goes up and down with how much that land is worth (LAND WORTH below): the more is
+// built, bought, pumped and lived in there, the stronger its money.
+import { sample, safeZoneAt, plotOf, CITY_R, placesWithPositions, PLOT } from './world-layout.mjs';
+import { moneyWords, SILVER, GOLD } from './money.mjs';
+import { plotPrice } from './land.mjs';
+import { cityPlan } from './citylayout.mjs';
 
 const HOUR = 3600 * 1000, DAY = 24 * HOUR;
 
@@ -18,12 +25,35 @@ const HOUR = 3600 * 1000, DAY = 24 * HOUR;
 // every price in the game is in it. Each other land has a coin of its own, worth so many Copper on
 // an ordinary day ("par"), going up and down a little through the day.
 export const CURRENCIES = {
-  crown: { name: 'Crown', plural: 'Crown coins', icon: '🟤', region: 'heart', city: 'central', par: 1, text: 'Copper, Silver and Gold coins of the Heartland. Every shop takes them.' },
-  ember: { name: 'Ember Scale', plural: 'Ember Scales', icon: '🔶', region: 'peaks', city: 'emberfall', par: 40, swing: 0.16, text: 'Red-gold scales struck in the forges of Emberfall, in the Dragon Peaks.' },
-  ash: { name: 'Ash Mark', plural: 'Ash Marks', icon: '⚫', region: 'warrens', city: 'ashgrave', par: 6, swing: 0.22, text: 'Rough iron tokens of Ashgrave, in the Ashen Wastes.' },
-  glimmer: { name: 'Glimmer', plural: 'Glimmers', icon: '✨', region: 'fae', city: 'lumenhollow', par: 15, swing: 0.12, text: 'Little glowing glass beads of Lumenhollow, on the Fae Isles.' },
-  pearl: { name: 'Mire Pearl', plural: 'Mire Pearls', icon: '⚪', region: 'mire', city: 'mirehaven', par: 25, swing: 0.1, text: 'Lake pearls of Mirehaven, in Mirefall.' },
+  crown: { name: 'Crown', plural: 'Crowns', icon: '🟤', region: 'heart', city: 'central', par: 1, note: 'Crown note', text: 'Crown notes printed by the Bank of the Central City, with Copper, Silver and Gold coins as small change. Every shop takes them.' },
+  ember: { name: 'Ember Note', plural: 'Ember Notes', icon: '🔶', region: 'peaks', city: 'emberfall', par: 40, swing: 0.16, note: 'Ember Note', text: 'Red-gold banknotes printed by the Bank of Emberfall, in the Dragon Peaks.' },
+  ash: { name: 'Ash Mark', plural: 'Ash Marks', icon: '⚫', region: 'warrens', city: 'ashgrave', par: 6, swing: 0.22, note: 'Ash Mark', text: 'Grey, soot-stamped banknotes printed by the Bank of Ashgrave, in the Ashen Wastes.' },
+  glimmer: { name: 'Glimmer', plural: 'Glimmers', icon: '✨', region: 'fae', city: 'lumenhollow', par: 15, swing: 0.12, note: 'Glimmer note', text: 'Shimmering leaf-paper banknotes printed by the Bank of Lumenhollow, on the Fae Isles.' },
+  pearl: { name: 'Mire Pearl', plural: 'Mire Pearls', icon: '⚪', region: 'mire', city: 'mirehaven', par: 25, swing: 0.1, note: 'Mire Pearl note', text: 'Pale green banknotes with a pearl seal, printed by the Bank of Mirehaven, in Mirefall.' },
 };
+// The notes each land prints (in its own money). The Crown's are counted in Copper: 1, 5 and 10
+// Silver and 1 and 10 Gold; anything smaller is paid in coins.
+export const NOTE_SIZES = [100, 50, 20, 10, 5, 1];
+export const CROWN_NOTES = [10 * GOLD, GOLD, 10 * SILVER, 5 * SILVER, SILVER];
+const crownNoteName = (v) => (v >= GOLD ? `${v / GOLD} Gold` : `${v / SILVER} Silver`);
+// An amount as the cash it is: [{ n, of }] notes, then the coins left over (Crown: in Copper)
+export function cashOf(cur, amount) {
+  let left = Math.max(0, Math.floor(Number(amount) || 0));
+  const notes = [];
+  for (const v of cur === 'crown' ? CROWN_NOTES : NOTE_SIZES) {
+    const k = Math.floor(left / v);
+    if (k) { notes.push({ n: k, of: v, name: cur === 'crown' ? `${crownNoteName(v)} note` : `${v} ${CURRENCIES[cur].note}` }); left -= k * v; }
+  }
+  return { notes, coins: left };
+}
+// "2 × 1 Gold note, 1 × 5 Silver note and 37 Copper in coins"
+export function cashWords(cur, amount) {
+  const { notes, coins } = cashOf(cur, amount);
+  const parts = notes.map((p) => `${p.n} × ${p.name}`);
+  if (coins) parts.push(`${moneyWords(coins)} in coins`);
+  if (!parts.length) return cur === 'crown' ? 'no money' : 'no notes';
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
+}
 export const FOREIGN = Object.keys(CURRENCIES).filter((k) => k !== 'crown');
 // which coin a land (region id) or a city pays in
 export const currencyOfRegion = (region) => Object.keys(CURRENCIES).find((k) => CURRENCIES[k].region === region) || 'crown';
@@ -35,19 +65,65 @@ function wobble(t, period, seed) {
   const u = t / period, i = Math.floor(u), f = u - i, k = f * f * (3 - 2 * f);
   return (h01(i * 1.7 + seed) * (1 - k) + h01((i + 1) * 1.7 + seed) * k) * 2 - 1;
 }
-// What one coin of a currency is worth in Copper now
+// ---------- land worth ----------
+// Each land is worth what stands and lives in it: its own treasury (LAND_BASE), every plot of land
+// owned there (at its price), every house bought in its great city, every oil derrick and the
+// barrels it has pumped, and every person born there who is alive. A land worth more has stronger
+// money. The Crown is what every price is counted in, so the others are measured against it: if the
+// Heartland grows faster than a land, that land's notes buy fewer Crowns, and the other way round.
+export const LAND_BASE = 500000;          // a land's own treasury, in Copper (50 Gold)
+export const PERSON_WORTH = 2000;         // each living person born there
+export const DERRICK_WORTH = 3000;        // each derrick standing (what it cost)
+const WORTH_MIN = 0.5, WORTH_MAX = 3;
+let WORTH = {};                            // cur -> worth in Copper (empty: every land at its base)
+// `w`: { crown: 812000, ember: 530000, ... } from landWorth (the server sends it with the Bank)
+export function setLandWorth(w) { WORTH = w && typeof w === 'object' ? { ...w } : {}; }
+export const landWorthNow = () => Object.fromEntries(Object.keys(CURRENCIES).map((k) => [k, Math.round(WORTH[k] || LAND_BASE)]));
+// how strong a land's money is from its worth alone (1 at its base)
+export function worthFactor(cur) {
+  const w = Math.max(0, Number(WORTH[cur]) || LAND_BASE);
+  return Math.min(WORTH_MAX, Math.max(WORTH_MIN, Math.sqrt(w / LAND_BASE)));
+}
+const _w = {};
+// What every land is worth now. `plots` [{ ix, iz }], `homes` [{ city, house }] (houses bought),
+// `wells` [{ id, out }], `people` { cityId: how many living people were born there }
+export function landWorth({ plots = [], homes = [], wells = [], people = {} } = {}) {
+  const w = Object.fromEntries(Object.keys(CURRENCIES).map((k) => [k, LAND_BASE]));
+  for (const p of plots) {
+    const s = sample((p.ix + 0.5) * PLOT, (p.iz + 0.5) * PLOT, _w);
+    w[currencyOfRegion(s.region)] += plotPrice(p.ix, p.iz);
+  }
+  const sale = new Map(cityPlan().sale.map((h) => [h.id, h.price]));
+  for (const h of homes) w[currencyOfCity(h.city)] += sale.get(h.house) || 0;
+  for (const q of wells) {
+    const d = depositById(q.id);
+    if (d) w[d.cur] += DERRICK_WORTH + (Number(q.out) || 0) * OIL_PRICE;
+  }
+  for (const [city, n] of Object.entries(people)) if (CURRENCIES[currencyOfCity(city)]) w[currencyOfCity(city)] += (Number(n) || 0) * PERSON_WORTH;
+  return w;
+}
+// how much stronger or weaker a land's money is against the Crown because of what the lands are worth
+export const worthEdge = (cur) => (cur === 'crown' ? 1 : worthFactor(cur) / worthFactor('crown'));
+
+// What one note of a currency is worth in Copper now: its par, times how its land's worth stands
+// against the Heartland's, with a little wobble through the day
 export function rate(cur, now = Date.now()) {
   const C = CURRENCIES[cur];
   if (!C || cur === 'crown') return 1;
   const seed = FOREIGN.indexOf(cur) * 13.37 + 1;
-  const v = C.par * (1 + C.swing * (0.7 * wobble(now, 8 * HOUR, seed) + 0.3 * wobble(now, 2 * DAY, seed + 5)));
-  return Math.round(v * 100) / 100;
+  const v = C.par * worthEdge(cur) * (1 + C.swing * (0.7 * wobble(now, 8 * HOUR, seed) + 0.3 * wobble(now, 2 * DAY, seed + 5)));
+  return Math.max(0.01, Math.round(v * 100) / 100);
 }
-// The Bank changes money with a small spread (its way of earning, instead of interest):
-// it sells you a foreign coin for a little more than it is worth, and buys it for a little less.
+// The Bank changes money with a small spread (its way of earning, instead of interest): it sells you
+// notes for a little more than they are worth, and buys them for a little less. A land's own Bank
+// (the one that prints its notes) and its kiosks change them at a much smaller spread.
 export const SPREAD = 0.03;
-export const buyRate = (cur, now) => Math.ceil(rate(cur, now) * (1 + SPREAD) * 100) / 100; // Copper you pay for 1 coin
-export const sellRate = (cur, now) => Math.floor(rate(cur, now) * (1 - SPREAD) * 100) / 100; // Copper you get for 1 coin
+export const HOME_SPREAD = 0.01;
+const spreadOf = (cur, here) => (here && here === cur ? HOME_SPREAD : SPREAD);
+export const buyRate = (cur, now, here = null) => Math.ceil(rate(cur, now) * (1 + spreadOf(cur, here)) * 100) / 100; // Copper you pay for 1 note
+export const sellRate = (cur, now, here = null) => Math.floor(rate(cur, now) * (1 - spreadOf(cur, here)) * 100) / 100; // Copper you get for 1 note
+// Notes of one land straight into notes of another: how many `to` notes `n` `from` notes buy
+export const swapGets = (from, to, n, now, here = null) => Math.floor((n * sellRate(from, now, here)) / buyRate(to, now, here));
 export const coinsWords = (cur, n) => (cur === 'crown' ? moneyWords(n) : `${n.toLocaleString()} ${n === 1 ? CURRENCIES[cur].name : CURRENCIES[cur].plural}`);
 
 // ---------- the Bank ----------
@@ -153,7 +229,7 @@ export function bankAct(c, body, now = Date.now()) {
       const cur = body?.cur;
       if (!FOREIGN.includes(cur)) return fail('Choose a currency.');
       if (!n) return fail('Enter how many coins to buy.');
-      const cost = Math.ceil(n * buyRate(cur, now));
+      const cost = Math.ceil(n * buyRate(cur, now, place.cur));
       if (c.coins < cost) return fail(`${coinsWords(cur, n)} cost ${moneyWords(cost)} today.`, cost);
       c.coins -= cost; b.wallet[cur] += n; note(b, now, `Bought ${coinsWords(cur, n)} for ${moneyWords(cost)}`);
       return { ok: true, message: `You buy ${coinsWords(cur, n)} for ${moneyWords(cost)}. They are kept in your Bank account.` };
@@ -163,9 +239,19 @@ export function bankAct(c, body, now = Date.now()) {
       if (!FOREIGN.includes(cur)) return fail('Choose a currency.');
       if (!n) return fail('Enter how many coins to change.');
       if (b.wallet[cur] < n) return fail(`You only have ${coinsWords(cur, b.wallet[cur])}.`);
-      const got = Math.floor(n * sellRate(cur, now));
+      const got = Math.floor(n * sellRate(cur, now, place.cur));
       b.wallet[cur] -= n; c.coins += got; note(b, now, `Changed ${coinsWords(cur, n)} into ${moneyWords(got)}`);
       return { ok: true, message: `You change ${coinsWords(cur, n)} into ${moneyWords(got)}.` };
+    }
+    case 'swap': { // notes of one land straight into another's (both kept in your account)
+      const from = body?.cur, to = body?.to;
+      if (!FOREIGN.includes(from) || !FOREIGN.includes(to) || from === to) return fail('Choose two different lands\' notes.');
+      if (!n) return fail('Enter how many notes to change.');
+      if (b.wallet[from] < n) return fail(`You only have ${coinsWords(from, b.wallet[from])}.`);
+      const got = swapGets(from, to, n, now, place.cur);
+      if (!got) return fail(`${coinsWords(from, n)} is not enough for one ${CURRENCIES[to].name} today.`);
+      b.wallet[from] -= n; b.wallet[to] += got; note(b, now, `Changed ${coinsWords(from, n)} into ${coinsWords(to, got)}`);
+      return { ok: true, message: `You change ${coinsWords(from, n)} into ${coinsWords(to, got)}. They are kept in your Bank account.` };
     }
     case 'sell_oil': { // your Oil Company's barrels, sold to this city's Bank in its own currency
       const o = freshOil(c);

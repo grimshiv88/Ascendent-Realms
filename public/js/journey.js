@@ -90,7 +90,7 @@ function buildSteps(c, P) {
     { id: 'estate', goal: 'Visit the Real Estate office', target: P.estate, near: 14,
       reach: { title: 'The Real Estate office', text: 'Houses for sale in every quarter of the city are bought here, once you have the coins. A house of your own lets you into its quarter of the city.' } },
     { id: 'bank', goal: 'Find the city Bank', target: P.bank, near: 14,
-      reach: { title: 'The Bank', text: 'Keep your coins safe here, and change Copper for Silver and Gold.' } },
+      reach: { title: 'The Bank', text: 'Keep your money safe here, and change Crowns for the banknotes of other lands. A land is worth more the more is built there, and its notes are worth more too.' } },
     { id: 'playground', child: true, goal: 'Find the playground', target: P.playground, near: 16, skip: () => !isChild(c),
       reach: { title: 'The playground', text: 'The city\'s children play here. Come by between lessons.' } },
     { id: 'checkpoint', goal: 'Find the checkpoint in the Dump', target: P.checkpoint, near: 14,
