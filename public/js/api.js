@@ -1030,6 +1030,12 @@ export async function playerProfile(name) {
   }
   return request(`api/players/${encodeURIComponent(name)}`);
 }
+// A gift or a pet order from the realm's keepers (see server/gifts.js): `act` is 'seen' (the
+// pop-up was shown), 'open' (unwrap it: gives back what is inside) or 'done' (a pet order carried out)
+export async function giftAct(id, act) {
+  if (await isPreviewMode()) throw new Error('Gifts come from the Admin Board of the online game.');
+  return request('api/gifts', { method: 'POST', body: { id, act } });
+}
 export async function socialPoll(after = 0) {
   if (await isPreviewMode()) {
     await previewSocial.sync();

@@ -8,6 +8,7 @@ const land = require('./land');
 const kings = require('./kings');
 const cults = require('./cults');
 const admin = require('./admin');
+const gifts = require('./gifts');
 const social = require('./social');
 const rooms = require('./rooms');
 const bounties = require('./bounties');
@@ -119,7 +120,10 @@ app.post('/api/character', requireAccount, async (req, res) => {
 
 // The bridges over the city moats (raised in war or when monsters attack; the admins set them)
 const cityGates = async () => { const r = await db.get("SELECT data FROM world_state WHERE key = 'city_gates'"); return r ? JSON.parse(r.data) : {}; };
-app.get('/api/cities', async (req, res) => res.json({ raised: await cityGates(), ceremonies: await characters.recentCeremonies() }));
+// (a monster attack on a city keeps its bridges raised while it lasts: see server/gifts.js)
+app.get('/api/cities', async (req, res) => res.json({ raised: { ...(await cityGates()), ...(await gifts.raidCities()) }, ceremonies: await characters.recentCeremonies() }));
+// a gift from the realm's keepers: the pop-up was seen, it is opened, or a pet order was carried out
+app.post('/api/gifts', requireAccount, answer((body, acc) => gifts.act(acc.id, body)));
 
 app.post('/api/character/ceremony', requireAccount, async (req, res) => {
   const result = await characters.ceremony(req.account.id);
@@ -257,7 +261,7 @@ const adminGate = (method, route) => async (req, res, next) => {
 };
 app.get('/api/admin/accounts', adminGate('GET', 'accounts'), async (req, res) => res.json(await admin.accounts()));
 // who is in the world right now, and where (see server/presence.js)
-app.get('/api/admin/online', adminGate('GET', 'online'), async (req, res) => res.json(await presence.online()));
+app.get('/api/admin/online', adminGate('GET', 'online'), async (req, res) => res.json({ ...(await presence.online()), today: (await presence.today(Number(req.query.since))).players }));
 app.post('/api/admin/gates', adminGate('POST', 'gates'), async (req, res) => {
   const { city, raised } = req.body || {};
   if (!['central', 'emberfall', 'ashgrave', 'lumenhollow', 'mirehaven'].includes(city)) return res.status(400).json({ error: 'No such city.' });
@@ -270,13 +274,14 @@ app.post('/api/admin/gates', adminGate('POST', 'gates'), async (req, res) => {
 for (const [route, fn] of [['password', admin.setPassword], ['birthdate', admin.setBirthdate], ['signout', admin.signOutEverywhere], ['delete', admin.remove],
   ['edit', admin.edit], ['move', admin.move], ['ban', admin.ban], ['mute', admin.mute], ['chat/delete', admin.deleteMessage], ['reports/close', admin.closeReport],
   ['announce', admin.announce], ['take', admin.take], ['kings/reset', admin.resetKing], ['skip/childhood', admin.skipChildhood],
-  ['life/edit', admin.editPastLife], ['life/restore', admin.restoreLife], ['sects', admin.appointLeader], ['tuning', admin.setTuning], ['staff', admin.setStaff]]) {
+  ['life/edit', admin.editPastLife], ['life/restore', admin.restoreLife], ['sects', admin.appointLeader], ['tuning', admin.setTuning], ['staff', admin.setStaff],
+  ['gift', admin.gift], ['gift/unsend', admin.unsendGift], ['pet', admin.pet], ['raid', admin.raid], ['raid/end', admin.endRaid], ['revive', admin.revive]]) {
   app.post(`/api/admin/${route}`, adminGate('POST', route), async (req, res) => {
     const result = await fn(req.body || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);
   });
 }
-for (const [route, fn] of [['stats', admin.stats], ['player', admin.player], ['catalogue', admin.catalogue], ['chat', admin.chat], ['reports', admin.reports], ['world', admin.world], ['log', admin.adminLog], ['tuning', admin.tuning], ['skills', admin.skillsBoard], ['sects', admin.leaders], ['me', admin.me], ['staff', admin.staffList]]) {
+for (const [route, fn] of [['stats', admin.stats], ['player', admin.player], ['catalogue', admin.catalogue], ['chat', admin.chat], ['reports', admin.reports], ['world', admin.world], ['log', admin.adminLog], ['tuning', admin.tuning], ['skills', admin.skillsBoard], ['sects', admin.leaders], ['me', admin.me], ['staff', admin.staffList], ['gifts', admin.giftsSent], ['raids', admin.raidsBoard]]) {
   app.get(`/api/admin/${route}`, adminGate('GET', route), async (req, res) => {
     const result = await fn(req.query || {}, req.account);
     res.status(result.error ? 400 : 200).json(result);

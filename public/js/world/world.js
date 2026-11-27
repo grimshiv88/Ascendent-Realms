@@ -54,6 +54,7 @@ import { createHusbandry } from './husbandry.js';
 import { createOil } from './oil.js';
 import { createCrops } from './crops.js';
 import { createRiding, poseRide } from './riding.js';
+import { createRaids } from './raids.js';
 import { createHatchery } from './hatchery.js';
 import { BEAST_TAME } from '../data/mounts.mjs';
 import { RIDE_FATIGUE } from '../data/mounts.mjs';
@@ -200,9 +201,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   }
   // your family's house (its parents stand at the door), and which cities have their bridges raised
   const homeOf = () => { const f = character.child?.family || character.family; return f ? { city: f.city, house: f.house, race: f.race, dead: [0, 1].filter((j) => !parentAlive(game?.character || character, j)) } : null; };
-  let cityRaised = {};
-  function setCityGates(raised = {}) {
-    cityRaised = { ...raised };
+  let cityRaised = {}, gatesSet = {};
+  let raids = null; // (made once the monsters are)
+  // (a monster attack on a city raises its bridges too, while it lasts: see raids.js)
+  function setCityGates(raised = gatesSet) {
+    gatesSet = { ...raised };
+    cityRaised = { ...gatesSet, ...(raids?.raisedCities() || {}) };
     for (const s of sites) if (s.built?.setRaised) s.built.setRaised(!!cityRaised[s.place.id], colliders);
   }
   // who owns the houses for sale in each great city: { city: { house: owner } }
@@ -747,6 +751,24 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   });
 
   for (const s of sites) if (s.built && s.place.cave) postGuards(s); // caves built before the monsters existed
+
+  // ---------- monster attacks on the towns (see raids.js), started by the realm's keepers ----------
+  raids = createRaids({ creatures, say, getPos: () => (inside ? { x: inside.back.x, z: inside.back.z } : { x: pos.x, z: pos.z }), inWorld: () => !inside && !depth });
+  let chatterT = 6;
+  // while the news is fresh the townsfolk crowd the plaza, and you hear what they say as you pass
+  function townChatter(dt) {
+    chatterT -= dt;
+    if (chatterT > 0 || inside || depth) return;
+    chatterT = 9;
+    for (const s of builtCities()) {
+      if (!raids.gatherAt(s.place) || Math.hypot(pos.x - s.place.x, pos.z - s.place.z) > 45) continue;
+      const folk = s.built.npcs.filter((n) => n.kind !== 'teacher' && n.kind !== 'stall' && n.kind !== 'child');
+      const n = folk[Math.floor(Math.random() * folk.length)];
+      const line = n && raids.talk(s.place.x, s.place.z, Math.floor(Math.random() * 5));
+      if (line) say(`${n.name}: "${line}"`, 'note');
+      return;
+    }
+  }
 
   // ---------- hunting, cooking and the farms (see husbandry.js) ----------
   husbandry = createHusbandry({
@@ -2676,6 +2698,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     land.animate(t);
     for (const k of skyCards.values()) { k.card.group.visible = !inside && !depth && Math.hypot(pos.x - k.place.x, pos.z - k.place.z) < 1500; if (k.card.group.visible) k.card.update(t, 42); }
     creatures.update(dt, t);
+    raids?.tick(dt); townChatter(dt);
     tickEffects(dt);
     tickArrows(dt);
     skillFx.update(dt);
@@ -2820,7 +2843,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const k = skyCards.get(s.place.id);
         if (!inside && !depth && game && ceremonyDue(game.character) && Math.hypot(pos.x - s.place.x, pos.z - s.place.z) < 12) s.ceremonyAt = t;
         // (yours: they stay a little while after, until your card shows in the sky)
-        s.built.gather(t - (s.ceremonyAt ?? -1e9) < 30 || (!!k && realmNow() - k.at < GATHER_MS));
+        s.built.gather(t - (s.ceremonyAt ?? -1e9) < 30 || (!!k && realmNow() - k.at < GATHER_MS) || !!raids?.gatherAt(s.place));
       }
     }
     for (const q of mobVillages.values()) q.built.update(t, pos, creatures.list);
@@ -2968,6 +2991,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     },
     // on a flying mount: the phone's dive button (held) and whether you are in the air
     flyDown(on) { flyDown = !!on; },
+    // monster attacks on the towns (the list from the server, every few seconds)
+    setRaids(list) { raids.set(list); setCityGates(); },
+    // what a townsperson says about the news, if there is any where they live
+    raidTalk: (n, speaker = 0) => raids.talk(n.x, n.z, speaker),
+    debugRaids: () => raids.debugList(),
+    // the realm's keepers bring slain great beasts back to life (`kind`: a beast id, or 'all')
+    reviveBeasts(kind = 'all') {
+      const n = creatures.revive(allLairs().filter((L) => kind === 'all' || L.kind === kind).map((L) => L.id));
+      if (n) say(kind === 'all' ? 'The great beasts stir in their lairs again…' : `The ${BEASTS[kind]?.name || 'beast'} returns to its lair…`, 'note');
+      return n;
+    },
     commandDragon: () => commandDragon(),
     petOrder, castSpellNamed,
     petNow: () => { const c = riding?.companion(), m = riding?.mount(); return c ? { kind: 'dragon', id: c.id, item: m?.item, name: BEASTS[c.id].name } : m ? { kind: 'mount', id: m.id, item: m.item, name: ITEMS[m.item]?.name } : null; },
@@ -3042,6 +3076,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     digPit: (x, z) => oil?.pit(x, z, heading),
     plantSeed: (id) => (!inside && !depth ? crops?.plantSeed(id) : 'inside'),
     callMount: (id) => riding?.toggle(id),
+    // the realm's keepers move a pet (see gifts.js): to you, home, and whether you are flying on it
+    petCome: (id) => riding?.come(id) || 'none',
+    petHome: (id) => riding?.putAway(id) || 'none',
+    petFlying: (id) => !!riding?.flyingOn(id),
     placeEgg: (id) => hatchery?.placeEgg(id),
     debugHatchery: () => hatchery?.debug(),
     debugWarmEggs: (secs) => hatchery?.debugWarm(secs),
@@ -3207,6 +3245,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     stop() {
       saveNow();
       renderer.setAnimationLoop(null);
+      raids?.dispose();
       creatures.clear();
       others.clear();
       skillFx.clear();

@@ -657,7 +657,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       if (m.bits) for (const p of m.bits) { if (p.done) continue; p.vy -= 9.8 * dt; p.obj.position.y += p.vy * dt; p.obj.rotation.x += dt * 4; if (p.obj.position.y < m.y + 0.08) { p.obj.position.y = m.y + 0.08; p.done = true; } }
       if (m.kind.animal && !m.kind.aggressive) { stepAnimal(m, dt, t, p, dx, dz, dist); continue; }
       let speed = 0;
-      const hidden = p.safe && !m.hurtBy; // a torch or a campfire keeps you hidden
+      const hidden = p.safe && !m.hurtBy && !m.raid; // a torch or a campfire keeps you hidden (but not from monsters attacking a town)
       // lurkers wait without moving until you walk into them (or hit one)
       if (m.state === 'lurk') {
         if (!p.dead && (dist < 13 || m.hurtBy)) spring(m.pack);
@@ -665,7 +665,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       }
       // by day only angry monsters come for you; at night they all do. They notice you from afar
       // and creep closer before they charge; an ambusher that has sprung tracks you down.
-      const sense = m.hunting ? 140 : m.state === 'chase' ? 40 : night ? NOTICE + 10 : NOTICE;
+      const sense = m.hunting ? 140 : m.raid ? 45 : m.state === 'chase' ? 40 : night ? NOTICE + 10 : NOTICE;
       const chase = (m.angry || night) && !p.dead && !hidden && dist < sense;
       const stalk = !chase && m.angry && !p.dead && !hidden && dist < STALK;
       const baited = m.kind.animal ? lureMove(m, dt, p, dist, dx, dz) : -1;
@@ -691,6 +691,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         // guards hold their post, watching the way in
         m.state = 'wander';
         m.heading = m.guard.heading;
+      } else if (!stalk && m.leash && Math.hypot(m.leash.x - m.x, m.leash.z - m.z) > m.leash.r) {
+        // (monsters attacking a town keep close to it: back they go)
+        m.state = 'wander';
+        m.heading = Math.atan2(m.leash.x - m.x, m.leash.z - m.z);
+        speed = m.speed * 0.6;
       } else if (!stalk) {
         m.state = 'wander';
         m.timer -= dt;
@@ -889,6 +894,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     update, target, targets, hit,
     // how many seconds until a slain great beast's lair has a new one (0: it is there)
     slainIn: (lairId) => Math.max(0, (slain.get(lairId) || 0) - nowT),
+    // the realm's keepers bring slain great beasts back: their empty lairs have them again at once
+    revive(lairIds) { let n = 0; for (const id of lairIds) if ((slain.get(id) || 0) > nowT) { slain.delete(id); n++; } beastTimer = 0; return n; },
     calm() { for (const m of list) { m.angry = false; m.state = 'wander'; m.timer = 4; } },
     // the living grazing animal nearest (x, z) within r metres (to feed or pet)
     animalNear(x, z, r) {

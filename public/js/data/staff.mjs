@@ -13,8 +13,8 @@ export const BOARD_PERMS = [
   ['announce', 'Announcements', 'Show a message across the top of everyone\'s screen.'],
   ['move', 'Move players', 'Carry a player to a place.'],
   ['heal', 'Heal players', 'Heal a player fully and mend their bones.'],
-  ['edit', 'Change characters', 'Levels, coins, stats, items, skills, race and class, childhood.'],
-  ['world', 'Run the world', 'City bridges, thrones, land, caves and houses, health numbers, sect leaders.'],
+  ['edit', 'Change characters', 'Levels, coins, stats, items, skills, race and class, childhood, gifts and pets.'],
+  ['world', 'Run the world', 'City bridges, monster attacks, bringing back dragons, thrones, land, caves and houses, health numbers, sect leaders.'],
 ];
 // Powers in the game (the owner always has all of them)
 export const GAME_POWERS = [
@@ -47,10 +47,13 @@ export const ROUTE_PERMS = {
   'POST mute': 'mute', 'POST ban': 'ban', 'POST signout': 'kick', 'POST chat/delete': 'chat', 'POST reports/close': 'reports',
   'POST announce': 'announce', 'POST move': 'move', 'POST edit': 'edit', 'POST skip/childhood': 'edit',
   'POST gates': 'world', 'POST take': 'world', 'POST kings/reset': 'world', 'POST tuning': 'world', 'POST sects': 'world',
+  // gifts and pets (Change characters), monster attacks and bringing back the great beasts (Run the world)
+  'GET gifts': 'edit', 'POST gift': 'edit', 'POST gift/unsend': 'edit', 'POST pet': 'edit',
+  'GET raids': 'world', 'POST raid': 'world', 'POST raid/end': 'world', 'POST revive': 'world',
 };
 // Board requests that act on one player (by id): an admin the owner made can't use them on the owner
 // or on another admin
-export const ON_A_PLAYER = ['POST mute', 'POST ban', 'POST signout', 'POST move', 'POST edit', 'POST skip/childhood', 'POST sects'];
+export const ON_A_PLAYER = ['POST mute', 'POST ban', 'POST signout', 'POST move', 'POST edit', 'POST skip/childhood', 'POST sects', 'POST pet', 'POST gift'];
 
 // May someone with these permissions make this request? (`body` for Heal, which goes through edit)
 export function allowed(perms, key, body) {

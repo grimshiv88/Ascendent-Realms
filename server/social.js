@@ -135,7 +135,9 @@ async function poll(me, after) {
   }
   const ann = await db.get("SELECT data FROM world_state WHERE key = 'announcement'");
   const a = ann ? JSON.parse(ann.data) : null;
-  return { messages, rooms: rc.map((r) => r.label), announcement: a && a.until > Date.now() ? { text: a.text, at: a.at } : null, ...(await friends(me)) };
+  // gifts and pet orders from the realm's keepers, monster attacks, great beasts brought back (server/gifts.js)
+  const world = await require('./gifts').forGame(me).catch(() => ({}));
+  return { messages, rooms: rc.map((r) => r.label), announcement: a && a.until > Date.now() ? { text: a.text, at: a.at } : null, ...world, ...(await friends(me)) };
 }
 
 // Send to the general chat, or to a friend by username

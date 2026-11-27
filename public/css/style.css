@@ -1312,6 +1312,30 @@ body.player-dead #world { filter: grayscale(1) brightness(0.75); transition: fil
 #online-list li span { opacity: 0.8; }
 #online-list small { display: block; opacity: 0.75; }
 @media (max-width: 700px) { #online-now { top: 178px; } #online-list { top: 210px; } }
+
+/* a monster attack on a town: the warning across the screen of the players close by (world/raids.js) */
+.raid-banner { position: fixed; top: 56px; left: 50%; transform: translateX(-50%); z-index: 61; max-width: min(720px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px 9px 16px; border: 1px solid #e0574a; border-radius: 6px;
+  background: linear-gradient(180deg, rgba(70, 14, 10, 0.95), rgba(34, 8, 6, 0.95)); color: #fff0e6; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55), 0 0 18px rgba(224, 87, 74, 0.35);
+  font-size: 15px; animation: raid-in 0.4s ease-out; }
+.raid-banner[hidden] { display: none; }
+.raid-banner b { font-size: 20px; }
+.raid-banner button { background: none; border: 0; color: #fff0e6; font-size: 18px; cursor: pointer; padding: 0 4px; }
+@keyframes raid-in { from { transform: translate(-50%, -16px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+/* a gift from the realm's keepers (gifts.js): the pop-up when it arrives, and when it is opened */
+.gift-pop { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: rgba(0, 0, 0, 0.55); padding: 16px; }
+.gift-pop[hidden] { display: none; }
+.gift-card { width: min(420px, 100%); text-align: center; padding: 22px 20px 18px; border: 1px solid #c8921a; border-radius: 10px; color: #f4ead2;
+  background: radial-gradient(ellipse at top, #3a2a10 0%, #160f07 70%); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(245, 200, 76, 0.2); animation: gift-in 0.45s cubic-bezier(.2, 1.4, .4, 1); }
+.gift-card .gift-big { font-size: 64px; line-height: 1; display: block; margin-bottom: 8px; animation: gift-wiggle 1.6s ease-in-out infinite; }
+.gift-card.opened .gift-big { animation: none; }
+.gift-card h3 { margin: 0 0 6px; font-family: Cinzel, serif; color: #f5c84c; }
+.gift-card .gift-note { margin: 10px 0; padding: 10px 12px; border-left: 3px solid #c8921a; background: rgba(0, 0, 0, 0.3); text-align: left; font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; }
+.gift-card .gift-from { color: #a99d80; font-size: 0.9em; margin: 0 0 12px; }
+.gift-card .gift-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+@keyframes gift-in { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes gift-wiggle { 0%, 70%, 100% { transform: rotate(0); } 76% { transform: rotate(-9deg); } 84% { transform: rotate(8deg); } 92% { transform: rotate(-4deg); } }
 /* The tutorial for new players (tutorial.js): a card at the bottom, an arrow that points the way,
    and a bouncing pointer under the button a step is about */
 .tut-card { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 2; width: min(460px, calc(100% - 32px)); padding: 12px 14px; background: rgba(8, 6, 3, 0.86); border: 1px solid var(--gold-3); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55); color: var(--ink); font: 0.92rem/1.45 Georgia, serif; }
