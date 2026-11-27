@@ -5,10 +5,12 @@
 //     walk along the top of the wall (stairs up to it either side of the gate, inside)
 //   - a courtyard with an avenue of statues and braziers from the gate to the keep, the King's own
 //     wonders either side (lava pools, glowing trees, gel pools...) and two great halls
-//   - the keep: a Throne Hall 38 m wide, 94 m long and 30 m high (the throne on a dais at the far
-//     end, sized for the King), and a wing either side with three big rooms on the ground floor,
-//     a gallery above (with balconies looking down into the Throne Hall) and a roof terrace.
-//     Every stair goes somewhere: ground floor -> gallery -> roof terrace, and courtyard -> wall top.
+//   - the keep: a tower 92 m wide, 96 m deep and 110 m high, seven floors stacked one on another.
+//     The Hall of Guards on the ground, then five floors each kept by a floor boss (the Barracks,
+//     the Armoury, the Treasury, the Hall of Trials, the Hall of Champions), and at the very top
+//     the Throne Hall, where the King sits with the Overlords. The stair up from each boss floor is
+//     sealed by a wall of light until that floor's boss falls; the stairs climb on alternate sides,
+//     so you cross every floor (and its boss) on the way up.
 // Everything that never moves is merged into a few meshes (see merge.js), so a castle costs a
 // handful of draw calls; its walls are lines of small solid circles (like every other wall).
 import * as THREE from 'three';
@@ -57,21 +59,41 @@ export const CASTLE = {
   WALL_H: 18, WALL_T: 5,
   GATE: 10,          // half the gate's width
   KEEP: { x: 46, n: -88, s: 8 }, // the keep's outer walls
-  HALL: 20,          // the Throne Hall's side walls (x = ±20)
-  HALL_H: 30,
-  GALLERY: 12, TERRACE: 24, // the wings' upper floor and roof terrace
+  STOREY: 14,        // from one floor of the keep to the next
+  TOP: 110,          // the keep's roof (the Throne Hall is 26 m high)
+  STAIR: { x0: 36.5, x1: 45, z0: 0.5, z1: -28.5 }, // each floor's stair up (|x|; on alternate sides)
+  ARENA: [0, -40],   // where each floor's boss stands
   THRONE_Z: -81, KING_Z: -76, DAIS: { x: 14, z0: -87, z1: -68, y: 0.7 },
 };
 const C = CASTLE;
+// The keep's floors, from the ground up. A floor with a boss has its stair up sealed until the boss falls.
+export const KEEP_FLOORS = [
+  { name: 'The Hall of Guards' },
+  { name: 'The Barracks', boss: 'Warden of the Gate', level: 550 },
+  { name: 'The Armoury', boss: 'Master of Arms', level: 650 },
+  { name: 'The Treasury', boss: 'Keeper of the Hoard', level: 750 },
+  { name: 'The Hall of Trials', boss: 'The Trial Master', level: 850 },
+  { name: 'The Hall of Champions', boss: "The King's Champion", level: 950 },
+  { name: 'The Throne Hall' },
+];
+const TOPF = KEEP_FLOORS.length - 1;
+export const floorY = (k) => k * C.STOREY;  // floor k's height above the courtyard
+C.THRONE_Y = floorY(TOPF);                  // (84 m up)
+const sideOf = (k) => (k % 2 ? 1 : -1);    // floor k's stair up is on the west (-1) or east (+1) side
 
-// Spots for the court (local x, z): the King, the Overlords along the carpet, the guards
+// Spots for the court (local x, z, y): the King and the Overlords in the Throne Hall at the top,
+// a boss on each floor below, the guards outside and in the Hall of Guards
 export function courtSpots(n) {
+  const TY = C.THRONE_Y;
   const overlords = [];
-  for (let i = 0; i < n; i++) overlords.push([(i % 2 ? 1 : -1) * 6, -62 + Math.floor(i / 2) * 9]);
+  for (let i = 0; i < n; i++) overlords.push([(i % 2 ? 1 : -1) * 6, -62 + Math.floor(i / 2) * 9, TY]);
+  const bosses = [];
+  KEEP_FLOORS.forEach((f, k) => { if (f.boss) bosses.push({ floor: k, x: C.ARENA[0], z: C.ARENA[1], y: floorY(k), title: f.boss, level: f.level, room: f.name }); });
   return {
-    king: [0, C.KING_Z],
+    king: [0, C.KING_Z, TY + C.DAIS.y],
     overlords,
-    guards: [[-6, C.R + 9], [6, C.R + 9], [-5, 74], [5, 74], [-5, 38], [5, 38], [-7, 3], [7, 3]],
+    bosses,
+    guards: [[-6, C.R + 9], [6, C.R + 9], [-5, 74], [5, 74], [-5, 38], [5, 38], [-7, 3], [7, 3], [-12, -30], [12, -30]],
   };
 }
 
@@ -107,13 +129,13 @@ function maker(cx, F, cz) {
     cone(mat, x, y, z, r, h, seg = 16) { return B.mesh(new THREE.ConeGeometry(r, h, seg), mat, x, y + h / 2, z); },
     ball(mat, x, y, z, r, seg = 14) { return B.mesh(new THREE.SphereGeometry(r, seg, Math.max(6, seg >> 1)), mat, x, y, z); },
     // something solid: circles of radius r along a line (local coords), standing from y up h metres
-    solidLine(x0, z0, x1, z1, y, h, r, yAt = null) {
+    solidLine(x0, z0, x1, z1, y, h, r, yAt = null, hAt = null) {
       const len = Math.hypot(x1 - x0, z1 - z0);
       const step = Math.max(0.5, r * 1.1);
       const n = Math.max(1, Math.ceil(len / step));
       for (let i = 0; i <= n; i++) {
         const t = i / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
-        solids.push({ x: cx + x, z: cz + z, r, kind: 'wall', built: true, y: F + (yAt ? yAt(x, z) : y), height: h });
+        solids.push({ x: cx + x, z: cz + z, r, kind: 'wall', built: true, y: F + (yAt ? yAt(x, z) : y), height: hAt ? hAt(x, z) : h });
       }
     },
     // a solid round thing (a tower, a pillar). Big ones are a ring of circles (the collision grid
@@ -224,10 +246,10 @@ function towerRoof(B, T, x, y, z, r) {
 }
 
 // A great statue on a plinth, facing `ry` (0 = facing south, out towards the gate)
-function statue(B, T, x, z, s = 1, ry = 0) {
+function statue(B, T, x, z, s = 1, ry = 0, y0 = 0) {
   const stone = stoneWallMat(T.wall2), dark = plain(T.trim, 0.8), gold = plain(T.gold, 0.35, 0.6), eye = glowing(T.glow, 2);
-  B.box(stone, x, 0, z, 5 * s, 2 * s, 5 * s);
-  const y = 2 * s;
+  B.box(stone, x, y0, z, 5 * s, 2 * s, 5 * s);
+  const y = y0 + 2 * s;
   const at = (dx, dz) => [x + Math.cos(ry) * dx + Math.sin(ry) * dz, z - Math.sin(ry) * dx + Math.cos(ry) * dz];
   switch (T.statue) {
     case 'dragon': { // a dragon sitting up, wings half spread, looking down the avenue
@@ -559,145 +581,233 @@ export function buildKingCastle(c) {
     banner(B, T, hx - s * (hw / 2 + 0.7), hh - 0.5, hz, 3.5, 7, -s, 0);
   }
 
-  // ---- the keep ----
-  const K = C.KEEP, H = C.HALL, HH = C.HALL_H, GL = C.GALLERY, TE = C.TERRACE;
-  const KH = TE + 1.6; // the wings' outer walls rise to the terrace's parapet
-  // the Throne Hall's front, with the great doors; the wings' fronts each with a door of their own
-  wall(B, wallM, 'x', K.s, -H, H, 0, HH, 2.4, [[-8, 8, 18]]);
-  for (const s of [-1, 1]) {
-    const lo = Math.min(s * H, s * K.x), hi = Math.max(s * H, s * K.x);
-    wall(B, wallM, 'x', K.s, lo, hi, 0, KH, 2, [[s > 0 ? 29 : -37, s > 0 ? 37 : -29, 9]]);
-    wall(B, wallM, 'x', K.n, lo, hi, 0, KH, 2);
-    wall(B, wallM, 'z', s * K.x, K.n, K.s, 0, KH, 2);
-  }
-  wall(B, wallM, 'x', K.n, -H, H, 0, HH, 2.4);
-  // the Throne Hall's side walls: doors into the wings below, balconies from the galleries above
-  for (const s of [-1, 1]) {
-    wall(B, wallM, 'z', s * H, K.n, K.s, 0, GL, 2, [[-16, -6, 10], [-76, -64, 10]]);
-    wall(B, wallM, 'z', s * H, K.n, K.s, GL, TE - GL - 1, 2, [[-84, -64, 9], [-22, -4, 9]]);
-    wall(B, wallM, 'z', s * H, K.n, K.s, TE - 1, HH - TE + 1, 2);
-    for (const [a, b2] of [[-84, -64], [-22, -4]]) {
-      // the balcony: a ledge out over the hall with a golden rail
-      B.box(trimM, s * (H - 0.7), GL - 0.6, (a + b2) / 2, 3.4, 0.6, b2 - a);
-      B.floor(s * (H - 2.4), s * (H + 1), a, b2, GL);
-      B.box(goldM, s * (H - 2.2), GL, (a + b2) / 2, 0.3, 1.2, b2 - a);
-      B.solidLine(s * (H - 2.2), a, s * (H - 2.2), b2, GL, 1.2, 0.4);
+  // ---- the keep: a tower of seven floors ----
+  const K = C.KEEP, ST = C.STOREY, TOP = C.TOP, TY = C.THRONE_Y, SR = C.STAIR;
+  const IX = K.x - 1, IN = K.n + 1, IS = K.s - 1; // the inside faces of its walls
+  const iron = plain('#2e2c2a', 0.5, 0.7), wood = plain(T.trim, 0.8), steel = plain('#a8aeb6', 0.3, 0.8), carpetM = plain(T.carpet, 0.95);
+  // the outer walls, as high as the roof: the great doors in front, and windows on every floor
+  wall(B, wallM, 'x', K.s, -K.x, K.x, 0, ST, 2.4, [[-8, 8, 12]]);
+  wall(B, wallM, 'x', K.s, -K.x, K.x, ST, TOP - ST, 2.4);
+  wall(B, wallM, 'x', K.n, -K.x, K.x, 0, TOP, 2.4);
+  for (const s of [-1, 1]) wall(B, wallM, 'z', s * K.x, K.n, K.s, 0, TOP, 2);
+  for (let k = 0; k <= TOPF; k++) {
+    const y = floorY(k), top = k === TOPF, wy = y + (top ? 5 : 4), wh = top ? 14 : 6;
+    // (each pane goes right through the wall, so it glows inside and out)
+    for (const s of [-1, 1]) {
+      for (let z = K.n + 9; z < K.s - 4; z += 10) B.box(winM, s * K.x, wy, z, 2.6, wh, 2);
+      for (const x of [16, 27, 38]) { B.box(winM, s * x, wy, K.n, 2, wh, 2.8); if (k) B.box(winM, s * x, wy, K.s, 2, wh, 2.8); }
+    }
+    // a band of trim round the outside at each floor
+    if (k) {
+      B.box(trimM, 0, y - 1, K.s + 1.4, 2 * K.x + 1, 1, 0.6); B.box(trimM, 0, y - 1, K.n - 1.4, 2 * K.x + 1, 1, 0.6);
+      for (const s of [-1, 1]) B.box(trimM, s * (K.x + 1.2), y - 1, (K.n + K.s) / 2, 0.6, 1, K.s - K.n + 1);
     }
   }
-  // the keep's floors: the Throne Hall and the wings' ground floor are the courtyard's level
-  B.box(floorM, 0, -0.6, (K.n + K.s) / 2, 2 * K.x, 0.75, K.s - K.n);
-  B.floor(-K.x, K.x, K.n, K.s, 0.15);
-  // windows down the outside of the keep
+  // buttresses up the long sides, front and back
   for (const s of [-1, 1]) {
-    for (let z = K.n + 8; z < K.s - 4; z += 10) { B.box(winM, s * (K.x + 1.05), 3.5, z, 0.2, 5, 2); B.box(winM, s * (K.x + 1.05), 15, z, 0.2, 5, 2); }
-    for (const x of [s * 25, s * 41]) { B.box(winM, x, 15, K.s + 1.05, 2, 5, 0.2); B.box(winM, x, 15, K.n - 1.05, 2, 5, 0.2); }
+    for (const z of [-64, -40, -16]) { B.box(wall2M, s * (K.x + 1.6), 0, z, 1.6, TOP - 6, 3); B.solidDisc(s * (K.x + 1.6), z, 1.4, 0, TOP); }
+    for (const x of [22, 33]) for (const z of [K.n - 1.6, K.s + 1.6]) { B.box(wall2M, s * x, 0, z, 3, TOP - 6, 1.6); B.solidDisc(s * x, z, 1.4, 0, TOP); }
   }
-  // the Throne Hall's high clerestory windows and its great roof
-  for (let z = K.n + 6; z < K.s - 4; z += 9) for (const s of [-1, 1]) B.box(winM, s * (H + 1.05), TE + 1, z, 0.2, 3.6, 2.4);
-  B.box(wall2M, 0, HH, (K.n + K.s) / 2, 2 * H + 3, 1, K.s - K.n + 3);
-  B.prism(plain(T.roof, 0.7), 0, HH + 1, (K.n + K.s) / 2, 2 * H + 5, 15, K.s - K.n + 4);
-  // the King's spire behind the Throne Hall, and towers at the keep's four corners
-  B.cyl(wall2M, 0, 0, K.n - 2, 6, 52, 18);
-  B.solidDisc(0, K.n - 2, 6, 0, 52);
-  B.cyl(trimM, 0, 52, K.n - 2, 6.6, 1, 18);
-  towerRoof(B, T, 0, 53, K.n - 2, 6.2);
-  for (const [tx, tz] of [[-K.x, K.s], [K.x, K.s], [-K.x, K.n], [K.x, K.n]]) {
-    B.cyl(wallM, tx, 0, tz, 5.5, 38, 16);
-    B.solidDisc(tx, tz, 5.5, 0, 38);
-    for (const y of [12, 22, 31]) for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + Math.PI / 4; B.box(winM, tx + Math.cos(a) * 5.52, y, tz + Math.sin(a) * 5.52, 0.9, 2.6, 0.2, -a + Math.PI / 2); }
-    B.cyl(trimM, tx, 38, tz, 6.1, 0.9, 16);
-    towerRoof(B, T, tx, 38.9, tz, 5.8);
+  // the roof: a deck with merlons round its edge and a great ridge roof in the King's colour
+  B.box(wall2M, 0, TOP, (K.n + K.s) / 2, 2 * K.x + 3, 1.2, K.s - K.n + 3);
+  merlons(B, wall2M, 'x', K.s + 0.6, -K.x, K.x, TOP + 1.2, 1.6, 1.8, 1.6);
+  merlons(B, wall2M, 'x', K.n - 0.6, -K.x, K.x, TOP + 1.2, 1.6, 1.8, 1.6);
+  for (const s of [-1, 1]) merlons(B, wall2M, 'z', s * (K.x + 0.6), K.n, K.s, TOP + 1.2, 1.6, 1.8, 1.6);
+  B.prism(plain(T.roof, 0.7), 0, TOP + 1.2, (K.n + K.s) / 2, 2 * K.x - 18, 26, K.s - K.n - 16);
+  // towers at the keep's four corners, higher than the roof, and the King's spire rising from the roof
+  for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    const tx = sx * (K.x + 2.5), tz = sz > 0 ? K.s + 2.5 : K.n - 2.5, TR = 6.5, TH = TOP + 16;
+    B.cyl(wallM, tx, 0, tz, TR, TH, 18);
+    B.solidDisc(tx, tz, TR, 0, TH);
+    for (let k = 0; k <= TOPF; k++) for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; B.box(winM, tx + Math.cos(a) * (TR + 0.02), floorY(k) + 6, tz + Math.sin(a) * (TR + 0.02), 1, 3, 0.2, -a + Math.PI / 2); }
+    B.cyl(trimM, tx, TH, tz, TR + 0.6, 1, 18);
+    for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; B.box(wall2M, tx + Math.cos(a) * (TR + 0.1), TH + 1, tz + Math.sin(a) * (TR + 0.1), 1.3, 1.6, 0.9, -a + Math.PI / 2); }
+    towerRoof(B, T, tx, TH + 1, tz, TR - 0.6);
   }
-  // the front: the great doors standing open, banners and braziers
+  {
+    const [sx, sz] = C.ARENA, SH = 48;
+    B.cyl(wall2M, sx, TOP + 1.2, sz, 7, SH, 20);
+    for (let y = TOP + 26; y < TOP + SH - 4; y += 9) for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; B.box(winM, sx + Math.cos(a) * 7.02, y, sz + Math.sin(a) * 7.02, 1.4, 4, 0.2, -a + Math.PI / 2); }
+    B.cyl(trimM, sx, TOP + 1.2 + SH, sz, 7.6, 1.2, 20);
+    towerRoof(B, T, sx, TOP + 2.4 + SH, sz, 7.2);
+  }
+  // the front: the great doors standing open, long banners down from the Throne Hall, braziers
   for (const s of [-1, 1]) {
-    const leaf = B.box(plain(T.trim, 0.7, 0.2), s * 11.5, 0, K.s + 3.6, 7.6, 17.5, 0.6);
+    const leaf = B.box(plain(T.trim, 0.7, 0.2), s * 11.5, 0, K.s + 3.6, 7.6, 11.6, 0.6);
     leaf.rotation.y = s * 1.2;
-    B.box(goldM, s * 8.6, 0, K.s + 1.3, 0.8, 18, 0.8);
-    banner(B, T, s * 13.5, HH - 2, K.s + 1.2, 4.5, 12, 0, 1);
+    B.box(goldM, s * 8.6, 0, K.s + 1.3, 0.8, 12, 0.8);
+    banner(B, T, s * 13.5, ST - 1.5, K.s + 1.4, 4.5, 10, 0, 1);
+    banner(B, T, s * 8, TY + 22, K.s + 1.4, 6, 40, 0, 1);
     brazier(B, T, s * 12, 0, K.s + 8, 1.3);
   }
-  B.box(goldM, 0, 18, K.s + 1.3, 18, 1.2, 0.8);
+  B.box(goldM, 0, 12, K.s + 1.3, 18, 1.2, 0.8);
 
-  // ---- inside the Throne Hall ----
-  // the long carpet, the pillars, the banners between them, braziers and the King's wonders
-  B.box(plain(T.carpet, 0.95), 0, 0.15, (C.DAIS.z1 + K.s) / 2, 9, 0.06, K.s - C.DAIS.z1);
-  B.box(goldM, -4.7, 0.15, (C.DAIS.z1 + K.s) / 2, 0.4, 0.07, K.s - C.DAIS.z1);
-  B.box(goldM, 4.7, 0.15, (C.DAIS.z1 + K.s) / 2, 0.4, 0.07, K.s - C.DAIS.z1);
-  for (let z = -78; z <= 0; z += 12) {
-    for (const s of [-1, 1]) {
-      B.cyl(wall2M, s * 11.5, 0, z, 1.7, 1.4, 12, 2.2);
-      B.cyl(wallM, s * 11.5, 1.4, z, 1.5, HH - 3.4, 14);
-      B.cyl(goldM, s * 11.5, HH - 2, z, 2.4, 2, 14, 1.5);
-      B.cyl(goldM, s * 11.5, 6, z, 1.55, 0.4, 14);
-      B.solidDisc(s * 11.5, z, 1.7, 0, HH);
-      if (z > -78) banner(B, T, s * (H - 1.05), GL - 1.5, z + 6, 3, 8, -s, 0);
+  // ---- the floors, the stairs between them, and the seals on the stairs ----
+  // (floor k's stair climbs from its south end, z 0.5, to the north, z -28.5, along the side
+  //  wall on side sideOf(k), into a stairwell in the floor above)
+  const seals = [];
+  const slab = (y, hole) => {
+    const parts = [[-IX, hole[0], IN, IS], [hole[1], IX, IN, IS], [hole[0], hole[1], IN, hole[2]], [hole[0], hole[1], hole[3], IS]];
+    for (const [x0, x1, z0, z1] of parts) {
+      if (x1 - x0 < 0.05 || z1 - z0 < 0.05) continue;
+      B.box(floorM, (x0 + x1) / 2, y - 0.6, (z0 + z1) / 2, x1 - x0, 0.6, z1 - z0);
+      B.floor(x0, x1, z0, z1, y);
+    }
+    // (the ceiling below stops the camera: a roof it can't see through)
+    for (let x = -IX + 3.5; x < IX; x += 7) for (let z = IN + 3.5; z < IS; z += 7) {
+      if (x > hole[0] - 2 && x < hole[1] + 2 && z > hole[2] - 2 && z < hole[3] + 2) continue;
+      B.solids.push({ x: cx + x, z: cz + z, r: 5, kind: 'wall', built: true, camOnly: true, y: F + y - 0.9, height: 1 });
+    }
+  };
+  // the ground floor
+  B.box(floorM, 0, -0.6, (K.n + K.s) / 2, 2 * K.x, 0.75, K.s - K.n);
+  B.floor(-K.x, K.x, K.n, K.s, 0.15);
+  for (let k = 0; k < TOPF; k++) {
+    const s = sideOf(k), y0 = floorY(k), y1 = floorY(k + 1);
+    const hx0 = Math.min(s * SR.x0, s * SR.x1), hx1 = Math.max(s * SR.x0, s * SR.x1);
+    // the floor above, with its stairwell; the stair
+    slab(y1, [hx0, hx1, SR.z1, SR.z0]);
+    B.stair(wall2M, hx0, hx1, SR.z1, SR.z0, 'z', SR.z0, SR.z1, k ? y0 : 0.15, y1, y0);
+    const rampY = (z) => y0 + (y1 - y0) * Math.min(1, Math.max(0, (SR.z0 - z) / (SR.z0 - SR.z1)));
+    // its open side: a solid face from the floor up to a rail along the stair
+    B.solidLine(s * (SR.x0 + 0.3), SR.z0, s * (SR.x0 + 0.3), SR.z1, y0, 1.2, 0.35, null, (x, z) => rampY(z) - y0 + 1.2);
+    B.box(goldM, s * (SR.x0 + 0.2), y0, (SR.z0 + SR.z1) / 2, 0.3, 0.1, SR.z0 - SR.z1); // (a gold edge along its foot)
+    for (let z = SR.z0 - 2; z > SR.z1; z -= 4) B.box(goldM, s * (SR.x0 + 0.25), rampY(z), z, 0.25, 1.15, 0.25);
+    B.mesh(new THREE.CylinderGeometry(0.12, 0.12, Math.hypot(SR.z0 - SR.z1, y1 - y0), 6), goldM, s * (SR.x0 + 0.25), (y0 + y1) / 2 + 1.15, (SR.z0 + SR.z1) / 2, Math.atan2(SR.z0 - SR.z1, y1 - y0), 0, 0);
+    // rails round the stairwell above (not at its north end, where the stair comes up)
+    B.solidLine(s * (SR.x0 - 0.2), SR.z1, s * (SR.x0 - 0.2), SR.z0 + 0.2, y1, 1.2, 0.35);
+    B.solidLine(s * SR.x0, SR.z0 + 0.3, s * SR.x1, SR.z0 + 0.3, y1, 1.2, 0.35);
+    B.box(goldM, s * (SR.x0 - 0.2), y1, (SR.z0 + SR.z1) / 2, 0.3, 1.1, SR.z0 - SR.z1);
+    B.box(goldM, s * (SR.x0 + SR.x1) / 2, y1, SR.z0 + 0.3, SR.x1 - SR.x0, 1.1, 0.3);
+    for (let z = SR.z0; z >= SR.z1; z -= 3.6) B.box(wall2M, s * (SR.x0 - 0.2), y1, z, 0.5, 1, 0.5);
+    // a boss floor's stair is sealed by a wall of light until its boss falls
+    if (KEEP_FLOORS[k].boss) {
+      const n0 = B.solids.length;
+      B.solidLine(s * (SR.x0 - 0.8), SR.z0 + 0.6, s * SR.x1, SR.z0 + 0.6, y0, 8, 0.5);
+      seals[k] = { solid: B.solids.splice(n0), x: s * (SR.x0 + SR.x1) / 2 - s * 0.4, y: y0, z: SR.z0 + 0.6, w: SR.x1 - SR.x0 + 0.8 };
     }
   }
-  if (T.special === 'lava') {
-    // channels of lava down both sides of the hall, under grates
-    for (const s of [-1, 1]) { B.box(plain('#1a1414', 0.95), s * 16, 0.1, -36, 3.2, 0.2, 80); B.box(glowing('#ff5a10', 2.2), s * 16, 0.12, -36, 2.2, 0.2, 78); }
-  } else if (T.special === 'pools' || T.special === 'gel' || T.special === 'glowtrees') {
-    for (const s of [-1, 1]) { B.box(wall2M, s * 16, 0.1, -36, 4, 0.3, 70); B.box(water(T.special === 'gel' ? T.glow : '#2aa8a0'), s * 16, 0.15, -36, 3.2, 0.3, 68); }
-  }
-  for (const z of [-57.5, -36, -14]) for (const s of [-1, 1]) brazier(B, T, s * 8.5, 0.15, z, 1.1, z !== -36);
-  // great rings of fire hanging from the roof on chains
-  for (const z of [-62, -38, -14]) {
-    B.box(plain('#2e2c2a', 0.5, 0.7), 0, 19, z, 0.25, HH - 19, 0.25);
-    B.mesh(new THREE.TorusGeometry(3.4, 0.25, 6, 20), goldM, 0, 19, z, Math.PI / 2, 0, 0);
-    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; B.cone(glowing(T.glow, 2.4), Math.cos(a) * 3.4, 19.1, z + Math.sin(a) * 3.4, 0.3, 0.8, 6); }
-    B.light(0, 18, z, T.light, 160, 55);
-  }
-  // the dais and the throne, made for the King
-  const D = C.DAIS;
-  B.box(wall2M, 0, 0, (D.z0 + D.z1) / 2, 2 * D.x, D.y, D.z1 - D.z0);
-  B.box(goldM, 0, D.y - 0.1, D.z1 + 0.05, 2 * D.x, 0.12, 0.3);
-  B.box(plain(T.carpet, 0.95), 0, D.y, (D.z0 + D.z1) / 2 + 2, 9, 0.06, D.z1 - D.z0 - 4);
-  B.floor(-D.x, D.x, D.z0, D.z1, D.y);
-  throne(B, T, 0, D.y, C.THRONE_Z + 3, T.kingH);
-  for (const s of [-1, 1]) { brazier(B, T, s * 10, 0.15, D.z1 + 3.5, 1.5); statue(B, T, s * 10, D.z0 + 5, 1.2, 0); }
-  B.solidDisc(0, C.THRONE_Z, 2, D.y, 4);
-  // the King's great banner on the wall behind the throne
-  banner(B, T, 0, HH - 3, K.n + 1.25, 12, 20, 0, 1);
 
-  // ---- the wings: three big rooms below, a gallery above, a roof terrace on top ----
-  for (const s of [-1, 1]) {
-    const X = (v) => s * v;
-    // ground-floor rooms (to the south, the middle with the stair, the north) with wide doorways
-    for (const zw of [-56, -26]) wall(B, wall2M, 'x', zw, X(H + 1), X(K.x - 1), 0, GL - 0.6, 1.2, [[Math.min(X(29), X(37)), Math.max(X(29), X(37)), 9]]);
-    // the gallery's floor and the terrace above, each with an open stairwell
-    const slab = (y, x0, x1, z0, z1) => { B.box(floorM, X((x0 + x1) / 2), y - 0.6, (z0 + z1) / 2, Math.abs(x1 - x0), 0.6, Math.abs(z1 - z0)); B.floor(X(x0), X(x1), z0, z1, y); };
-    // gallery (y 12): the stairwell from below is at |x| 39..45, z -55..-30
-    slab(GL, H + 1, 39, K.n + 1, K.s - 1);
-    slab(GL, 39, K.x - 1, K.n + 1, -55);
-    slab(GL, 39, K.x - 1, -30, K.s - 1);
-    // terrace (y 24): the stairwell from the gallery is at |x| 21..27, z -55..-29
-    slab(TE, 27, K.x - 1, K.n + 1, K.s - 1);
-    slab(TE, H + 1, 27, K.n + 1, -55);
-    slab(TE, H + 1, 27, -29, K.s - 1);
-    // the stairs: ground -> gallery along the outer wall, gallery -> terrace along the hall wall
-    B.stair(wall2M, X(39.2), X(44.8), -31, -55, 'z', -31, -55, 0.15, GL, 0);
-    B.stair(wall2M, X(21.2), X(26.8), -31, -55, 'z', -31, -55, GL, TE, GL);
-    // rails round the stairwells (so you don't walk off the edge above them)
-    B.solidLine(X(38.8), -55, X(38.8), -30, GL, 1.2, 0.35); B.box(goldM, X(38.8), GL, -42.5, 0.3, 1.1, 25);
-    B.solidLine(X(39), -30, X(45), -30, GL, 1.2, 0.35); B.box(goldM, X(42), GL, -30, 6, 1.1, 0.3);
-    B.solidLine(X(27.2), -55, X(27.2), -29, TE, 1.2, 0.35); B.box(goldM, X(27.2), TE, -42, 0.3, 1.1, 26);
-    B.solidLine(X(21), -29, X(27), -29, TE, 1.2, 0.35); B.box(goldM, X(24), TE, -29, 6, 1.1, 0.3);
-    // a low wall along each stair's open side
-    B.solidLine(X(38.9), -31, X(38.9), -55, 0, 1.2, 0.3, (x, z) => (Math.abs(z) - 31) / 24 * GL);
-    B.solidLine(X(27.1), -31, X(27.1), -55, GL, 1.2, 0.3, (x, z) => GL + (Math.abs(z) - 31) / 24 * (TE - GL));
-    // the terrace's parapet (the outer walls rise past it) and merlons on top
-    merlons(B, wall2M, 'z', X(K.x), K.n, K.s, KH, 2);
-    merlons(B, wall2M, 'x', K.s, X(H), X(K.x), KH, 2);
-    merlons(B, wall2M, 'x', K.n, X(H), X(K.x), KH, 2);
-    // things in the rooms: long tables, chests and racks (the court's hall, the treasury, the armoury)
-    const wood = plain(T.trim, 0.8);
-    for (const z of [-14, -1]) { B.box(wood, X(41), 0.15, z - 4, 3.6, 1.3, 10); B.solidLine(X(41), z - 8, X(41), z, 0.15, 1.4, 1.8); }
-    for (let i = 0; i < 6; i++) { B.box(goldM, X(24 + (i % 3) * 5), 0.15, -84 + Math.floor(i / 3) * 4, 2.4, 1.6, 1.6); B.solids.push({ x: cx + X(24 + (i % 3) * 5), z: cz - 84 + Math.floor(i / 3) * 4, r: 1.2, kind: 'wall', built: true, y: F, height: 1.7 }); }
-    for (let z = -80; z <= -62; z += 6) B.box(wood, X(43.5), 0.15, z, 1, 5, 4);
-    brazier(B, T, X(33), 0.15, -40, 0.9, false); brazier(B, T, X(33), 0.15, -70, 0.9);
-    brazier(B, T, X(33), GL, -10, 1, true); brazier(B, T, X(33), GL, -76, 1, false);
-    // the gallery's banners and long rugs
-    B.box(plain(T.carpet, 0.95), X(31), GL, -40, 6, 0.05, 70);
+  // ---- what is on each floor ----
+  const pillar = (x, z, y, h, r = 1.5) => {
+    B.cyl(wall2M, x, y, z, r + 0.2, 1.2, 12, r + 0.7);
+    B.cyl(wallM, x, y + 1.2, z, r, h - 3, 14);
+    B.cyl(goldM, x, y + h - 1.8, z, r + 0.9, 1.8, 14, r);
+    B.solidDisc(x, z, r + 0.2, y, h);
+  };
+  const lamps = (y, list) => { for (const [x, z] of list) B.light(x, y + 10, z, T.light, 150, 60); };
+  // a ring of fire hanging on a chain from the ceiling
+  const chandelier = (x, y, z, hang, r = 3.4) => {
+    B.box(iron, x, y, z, 0.25, hang, 0.25);
+    B.mesh(new THREE.TorusGeometry(r, 0.25, 6, 20), goldM, x, y, z, Math.PI / 2, 0, 0);
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; B.cone(glowing(T.glow, 2.4), x + Math.cos(a) * r, y + 0.1, z + Math.sin(a) * r, 0.3, 0.8, 6); }
+  };
+  // the boss's ground in the middle of a floor: a great ring in the floor, in the King's colours
+  const arena = (y) => {
+    const [ax, az] = C.ARENA;
+    B.cyl(plain(T.wall2, 0.9), ax, y, az, 17, 0.06, 32);
+    B.cyl(carpetM, ax, y + 0.01, az, 15.5, 0.06, 32);
+    B.mesh(new THREE.TorusGeometry(16.2, 0.3, 4, 40), goldM, ax, y + 0.05, az, Math.PI / 2, 0, 0);
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; B.cyl(stoneWallMat(T.wall2), ax + Math.cos(a) * 19, y, az + Math.sin(a) * 19, 0.6, 2.6, 8); B.ball(glowing(T.glow, 2.2), ax + Math.cos(a) * 19, y + 3, az + Math.sin(a) * 19, 0.45, 8); B.solidDisc(ax + Math.cos(a) * 19, az + Math.sin(a) * 19, 0.6, y, 3); }
+  };
+  for (let k = 0; k <= TOPF; k++) {
+    const y = floorY(k), h = (k === TOPF ? TOP : floorY(k + 1) - 0.6) - y;
+    if (k < TOPF) {
+      // two rows of pillars and banners down both side walls
+      for (let z = -80; z <= -8; z += 18) for (const s of [-1, 1]) pillar(s * 28, z, y, h);
+      for (let z = -78; z <= -36; z += 14) for (const s of [-1, 1]) banner(B, T, s * (IX - 0.05), y + h - 1, z, 3.4, 7, -s, 0);
+      lamps(y, [[0, -66], [0, -16]]);
+      for (const z of [-66, -16]) chandelier(0, y + h - 4, z, 3.4, 3);
+    }
+    if (KEEP_FLOORS[k].boss) arena(y);
+    // (things along the walls stay clear of the stairs: north of z -32, on both sides)
+    const wallSide = (fn) => { for (const s of [-1, 1]) fn(s, (v) => s * v); };
+    switch (k) {
+      case 0: { // the Hall of Guards: racks of spears and benches along the walls, a great statue
+        wallSide((s, X) => {
+          for (let z = -78; z <= -36; z += 6) { B.box(wood, X(43), y, z, 1.2, 0.3, 4); for (let i = -1; i <= 1; i++) { B.box(wood, X(43.4), y, z + i * 1.2, 0.15, 4.6, 0.15); B.cone(steel, X(43.4), y + 4.6, z + i * 1.2, 0.18, 0.7, 6); } }
+          B.box(wood, X(32), y, -60, 2, 0.9, 20); B.solidLine(X(32), -70, X(32), -50, y, 1, 1);
+        });
+        statue(B, T, 0, -60, 1.8, 0, y); B.solidDisc(0, -60, 4.6, y, 14);
+        for (const s of [-1, 1]) brazier(B, T, s * 10, y + 0.15, -4, 1.2);
+        break;
+      }
+      case 1: { // the Barracks: rows of bunks along the walls, long tables at the north end
+        wallSide((s, X) => {
+          for (let z = -79; z <= -36; z += 4.5) { B.box(wood, X(42), y, z, 4.4, 0.7, 2.2); B.box(carpetM, X(42), y + 0.7, z, 4, 0.25, 1.9); B.box(wood, X(42), y + 2.2, z, 4.4, 0.2, 2.2); for (const d of [-1, 1]) B.box(wood, X(42 + d * 2), y, z + 1, 0.2, 2.4, 0.2); }
+          B.solidLine(X(42), -80, X(42), -35, y, 2.6, 2.2);
+          B.box(wood, X(14), y, -80, 3, 1.1, 12); B.solidLine(X(14), -85, X(14), -75, y, 1.2, 1.6);
+        });
+        for (const s of [-1, 1]) brazier(B, T, s * 20, y, -84, 1);
+        break;
+      }
+      case 2: { // the Armoury: racks of blades and shields, anvils and the forge at the north wall
+        wallSide((s, X) => {
+          for (let z = -79; z <= -36; z += 5) {
+            B.box(wood, X(43.6), y, z, 0.6, 4, 4);
+            for (let i = -1; i <= 1; i++) B.box(steel, X(43.1), y + 0.8, z + i * 1.2, 0.12, 3, 0.3);
+            B.cyl(plain(T.banner, 0.8), X(43), y + 2.6, z + 2.4, 0.8, 0.15, 12).rotation.z = Math.PI / 2;
+          }
+          B.solidLine(X(43.6), -81, X(43.6), -34, y, 4, 1);
+          B.box(iron, X(10), y, -74, 2.4, 1.1, 1.2); B.box(iron, X(10), y + 1.1, -74, 3.2, 0.5, 1.4); B.solidDisc(X(10), -74, 1.6, y, 1.6);
+        });
+        B.box(stoneWallMat(T.wall2), 0, y, IN + 4, 14, 4, 6); B.box(glowing('#ff6a18', 2.4), 0, y + 1.2, IN + 7.05, 8, 2, 0.2);
+        B.box(stoneWallMat(T.wall2), 0, y + 4, IN + 3, 4, h - 4.6, 4); B.solidLine(-7, IN + 4, 7, IN + 4, y, h, 3);
+        B.light(0, y + 3, IN + 10, '#ff7a2a', 90, 30);
+        break;
+      }
+      case 3: { // the Treasury: heaps of gold, chests and urns
+        const heap = (x, z, r) => { B.cone(goldM, x, y, z, r, r * 0.7, 14); for (let i = 0; i < 5; i++) { const a = i * 1.3; B.cyl(goldM, x + Math.cos(a) * r * 1.1, y, z + Math.sin(a) * r * 1.1, 0.35, 0.08, 10); } B.solidDisc(x, z, r * 0.8, y, r * 0.7); };
+        wallSide((s, X) => {
+          for (let z = -78; z <= -36; z += 6) { B.box(wood, X(43), y, z, 2.6, 1.6, 1.6); B.box(goldM, X(43), y + 0.6, z, 2.7, 0.2, 1.7); B.box(goldM, X(43), y + 1.6, z, 2.7, 0.2, 1.7); }
+          B.solidLine(X(43), -79, X(43), -35, y, 1.8, 1.3);
+          heap(X(16), -80, 3.4); heap(X(34), -70, 2.6); heap(X(16), -8, 2.4);
+          for (const z of [-60, -50]) { B.cyl(plain(T.wall2, 0.5, 0.3), X(36), y, z, 0.9, 2.2, 12, 0.5); B.cyl(goldM, X(36), y + 2.2, z, 0.5, 0.4, 12, 0.7); }
+        });
+        heap(0, -80, 4.2);
+        B.light(0, y + 4, -80, '#ffd070', 70, 26);
+        break;
+      }
+      case 4: { // the Hall of Trials: weapon stands round the ring and the marks of old fights
+        wallSide((s, X) => {
+          for (let z = -78; z <= -36; z += 8) { B.box(stoneWallMat(T.wall2), X(43), y, z, 2, 1.2, 2); B.box(steel, X(43), y + 1.2, z, 0.2, 2.6, 0.2); B.box(steel, X(43), y + 3.1, z, 0.2, 0.2, 1.4); B.solidDisc(X(43), z, 1.2, y, 3.8); }
+          for (const z of [-76, -4]) { B.box(stoneWallMat(T.wall2), X(16), y, z, 9, 1.2, 4); B.box(stoneWallMat(T.wall2), X(16), y + 1.2, z - 1, 9, 1.2, 2); B.solidLine(X(12), z, X(20), z, y, 2.4, 2); }
+        });
+        break;
+      }
+      case 5: { // the Hall of Champions: statues of the King's champions down both sides
+        wallSide((s, X) => {
+          for (let z = -77; z <= -38; z += 9.75) { statue(B, T, X(41), z, 1, -s * Math.PI / 2, y); B.solidDisc(X(41), z, 2.8, y, 10); }
+        });
+        if (T.special === 'lava') for (const s of [-1, 1]) { B.box(plain('#1a1414', 0.95), s * 21, y, -44, 3.2, 0.2, 60); B.box(glowing('#ff5a10', 2.2), s * 21, y + 0.02, -44, 2.2, 0.2, 58); }
+        else for (const s of [-1, 1]) { B.box(wall2M, s * 21, y, -44, 4, 0.3, 60); B.box(water(T.special === 'gel' ? T.glow : T.special === 'marsh' ? '#3a5a3a' : '#2aa8a0'), s * 21, y + 0.05, -44, 3.2, 0.3, 58); }
+        break;
+      }
+      case TOPF: { // ---- the Throne Hall ----
+        // the long carpet, two rows of great pillars, banners, braziers and the King's wonders
+        B.box(carpetM, 0, y + 0.02, (C.DAIS.z1 + IS) / 2, 9, 0.06, IS - C.DAIS.z1);
+        for (const s of [-1, 1]) B.box(goldM, s * 4.7, y + 0.02, (C.DAIS.z1 + IS) / 2, 0.4, 0.07, IS - C.DAIS.z1);
+        for (let z = -78; z <= 0; z += 12) for (const s of [-1, 1]) { pillar(s * 11.5, z, y, h, 1.5); if (z > -78) banner(B, T, s * 11.5 + s * 1.6, y + 14, z + 6, 2.6, 7, s, 0); }
+        for (let z = -80; z <= -8; z += 18) for (const s of [-1, 1]) pillar(s * 30, z, y, h, 1.8);
+        for (let z = -78; z <= -36; z += 14) for (const s of [-1, 1]) banner(B, T, s * (IX - 0.05), y + 20, z, 4, 12, -s, 0);
+        if (T.special === 'lava') for (const s of [-1, 1]) { B.box(plain('#1a1414', 0.95), s * 17, y, -36, 3.2, 0.2, 80); B.box(glowing('#ff5a10', 2.2), s * 17, y + 0.02, -36, 2.2, 0.2, 78); }
+        else if (T.special === 'pools' || T.special === 'gel' || T.special === 'glowtrees') for (const s of [-1, 1]) { B.box(wall2M, s * 17, y, -36, 4, 0.3, 70); B.box(water(T.special === 'gel' ? T.glow : '#2aa8a0'), s * 17, y + 0.05, -36, 3.2, 0.3, 68); }
+        for (const z of [-57.5, -14]) for (const s of [-1, 1]) brazier(B, T, s * 8.5, y, z, 1.1);
+        for (const z of [-62, -38, -14]) { chandelier(0, y + 18, z, h - 18); B.light(0, y + 17, z, T.light, 170, 60); }
+        // the dais and the throne, made for the King
+        const D = C.DAIS;
+        B.box(wall2M, 0, y, (D.z0 + D.z1) / 2, 2 * D.x, D.y, D.z1 - D.z0);
+        B.box(goldM, 0, y + D.y - 0.1, D.z1 + 0.05, 2 * D.x, 0.12, 0.3);
+        B.box(carpetM, 0, y + D.y, (D.z0 + D.z1) / 2 + 2, 9, 0.06, D.z1 - D.z0 - 4);
+        B.floor(-D.x, D.x, D.z0, D.z1, y + D.y);
+        throne(B, T, 0, y + D.y, C.THRONE_Z + 3, T.kingH);
+        for (const s of [-1, 1]) { brazier(B, T, s * 10, y, D.z1 + 3.5, 1.5); statue(B, T, s * 10, D.z0 + 5, 1.2, 0, y); B.solidDisc(s * 10, D.z0 + 5, 3, y, 10); }
+        B.solidDisc(0, C.THRONE_Z, 2, y + D.y, 4);
+        // the King's great banner on the wall behind the throne
+        banner(B, T, 0, y + h - 3, IN + 0.25, 12, 20, 0, 1);
+        break;
+      }
+    }
   }
 
   // ---- merge it, and gather the lights ----
@@ -721,6 +831,30 @@ export function buildKingCastle(c) {
     }
     return best === -Infinity ? best : F + best;
   }
+  // the walls of light on the boss floors' stairs (kept apart from the merged stone, to take away)
+  const sealMat = new THREE.MeshStandardMaterial({ color: T.glow, emissive: T.glow, emissiveIntensity: 1.4, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false });
+  for (const sl of seals) {
+    if (!sl) continue;
+    sl.mesh = new THREE.Group();
+    const pane = new THREE.Mesh(new THREE.PlaneGeometry(sl.w, 8), sealMat);
+    pane.position.set(sl.x, sl.y + 4, sl.z);
+    sl.mesh.add(pane);
+    for (const d of [-1, 1]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 8.4, 8), glowing(T.glow, 2.2)); post.position.set(sl.x + d * sl.w / 2, sl.y + 4.2, sl.z); sl.mesh.add(post); }
+    B.g.add(sl.mesh);
+  }
+  // which room of the keep (x, z, y) is in, if any
+  function roomAt(x, z, y) {
+    const lx = x - cx, lz = z - cz;
+    if (Math.abs(lx) > K.x || lz < K.n || lz > K.s) return null;
+    const k = Math.max(0, Math.min(TOPF, Math.floor((y - F + 1) / ST)));
+    return k ? `Floor ${k}: ${KEEP_FLOORS[k].name}` : KEEP_FLOORS[0].name;
+  }
   const spots = courtSpots(5);
-  return { group: B.g, solid: B.solids, floorAt, spots, local: (x, z) => [cx + x, cz + z], theme: T };
+  return {
+    group: B.g, solid: B.solids, floorAt, spots, roomAt, local: (x, z) => [cx + x, cz + z], theme: T,
+    // the seal on floor k's stair: is it still there, and taking it away (once its boss falls)
+    sealed: (k) => !!seals[k]?.mesh,
+    unseal(k) { const sl = seals[k]; if (!sl?.mesh) return null; B.g.remove(sl.mesh); sl.mesh = null; return sl.solid; },
+    seals: seals.filter(Boolean).flatMap((sl) => sl.solid),
+  };
 }

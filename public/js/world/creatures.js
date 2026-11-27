@@ -40,6 +40,8 @@ for (const [race, b] of Object.entries(ROYAL_RACES)) {
   const loot = [['big_potion', 1, 2, 4], ['moonstone', 0.8, 1, 3], ['dragonite', 0.5, 1, 2]];
   KINDS[`king_${race}`] = { name: 'Monster King', body: { race, form: 'humanoid', stage: 5, ...b }, levels: [1000, 1000], aggressive: false, speed: 3.4, royal: true, drops: [...loot, ['knight_blade', 0.6, 1, 1], ['steel_plate', 0.5, 1, 1]] };
   KINDS[`overlord_${race}`] = { name: 'Overlord', body: { race, form: 'humanoid', stage: 4, ...b }, levels: [990, 999], aggressive: false, speed: 3.2, royal: true, drops: loot };
+  // the bosses of the floors of a King's keep (see kingcastle.js): they fight whoever comes up to them
+  KINDS[`floorboss_${race}`] = { name: 'Floor Boss', body: { race, form: 'monster', stage: 4, ...b }, levels: [500, 999], aggressive: true, speed: 3.4, royal: true, drops: [...loot, ['knight_blade', 0.3, 1, 1], ['steel_plate', 0.25, 1, 1]] };
   KINDS[`guard_${race}`] = { name: 'Royal Guard', body: { race, form: 'monster', stage: 3, ...b }, levels: [400, 600], aggressive: false, speed: 3, royal: true, drops: [['big_potion', 0.6, 1, 2], ['gold_ore', 0.5, 1, 3]] };
 }
 export const BY_REGION = {
@@ -747,6 +749,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     for (const m of [...list]) {
       let dx = p.x - m.x, dz = p.z - m.z;
       let dist = Math.hypot(dx, dz);
+      if (m.floorY != null && Math.abs(p.y - m.y) > 6) dist = 1e4; // (you are on another floor)
       if (m.kind.beast) { stepBeast(m, dt, t, p, dx, dz, dist); continue; }
       if (m.ghost && !m.dead) { stepGhost(m, dt, t, p, dist); continue; }
       // (one of yours that another player is near stays for them)
@@ -833,10 +836,12 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         const s = sample(nx, nz, tmp);
         // monsters stay out of the water, caves they weren't in, the safe zones round the waystones,
         // and land with buildings on it or that belongs to a nation
-        const blocked = s.h <= s.water + 0.2 || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z)) || (!m.kind.royal && safeZoneAt(nx, nz) && !safeZoneAt(m.x, m.z))
+        let blocked = s.h <= s.water + 0.2 || (isInsideCave?.(nx, nz) && !isInsideCave?.(m.x, m.z)) || (!m.kind.royal && safeZoneAt(nx, nz) && !safeZoneAt(m.x, m.z))
           || (!m.kind.royal && wardedAt(nx, nz) && !wardedAt(m.x, m.z))
           || wallAhead(m, nx, nz);
-        if (!blocked) { m.x = nx; m.z = nz; m.y = feet(nx, nz, m.y, s.h); } else {
+        const ny = blocked ? 0 : feet(nx, nz, m.y, s.h);
+        if (!blocked && m.floorY != null && Math.abs(ny - m.floorY) > 1.2) blocked = true; // (it keeps to its own floor)
+        if (!blocked) { m.x = nx; m.z = nz; m.y = ny; } else {
           // a charging wolf or bear crashes into what's in its way (and may break a fence)
           const wall = m.kind.animal && speed >= 5 && !(m.crashT > 0) && blocked !== true ? blocked : null;
           if (wall) { m.crashT = 0.8; onCrash?.(m, wall, speed); }
@@ -948,9 +953,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   // either side, nearest first
   function targets(x, z, heading, reach, arc = 1.0) {
     const out = [];
+    let py; // (your height, looked up only if a monster keeps to a floor)
     for (const m of list) {
       if (m.dead || m.farm) continue; // (the farmer's animals are not for hunting)
       if (m.kind.beast && (m.air > 7 && reach < 12 || (m.kind.beast.shape === 'spirit' && !m.risen))) continue; // (out of reach up in the sky, or still under the lake)
+      if (m.floorY != null && Math.abs(m.y - (py ??= getPlayer()?.y ?? m.y)) > 6) continue; // (on another floor)
       const dx = m.x - x, dz = m.z - z;
       const d = Math.hypot(dx, dz) - m.radius;
       if (d > reach) continue;
@@ -1034,9 +1041,13 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     },
     clear() { for (const m of [...list]) remove(m); for (const g of lavaLakes.values()) scene.remove(g); lavaLakes.clear(); for (const f of falls) scene.remove(f.g); falls.length = 0; },
     // put a monster somewhere on purpose (cave guards, cave dwellers, bosses)
+    // (`extra.y`: stand on the floor at that height, such as a floor of a castle's keep; it then keeps
+    //  to that floor, and only fights someone on it)
     spawnAt(kindId, level, x, z, extra = {}) {
       const s = sample(x, z, tmp);
-      const m = make(kindId, Math.max(1, level), x, feet(x, z, s.h, s.h), z, extra);
+      const y = feet(x, z, extra.y ?? s.h, s.h);
+      const m = make(kindId, Math.max(1, level), x, y, z, extra);
+      if (extra.y != null) m.floorY = y;
       if (extra.boss) { m.body.scale.multiplyScalar(1.45); m.height *= 1.45; m.radius *= 1.45; }
       return m;
     },
