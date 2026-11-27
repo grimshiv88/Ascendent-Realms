@@ -1,6 +1,7 @@
 // The playable world: the whole map as streamed 3D land, your character, monsters, and a third-person camera.
 import * as THREE from 'three';
 import { GlowLight, lightPool } from './lightpool.js';
+import { sharedNotices } from '../notices.js';
 import { createLand } from './land.js';
 import { pickQuality, createSmoothness, isMobile } from './quality.js';
 import { setLeanDetail } from './merge.js';
@@ -565,7 +566,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     floatLayer.appendChild(el);
     floaters.push({ el, at: at.clone(), t: 0 });
   }
-  const say = (text, kind = 'note') => floatText(text, pos.clone().add(new THREE.Vector3(0, bodyH + 0.4, 0)), kind);
+  // messages to you go to the readable stack at the top of the screen (notices.js), not floating off your head
+  const say = (text, kind = 'note') => sharedNotices(canvas.parentElement).say(text, kind);
 
   // ---------- day and night ----------
   // A day of the realm is DAY_MINUTES real minutes (data/clock.mjs). The sun crosses the sky; at night a dim moon lights the land.

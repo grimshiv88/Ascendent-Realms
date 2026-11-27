@@ -1,5 +1,6 @@
 // Front door flow: intro → title docks → Choose → Sign Up / Sign In → clouds → next screen.
 import { RACES } from './data/game-data.mjs';
+import { sharedNotices } from './notices.js';
 import { renderCastlePlan } from './castleplan.js';
 import { startIntro } from './intro.js';
 import * as api from './api.js';
@@ -2048,14 +2049,17 @@ function showItemPop(html, onClick = null) {
   return pop;
 }
 
+// The gold banner is for place names. Whole sentences ("Your teacher taught you ...") go to the message
+// stack instead, so a second one can't wipe the first off the screen before you have read it.
 function showArea(name) {
+  if (String(name).length > 40) { sharedNotices($('game')).say(name, 'area'); return; }
   const el = $('area');
   el.textContent = name;
   el.classList.remove('show');
   void el.offsetWidth;
   el.classList.add('show');
   clearTimeout(areaTimer);
-  areaTimer = setTimeout(() => el.classList.remove('show'), 4000);
+  areaTimer = setTimeout(() => el.classList.remove('show'), 5000);
 }
 
 function wireForm(formId, action, after = (result) => steps.next(result)) {
