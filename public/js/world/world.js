@@ -503,6 +503,16 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // Free camera while the mouse isn't captured (Free Move mouse, or a touch screen): as you walk,
   // the camera swings round behind you on its own, unless the player turned that off in Settings
   let camFollow = view?.camFollow !== 'off';
+  // Controls → Sensitivity: how fast the mouse, a finger and the keys turn the camera, upside-down
+  // looking, how fast the wheel zooms, and how wide the camera sees (field of view, in degrees)
+  const feel = { mouse: 1, touch: 1, invertY: false, zoom: 1, turn: 1, fov: 60 };
+  function setFeel(f = {}) {
+    const n = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
+    feel.mouse = n(f.mouse, 0.1, 4, 1); feel.touch = n(f.touch, 0.1, 4, 1); feel.zoom = n(f.zoom, 0.2, 4, 1);
+    feel.turn = n(f.turn, 0.3, 3, 1); feel.fov = n(f.fov, 45, 100, 60); feel.invertY = !!f.invertY;
+    if (camera.fov !== feel.fov) { camera.fov = feel.fov; camera.updateProjectionMatrix(); }
+  }
+  setFeel(view?.feel);
   let lookEnded = -10; // when you last let go after dragging the camera round
   // 'third': the camera is behind you. 'first': you see through your character's eyes (head hidden,
   // arms and weapon still there). Scrolling all the way in goes to first person, scrolling out comes back.
@@ -2182,8 +2192,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   });
   document.addEventListener('mousemove', (e) => {
     if (!locked() || windowOpen?.()) return;
-    yaw -= e.movementX * 0.0025;
-    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018, pitchLo(), pitchHi());
+    yaw -= e.movementX * 0.0025 * feel.mouse;
+    pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.0018 * feel.mouse * (feel.invertY ? -1 : 1), pitchLo(), pitchHi());
   });
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && locked()) { if (e.button === 0 && !talkAt(window.innerWidth / 2, window.innerHeight / 2)) attack(); return; }
@@ -2226,9 +2236,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       }
     } else if (look && e.pointerId === look.id) {
       // a finger turns the camera more gently than a mouse, so small swipes are small turns
-      const k = look.mouse ? 1 : 0.55;
+      const k = look.mouse ? feel.mouse : 0.55 * feel.touch;
       yaw -= (e.clientX - look.x) * 0.006 * k;
-      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k, pitchLo(), pitchHi());
+      pitch = THREE.MathUtils.clamp(pitch + (e.clientY - look.y) * 0.004 * k * (feel.invertY ? -1 : 1), pitchLo(), pitchHi());
       look.x = e.clientX; look.y = e.clientY;
     }
   });
@@ -2259,7 +2269,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   function zoomBy(deltaY) {
     if (viewMode === 'first') { if (deltaY > 0) setView('third', true); }
     else if (dist <= 2 && deltaY < 0) setView('first', true);
-    else dist = THREE.MathUtils.clamp(dist + deltaY * 0.01, 2, 30);
+    else dist = THREE.MathUtils.clamp(dist + deltaY * 0.01 * feel.zoom, 2, 30);
   }
   canvas.addEventListener('wheel', (e) => { zoomBy(e.deltaY); e.preventDefault(); }, { passive: false });
   // catch the mouse for the camera again (after the chat, or the Free the mouse key); a key press
@@ -2432,7 +2442,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (cameraMode === 'follow' && !fp) {
       // Follow camera: left and right turn your body, forward and back walk the way you face,
       // and the camera swings round behind you
-      heading -= fx * dt * (running ? STEER_RUN : STEER);
+      heading -= fx * dt * (running ? STEER_RUN : STEER) * feel.turn;
       if (Math.abs(fz) > 0.05) {
         const h = aboutFace ? backHeading : heading; // turning round: walk the new way straight away
         move.set(Math.sin(h) * Math.sign(fz), 0, Math.cos(h) * Math.sign(fz));
@@ -2446,7 +2456,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // Steering: while you go forward (walking or sprinting), left and right turn you gently,
       // as much as you press, and the camera turns with you. Only sideways on its own steps sideways.
       const steering = fz > 0.1 && !look && !fp; // in first person, left and right step sideways
-      if (steering) { const turn = fx * dt * (running ? STEER_RUN : STEER); yaw -= turn; backYaw -= turn; }
+      if (steering) { const turn = fx * dt * (running ? STEER_RUN : STEER) * feel.turn; yaw -= turn; backYaw -= turn; }
       const ya = aboutFace ? backYaw : yaw; // turning round: walk the new way while the camera catches up
       const camFwd = v3.set(-Math.sin(ya), 0, -Math.cos(ya));
       const side = steering ? fx * 0.25 : fx; // a slight lean into the turn instead of a sharp angle
@@ -2962,15 +2972,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     petOrder, castSpellNamed,
     petNow: () => { const c = riding?.companion(), m = riding?.mount(); return c ? { kind: 'dragon', id: c.id, item: m?.item, name: BEASTS[c.id].name } : m ? { kind: 'mount', id: m.id, item: m.item, name: ITEMS[m.item]?.name } : null; },
     get hasDragon() { return !!riding?.companion(); },
-    // an admin's Dragon radar: every dragon and wyvern lair, and where the beast is now if it is near
+    // an admin's Dragon radar: every dragon and wyvern lair and the Spirit King's lake, and where the
+    // beast is now if it is near
     radar() {
       const out = [];
       for (const L of allLairs()) {
         const b = BEASTS[L.kind];
-        if (b.shape === 'spirit') continue;
         const m = creatures.list.find((q) => q.lair === L && !q.dead);
         const x = m ? m.x : L.x, z = m ? m.z : L.z;
-        out.push({ id: L.id, name: b.name, king: !!b.king, boss: !!b.boss, wyvern: b.shape === 'wyvern', x, z, dist: Math.hypot(x - pos.x, z - pos.z),
+        out.push({ id: L.id, name: b.name, king: !!b.king, boss: !!b.boss, wyvern: b.shape === 'wyvern', spirit: b.shape === 'spirit', x, z, dist: Math.hypot(x - pos.x, z - pos.z),
           seen: !!m, air: m ? Math.round(m.air || 0) : 0, hp: m ? Math.round(100 * m.hp / m.maxHp) : null, backIn: creatures.slainIn(L.id) });
       }
       return { x: pos.x, z: pos.z, yaw, beasts: out.sort((a, b) => a.dist - b.dist) };
@@ -3189,6 +3199,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     debug: { scene, renderer, camera }, // (tests: what is drawn, and how much)
     setCameraMode(mode) { cameraMode = mode === 'follow' ? 'follow' : 'free'; },
     setCameraFollow(on) { camFollow = on !== 'off' && on !== false; },
+    setFeel,
     setView(mode) { setView(mode); },
     // order a drink in the tavern: `served` runs when the waiter brings it to you (wherever you are inside)
     tavernOrder(served) { if (inside?.built.order) inside.built.order(() => ({ x: pos.x, z: pos.z }), served); },

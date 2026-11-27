@@ -8,7 +8,7 @@ import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
 import { villageName } from './data/mobvillages.mjs';
-import { renderHud, renderStatus, renderSettings, renderControlsWindow, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, renderChallenge, HELP_HTML } from './status.js';
+import { renderHud, renderStatus, renderSettings, renderControlsWindow, renderRankings, toggleMenu, renderWelcome, FEEL_DEFAULT, feelShown, bindHud, renderChallenge, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass, itemInfoHtml } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
@@ -671,10 +671,9 @@ function startGame(character) {
         if (world?.teleport(x, z - 5)) { closePanel(); showArea('Teleported.'); } else showArea('You can\'t teleport from in here.');
       } : null);
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
-    else if (name === 'controls') renderControlsWindow(overlay, { binding: ui.bindingControl, message: ui.controlMsg || '', tab: ui.ctlTab || 'move', clash: ui.clash, skillBar: character.skillBar, admin: !!ui.adminPowers || !!(myAccount?.powers || []).length });
+    else if (name === 'controls') renderControlsWindow(overlay, { binding: ui.bindingControl, message: ui.controlMsg || '', tab: ui.ctlTab || 'move', settings, clash: ui.clash, skillBar: character.skillBar, admin: !!ui.adminPowers || !!(myAccount?.powers || []).length });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
-    else if (name === 'options') renderOptions(overlay);
     else if (name === 'welcome') renderWelcome(overlay, character.name, !(character.level === 1 && !character.exp));
     else if (name === 'portal' && world?.atPortal) {
       ui.trip = { from: world.atPortal, to: null, onPick: showTrip, level: character.level };
@@ -879,7 +878,18 @@ function startGame(character) {
     try { loadFamily(await api.familyAct({ act: 'propose', to })); ui.familyMsg = `You asked ${to}. They will see it in their Family window.`; } catch (err) { ui.familyMsg = err.message; }
     drawPanel();
   });
+  // Controls → Sensitivity: a slider changes the feel at once (the window isn't redrawn while you drag)
+  overlay.addEventListener('input', (e) => {
+    const k = e.target.dataset?.feel;
+    if (!k) return;
+    const v = Number(e.target.value) / (k === 'fov' ? 1 : 100);
+    settings.feel = { ...FEEL_DEFAULT, ...settings.feel, [k]: v };
+    world?.setFeel(settings.feel);
+    const out = overlay.querySelector(`[data-feel-out="${k}"]`);
+    if (out) out.textContent = feelShown(k, v);
+  });
   overlay.addEventListener('change', (e) => {
+    if (e.target.dataset?.feel) { saveSettings(); return; }
     if (e.target.matches?.('[data-country]')) {
       game.setCountry(e.target.value);
       const f = overlay.querySelector('[data-country-flag]');
@@ -1067,8 +1077,10 @@ function startGame(character) {
     }
     const t = (attr) => e.target.closest(`[${attr}]`)?.getAttribute(attr);
     let v;
-    if ((v = t('data-act')) != null && overlay.dataset.panel === 'options') { closePanel(); runAct(v); return; }
-    if ((v = t('data-open')) != null) { overlay.dataset.panel = ''; if (v === 'portal') { closePanel(); openPortal(); } else openPanel(v); return; }
+    if ((v = t('data-act')) != null && overlay.dataset.panel === 'controls') { closePanel(); runAct(v); return; }
+    if ((v = t('data-open')) != null) {
+      const tab = e.target.closest('[data-open]')?.dataset.ctlTab;
+      if (v === 'controls' && tab) { ui.ctlTab = tab; ui.bindingControl = null; ui.clash = null; ui.controlMsg = ''; } overlay.dataset.panel = ''; if (v === 'portal') { closePanel(); openPortal(); } else openPanel(v); return; }
     if ((v = t('data-portal-go')) != null) {
       const to = ui.trip?.to;
       const r = to ? game.usePortal(ui.trip.from.id, v) : 'pick';
@@ -1361,6 +1373,8 @@ function startGame(character) {
     if ((v = t('data-view')) != null) { settings.view = v; saveSettings(); world?.setView(v); drawPanel(); return; }
     if ((v = t('data-graphics')) != null) { settings.graphics = v; saveSettings(); settings.graphicsNow = world?.setGraphics(v); drawPanel(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
+    if ((v = t('data-feel-invert')) != null) { settings.feel = { ...FEEL_DEFAULT, ...settings.feel, invertY: v === 'on' }; saveSettings(); world?.setFeel(settings.feel); drawPanel(); return; }
+    if (t('data-feel-reset') != null) { settings.feel = { ...FEEL_DEFAULT }; saveSettings(); world?.setFeel(settings.feel); drawPanel(); return; }
     if (e.target.closest('[data-tutorial-replay]')) { closePanel(); runTutorial(true); return; }
     if ((v = t('data-cam-follow')) != null) { settings.camFollow = v; saveSettings(); world?.setCameraFollow(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
@@ -1470,7 +1484,7 @@ function startGame(character) {
   try { warmWorldMap(); warmIcons([...(character.inventory || []).map((e) => e.id), ...Object.values(character.equipped || {}).map((e) => e?.id).filter(Boolean)]); } catch { /* only a head start */ }
   world = startWorld($('world'), character, {
     game,
-    view: { camera: settings.camera, camFollow: settings.camFollow, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
+    view: { camera: settings.camera, camFollow: settings.camFollow, feel: settings.feel, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
     onView(v) { settings.view = v; saveSettings(); showArea(v === 'first' ? 'First person view' : 'Third person view'); if (overlay.dataset.panel === 'settings' && !overlay.classList.contains('hidden')) drawPanel(); },
     onArea: (name) => showArea(name),
     onPlot(info) {
