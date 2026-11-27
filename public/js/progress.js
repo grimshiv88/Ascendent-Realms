@@ -149,7 +149,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), hunger: Math.round(c.hunger), crops: c.crops, mount: c.mount || null, torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, dayPass: c.dayPass || null, country: c.country || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
+    journey: c.journey || null, room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), hunger: Math.round(c.hunger), crops: c.crops, mount: c.mount || null, torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, dayPass: c.dayPass || null, country: c.country || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
     spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null,
   });
 
@@ -712,6 +712,8 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return 'bought';
     },
     // the real-world country on the ID (a code from data/countries.mjs, or null)
+    // the first journey's progress (see journey.js)
+    setJourney(j) { c.journey = j; changed('journey'); },
     setCountry(code) { c.country = cleanCountry(code); changed('country'); this.saveNow(); },
     // ---- marriage and children (see data/family.mjs) ----
     // marry a townsperson: 'married', 'young', 'married-already' or 'coins'

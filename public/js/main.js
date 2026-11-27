@@ -55,6 +55,7 @@ document.addEventListener('selectstart', (e) => { if (!typing(e)) e.preventDefau
 document.addEventListener('dragstart', (e) => { if (!typing(e)) e.preventDefault(); });
 import { actionFor, setKey, resetKeys, CONTROLS, FIXED_KEYS, codeFor, keyName } from './data/controls.mjs';
 import { startTutorial } from './tutorial.js';
+import { startJourney } from './journey.js';
 import { ageOf, isChild, ceremonyDue, SCHOOLS, PARENT_JOBS } from './data/birth.mjs';
 import { UNDYING_LEVEL, RENEW_AGE, MARRY_AGE, diedOfAge } from './data/life.mjs';
 import { BODYGUARDS } from './data/hire.mjs';
@@ -175,6 +176,7 @@ function openCreation(username) {
 
 let world = null;
 let tutorial = null; // the guide for new players, while it runs (see tutorial.js)
+let journey = null; // a newcomer's first journey: goals with arrows and notices (see journey.js)
 let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
@@ -1442,6 +1444,7 @@ function startGame(character) {
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
       tutorial?.saw(type, data);
+      journey?.saw(type, data);
       // the phone took the graphics away for a moment (see world.js): wait, or reload if they don't come back
       if (type === 'graphicsLost') { showArea('Getting the graphics back...'); return; }
       if (type === 'graphicsBack') { showArea('Graphics are back'); return; }
@@ -1707,6 +1710,8 @@ function startGame(character) {
     tutorial?.stop();
     const storeKey = `ar-tut-step:${who}`;
     if (fromStart) try { localStorage.removeItem(storeKey); } catch { /* private window */ }
+    // the first journey follows the tutorial (played again from Settings, it starts over if it was hidden)
+    if (fromStart && character.journey?.off) { game.setJourney({ ...character.journey, off: false }); runJourney(); }
     tutorial = startTutorial($('game'), {
       character, getWorld: () => world, storeKey,
       onEnd() {
@@ -1718,6 +1723,13 @@ function startGame(character) {
   }
   const newcomer = !!character.child || (character.level <= 1 && !character.exp);
   ui.tutorialDue = newcomer && !myAccount?.tutorialDone && !tutDoneHere();
+  // a newcomer's first journey (kept on the character, so it carries on after a reload)
+  function runJourney() {
+    journey?.stop();
+    journey = startJourney($('game'), { character, game, getWorld: () => world, paused: () => !!tutorial?.running });
+  }
+  if (ui.tutorialDue && !character.journey) game.setJourney({ seen: [], off: false });
+  runJourney();
   openPanel('welcome');
 }
 

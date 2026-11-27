@@ -71,16 +71,13 @@ function buildSteps(character, T) {
     { id: 'bag', title: 'Your Bag', text: `Press ${key('bag')} to open your Bag. Your items and what you wear are in it. ${child ? 'Your family packed you bread, water and tea: tap one to eat or drink it when you are hungry.' : 'Tap an item to use it or put it on.'}`, point: '.menu-btn', when: { panel: 'bag' } },
     { id: 'map', title: 'The map', text: `The little map in the corner turns with you. Tap it, or press ${key('map')}, for the world map.`, point: '#minimap', when: { panel: 'map' } },
   );
-  if (child && T?.academy) steps.push({ id: 'academy', title: 'The Academies', text: 'Children train at the Academies on Academy Street. Follow the arrow to them. Inside, register at the counter, then practise on the red mat beside your teacher. The school you pick helps decide your class, but it does not make it certain.', target: T.academy, label: 'Academy Street', when: { near: 14, panels: ['academy'], events: [['indoors', (d) => d?.kind === 'academy'], ['academy']] } });
-  if (T?.shop) steps.push({ id: 'shop', title: 'The market street', text: `The city's own shops line the market street: food, potions, a tailor, a smith, armour and a tavern. Follow the arrow to the food shop. Walk up to a counter and press ${key('interact')}. All food and drink here is halal.`, target: T.shop, label: 'Market street', when: { near: 12, panels: ['market', 'shop'], events: [['indoors', (d) => d?.kind !== 'academy' && d?.kind !== 'guild' && d?.kind !== 'castle']] } });
   steps.push(
-    { id: 'buy', title: 'Buying and selling', text: `You can also press ${key('shop')} anywhere to open the Shop window. Better gear unlocks as your level rises. Selling gives back less than you paid.`, when: { panel: 'shop' }, button: 'Next' },
+    { id: 'buy', title: 'The Shop', text: `Press ${key('shop')} anywhere to open the Shop window. Better gear unlocks as your level rises. Selling gives back less than you paid.`, when: { panel: 'shop' }, button: 'Next' },
     { id: 'quests', title: 'Quests', text: `Press ${key('quests')} for Quests. Take one on, do what it asks, then come back to claim the reward in EXP and coins.`, point: '.menu-btn', when: { panel: 'quests' } },
   );
-  if (child && T?.shrine) steps.push({ id: 'shrine', title: 'The Ceremony', text: 'When you turn 7, go to the shrine in the middle of the city, at the very top. There your class is revealed at the Ceremony of Revealing. The guards let children up to it when the day comes.', target: T.shrine, label: 'The shrine', when: 'next' });
   steps.push(
     { id: 'settings', title: 'Settings', text: `Press ${key('settings')} for Settings: the camera, the keys, graphics and your account. You can play this guide again from there.`, when: { panel: 'settings' }, button: 'Next' },
-    { id: 'done', title: 'You are ready', text: `Be careful out there. Night is dangerous away from the city lights, and your lives are few. All the keys are in the Key Guide (${key('help')}). Good luck!`, when: 'next', button: 'Finish' },
+    { id: 'done', title: 'You are ready', text: `Your first goal now shows at the top of the screen, with an arrow pointing the way. Be careful out there. Night is dangerous away from the city lights, and your lives are few. All the keys are in the Key Guide (${key('help')}). Good luck!`, when: 'next', button: 'Finish' },
   );
   return steps;
 }
