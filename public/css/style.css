@@ -1080,6 +1080,9 @@ input:focus { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 2px 
 .bank-log { margin-top: 8px; font-size: 0.8rem; opacity: 0.85; }
 .bank-log summary { cursor: pointer; }
 .bank-log div { padding: 2px 0; }
+.bank-note summary, .bank-info summary { cursor: pointer; }
+.bank-note small { display: block; margin-top: 4px; opacity: 0.85; }
+.bank-info { margin-top: 8px; }
 .sys-top .bad { color: #ff4a5a; }
 
 /* ---------- country flags (sign-up, ID, Settings) and the City Pass on the ID ---------- */

@@ -740,19 +740,31 @@ const previewOil = {
   all() { try { return JSON.parse(storage.get('ar.preview.oil')) || []; } catch { return []; } },
   save(list) { storage.set('ar.preview.oil', JSON.stringify(list)); cloudPush('world/oil', { wells: list }); },
 };
-const econView = (E, c, now) => ({ coins: c.coins, bank: E.bankView(c, now), oil: E.oilView(c) });
-const wellsView = (E, list, name, now) => list.map((w) => ({ id: w.id, x: w.x, z: w.z, owner: w.owner, company: w.company, ...E.wellState(w, now), mine: w.owner === name }));
+const econView = (E, c, now) => ({ coins: c.coins, bank: E.bankView(c, now), oil: E.oilView(c), worth: E.landWorthNow() });
+// what every land is worth (data/economy.mjs), from what is kept in this browser in preview mode
+function previewWorth(E) {
+  const people = {};
+  for (const a of preview.accounts()) { const city = a.character?.child?.family?.city || a.character?.family?.city; if (city) people[city] = (people[city] || 0) + 1; }
+  E.setLandWorth(E.landWorth({ plots: previewLand.all(), homes: previewHomes.all(), wells: previewOil.all(), people }));
+}
+// the server sends what the lands are worth with the Bank; the notes' values here follow it
+async function withWorth(r) {
+  if (r?.worth) (await import('./data/economy.mjs')).setLandWorth(r.worth);
+  return r;
+}
 export async function bankInfo() {
   if (await isPreviewMode()) {
     const E = await import('./data/economy.mjs');
+    previewWorth(E);
     return updatePreviewAccount((acc) => ({ ok: true, ...econView(E, acc.character, Date.now()) }));
   }
-  return request('api/bank');
+  return withWorth(await request('api/bank'));
 }
-// { act: 'deposit' | 'withdraw' | 'borrow' | 'repay' | 'buy' | 'sell' | 'sell_oil', amount, cur, city }
+// { act: 'deposit' | 'withdraw' | 'borrow' | 'repay' | 'buy' | 'sell' | 'swap' | 'sell_oil', amount, cur, to, city }
 export async function bankAct(body) {
   if (await isPreviewMode()) {
     const E = await import('./data/economy.mjs');
+    previewWorth(E);
     return updatePreviewAccount((acc) => {
       const now = Date.now();
       const r = E.bankAct(acc.character, body, now);
@@ -760,7 +772,7 @@ export async function bankAct(body) {
       return { ...r, ...econView(E, acc.character, now) };
     });
   }
-  return request('api/bank', { method: 'POST', body });
+  return withWorth(await request('api/bank', { method: 'POST', body }));
 }
 export async function oilInfo() {
   if (await isPreviewMode()) {

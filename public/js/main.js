@@ -1297,7 +1297,7 @@ function startGame(character) {
       const amount = box && box.value !== '' ? Math.floor(Number(box.value)) : undefined;
       const name = overlay.querySelector('#bank-company')?.value;
       if (v === 'found') econ(() => api.oilAct({ act: 'found', name, city: ui.bankCity?.id }));
-      else econ(() => api.bankAct({ act: v, amount, cur: e.target.closest('[data-cur]')?.dataset.cur, from: e.target.closest('[data-from]')?.dataset.from, city: ui.bankCity?.id }));
+      else econ(() => api.bankAct({ act: v, amount, cur: e.target.closest('[data-cur]')?.dataset.cur || overlay.querySelector('#bank-from')?.value, to: overlay.querySelector('#bank-to')?.value, from: e.target.closest('[data-from]')?.dataset.from, city: ui.bankCity?.id }));
       return;
     }
     if ((v = t('data-oil')) != null) {
