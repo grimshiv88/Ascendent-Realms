@@ -79,6 +79,7 @@ const G = require('../public/js/data/game-data.mjs');
 const { SKILLS, SKILL_CATEGORIES, SKILL_RANKS, skillCategory, skillPower, skillClasses, SKILL_SHAPES } = require('../public/js/data/skills.mjs');
 const { SPELLS, spellRank, spellCategory, spellText, KIND_TEXT } = require('../public/js/data/spells.mjs');
 const U = require('../public/js/data/unique.mjs');
+const DS = require('../public/js/data/descriptions.mjs');
 const P = require('../public/js/data/citypass.mjs');
 const cults = require('./cults');
 const CU = require('../public/js/data/cults.mjs');
@@ -330,14 +331,17 @@ function catalogue() {
     shapes: SKILL_SHAPES,
     spellShapes: KIND_TEXT,
     skills: Object.values(SKILLS).map((sk) => ({ id: sk.id, name: sk.name, icon: sk.icon, category: skillCategory(sk), power: skillPower(sk), rank: sk.rank,
-      classes: skillClasses(sk), general: (sk.cls || []).includes('any'), element: sk.el && sk.el !== 'Steel' && sk.el !== 'Gold' ? sk.el : '', shape: sk.type, magic: !!sk.magic, sp: sk.sp, cd: sk.cd, text: sk.text })),
-    spells: Object.values(SPELLS).map((sp) => ({ id: sp.id, name: sp.name, element: sp.element, level: sp.level, rank: spellRank(sp), category: spellCategory(sp), shape: sp.kind, sp: sp.sp, cd: sp.cd, text: spellText(sp) })),
+      classes: skillClasses(sk), general: (sk.cls || []).includes('any'), element: sk.el && sk.el !== 'Steel' && sk.el !== 'Gold' ? sk.el : '', shape: sk.type, magic: !!sk.magic, sp: sk.sp, cd: sk.cd, text: sk.text, desc: sk.desc || '' })),
+    spells: Object.values(SPELLS).map((sp) => ({ id: sp.id, name: sp.name, element: sp.element, level: sp.level, rank: spellRank(sp), category: spellCategory(sp), shape: sp.kind, sp: sp.sp, cd: sp.cd, text: spellText(sp), desc: sp.desc || '' })),
     uniqueRanks: U.UNIQUE_RANKS,
     uniques: [U.APPRAISAL.name, ...U.UNIQUE_SKILLS.map((u) => u.name)],
     // every Unique Skill as [name, power kind, element, class it suits], for the filtered picker
     uniqueList: [U.APPRAISAL, ...U.UNIQUE_SKILLS].map((u) => [u.name, u.kind, u.element || '', u.fit || '']),
     uniqueKinds: U.UNIQUE_KIND_NAMES,
     uniqueCategory: U.UNIQUE_CATEGORY,
+    // the parts every Unique Skill's description is written from (data/descriptions.mjs); the board
+    // writes them out itself, as sending thousands of finished ones would be slow
+    uniqueDesc: { made: DS.UNIQUE_DESC, elements: DS.UNIQUE_ELEMENT_LOOK, words: DS.UNIQUE_WORD_LOOK, kinds: DS.UNIQUE_KIND_USE },
   };
 }
 

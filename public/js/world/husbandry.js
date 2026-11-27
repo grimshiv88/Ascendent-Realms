@@ -399,6 +399,8 @@ export function createHusbandry({ scene, colliders, creatures, game, say, floatT
     // a big animal is heavy: you walk slower while you drag it
     dragSlow: () => (dragging ? Math.max(0.45, 1 - dragging.kind.animal.len * 0.18) : 1),
     get dragging() { return dragging; },
+    // a lit fire (yours, a farm's or a waystone's) within r metres of (x, z)
+    fireNear: (x, z, r) => fireNear(x, z, r),
     nearCampfire: (x, z) => fires.some((f) => Math.hypot(f.x - x, f.z - z) < CAMPFIRE_SAFE),
     farms: () => farms.map((q) => ({ ...q.f, built: !!q.built })),
     built: () => builtFarms().map((q) => q.built),

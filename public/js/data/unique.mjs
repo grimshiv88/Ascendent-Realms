@@ -10,6 +10,7 @@
 
 // What each kind of power does at each tier (0 = sealed, before the first evolution; 6 = Unbound at
 // level 1000). It never costs SP; it rests (cd, seconds) between uses, less as it grows.
+import { uniqueDescription } from './descriptions.mjs';
 export const UNBOUND_LEVEL = 1000;
 // the evolutions (game-data.mjs EVOLUTION_LEVELS, after the first at level 1)
 const OPENS = [20, 50, 100, 200, 500];
@@ -176,6 +177,8 @@ export function pickUnique(taken = new Set(), rnd = Math.random, opts = {}) {
 }
 // What a character keeps of it: its name and rank (everything else comes from this file)
 export const uniqueSlot = (u) => ({ name: u.name, kind: u.kind, element: u.element, text: u.text, rank: u.kind === 'appraise' ? APPRAISAL.rank : rankOf(u), fit: u.fit });
+// The longer description of a Unique Skill: what it looks like and when to use it (data/descriptions.mjs)
+export const uniqueDesc = (u) => uniqueDescription(u?.kind ? u : uniqueByName(u?.name || u));
 export const isAppraisal = (c) => String(c?.uniqueSkill?.name || '').toLowerCase() === 'appraisal';
 
 // How far it has been let out: one tier for each evolution (20, 50, 100, 200, 500), and the last,
@@ -194,7 +197,7 @@ export function uniqueAbility(c) {
   const t = uniqueTier(c?.level || 1);
   // Appraisal isn't a blow: it opens the Appraisal window
   if (u.kind === 'appraise') {
-    return { id: 'unique', unique: true, name: u.name, kind: u.kind, element: u.element, icon: '👁️', type: 'appraise', sp: 0, cd: 2, tier: t, rank, fit: u.fit,
+    return { id: 'unique', unique: true, name: u.name, kind: u.kind, element: u.element, icon: '👁️', type: 'appraise', sp: 0, cd: 2, tier: t, rank, fit: u.fit, desc: uniqueDesc(u),
       text: `${u.text} Use it to appraise what is around you, or anyone by name.` };
   }
   const k = KINDS[u.kind];
@@ -204,7 +207,7 @@ export function uniqueAbility(c) {
   const sk = {
     id: 'unique', unique: true, name: u.name, kind: u.kind, element: u.element, icon: k.icon, type: k.type, sp: 0, cd: Math.round(CD[t] / Math.sqrt(p)), tier: t, rank, fit: u.fit,
     mult: r1(at(k.mult) && at(k.mult) * p), radius: at(k.radius), reach: at(k.reach), dist: at(k.dist), pct: at(k.pct) && Math.min(k.type === 'heal' ? 100 : Infinity, Math.round(at(k.pct) * p)), secs: at(k.secs), stat: k.stat,
-    hold: at(k.hold), drain: at(k.drain), effect: ELEMENT_EFFECT[u.element] || null,
+    hold: at(k.hold), drain: at(k.drain), effect: ELEMENT_EFFECT[u.element] || null, desc: uniqueDesc(u),
   };
   sk.text = `${u.text} Now: ${k.what(sk)}. Rests ${sk.cd} s.`;
   return sk;

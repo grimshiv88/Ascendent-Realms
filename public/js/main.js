@@ -8,7 +8,7 @@ import { openCreator } from './creator.js';
 import { startWorld } from './world/world.js';
 import { renderMap, createMinimap } from './mapview.js';
 import { villageName } from './data/mobvillages.mjs';
-import { renderHud, renderStatus, renderSettings, renderControlsWindow, renderRankings, toggleMenu, renderOptions, renderWelcome, bindHud, renderChallenge, HELP_HTML } from './status.js';
+import { renderHud, renderStatus, renderSettings, renderControlsWindow, renderRankings, toggleMenu, renderWelcome, FEEL_DEFAULT, feelShown, bindHud, renderChallenge, HELP_HTML } from './status.js';
 import { createProgress } from './progress.js';
 import { renderBag, renderShop, renderSmith, renderPotions, tabsHtml, setTabsClass, itemInfoHtml } from './bag.js';
 import { ITEMS, forgeCost } from './data/items.mjs';
@@ -30,7 +30,7 @@ import { buildCharacter, animateCharacter } from './characters/model.js';
 import { wearGear } from './characters/gear.js';
 import { fillIcons, warmIcons } from './characters/icons.js';
 import { warmWorldMap } from './world/mapdraw.js';
-import { SPELLS } from './data/spells.mjs';
+import { SPELLS, spellName } from './data/spells.mjs';
 import { renderIdCard } from './idcard.js';
 import { renderRooms } from './roomsui.js';
 import { renderGroups } from './groupsui.js';
@@ -44,6 +44,7 @@ import { gameTime as realmTime, DAY_TEXT } from './data/clock.mjs';
 import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
 import { createVoice } from './voice.js';
+import { createVoiceCommands } from './voicecmd.js';
 import { createPowers } from './powersui.js';
 import { createRadar } from './radarui.js';
 import { createArena } from './arenaui.js';
@@ -55,6 +56,8 @@ document.addEventListener('contextmenu', (e) => { if (!typing(e)) e.preventDefau
 document.addEventListener('selectstart', (e) => { if (!typing(e)) e.preventDefault(); });
 document.addEventListener('dragstart', (e) => { if (!typing(e)) e.preventDefault(); });
 import { actionFor, setKey, resetKeys, resetKey, clearKey, clashFor, CONTROL, FIXED_KEYS, codeFor, keyName, mouseCode, useAccountKeys } from './data/controls.mjs';
+import { startTutorial } from './tutorial.js';
+import { startJourney } from './journey.js';
 import { ageOf, isChild, ceremonyDue, SCHOOLS, PARENT_JOBS } from './data/birth.mjs';
 import { UNDYING_LEVEL, RENEW_AGE, MARRY_AGE, diedOfAge } from './data/life.mjs';
 import { BODYGUARDS } from './data/hire.mjs';
@@ -179,6 +182,8 @@ function openCreation(username) {
 
 let world = null;
 let arena = null; // the Colosseum (see arenaui.js)
+let tutorial = null; // the guide for new players, while it runs (see tutorial.js)
+let journey = null; // a newcomer's first journey: goals with arrows and notices (see journey.js)
 let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
@@ -669,10 +674,9 @@ function startGame(character) {
         if (world?.teleport(x, z - 5)) { closePanel(); showArea('Teleported.'); } else showArea('You can\'t teleport from in here.');
       } : null);
     else if (name === 'settings') renderSettings(overlay, settings, api.deviceAccounts(), api.cloudSaves(), ui.passwordMsg || '', { country: game ? character.country || '' : undefined, account: myAccount, acct: ui.acct });
-    else if (name === 'controls') renderControlsWindow(overlay, { binding: ui.bindingControl, message: ui.controlMsg || '', tab: ui.ctlTab || 'move', clash: ui.clash, skillBar: character.skillBar, admin: !!ui.adminPowers || !!(myAccount?.powers || []).length });
+    else if (name === 'controls') renderControlsWindow(overlay, { binding: ui.bindingControl, message: ui.controlMsg || '', tab: ui.ctlTab || 'move', settings, clash: ui.clash, skillBar: character.skillBar, admin: !!ui.adminPowers || !!(myAccount?.powers || []).length });
     else if (name === 'skills') renderSkills(overlay, game, { binding: ui.binding, message: ui.skillMsg });
     else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
-    else if (name === 'options') renderOptions(overlay);
     else if (name === 'welcome') renderWelcome(overlay, character.name, !(character.level === 1 && !character.exp));
     else if (name === 'portal' && world?.atPortal) {
       ui.trip = { from: world.atPortal, to: null, onPick: showTrip, level: character.level };
@@ -701,6 +705,7 @@ function startGame(character) {
     if (!overlay.classList.contains('hidden') && overlay.dataset.panel === name) { closePanel(); return; }
     world?.releaseMouse();
     overlay.dataset.panel = name;
+    tutorial?.saw('panel', name);
     if (name !== 'power') ui.powers = [];
     ui.workshop = false;
     ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.acct = {}; ui.skillMsg = ''; ui.binding = null; ui.bindingControl = null; ui.clash = null; ui.controlMsg = '';
@@ -800,7 +805,13 @@ function startGame(character) {
     overlay.querySelector('[data-begin-again]').addEventListener('click', () => location.reload());
     for (const b of overlay.querySelectorAll('[data-rebirth]')) b.addEventListener('click', () => { try { sessionStorage.setItem('ar.rebirth', b.dataset.rebirth); } catch { /* blocked */ } location.reload(); });
   }
-  const closePanel = () => { if (overlay.dataset.panel === 'power') ui.powers = []; overlay.classList.add('hidden'); overlay.dataset.shown = ''; preview.unmount(); };
+  const closePanel = () => {
+    const was = overlay.classList.contains('hidden') ? '' : overlay.dataset.panel;
+    if (overlay.dataset.panel === 'power') ui.powers = [];
+    overlay.classList.add('hidden'); overlay.dataset.shown = ''; preview.unmount();
+    // the tutorial starts when a newcomer closes the welcome
+    if (was === 'welcome' && ui.tutorialDue) { ui.tutorialDue = false; runTutorial(); }
+  };
 
   // Your character in the bag, turning slowly, wearing what you have on
   const preview = (() => {
@@ -870,7 +881,18 @@ function startGame(character) {
     try { loadFamily(await api.familyAct({ act: 'propose', to })); ui.familyMsg = `You asked ${to}. They will see it in their Family window.`; } catch (err) { ui.familyMsg = err.message; }
     drawPanel();
   });
+  // Controls → Sensitivity: a slider changes the feel at once (the window isn't redrawn while you drag)
+  overlay.addEventListener('input', (e) => {
+    const k = e.target.dataset?.feel;
+    if (!k) return;
+    const v = Number(e.target.value) / (k === 'fov' ? 1 : 100);
+    settings.feel = { ...FEEL_DEFAULT, ...settings.feel, [k]: v };
+    world?.setFeel(settings.feel);
+    const out = overlay.querySelector(`[data-feel-out="${k}"]`);
+    if (out) out.textContent = feelShown(k, v);
+  });
   overlay.addEventListener('change', (e) => {
+    if (e.target.dataset?.feel) { saveSettings(); return; }
     if (e.target.matches?.('[data-country]')) {
       game.setCountry(e.target.value);
       const f = overlay.querySelector('[data-country-flag]');
@@ -947,6 +969,13 @@ function startGame(character) {
     dive.addEventListener('pointerdown', set(true));
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) dive.addEventListener(ev, set(false));
     setInterval(() => { const on = !!world?.flying; if (dive.classList.contains('hidden') === on) dive.classList.toggle('hidden', !on); if (!on) world?.flyDown?.(false); }, 400);
+    // your tamed dragon: tap to set it on the foe in front of you (or call it back); on its back, it breathes
+    const drag = document.createElement('button');
+    drag.type = 'button'; drag.id = 'dragon-btn'; drag.className = 'hidden'; drag.setAttribute('aria-label', 'Your dragon: attack or come back');
+    drag.textContent = '🐉';
+    dive.after(drag);
+    drag.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); world?.commandDragon?.(); });
+    setInterval(() => { const on = !!world?.hasDragon; if (drag.classList.contains('hidden') === on) drag.classList.toggle('hidden', !on); }, 600);
   }
 
   const SHOP_SAYS = { ok: 'Bought. It is in your bag.', locked: 'You need a higher level for that.', coins: 'Not enough coins.', full: 'Your bag is full.' };
@@ -1051,8 +1080,10 @@ function startGame(character) {
     }
     const t = (attr) => e.target.closest(`[${attr}]`)?.getAttribute(attr);
     let v;
-    if ((v = t('data-act')) != null && overlay.dataset.panel === 'options') { closePanel(); runAct(v); return; }
-    if ((v = t('data-open')) != null) { overlay.dataset.panel = ''; if (v === 'portal') { closePanel(); openPortal(); } else openPanel(v); return; }
+    if ((v = t('data-act')) != null && overlay.dataset.panel === 'controls') { closePanel(); runAct(v); return; }
+    if ((v = t('data-open')) != null) {
+      const tab = e.target.closest('[data-open]')?.dataset.ctlTab;
+      if (v === 'controls' && tab) { ui.ctlTab = tab; ui.bindingControl = null; ui.clash = null; ui.controlMsg = ''; } overlay.dataset.panel = ''; if (v === 'portal') { closePanel(); openPortal(); } else openPanel(v); return; }
     if ((v = t('data-portal-go')) != null) {
       const to = ui.trip?.to;
       const r = to ? game.usePortal(ui.trip.from.id, v) : 'pick';
@@ -1289,6 +1320,7 @@ function startGame(character) {
     if (t('data-campfire') != null) { closePanel(); world?.lightCampfire(); return; }
     if ((v = t('data-plant')) != null) { closePanel(); world?.plantSeed(v); return; }
     if ((v = t('data-mount')) != null) { closePanel(); world?.callMount(v); return; }
+    if ((v = t('data-egg')) != null) { closePanel(); world?.placeEgg(v); return; }
     if ((v = t('data-cult')) != null) {
       const btn = e.target.closest('[data-cult]');
       const body = { action: v };
@@ -1344,6 +1376,9 @@ function startGame(character) {
     if ((v = t('data-view')) != null) { settings.view = v; saveSettings(); world?.setView(v); drawPanel(); return; }
     if ((v = t('data-graphics')) != null) { settings.graphics = v; saveSettings(); settings.graphicsNow = world?.setGraphics(v); drawPanel(); return; }
     if ((v = t('data-camera')) != null) { settings.camera = v; saveSettings(); world?.setCameraMode(v); drawPanel(); return; }
+    if ((v = t('data-feel-invert')) != null) { settings.feel = { ...FEEL_DEFAULT, ...settings.feel, invertY: v === 'on' }; saveSettings(); world?.setFeel(settings.feel); drawPanel(); return; }
+    if (t('data-feel-reset') != null) { settings.feel = { ...FEEL_DEFAULT }; saveSettings(); world?.setFeel(settings.feel); drawPanel(); return; }
+    if (e.target.closest('[data-tutorial-replay]')) { closePanel(); runTutorial(true); return; }
     if ((v = t('data-cam-follow')) != null) { settings.camFollow = v; saveSettings(); world?.setCameraFollow(v); drawPanel(); return; }
     if ((v = t('data-add')) != null) { ui.pending[v] = (ui.pending[v] || 0) + 1; drawPanel(); return; }
     if ((v = t('data-party-invites')) != null) {
@@ -1452,7 +1487,7 @@ function startGame(character) {
   try { warmWorldMap(); warmIcons([...(character.inventory || []).map((e) => e.id), ...Object.values(character.equipped || {}).map((e) => e?.id).filter(Boolean)]); } catch { /* only a head start */ }
   world = startWorld($('world'), character, {
     game,
-    view: { camera: settings.camera, camFollow: settings.camFollow, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
+    view: { camera: settings.camera, camFollow: settings.camFollow, feel: settings.feel, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
     onView(v) { settings.view = v; saveSettings(); showArea(v === 'first' ? 'First person view' : 'Third person view'); if (overlay.dataset.panel === 'settings' && !overlay.classList.contains('hidden')) drawPanel(); },
     onArea: (name) => showArea(name),
     onPlot(info) {
@@ -1467,6 +1502,8 @@ function startGame(character) {
     onMouseFreed: () => { ui.freedAt = performance.now(); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
+      tutorial?.saw(type, data);
+      journey?.saw(type, data);
       // the Colosseum's board, blows in a duel, sitting in the stands (see arenaui.js)
       if (arena?.onWorldEvent(type, data)) return;
       // the phone took the graphics away for a moment (see world.js): wait, or reload if they don't come back
@@ -1491,6 +1528,7 @@ function startGame(character) {
       }
       if (type === 'depths') $('minimap').classList.add('hidden'); // no map underground
       if (type === 'depths') showArea(`${data.cave.name}: ${{ small: 'a small', medium: 'a winding', deep: 'a deep' }[data.cave.size]} ${data.cave.dungeon ? 'dungeon in the mountain' : 'cave'}. Not every tunnel leads down to the boss: some are false routes that go deep and end in rock. ${world?.holding ? '' : 'Pitch dark: light a torch (T). '}Mine glowing ore veins, break nests, and find the boss at the bottom.`);
+      if (type === 'practice-tip') { showArea(data); return; }
       if (type === 'surface') { ui.atCave = null; drawHud(); $('minimap').classList.remove('hidden'); }
       if (type === 'cave') {
         ui.atCave = data; ui.caveMsg = '';
@@ -1596,6 +1634,7 @@ function startGame(character) {
       if (type === 'chest') showArea(`The chest held ${money(data.coins)}, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();
       if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
+      if (type === 'wonder' && data) showArea(`${data.name}: ${data.text}`);
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
       if (type === 'collapsed') showArea('You collapsed from exhaustion! Monsters may find you…');
@@ -1612,6 +1651,7 @@ function startGame(character) {
       if (act === 'portal') { if (overlay.dataset.panel === 'portal' && !overlay.classList.contains('hidden')) closePanel(); else openPortal(); }
       if (overlay.classList.contains('hidden')) { const b = character.skillBar.find((x) => x.key === e.code); if (b) trySkill(b.id); else if (act === 'unique') trySkill('unique'); else if (act === 'mythic') trySkill('mythic'); }
       if (act === 'land') toggleLand();
+      if (act === 'voicecmd' && !e.repeat) ui.voiceCmd?.toggle();
       if (act === 'view') { e.preventDefault(); if (!e.repeat) world?.toggleView(); }
       if (act === 'chat') { e.preventDefault(); world?.releaseMouse(); social?.focusChat(); }
       // Esc closes the window that is open, and frees the mouse. It never opens a window by itself
@@ -1704,6 +1744,38 @@ function startGame(character) {
   });
   // Voice chat (16+): a mic button under the chat button; voices fade with distance
   createVoice($('game'), { position: () => world?.position() });
+  // Voice commands: your pet's name and an order, or a skill or spell name, said aloud
+  ui.voiceCmd ||= createVoiceCommands($('game'), {
+    say: (t, k) => world?.say(t, k),
+    inParty: async () => !!(await api.groupsList())?.party,
+    pet: () => world?.petNow() || null,
+    petName: (item) => (item && game.character.petNames?.[item]) || null,
+    setPetName(item, name) {
+      if (!item) return;
+      const c = game.character;
+      c.petNames = { ...(c.petNames || {}) };
+      if (name) c.petNames[item] = name; else delete c.petNames[item];
+      game.touch('bag');
+    },
+    order: (o, what) => world?.petOrder(o, what),
+    skills: () => {
+      const out = game.knownSkills().filter((id) => SKILLS[id]).map((id) => ({ id, name: SKILLS[id].name }));
+      const u = uniqueAbility(character);
+      if (u?.name) out.push({ id: 'unique', name: u.name });
+      if (game.mythic()?.name) out.push({ id: 'mythic', name: game.mythic().name });
+      return out;
+    },
+    spells: () => (game.character.spells || []).filter((id) => SPELLS[id]).map((id) => ({ id, name: SPELLS[id].name })),
+    useSkill: (id) => trySkill(id),
+    castSpell(id) {
+      const r = world?.castSpellNamed(id);
+      const sp = SPELLS[id], n = sp ? spellName(sp, game.character) : 'That spell';
+      const why = { staff: `${n}: hold a staff to cast spells`, off: `${n} is not on your staff. Put it on in the Skills window (K)`, unknown: `You don't know ${n}`, cooling: `${n} is not ready yet`, sp: `Not enough SP for ${n}` }[r];
+      if (why) world.say(why, 'hurt');
+    },
+    onOpen: () => world?.releaseMouse(),
+  });
+  if (/[?&]debug\b/.test(location.search)) window.__voice = ui.voiceCmd; // (for tests: __voice.hear('dragon attack'))
   // An admin's powers (fly, can't die, run fast, teleport), given by the owner on the Admin Board.
   // The private preview page belongs to the owner, so there every power is there to switch on.
   api.isPreviewMode().then((preview) => {
@@ -1776,6 +1848,34 @@ function startGame(character) {
   }, 1000);
   // the minimap in the corner follows you; tap it for the world map
   createMinimap($('minimap'), () => world?.position(), () => openPanel('map'));
+  // The tutorial: shown once per account to a newcomer (a child just born, or a brand-new
+  // character), after the welcome. It can be skipped, and played again from Settings.
+  const who = (myAccount?.username || character.name || '').toLowerCase();
+  const tutDoneHere = () => { try { return localStorage.getItem(`ar-tut-done:${who}`) === '1'; } catch { return false; } };
+  function runTutorial(fromStart = false) {
+    tutorial?.stop();
+    const storeKey = `ar-tut-step:${who}`;
+    if (fromStart) try { localStorage.removeItem(storeKey); } catch { /* private window */ }
+    // the first journey follows the tutorial (played again from Settings, it starts over if it was hidden)
+    if (fromStart && character.journey?.off) { game.setJourney({ ...character.journey, off: false }); runJourney(); }
+    tutorial = startTutorial($('game'), {
+      character, getWorld: () => world, storeKey,
+      onEnd() {
+        tutorial = null;
+        try { localStorage.setItem(`ar-tut-done:${who}`, '1'); } catch { /* private window */ }
+        if (myAccount && !myAccount.tutorialDone) { myAccount.tutorialDone = true; api.setTutorialDone().catch(() => {}); }
+      },
+    });
+  }
+  const newcomer = !!character.child || (character.level <= 1 && !character.exp);
+  ui.tutorialDue = newcomer && !myAccount?.tutorialDone && !tutDoneHere();
+  // a newcomer's first journey (kept on the character, so it carries on after a reload)
+  function runJourney() {
+    journey?.stop();
+    journey = startJourney($('game'), { character, game, getWorld: () => world, paused: () => !!tutorial?.running });
+  }
+  if (ui.tutorialDue && !character.journey) game.setJourney({ seen: [], off: false });
+  runJourney();
   openPanel('welcome');
 }
 

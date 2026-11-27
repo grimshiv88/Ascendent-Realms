@@ -11,6 +11,8 @@
 // an EFFECTS id), stun (seconds a foe is pinned in place and can't strike; half as long on bosses),
 // hold (seconds it is slowed to half speed), drain (the share of the damage healed back to you),
 // and stat 'matk' for buffs to magic.
+import { SKILL_DESC } from './descriptions.mjs';
+import { EXTRA_SKILLS } from './skills-extra.mjs';
 const EFFECT_WORDS = { burn: 'set it burning', poison: 'poison it', bleed: 'make it bleed', frost: 'slow it', drain: 'drain its life' };
 const STAT_WORDS = { atk: 'ATK', def: 'DEF', matk: 'MATK' };
 export const SKILLS = {
@@ -157,9 +159,23 @@ add('earth_prison', 'Earth Prison', '🏛️', 'expert', ['builder', 'tank'], 'E
 add('frozen_eternity', 'Frozen Eternity', '🧊', 'master', ['mage'], 'Water', 'nova', { type: 'sweep', mult: 2.6, radius: 9, magic: true, sp: 46, cd: 40, stun: 6, effect: { id: 'frost', chance: 1 } }, 'Everything near you freezes solid.');
 add('abyssal_chains', 'Abyssal Chains', '⛓️', 'master', ['assassin', 'tank'], 'Dark', 'nova', { type: 'sweep', mult: 2.8, radius: 8, sp: 46, cd: 40, stun: 6, drain: 0.15 }, 'Chains from the abyss drag at every foe.');
 
+// the third book (data/skills-extra.mjs): the blows in its Attack part stay Attack even when they
+// also stun or slow a little; each brings its own description
+{
+  const firstMove = EXTRA_SKILLS.findIndex((x) => x[0] === 'sidestep');
+  EXTRA_SKILLS.forEach(([id, name, icon, rank, cls, el, move, n, about, desc], i) => {
+    if (SKILLS[id]) throw new Error(`skill ${id} twice`);
+    add(id, name, icon, rank, cls, el, move, i < firstMove && (n.stun || n.hold) ? { ...n, cat: 'attack' } : n, about);
+    SKILLS[id].desc0 = desc;
+  });
+}
+
 for (const [id, s] of Object.entries(SKILLS)) {
   s.id = id;
   if (!s.text) s.text = `${s.about} ${skillDetails(s)}.`;
+  // the longer description: what it looks like and when to use it (data/descriptions.mjs)
+  s.desc = SKILL_DESC[id] || s.desc0 || s.about || '';
+  delete s.desc0;
 }
 
 // ---------- ranks ----------
