@@ -67,6 +67,7 @@ async function publicAccount(row) {
     age: ageOf(row.birthdate),
     needsBirthdate: !row.birthdate,
     tutorialDone: !!row.tutorial_done,
+    keys: readKeys(row.keybinds),
     mail: mail.ready(),
     // admin access: the powers in the game this account has (fly, can't die, ...), and whether it can open the Admin Board
     powers: require('./staff').powersOf(row),
@@ -278,6 +279,20 @@ async function setTutorialDone(row) {
   return { ok: true };
 }
 
+// ---------- the player's keys (Settings → Controls) ----------
+// only the shape is checked: action names and key names, at most 100 actions
+function readKeys(text) { try { return text ? JSON.parse(text) : null; } catch { return null; } }
+async function setKeys(row, { keys }) {
+  if (!keys || typeof keys !== 'object' || Array.isArray(keys)) return { error: 'Those keys could not be saved.' };
+  const out = {};
+  for (const [id, v] of Object.entries(keys).slice(0, 100)) {
+    if (!/^[a-z_]{1,24}$/.test(id) || !Array.isArray(v)) continue;
+    out[id] = [0, 1].map((i) => (typeof v[i] === 'string' && /^[A-Za-z0-9]{1,24}$/.test(v[i]) ? v[i] : null));
+  }
+  await db.run('UPDATE accounts SET keybinds = ? WHERE id = ?', JSON.stringify(out), row.id);
+  return { ok: true };
+}
+
 // ---------- the password ----------
 // a signed-in player changes it: the old password is needed
 async function changePassword(row, { current, password }, keepToken) {
@@ -354,5 +369,5 @@ async function twofaOff(row, { password }) {
 
 module.exports = {
   shownEmail, hasEmail, mustVerify, banned, hashPassword, signUp, signIn, signInCode, signInByEmail, signOut, accountFromToken, accountRow,
-  sendVerify, verifyEmail, setEmail, setBirthdate, setTutorialDone, changePassword, forgotPassword, resetPassword, twofaEmail, twofaAppStart, twofaAppConfirm, twofaOff,
+  sendVerify, verifyEmail, setEmail, setBirthdate, setKeys, setTutorialDone, changePassword, forgotPassword, resetPassword, twofaEmail, twofaAppStart, twofaAppConfirm, twofaOff,
 };

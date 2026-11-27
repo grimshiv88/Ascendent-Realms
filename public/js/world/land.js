@@ -317,6 +317,7 @@ export function makeColliderGrid() {
       for (let dx = -1; dx <= 1; dx++) {
         for (let dz = -1; dz <= 1; dz++) {
           for (const t of grid.get(key(cx + dx, cz + dz)) || []) {
+            if (t.camOnly) continue; // (an awning or roof you walk under: it only stops the camera)
             const ox = pos.x - t.x, oz = pos.z - t.z;
             const d = Math.hypot(ox, oz);
             const min = t.r + radius;

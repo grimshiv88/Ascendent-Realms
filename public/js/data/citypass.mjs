@@ -20,7 +20,7 @@ export const PASS_ORDER = ['dump', 'common', 'noble', 'castle'];
 export const PASS_NAME = { dump: 'The Dump', common: 'Common Quarter', noble: 'Noble Quarter', castle: 'Castle Hill' };
 // the level that opens each ring to anyone
 export const PASS_LEVEL = { common: 20, noble: 100, castle: 250 };
-// a day pass at the gate, in Copper, good for one day of the realm (one real hour)
+// a day pass at the gate, in Copper, good for one day of the realm (see clock.mjs)
 export const DAY_PASS = { common: 20, noble: 300, castle: 1500 };
 export const DAY_PASS_MS = DAY_MS;
 

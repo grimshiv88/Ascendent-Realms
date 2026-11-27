@@ -32,6 +32,8 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS admin_perms TEXT;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS voice_verified BOOLEAN NOT NULL DEFAULT false;
 -- the tutorial for new players was finished or skipped (it is shown once per account)
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS tutorial_done BOOLEAN NOT NULL DEFAULT false;
+-- the player's keys (Settings → Controls): JSON { action: [main key, second key] }, so they follow the account
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS keybinds TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_email ON accounts (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_username ON accounts (lower(username));
 
