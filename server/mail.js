@@ -105,6 +105,10 @@ const emails = {
   twofaChanged: (to, name, on) => send(to, on ? '2-step sign-in is on' : '2-step sign-in was turned off',
     page(on ? '2-step sign-in is on' : '2-step sign-in was turned off', [on ? `Signing in to <b>${esc(name)}</b> now needs a code as well as the password.` : `Signing in to <b>${esc(name)}</b> now needs only the password.`, 'If this wasn\'t you, change your password straight away.']),
     on ? `2-step sign-in is on for ${name}.` : `2-step sign-in was turned off for ${name}.`),
+  // the owner gives an account admin access on the Admin Board: the code that lets it go through
+  adminAccessCode: (to, owner, who, { list, code }) => send(to, `Code to give ${who} admin access: ${code}`,
+    page('Give admin access?', [`You (<b>${esc(owner)}</b>) are giving <b>${esc(who)}</b> admin access on the Admin Board, with: ${esc(list)}.`, 'Type this code on the board to finish. It works for 10 minutes.', 'If this wasn\'t you, someone is signed in to your owner account: change your password straight away.'], { code }),
+    `Your code to give ${who} admin access (${list}) is ${code} (10 minutes). If this wasn't you, change your password.`),
   emailChanged: (to, name, newEmail) => send(to, 'Your email was changed',
     page('Your email was changed', [`The email of <b>${esc(name)}</b> was changed to ${esc(newEmail)}.`, 'If this wasn\'t you, tell the game\'s owner straight away.']),
     `The email of ${name} was changed to ${newEmail}.`),

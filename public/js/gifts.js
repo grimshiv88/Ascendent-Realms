@@ -64,21 +64,25 @@ export function createGifts({ game, world, say, onBag }) {
     try {
       const r = await api.giftAct(id, 'open');
       if (game.entry(uid)) game.removeItem(uid, 1);
-      const it = ITEMS[r.item];
-      if (!r.already && it) {
-        if (!game.addItem(r.item, r.n || 1)) say?.('Your bag is full: the gift is on the ground at your feet… make room and ask the keepers to send it again.');
-      }
+      // what is inside: one thing or several
+      const inside = (Array.isArray(r.items) && r.items.length ? r.items : [{ item: r.item, n: r.n }])
+        .map((x) => ({ ...x, n: x.n || 1, it: ITEMS[x.item] })).filter((x) => x.it);
+      let dropped = false;
+      if (!r.already) for (const x of inside) if (!game.addItem(x.item, x.n)) dropped = true;
+      if (dropped) say?.('Your bag is full: some of the gift could not fit… make room and ask the keepers to send it again.');
       game.touch('bag');
       onBag?.();
+      const one = inside.length === 1 ? inside[0] : null;
+      const mount = !r.already && inside.find((x) => x.it.kind === 'mount');
       queue.unshift({
         show() {
-          card(`<span class="gift-big">${esc(it?.icon || '🎁')}</span><h3>${r.already ? 'This gift was opened already' : `${esc(it?.name || r.item)}${r.n > 1 ? ` ×${r.n}` : ''}!`}</h3>
-            ${r.already ? '' : `<p class="gift-from">${esc(it?.text || '')}</p>`}
+          card(`<span class="gift-big">${esc(one ? one.it.icon || '🎁' : '🎁')}</span><h3>${r.already ? 'This gift was opened already' : one ? `${esc(one.it.name)}${one.n > 1 ? ` ×${one.n}` : ''}!` : 'Your gift holds…'}</h3>
+            ${r.already ? '' : one ? `<p class="gift-from">${esc(one.it.text || '')}</p>` : `<ul class="gift-list">${inside.map((x) => `<li><span>${esc(x.it.icon || '•')}</span> ${esc(x.it.name)}${x.n > 1 ? ` ×${x.n}` : ''}</li>`).join('')}</ul>`}
             ${r.note ? `<p class="gift-note">${esc(r.note)}</p>` : ''}
             <p class="gift-from">From ${esc(r.from || 'the keepers of the realm')}</p>
-            <div class="gift-btns">${!r.already && it?.kind === 'mount' ? '<button type="button" class="gold-button" data-do="call">Call it to you</button>' : ''}<button type="button" class="${!r.already && it?.kind === 'mount' ? 'link-button' : 'gold-button'}" data-do="ok">Thank you!</button></div>`, true);
+            <div class="gift-btns">${mount ? '<button type="button" class="gold-button" data-do="call">Call it to you</button>' : ''}<button type="button" class="${mount ? 'link-button' : 'gold-button'}" data-do="ok">Thank you!</button></div>`, true);
         },
-        click(what) { if (what === 'call') world()?.callMount(r.item); close(); },
+        click(what) { if (what === 'call' && mount) world()?.callMount(mount.item); close(); },
       });
       current = null;
       next();

@@ -6,7 +6,10 @@
 const db = require('./db');
 const mail = require('./mail');
 const { checkBirthdate, ageOf } = require('../public/js/data/birthdate.mjs');
-const { hashPassword, shownEmail } = require('./auth');
+const auth = require('./auth');
+const { hashPassword, shownEmail } = auth;
+// codes by email for giving admin access: only where the game can send emails (MAIL_SHOW_CODES: tests)
+const codesOn = () => mail.ready() || process.env.MAIL_SHOW_CODES === '1';
 
 const staff = require('./staff');
 const ST = require('../public/js/data/staff.mjs');
@@ -602,8 +605,31 @@ async function setStaff(body, me) {
   const acc = await db.get('SELECT id, username, email, email_verified, admin_perms FROM accounts WHERE id = ?', int(body.id, 1, 2e9) || 0);
   if (!acc) return { error: 'No such account.' };
   if (staff.isOwner(acc)) return { error: 'This is an owner account: it can do everything already.' };
-  const s = ST.cleanStaff(body);
+  let s = ST.cleanStaff(body);
   const before = staff.staffOf(acc);
+  // Giving or changing admin access needs a code sent to the owner's own email (taking it away doesn't).
+  // The first request sends the code; the second brings it back, and what the code was sent for is what is saved.
+  if (s.perms.length && codesOn()) {
+    if (!body.ticket) {
+      if (!me?.email) return { error: 'Your owner account has no email for the code to go to.' };
+      const c = await auth.makeCode(me.id, 'staff', JSON.stringify({ id: acc.id, ...s }));
+      if (c.error) return c;
+      const names = Object.fromEntries([...ST.BOARD_PERMS, ...ST.GAME_POWERS].map(([id, name]) => [id, name]));
+      const m = await mail.adminAccessCode(me.email, me.username, acc.username, { code: c.code, list: s.perms.map((p) => names[p] || p).join(', ') });
+      if (!m.sent && process.env.MAIL_SHOW_CODES !== '1') {
+        await db.run('DELETE FROM auth_codes WHERE ticket = ?', c.ticket);
+        return { error: 'The code email could not be sent. Please try again in a minute.' };
+      }
+      return { needCode: true, ticket: c.ticket, sentTo: auth.hideEmail(me.email) };
+    }
+    const t = await auth.ticketRow(body.ticket, 'staff');
+    if (!t || t.account_id !== me.id) return { error: 'That code has run out. Please ask for a new one.' };
+    const want = JSON.parse(t.data || '{}');
+    if (want.id !== acc.id) return { error: 'That code was for another account.' };
+    const r = await auth.useCode(t, body.code);
+    if (r.error) return r;
+    s = ST.cleanStaff(want);
+  }
   await db.run('UPDATE accounts SET admin_perms = ? WHERE id = ?', s.perms.length ? JSON.stringify(s) : null, acc.id);
   await log(me, s.perms.length ? (before ? 'change admin access' : 'give admin access') : 'take admin access', acc.username,
     s.perms.length ? `${s.perms.join(', ')}${s.perms.includes('ban') ? ` (bans up to ${s.banDays} day(s))` : ''}` : '');

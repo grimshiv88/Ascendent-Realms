@@ -292,10 +292,8 @@
       <form id="giftform" class="grid2" style="align-items:end">
         <label>To <input name="to" list="usernames" placeholder="Username, or leave empty"></label>
         <label class="perm" style="align-self:center"><input type="checkbox" name="everyone"> <span>Everyone who has a character<small>One gift each</small></span></label>
-        <label>A pet or animal <select name="pet"></select></label>
-        <label>…or another item <input name="item" list="items" placeholder="Type to search"></label>
-        <label>How many <input name="n" type="number" min="1" max="1000" value="1"></label>
         <label>Signed <input name="from" maxlength="40" placeholder="The keepers of the realm"></label>
+        <div id="giftbox-tab" data-gift-box="tab" style="grid-column: 1 / -1"></div>
         <label style="grid-column: 1 / -1">Note <textarea name="note" maxlength="400" rows="2" placeholder="A few words to go with it"></textarea></label>
         <div class="row"><button class="primary" type="submit">Send the gift</button></div>
       </form>
@@ -358,7 +356,7 @@ function accessCard(p) {
   const box = ([id, name, about]) => `<label class="perm"><input type="checkbox" name="perm" value="${id}"${s.perms.includes(id) ? ' checked' : ''}><span><b>${esc(name)}</b><small>${esc(about)}</small></span></label>`;
   return `<form class="card" data-form="access">
       <h3>Admin access ${s.perms.length ? '<span class="tag">admin</span>' : ''}</h3>
-      <p class="quiet">${s.perms.length ? `${esc(p.username)} is an admin. Tick or untick what they may do, then save.` : `Make ${esc(p.username)} an admin: tick what they may do, then save.`} Only you can give or take away admin access. Admins can't use their powers on you or on other admins, and everything they do is written in the Log.</p>
+      <p class="quiet">${s.perms.length ? `${esc(p.username)} is an admin. Tick or untick what they may do, then save.` : `Make ${esc(p.username)} an admin: tick what they may do, then save.`} Only you can give or take away admin access. Giving or changing it asks for a code the game emails to you first. Admins can't use their powers on you or on other admins, and everything they do is written in the Log.</p>
       <h4>On this board</h4>
       <div class="perms">${me.boardPerms.map(box).join('')}</div>
       <label class="row" style="margin:6px 0">Longest ban they may give <input name="banDays" type="number" min="1" max="365" value="${s.banDays}" style="flex:0 0 80px"> days</label>
@@ -418,10 +416,11 @@ function drawList() {
       <small>${a.character ? `${esc(a.character.name)} · Lv ${a.character.level} ${esc(nice(a.character.race))} ${esc(nice(a.character.cls))}` : 'No character yet'}</small>
     </button>`).join('') || '<p class="empty">No players match.</p>';
 }
-$('search').addEventListener('input', drawList);
+$('search').addEventListener('input', soon(drawList, 120));
 $('plist').addEventListener('click', (e) => { const b = e.target.closest('[data-open]'); if (b) openPlayer(Number(b.dataset.open)); });
 
 async function openPlayer(id) {
+  if (open !== id) baskets.card = []; // a gift being put together is for the player it was started for
   open = id;
   heldLoaded = false; // who holds which Unique Skill may have changed
   drawList();
@@ -434,8 +433,27 @@ async function openPlayer(id) {
 const pickState = {};
 // Sections that open with an arrow (closed at first); which ones are open is kept while the board is open
 const openFolds = new Set();
-const fold = (key, title, body) => `<details class="fold" data-fold="${key}"${openFolds.has(key) ? ' open' : ''}><summary><h3>${title}</h3></summary>${body}</details>`;
-document.addEventListener('toggle', (e) => { const d = e.target; if (d.dataset?.fold) { if (d.open) openFolds.add(d.dataset.fold); else openFolds.delete(d.dataset.fold); } }, true);
+// `body` may be a function: then what is inside is only built when the section is opened (the long
+// lists of skills, spells, Unique Skills and items would make the board slow if built every time)
+const lazyFolds = new Map();
+const fold = (key, title, body) => {
+  const lazy = typeof body === 'function';
+  if (lazy) lazyFolds.set(key, body);
+  const isOpen = openFolds.has(key);
+  return `<details class="fold" data-fold="${key}"${isOpen ? ' open' : ''}><summary><h3>${title}</h3></summary><div class="fold-body">${!lazy ? body : isOpen ? body() : ''}</div></details>`;
+};
+document.addEventListener('toggle', (e) => {
+  const d = e.target, key = d.dataset?.fold;
+  if (!key) return;
+  if (d.open) {
+    openFolds.add(key);
+    const box = d.querySelector(':scope > .fold-body');
+    if (box && !box.childElementCount && lazyFolds.has(key)) box.innerHTML = lazyFolds.get(key)();
+  } else openFolds.delete(key);
+}, true);
+// typing in a search box redraws its list a moment after the last key, not on every key
+function soon(fn, ms = 160) { let t = 0; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+const typed = (e) => e.type === 'input' && (e.target.type === 'search' || e.target.type === 'number' || e.target.type === 'text');
 const ELEMENTS = ['Fire', 'Water', 'Earth', 'Wind', 'Lightning', 'Nature', 'Light', 'Dark'];
 const rankName = (id) => catalogue.ranks?.find((r) => r.id === id)?.name || id;
 const rankTag = (id) => (id ? `<span class="rk rk-${esc(id)}">${esc(rankName(id))}</span>` : '');
@@ -495,7 +513,8 @@ function wirePickers(root) {
     pickFilter(box.dataset.picker)[el.dataset.pick] = el.value;
     redraw(box);
   };
-  root.addEventListener('input', onField);
+  const onTyped = soon(onField);
+  root.addEventListener('input', (e) => (typed(e) ? onTyped(e) : onField(e)));
   root.addEventListener('change', onField);
 }
 
@@ -506,6 +525,7 @@ function wirePickers(root) {
 let IF = null; // the item filter module (loaded as the board opens)
 import('./js/data/itemfilter.mjs').then((m) => { IF = m; }).catch(() => {});
 const ITEM_SHOW = 80;
+let itemInfos = null;
 const itemFilter = () => (pickState.items ||= IF ? IF.emptyItemFilter() : {});
 function itemPickerHtml() {
   if (!IF) return '';
@@ -513,7 +533,7 @@ function itemPickerHtml() {
   const opt = (v, label, cur) => `<option value="${esc(v)}"${String(cur) === String(v) ? ' selected' : ''}>${esc(label)}</option>`;
   const types = IF.ITEM_TYPES[f.group];
   return `<div class="picker" data-ipicker>
-    <p class="quiet" style="margin:0 0 6px">Or find an item with the filters and press Give (it gives the number typed above).</p>
+    <p class="quiet" style="margin:0 0 6px">Pick as many as you like: choose a kind (or All), narrow it down with the filters, and press Add for each one. Each press of Add one more adds one.</p>
     <div class="chips">${[{ id: 'all', name: 'All', icon: '' }, ...IF.ITEM_GROUPS].map((g) => `<button type="button" data-i-group="${g.id}" class="${f.group === g.id ? 'on' : ''}">${esc(g.icon)} ${esc(g.name)}</button>`).join('')}</div>
     <div class="filters">
       <select data-i="rank" aria-label="Rank">${opt('all', 'Every rank', f.rank)}<optgroup label="Item rank">${IF.ITEM_RANKS.map((r) => opt(r.id, r.name, f.rank)).join('')}</optgroup><optgroup label="Skill Stone rank">${IF.STONE_RANKS.map((r) => opt(`stone:${r}`, `Stone ${r}`, f.rank)).join('')}</optgroup></select>
@@ -530,14 +550,14 @@ function itemPickerHtml() {
 const itemRankTag = (x) => { const r = IF.ITEM_RANKS[x.rank]; return `<span class="rk" style="color:${r.color}">${esc(r.name)}</span>`; };
 function itemListHtml() {
   const f = itemFilter();
-  const all = catalogue.items.map((x) => IF.itemInfo(x.id)).filter(Boolean);
+  const all = (itemInfos ||= catalogue.items.filter((x) => x.kind !== 'gift').map((x) => IF.itemInfo(x.id)).filter(Boolean)); // (worked out once)
   const list = IF.sortItems(all.filter((x) => IF.itemMatches(x, f)), f.sort);
   const group = (id) => IF.ITEM_GROUPS.find((g) => g.id === id);
   const lvl = (x) => [x.shop != null && `shop from Lv ${x.shop}`, x.forge != null && `forged from Lv ${x.forge}`].filter(Boolean).join(', ') || 'found only';
   const rows = list.slice(0, ITEM_SHOW).map((x) => `<div class="pick"><span class="ic">${esc(x.icon)}</span>
     <span><b>${esc(x.name)}</b>${itemRankTag(x)}${x.skillRank ? `<span class="rk rk-${esc(x.skillRank)}">${esc(x.skillRank)}</span>` : ''} <span class="tag">${esc(group(x.group)?.icon || '')} ${esc(x.sub || group(x.group)?.name || '')}</span>
       <small>${esc(x.text)}</small><small>${esc(lvl(x))} · ${esc(IF.moneyWords ? IF.moneyWords(x.price) : x.price)}</small></span>
-    <button type="button" class="primary" data-give-item="${esc(x.id)}">Give</button></div>`).join('');
+    <button type="button" class="primary" data-gift-add="${esc(x.id)}">${inBasket(x.id) ? 'Add one more' : 'Add to the gift'}</button></div>`).join('');
   return `<p class="quiet" style="margin:0 0 4px">${list.length} of ${all.length} items match${list.length > ITEM_SHOW ? `, showing the first ${ITEM_SHOW}: narrow the filters or type a name` : ''}</p>${rows || '<p class="quiet">Nothing matches. Try another kind or rank.</p>'}`;
 }
 function wireItems(root) {
@@ -555,7 +575,8 @@ function wireItems(root) {
     itemFilter()[el.dataset.i] = el.value;
     redraw(el.closest('[data-ipicker]'));
   };
-  root.addEventListener('input', onField);
+  const onTyped = soon(onField);
+  root.addEventListener('input', (e) => (typed(e) ? onTyped(e) : onField(e)));
   root.addEventListener('change', onField);
 }
 
@@ -677,7 +698,8 @@ function wireUnique(root) {
     uFilter(box.dataset.upicker)[el.dataset.u] = el.value;
     if (el.dataset.u !== 'give') redraw(box);
   };
-  root.addEventListener('input', onField);
+  const onTyped = soon(onField);
+  root.addEventListener('input', (e) => (typed(e) ? onTyped(e) : onField(e)));
   root.addEventListener('change', onField);
 }
 
@@ -767,16 +789,16 @@ function drawCard(p) {
     </div>
 
     <div class="card" data-need="edit">
-      ${fold('card-skills', `Skills <span class="quiet">(${c.skills.length})</span>`, `
+      ${fold('card-skills', `Skills <span class="quiet">(${c.skills.length})</span>`, () => `
       ${skillGroups(c.skills).map((g) => `<p class="quiet" style="margin:8px 0 4px">${g.icon} ${esc(g.name)}</p><div class="bag">${g.list.map((sk) => `<div class="slot"><span>${esc(sk.icon)}</span><span class="nm">${esc(sk.name)}</span>${rankTag(sk.rank)}<button type="button" data-unskill="${sk.id}" title="Take away">✕</button></div>`).join('')}</div>`).join('') || '<p class="quiet">No skills yet.</p>'}
       ${pickerHtml('skill', c.skills)}`)}
-      ${fold('card-spells', `Spells <span class="quiet">(${c.spells.length})</span>`, `
+      ${fold('card-spells', `Spells <span class="quiet">(${c.spells.length})</span>`, () => `
       <div class="bag">${c.spells.map((id) => { const sp = catalogue.spells.find((x) => x.id === id); return `<div class="slot"><span>✨</span><span class="nm">${esc(sp?.name || id)} <span class="quiet">${esc(sp?.element || '')}</span></span>${sp ? rankTag(sp.rank) : ''}<button type="button" data-unspell="${esc(id)}" title="Take away">✕</button></div>`; }).join('') || '<p class="quiet">No spells. Mages and the Dark Side learn them.</p>'}</div>
       ${pickerHtml('spell', c.spells)}`)}
-      ${fold('card-unique', `Unique Skill <span class="quiet">${c.uniqueSkill ? `(${esc(c.uniqueSkill.name)}, ${esc(c.uniqueSkill.rank)})` : '(none)'}</span>`, `
+      ${fold('card-unique', `Unique Skill <span class="quiet">${c.uniqueSkill ? `(${esc(c.uniqueSkill.name)}, ${esc(c.uniqueSkill.rank)})` : '(none)'}</span>`, () => `
       <p>${c.uniqueSkill ? `${esc(c.uniqueSkill.name)} <span class="tag">${esc(c.uniqueSkill.rank)}</span> <span class="quiet">${esc(c.uniqueSkill.element || '')}</span>` : 'None'}</p>
       <form data-form="unique" class="row">
-        <input name="uname" list="uniques" placeholder="Unique Skill (type to search ${catalogue.uniques.length})">
+        <input name="uname" placeholder="Unique Skill name (or find it below)">
         <select name="rank" aria-label="Rank">${catalogue.uniqueRanks.slice().reverse().map((r) => `<option${r === c.uniqueSkill?.rank ? ' selected' : ''}>${r}</option>`).join('')}</select>
         <button class="primary" type="submit">Change</button>
       </form>
@@ -792,34 +814,23 @@ function drawCard(p) {
           <span>${esc(s.icon || '•')}</span><span class="nm">${esc(s.name)}${s.plus ? ` +${s.plus}` : ''}</span><span class="quiet">×${s.n}</span>
           <button type="button" data-remove="${i}" title="Take away">✕</button></div>`).join('') || '<p class="quiet">Empty.</p>'}
       </div>
-      <form data-form="give" class="row" style="margin-top:10px">
-        <input name="item" list="items" placeholder="Item to give (type to search)" required>
-        <input name="n" type="number" min="1" value="1" style="flex:0 0 80px" aria-label="How many">
-        <button class="primary" type="submit">Give</button>
-      </form>
-      ${itemPickerHtml()}
     </div>
 
-    <div class="grid2">
-      <div class="card" data-need="edit">
-        <h3>Pets and animals</h3>
-        ${p.pets.length ? `<div class="tablewrap"><table><tbody>${p.pets.map((x) => `<tr>
-          <td>${esc(x.icon)} <b>${esc(x.name)}</b>${x.n > 1 ? ` ×${x.n}` : ''}<br><span class="quiet">${x.out ? `Left out in the world at (${x.out.x}, ${x.out.z})` : 'Put away (comes when called)'}</span></td>
-          <td><div class="row"><button type="button" data-pet="call" data-item="${esc(x.item)}">Call it to them</button><button type="button" data-pet="home" data-item="${esc(x.item)}">Send it home</button><button type="button" class="danger" data-pet="take" data-item="${esc(x.item)}">Take it away</button></div></td></tr>`).join('')}</tbody></table></div>` : '<p class="quiet">No pets or animals of their own.</p>'}
-        ${p.petOrders.length ? `<p class="quiet">Waiting for their game: ${p.petOrders.map((o) => `${esc(PET_DO[o.action] || o.action)} (${esc(itemName(o.item))})`).join(', ')}. It happens within a few seconds while they play, or when they next come in.</p>` : ''}
-        <p class="quiet">Call: it comes to them where they stand. Send home: it leaves the world (it is still theirs, and comes when they call it). Take away: it is no longer theirs. Nothing needs a reload. While they fly on it, it waits until they land.</p>
-      </div>
-      <form class="card" data-form="gift" data-need="edit">
-        <h3>Send a gift</h3>
-        <p class="quiet">It pops up on their screen straight away if they are playing (no reload), or when they next come in, and waits in their bag as a 🎁 Gift until they open it.</p>
-        <div class="statgrid">
-          <label>A pet or animal <select name="pet">${petOptions()}</select></label>
-          <label>…or another item <input name="item" list="items" placeholder="Type to search"></label>
-          <label>How many <input name="n" type="number" min="1" max="1000" value="1"></label>
-        </div>
-        <label style="margin-top:6px">Note <textarea name="note" maxlength="400" rows="2" placeholder="A few words to go with it"></textarea></label>
-        <div class="row" style="margin-top:8px"><button class="primary" type="submit">Send the gift</button></div>
-      </form>
+    <form class="card" data-form="gift" data-need="edit">
+      <h3>Send a gift</h3>
+      <p class="quiet">Put one thing or several in it: a pet, an animal or any item. It pops up on their screen straight away if they are playing (no reload), or when they next come in, and waits in their bag as one 🎁 Gift until they open it.</p>
+      <div data-gift-box="card">${giftBoxHtml('card')}</div>
+      <label style="margin-top:6px">Note <textarea name="note" maxlength="400" rows="2" placeholder="A few words to go with it"></textarea></label>
+      <div class="row" style="margin-top:8px"><button class="primary" type="submit">Send the gift</button></div>
+    </form>
+
+    <div class="card" data-need="edit">
+      <h3>Pets and animals</h3>
+      ${p.pets.length ? `<div class="tablewrap"><table><tbody>${p.pets.map((x) => `<tr>
+        <td>${esc(x.icon)} <b>${esc(x.name)}</b>${x.n > 1 ? ` ×${x.n}` : ''}<br><span class="quiet">${x.out ? `Left out in the world at (${x.out.x}, ${x.out.z})` : 'Put away (comes when called)'}</span></td>
+        <td><div class="row"><button type="button" data-pet="call" data-item="${esc(x.item)}">Call it to them</button><button type="button" data-pet="home" data-item="${esc(x.item)}">Send it home</button><button type="button" class="danger" data-pet="take" data-item="${esc(x.item)}">Take it away</button></div></td></tr>`).join('')}</tbody></table></div>` : '<p class="quiet">No pets or animals of their own.</p>'}
+      ${p.petOrders.length ? `<p class="quiet">Waiting for their game: ${p.petOrders.map((o) => `${esc(PET_DO[o.action] || o.action)} (${esc(itemName(o.item))})`).join(', ')}. It happens within a few seconds while they play, or when they next come in.</p>` : ''}
+      <p class="quiet">Call: it comes to them where they stand. Send home: it leaves the world (it is still theirs, and comes when they call it). Take away: it is no longer theirs. Nothing needs a reload. While they fly on it, it waits until they land.</p>
     </div>
 
     <form class="card" data-form="move" data-need="move">
@@ -900,18 +911,14 @@ async function change(path, body, done) {
     if (r.player) drawCard(r.player);
     say(done, true);
     drawStats().catch(() => {});
-  } catch (err) { say(err.message); }
+    return true;
+  } catch (err) { say(err.message); return false; }
 }
 $('pcard').addEventListener('click', async (e) => {
-  const b = e.target.closest('button[data-act], button[data-pet], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore], button[data-give-skill], button[data-give-spell], button[data-give-unique], button[data-give-item]');
+  const b = e.target.closest('button[data-act], button[data-pet], button[data-remove], button[data-unskill], button[data-unspell], button[data-restore], button[data-give-skill], button[data-give-spell], button[data-give-unique]');
   if (!b) return;
   const name = $('pcard').dataset.name;
   if (b.dataset.giveUnique) return change('api/admin/edit', { unique: { name: b.dataset.giveUnique, rank: uFilter('ugive').give || 'B' } }, `${name}'s Unique Skill is now ${b.dataset.giveUnique}.`);
-  if (b.dataset.giveItem) {
-    const n = Math.max(1, Number($('pcard').querySelector('form[data-form="give"] [name="n"]')?.value) || 1);
-    const it = catalogue.items.find((x) => x.id === b.dataset.giveItem);
-    return change('api/admin/edit', { addItem: { id: b.dataset.giveItem, n } }, `Gave ${n > 1 ? `${n} × ` : ''}${it?.name || 'the item'} to ${name}.`);
-  }
   if (b.dataset.giveSkill) return change('api/admin/edit', { addSkill: b.dataset.giveSkill }, `Skill given to ${name}.`);
   if (b.dataset.giveSpell) return change('api/admin/edit', { addSpell: b.dataset.giveSpell }, `Spell given to ${name}.`);
   if (b.dataset.pet) {
@@ -982,16 +989,12 @@ $('pcard').addEventListener('submit', async (e) => {
     change('api/admin/life/edit', body, 'The past life was changed.');
   }
   if (kind === 'gift') {
-    const it = giftItem(f);
-    if (!it) return say('Choose a pet, or type an item from the list.');
-    await change('api/admin/gift', { item: it.id, n: Number(v('n')) || 1, note: v('note') }, `Gift sent to ${name}: ${it.name}. It pops up in their game within a few seconds (or when they next come in).`);
+    const items = basketList('card');
+    if (!items.length) return say('Put something in the gift first: a pet, an item typed in, or one found with the filters.');
+    const what = basketWords('card');
+    const sent = await change('api/admin/gift', { items, note: v('note') }, `Gift sent to ${name}: ${what}. It pops up in their game within a few seconds (or when they next come in).`);
+    if (sent) { baskets.card = []; redrawBasket('card'); f.elements.note.value = ''; }
     return;
-  }
-  if (kind === 'give') {
-    const typed = v('item').toLowerCase();
-    const it = catalogue.items.find((x) => x.name.toLowerCase() === typed || x.id === typed);
-    if (!it) return say('No item with that name. Pick one from the list as you type.');
-    change('api/admin/edit', { addItem: { id: it.id, n: Number(v('n')) || 1 } }, `Gave ${it.name} to ${name}.`);
   }
   if (kind === 'move') {
     const body = v('place') ? { place: v('place') } : { x: Number(v('x')), z: Number(v('z')) };
@@ -1005,7 +1008,21 @@ $('pcard').addEventListener('submit', async (e) => {
   if (kind === 'access') {
     const perms = [...f.querySelectorAll('input[name="perm"]:checked')].map((x) => x.value);
     if (!perms.length && !confirm(`Nothing is ticked: this takes away all of ${name}'s admin access. Go on?`)) return;
-    await change('api/admin/staff', { perms, banDays: Number(v('banDays')) || me.banDaysDefault }, perms.length ? `${name}'s admin access was saved. Game powers reach them when their game next loads.` : `${name} is not an admin any more.`);
+    const body = { id: open, perms, banDays: Number(v('banDays')) || me.banDaysDefault };
+    try {
+      // giving admin access needs the code the game emails to the owner
+      let r = await call('api/admin/staff', body);
+      while (r.needCode) {
+        const code = prompt(`To give ${name} admin access, type the 6-digit code just sent to your email (${r.sentTo}). It works for 10 minutes.`);
+        if (!code) return say('Nothing was changed: the code was not typed.');
+        try { r = await call('api/admin/staff', { ...body, ticket: r.ticket, code }); } catch (err) {
+          if (/run out|too many/i.test(err.message)) return say(`${err.message} Press Save again for a new code.`);
+          alert(err.message);
+        }
+      }
+      if (r.player) drawCard(r.player);
+      say(perms.length ? `${name}'s admin access was saved. Game powers reach them when their game next loads.` : `${name} is not an admin any more.`, true);
+    } catch (err) { say(err.message); }
     drawPlayers().catch(() => {});
   }
   if (kind === 'mute') change('api/admin/mute', { minutes: Number(v('minutes')) }, `${name} is muted.`);
@@ -1017,39 +1034,105 @@ $('pcard').addEventListener('submit', async (e) => {
 const PET_DO = { call: 'Call it to them', home: 'Send it home', take: 'Take it away' };
 const itemName = (id) => catalogue.items.find((x) => x.id === id)?.name || id;
 const petOptions = () => `<option value="">— choose —</option>${catalogue.items.filter((x) => x.kind === 'mount').map((x) => `<option value="${esc(x.id)}">${esc(x.icon)} ${esc(x.name)}</option>`).join('')}`;
-// the pet picked, or else the item typed
-function giftItem(f) {
-  const pet = f.elements.pet.value;
-  if (pet) return catalogue.items.find((x) => x.id === pet);
-  const typed = f.elements.item.value.trim().toLowerCase();
-  return typed ? catalogue.items.find((x) => x.kind !== 'gift' && (x.name.toLowerCase() === typed || x.id === typed)) : null;
+// What goes in a gift: a list of { id, n } kept for each form ('card' on a player's card, 'tab' on
+// the Gifts tab) while the board is open. Up to 10 different things in one gift.
+const GIFT_MAX = 10;
+const baskets = { card: [], tab: [] };
+const giftKey = () => (document.querySelector('[data-panel="gifts"]')?.hidden === false ? 'tab' : 'card');
+const inBasket = (id) => baskets[giftKey()].some((x) => x.id === id);
+const basketList = (key) => baskets[key].map((x) => ({ item: x.id, n: x.n }));
+const basketWords = (key) => baskets[key].map((x) => `${x.n > 1 ? `${x.n} × ` : ''}${itemName(x.id)}`).join(', ');
+function basketHtml(key) {
+  const b = baskets[key];
+  if (!b.length) return '<p class="quiet" style="margin:6px 0">Nothing in the gift yet.</p>';
+  return `<div class="bag" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))">${b.map((x) => { const it = catalogue.items.find((i) => i.id === x.id); return `<div class="slot"><span>${esc(it?.icon || '•')}</span><span class="nm">${esc(it?.name || x.id)}</span>
+    <input type="number" min="1" max="1000" value="${x.n}" data-basket-n="${esc(x.id)}" aria-label="How many" style="width:64px">
+    <button type="button" data-basket-del="${esc(x.id)}" title="Take it out">✕</button></div>`; }).join('')}</div>
+    <p class="quiet" style="margin:4px 0 0">${b.length} of ${GIFT_MAX} things in this gift</p>`;
 }
+function giftBoxHtml(key) {
+  return `<div class="statgrid">
+      <label>A pet or animal <select data-gift-pet>${petOptions()}</select></label>
+      <label>…or type an item <span class="row" style="flex-wrap:nowrap"><input data-gift-typed list="items" placeholder="Type to search"><button type="button" data-gift-typed-add>Add</button></span></label>
+    </div>
+    <div data-basket="${key}">${basketHtml(key)}</div>
+    ${fold(`gift-find-${key}`, 'Find items with filters <span class="quiet">(pick several)</span>', () => itemPickerHtml())}`;
+}
+function addToGift(key, id, box) {
+  const it = catalogue.items.find((x) => x.id === id && x.kind !== 'gift');
+  if (!it) return say('Pick an item from the list as you type.');
+  const b = baskets[key], had = b.find((x) => x.id === id);
+  if (had) had.n = Math.min(1000, had.n + 1);
+  else if (b.length >= GIFT_MAX) return say(`A gift holds up to ${GIFT_MAX} different things. Send this one first, or take something out.`);
+  else b.push({ id, n: 1 });
+  redrawBasket(key, box);
+  say(`${it.name} is in the gift.`, true);
+}
+function redrawBasket(key, box) {
+  const el = (box || document).querySelector(`[data-basket="${key}"]`);
+  if (el) el.innerHTML = basketHtml(key);
+  // the finder's buttons say whether each item is in already
+  for (const btn of (box || document).querySelectorAll('[data-gift-add]')) btn.textContent = baskets[key].some((x) => x.id === btn.dataset.giftAdd) ? 'Add one more' : 'Add to the gift';
+}
+document.addEventListener('click', (e) => {
+  const box = e.target.closest('[data-gift-box]');
+  if (!box) return;
+  const key = box.dataset.giftBox;
+  const add = e.target.closest('[data-gift-add]');
+  if (add) return addToGift(key, add.dataset.giftAdd, box);
+  const del = e.target.closest('[data-basket-del]');
+  if (del) { baskets[key] = baskets[key].filter((x) => x.id !== del.dataset.basketDel); return redrawBasket(key, box); }
+  if (e.target.closest('[data-gift-typed-add]')) {
+    const input = box.querySelector('[data-gift-typed]'), t = input.value.trim().toLowerCase();
+    if (!t) return say('Type the name of an item first.');
+    const it = catalogue.items.find((x) => x.kind !== 'gift' && (x.name.toLowerCase() === t || x.id === t));
+    if (!it) return say('No item has that name. Pick one from the list as you type.');
+    input.value = '';
+    addToGift(key, it.id, box);
+  }
+});
+document.addEventListener('change', (e) => {
+  const box = e.target.closest('[data-gift-box]');
+  if (!box) return;
+  const key = box.dataset.giftBox;
+  if (e.target.matches('[data-gift-pet]') && e.target.value) { addToGift(key, e.target.value, box); e.target.value = ''; }
+  if (e.target.matches('[data-basket-n]')) {
+    const x = baskets[key].find((y) => y.id === e.target.dataset.basketN);
+    if (x) { x.n = Math.max(1, Math.min(1000, Math.round(Number(e.target.value)) || 1)); e.target.value = x.n; }
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.matches?.('[data-gift-typed]')) { e.preventDefault(); e.target.closest('[data-gift-box]')?.querySelector('[data-gift-typed-add]')?.click(); }
+});
+const giftWhat = (g) => (g.items || [{ icon: g.icon, name: g.name, n: g.n }]).map((x) => `${esc(x.icon)} ${esc(x.name)}${x.n > 1 ? ` ×${x.n}` : ''}`).join('<br>');
 async function drawGifts() {
-  $('giftform').elements.pet.innerHTML = petOptions();
+  $('giftbox-tab').innerHTML = giftBoxHtml('tab');
   const { gifts } = await call('api/admin/gifts');
-  $('giftlist').innerHTML = gifts.map((g) => `<tr><td class="quiet">${when(g.at)}</td><td>${esc(g.to)}</td><td>${esc(g.icon)} ${esc(g.name)}${g.n > 1 ? ` ×${g.n}` : ''}</td><td>${esc(g.note || '')}${g.from ? `<br><span class="quiet">— ${esc(g.from)}</span>` : ''}</td>
+  $('giftlist').innerHTML = gifts.map((g) => `<tr><td class="quiet">${when(g.at)}</td><td>${esc(g.to)}</td><td>${giftWhat(g)}</td><td>${esc(g.note || '')}${g.from ? `<br><span class="quiet">— ${esc(g.from)}</span>` : ''}</td>
     <td>${g.opened ? `<span class="tag">Opened</span> <span class="quiet">${ago(g.opened)}</span>` : g.seen ? '<span class="tag">Seen, not opened</span>' : '<span class="quiet">Waiting for them</span>'}</td>
     <td>${g.opened ? '' : `<button type="button" class="danger" data-unsend="${g.id}">Take back</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="quiet">No gifts sent yet.</td></tr>';
 }
 $('giftform').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const f = e.target, it = giftItem(f);
-  if (!it) return say('Choose a pet, or type an item from the list.');
+  const f = e.target, items = basketList('tab');
+  if (!items.length) return say('Put something in the gift first: a pet, an item typed in, or one found with the filters.');
+  const what = basketWords('tab');
   const everyone = f.elements.everyone.checked, to = f.elements.to.value.trim();
-  const body = { item: it.id, n: Number(f.elements.n.value) || 1, note: f.elements.note.value.trim(), from: f.elements.from.value.trim() };
+  const body = { items, note: f.elements.note.value.trim(), from: f.elements.from.value.trim() };
   try {
     if (everyone) {
-      if (!confirm(`Send ${it.name} to every player?`)) return;
+      if (!confirm(`Send ${what} to every player?`)) return;
       const r = await call('api/admin/gift', { ...body, everyone: true });
-      say(`Sent ${it.name} to ${r.sent} players.`, true);
+      say(`Sent ${what} to ${r.sent} players.`, true);
     } else {
       if (!accounts.length) await drawPlayers();
       const acc = accounts.find((x) => x.username.toLowerCase() === to.toLowerCase());
       if (!acc) return say('Type the username of the player (or tick Everyone).');
       await call('api/admin/gift', { ...body, id: acc.id });
-      say(`Gift sent to ${acc.username}: ${it.name}. It pops up in their game within a few seconds (or when they next come in).`, true);
+      say(`Gift sent to ${acc.username}: ${what}. It pops up in their game within a few seconds (or when they next come in).`, true);
     }
-    f.elements.note.value = ''; f.elements.item.value = ''; f.elements.pet.value = '';
+    f.elements.note.value = '';
+    baskets.tab = [];
     drawGifts();
   } catch (err) { say(err.message); }
 });
@@ -1161,10 +1244,11 @@ async function drawSkills() {
   const { categories } = await call('api/admin/skills');
   heldUniques = categories.flatMap((k) => k.uniques); heldLoaded = true;
   $('skillboard').innerHTML = `<div class="picker" data-upicker="uheld">${uniqueFilters('uheld', true)}<div class="held-list">${heldHtml()}</div></div>`;
-  $('skillbook').innerHTML = fold('book-skills', `Skills <span class="quiet">(${catalogue.skills.length})</span>`, pickerHtml('book')) + fold('book-spells', `Spells <span class="quiet">(${catalogue.spells.length})</span>`, pickerHtml('spellbook'));
+  $('skillbook').innerHTML = fold('book-skills', `Skills <span class="quiet">(${catalogue.skills.length})</span>`, () => pickerHtml('book')) + fold('book-spells', `Spells <span class="quiet">(${catalogue.spells.length})</span>`, () => pickerHtml('spellbook'));
 }
 wirePickers($('pcard'));
 wireItems($('pcard'));
+wireItems(document.querySelector('[data-panel="gifts"]'));
 wireUnique($('pcard'));
 wireUnique($('skillboard'));
 wirePickers($('skillbook'));
@@ -1250,12 +1334,9 @@ async function start() {
     const dl = document.createElement('datalist');
     dl.id = 'items';
     dl.innerHTML = catalogue.items.map((i) => `<option value="${esc(i.name)}">`).join('');
-    const ul = document.createElement('datalist');
-    ul.id = 'uniques';
-    ul.innerHTML = catalogue.uniques.map((n) => `<option value="${esc(n)}">`).join('');
     const un = document.createElement('datalist');
     un.id = 'usernames';
-    document.body.append(dl, ul, un);
+    document.body.append(dl, un);
     await drawPlayers();
   } catch (e) {
     $('board').hidden = true; $('login').hidden = false; $('logout').hidden = true;

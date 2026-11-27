@@ -15,6 +15,9 @@ const R = require('../public/js/data/raids.mjs');
 const int = (v, min, max) => { const n = Number(v); return Number.isInteger(n) && n >= min && n <= max ? n : null; };
 const short = (v, n) => String(v ?? '').trim().slice(0, n);
 const MAX_WAITING = 30; // gifts a player can have waiting at once
+const MAX_IN_GIFT = 10;  // different things in one gift
+// what is inside a gift: [{ item, n }] (a gift from before several things could go in one has item and n)
+const contents = (d) => (Array.isArray(d.items) && d.items.length ? d.items : [{ item: d.item, n: d.n }]);
 // items that can't be sent as a gift
 const giftable = (id) => !!ITEMS[id] && ITEMS[id].kind !== 'gift';
 const PET_ACTIONS = { call: 'call it to them', home: 'send it home', take: 'take it away' };
@@ -43,9 +46,10 @@ async function act(accountId, body = {}) {
     return { ok: true };
   }
   if (body.act === 'open' && row.kind === 'gift') {
-    if (row.done_at) return { ok: true, already: true, item: d.item, n: d.n, note: d.note, from: d.from };
+    const items = contents(d);
+    if (row.done_at) return { ok: true, already: true, items, item: items[0].item, n: items[0].n, note: d.note, from: d.from };
     const { changes } = await db.run('UPDATE deliveries SET done_at = ?, seen_at = COALESCE(seen_at, ?) WHERE id = ? AND done_at IS NULL', Date.now(), Date.now(), row.id);
-    return { ok: true, already: !changes, item: d.item, n: d.n, note: d.note, from: d.from };
+    return { ok: true, already: !changes, items, item: items[0].item, n: items[0].n, note: d.note, from: d.from };
   }
   if (body.act === 'done' && row.kind === 'pet') {
     await db.run('UPDATE deliveries SET done_at = COALESCE(done_at, ?) WHERE id = ?', Date.now(), row.id);
@@ -55,15 +59,23 @@ async function act(accountId, body = {}) {
 }
 
 // Admin: send a gift to one player ({ id }) or to everyone ({ everyone: true })
-// body: { id | everyone, item, n, note, from }
+// body: { id | everyone, items: [{ item, n }] (or one: item, n), note, from }
 async function send(body, me) {
-  const item = String(body.item || '');
-  if (!giftable(item)) return { error: 'Choose what to send.' };
-  const n = int(body.n ?? 1, 1, 1000);
-  if (n === null) return { error: 'Send between 1 and 1000.' };
+  const asked = Array.isArray(body.items) ? body.items : [{ item: body.item, n: body.n }];
+  if (!asked.length) return { error: 'Choose what to send.' };
+  if (asked.length > MAX_IN_GIFT) return { error: `A gift holds up to ${MAX_IN_GIFT} different things.` };
+  const items = [];
+  for (const x of asked) {
+    const item = String(x?.item || '');
+    if (!giftable(item)) return { error: 'Choose what to send.' };
+    const n = int(x.n ?? 1, 1, 1000);
+    if (n === null) return { error: 'Send between 1 and 1000 of each thing.' };
+    const same = items.find((y) => y.item === item);
+    if (same) same.n = Math.min(1000, same.n + n); else items.push({ item, n });
+  }
   const note = short(body.note, 400);
   const from = short(body.from, 40) || 'The keepers of the realm';
-  const data = JSON.stringify({ item, n, note, from, by: me?.username || '?' });
+  const data = JSON.stringify({ items, item: items[0].item, n: items[0].n, note, from, by: me?.username || '?' });
   const now = Date.now();
   let targets;
   if (body.everyone) targets = await db.all('SELECT a.id, a.username FROM accounts a JOIN characters c ON c.account_id = a.id');
@@ -79,7 +91,7 @@ async function send(body, me) {
     await db.run("INSERT INTO deliveries (account_id, kind, data, at) VALUES (?, 'gift', ?, ?)", a.id, data, now);
     sent++;
   }
-  return { ok: true, sent, to: body.everyone ? 'everyone' : targets[0].username, what: `${n} × ${ITEMS[item].name}` };
+  return { ok: true, sent, to: body.everyone ? 'everyone' : targets[0].username, what: items.map((x) => `${x.n} × ${ITEMS[x.item].name}`).join(', ') };
 }
 
 // Admin: the gifts sent lately (newest first), and whether each was seen and opened
@@ -89,7 +101,8 @@ async function sent() {
   return {
     gifts: rows.map((r) => {
       const d = JSON.parse(r.data);
-      return { id: r.id, to: r.username, item: d.item, name: ITEMS[d.item]?.name || d.item, icon: ITEMS[d.item]?.icon || '🎁', n: d.n, note: d.note, from: d.from, at: Number(r.at), seen: r.seen_at ? Number(r.seen_at) : null, opened: r.done_at ? Number(r.done_at) : null };
+      const items = contents(d).map((x) => ({ item: x.item, n: x.n, name: ITEMS[x.item]?.name || x.item, icon: ITEMS[x.item]?.icon || '🎁' }));
+      return { id: r.id, to: r.username, items, item: items[0].item, name: items[0].name, icon: items[0].icon, n: items[0].n, note: d.note, from: d.from, at: Number(r.at), seen: r.seen_at ? Number(r.seen_at) : null, opened: r.done_at ? Number(r.done_at) : null };
     }),
   };
 }
