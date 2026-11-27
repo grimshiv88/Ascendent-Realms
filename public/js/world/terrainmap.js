@@ -9,11 +9,12 @@ const GROUND = {
 };
 const OTHER = hex('#c4b68a');
 const SAND = hex('#d9cb9c'), WOOD = hex('#3f5b2a'), ROCK = hex('#8e877a'), SNOW = hex('#f3f4f2');
-const SHALLOW = hex('#79adb8'), DEEP = hex('#3a6479');
+const SHALLOW = hex('#79adb8'), DEEP = hex('#3a6479'), ICE = hex('#bcd6e2');
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 function colourOf(s) {
+  if (s.ice) return ICE; // a frozen lake
   if (s.h < s.water) return mix(SHALLOW, DEEP, clamp01((s.water - s.h) / 25));
   let c = GROUND[s.region] || OTHER;
   if (s.h - s.water < 1.6 && s.coast < 1200 && !s.wet) c = SAND;

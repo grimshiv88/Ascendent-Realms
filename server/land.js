@@ -1,5 +1,6 @@
 // Land plots: who owns which square of the Heartland, what it is for, and whether it has been levelled.
 const db = require('./db');
+const { underColosseum } = require('../public/js/data/arena.mjs');
 const { moneyWords } = require('../public/js/data/money.mjs');
 const characters = require('./characters');
 const { PURPOSES, PURPOSE_FEE, checkPurchase, prepareCost, levelHeight, clearCost } = require('../public/js/data/land.mjs');
@@ -142,6 +143,7 @@ async function buyHome(accountId, body) {
   if (!city) return { error: 'There is no such city.' };
   const house = cityPlan().sale.find((h) => h.id === String(body.house || ''));
   if (!house) return { error: 'That house is not for sale.' };
+  if (underColosseum(city.id, house.x, house.z, Math.max(house.w, house.d) / 2 + 2)) return { error: 'That shack was pulled down to make room for the Colosseum.' };
   if (await db.get('SELECT 1 FROM city_homes WHERE city = ? AND house = ?', city.id, house.id)) return { error: 'Someone already owns this house.' };
   if ((await db.get('SELECT COUNT(*)::int AS n FROM city_homes WHERE account_id = ?', accountId)).n >= MAX_HOMES) return { error: `You can own at most ${MAX_HOMES} houses.` };
   const paid = await spend(accountId, house.price);

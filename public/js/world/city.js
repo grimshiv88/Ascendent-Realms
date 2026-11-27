@@ -15,6 +15,8 @@ import { marketStall, twoFacedSign } from './farms.js';
 import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS, familyOf, PARENT_JOBS, townName, seeded } from '../data/birth.mjs';
 import { TIERS, TOP_Y, TERRACE, INNER_R, ROAD_ANGLES, ROAD_HALF, RAMPS, RAMP_IN, RAMP_OUT, RAMP_WALL, ringY, rampAt, alongRoad, cityLift } from '../data/citylevels.mjs';
 import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, BANK_ID, tierY, RACE_HOME, homeFootprint } from '../data/citylayout.mjs';
+import { COLOSSEUM, underColosseum } from '../data/arena.mjs';
+import { buildColosseum } from './colosseum.js';
 
 export { PLAZA_R, INNER_R };
 // the look of the city's own buildings: [wall, roof, awning or banner colour]
@@ -343,9 +345,14 @@ export function buildCity(place, opts = {}) {
         fixed.add(walk);
       }
       if (i % 2 === 0) { const m = new THREE.Mesh(stoneBox(1.3, 0.6, 1.2), stoneMat); m.position.set(Math.sin(a) * (face - 0.4), up + 1.4, Math.cos(a) * (face - 0.4)); m.rotation.y = a; fixed.add(m); }
-      // solid all along (two to a stretch, so nobody small slips between them and up the bank), up
-      // to a little over the battlements: too high to jump over, but you can fly over it
-      for (const da of [0, seg / 2 / face]) if (!gap(a + da, face, ROAD_HALF + RAMP_WALL + 0.5)) solid.push({ x: cx + Math.sin(a + da) * (face + 0.2), z: cz + Math.cos(a + da) * (face + 0.2), r: 1.0, kind: 'wall', y: wallBase + low - 1, height: up - low + 3.2 });
+      // solid all along, up to a little over the battlements: too high to jump over, but you can
+      // fly over it. Four posts to a stretch, down the middle of the wall and as thick as it, so its
+      // face is smooth on both sides: two big ones on the outer face let you push half into the
+      // parapet from the walk on top, and jerked you back and forth along it
+      for (let q = 0; q < 4; q++) {
+        const aq = a + ((q - 1.5) * seg / 4) / face;
+        if (!gap(aq, face, ROAD_HALF + RAMP_WALL + 0.5)) solid.push({ x: cx + Math.sin(aq) * (face - 0.4), z: cz + Math.cos(aq) * (face - 0.4), r: 0.6, kind: 'wall', y: wallBase + low - 1, height: up - low + 4.2 });
+      }
     }
     rampBands.push({ r0: b - 3.5, r1: face, y: up });
     // the ramps: a road climbing between two stone walls, cut into the higher ring and built out
@@ -483,16 +490,28 @@ export function buildCity(place, opts = {}) {
     if (h.tilt) hb.rotation.y += h.tilt;
     if (h.style === 'manor') garden(fixed, h, ringRel(h.tier), solid, cx, cz);
   };
-  for (const h of houses) if (!h.gone) putHome(h, ''); // (a 'gone' house gave its place to the Mages' Academy)
+  // (the Dump's shacks where the Colosseum stands in the Central City were cleared away for it)
+  const cleared = (o) => underColosseum(place.id, o.x, o.z, (o.w ? Math.max(o.w, o.d) / 2 : 0) + 2);
+  for (const h of houses) if (!h.gone && !cleared(h)) putHome(h, ''); // (a 'gone' house gave its place to the Mages' Academy)
   const saleSigns = new Map();
   for (const h of plan.sale) {
+    if (cleared(h)) continue;
     putHome(h, 'sale');
     const out = h.d / 2 + 2.2, side = (h.doorX > 0 ? -1 : 1) * Math.max(h.w / 2 - 1.1, Math.abs(h.doorX) + 1.9); // (beside the door, never in front of it)
     const sx = h.x + h.fx * out + h.fz * side, sz = h.z + h.fz * out - h.fx * side;
     saleSigns.set(h.id, houseSign(g, fixed, sx, ringRel(h.tier), sz, h.rot, solid, cx, cz));
   }
   // the junk piled up in the Dump
-  for (const j of plan.junk) junkPile(fixed, j, ringRel('dump'), solid, cx, cz);
+  for (const j of plan.junk) if (!cleared(j)) junkPile(fixed, j, ringRel('dump'), solid, cx, cz);
+
+  // the Colosseum, in the Dump of the Central City between the south and east roads (see arena.mjs)
+  let colosseum = null;
+  if (!monster && place.id === COLOSSEUM.city) {
+    const lx = Math.sin(COLOSSEUM.a) * COLOSSEUM.r, lz = Math.cos(COLOSSEUM.a) * COLOSSEUM.r;
+    colosseum = buildColosseum({ fixed, g, lx, lz, turn: COLOSSEUM.a + Math.PI, y: ringRel('dump'), cx, cz, cityY: heightAt(cx, cz), solid, matOf, textTexture, lazyCharacter, buildCharacter, bodyHeight, races: S.guards });
+    shops.push({ id: 'colosseum', name: 'The Colosseum', x: colosseum.board.x, z: colosseum.board.z });
+    colosseumBoard(fixed, colosseum.board.x - cx, ringRel('dump'), colosseum.board.z - cz, colosseum.centre.x - cx, colosseum.centre.z - cz, solid, cx, cz);
+  }
 
   // the walls: outer fortress wall, moat, inner wall (see walls())
   const wallMat = matOf(S.wall, 0.95);
@@ -714,6 +733,7 @@ export function buildCity(place, opts = {}) {
   const dirtMat = matOf('#6e5e46', 1, { polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -24 });
   const ballMats = ['#c8402a', '#3a6ab0', '#d8b030'].map((col) => matOf(col, 0.6));
   plan.yards.forEach((Y) => {
+    if (cleared(Y)) return;
     const y = ringRel(Y.tier);
     const patch = new THREE.Mesh(new THREE.CircleGeometry(3.2, 16), dirtMat);
     patch.rotation.x = -Math.PI / 2; patch.position.set(Y.x, y + 0.03, Y.z); market.add(patch);
@@ -727,6 +747,7 @@ export function buildCity(place, opts = {}) {
   });
   const blanketMats = ['#6a5a48', '#7a4a3a', '#5a5a4a', '#8a7a5a'].map((col) => matOf(col, 1, { polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -24 }));
   plan.idlers.forEach((I) => {
+    if (cleared(I)) return;
     const y = ringRel(I.tier);
     const race = S.guards[(I.seed * 7 + 3) % S.guards.length];
     const H = bodyHeight(race, 'humanoid');
@@ -779,6 +800,7 @@ export function buildCity(place, opts = {}) {
     walkFolk(t, you, blocked);
     for (const b of bridges) b.update();
     castleGrounds?.update(t, you);
+    colosseum?.update(t);
     glow?.(t);
   };
   // raise or lower the bridges over the moat (raised, they shut the inner gates)
@@ -787,6 +809,8 @@ export function buildCity(place, opts = {}) {
   const cityY = heightAt(cx, cz);
   const deckAt = (x, z) => {
     for (const b of bridges) { const y = b.deckAt(x, z); if (y !== undefined) return y; }
+    const seats = colosseum?.topAt(x, z);
+    if (seats !== undefined) return seats;
     const top = castleGrounds?.topAt(x, z);
     if (top !== undefined) return top;
     const pad = padAt(pads, x, z);
@@ -812,7 +836,7 @@ export function buildCity(place, opts = {}) {
   // the houses for sale: show who owns each (`owners`: house id -> owner's name)
   const setOwners = (owners) => { for (const [id, sign] of saleSigns) sign.set(owners?.[id] || null, plan.sale.find((h) => h.id === id)); };
   setOwners({});
-  return { group: g, update, gather, shops, solid, gates, innerGates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, doors, centre: { x: cx, z: cz }, checkpoint: { x: cx + plan.checkpoint.x + plan.checkpoint.fx * 3.4, z: cz + plan.checkpoint.z + plan.checkpoint.fz * 3.4 } };
+  return { group: g, update, gather, shops, solid, gates, innerGates, npcs, setRaised, deckAt, inMoat, rescue, setOwners, doors, colosseum, centre: { x: cx, z: cz }, checkpoint: { x: cx + plan.checkpoint.x + plan.checkpoint.fx * 3.4, z: cz + plan.checkpoint.z + plan.checkpoint.fz * 3.4 } };
 }
 
 // The rings' floors (see buildCity): grassy lawns on Castle Hill, in the Noble and the Common
@@ -954,7 +978,8 @@ function garden(fixed, h, y, solid, cx, cz) {
     m.position.set((x0 + x1) / 2, 0.55, (z0 + z1) / 2);
     m.rotation.y = Math.atan2(-(z1 - z0), x1 - x0);
     g.add(m);
-    for (let t = 0; t <= len; t += 1.6) {
+    // (posts close enough together that nobody slips between them through the hedge)
+    for (let t = 0; t <= len; t += 0.6) {
       const lx = x0 + (x1 - x0) * (t / len), lz = z0 + (z1 - z0) * (t / len);
       solid.push({ x: cx + h.x + lx * c + lz * s, z: cz + h.z - lx * s + lz * c, r: 0.5, kind: 'wall', height: 1.1, step: false });
     }
@@ -1051,6 +1076,22 @@ function junkPile(fixed, j, y, solid, cx, cz) {
 // stairs, the steps), update }.
 const STEP_UP = 1.2; // the keep's door stands this high, up a flight of steps
 const YARD = { x0: -21, x1: 21, z0: -17, z1: 23, h: 6, gate: 3.2 };
+// The Colosseum's notice board outside its city gate: the fights on now, challenges, the championship
+function colosseumBoard(fixed, x, y, z, fx, fz, solid, cx, cz) {
+  const b = new THREE.Group();
+  b.position.set(x, y, z);
+  b.rotation.y = Math.atan2(x - fx, z - fz); // its face to those coming from the city
+  const wood = matOf('#6a4a2e', 0.9), dark = matOf('#3e2a1a', 0.9);
+  for (const sx of [-1.3, 1.3]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.6, 0.18), dark); p.position.set(sx, 1.3, 0); b.add(p); }
+  const back = new THREE.Mesh(new THREE.BoxGeometry(2.9, 1.7, 0.1), wood); back.position.set(0, 1.75, 0); b.add(back);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.12, 0.6), dark); roof.position.set(0, 2.7, 0.1); b.add(roof);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 1.5), new THREE.MeshBasicMaterial({ map: textTexture('Fights · Challenges · Championship', { board: true }) }));
+  face.position.set(0, 1.75, 0.06); b.add(face);
+  b.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  fixed.add(b);
+  solid.push({ x: cx + x, z: cz + z, r: 1.2, kind: 'wall', height: 2.7 });
+}
+
 function buildCastleGrounds(k, C, rot, cx, cz, solid, S) {
   const c = Math.cos(rot), s = Math.sin(rot);
   const ox = cx + C.x, oz = cz + C.z;

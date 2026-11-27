@@ -3,6 +3,7 @@
 // Their tamed dragon or wyvern (ridden, or at their side) and their hatchling show too.
 import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
+import { poseSwim, endSwim } from '../characters/moves.js';
 import { wearGear } from '../characters/gear.js';
 import { ITEMS } from '../data/items.mjs';
 import { bodySig, GONE_MS } from '../data/presence.mjs';
@@ -92,11 +93,11 @@ export function createOthers(scene, hooks = {}) {
         if (!p.body?.race) continue;
         now.add(p.id);
         let o = seen.get(p.id);
-        const sig = bodySig(p.body) + p.name;
+        const sig = bodySig(p.body) + p.name + (p.medal ? '#1' : '');
         if (o && o.sig !== sig) { drop(p.id); o = null; }
         if (!o) {
           let body;
-          try { body = makeBody(p.body, p.name); } catch (e) { console.warn('could not draw player', p.name, e); continue; } // a race this game doesn't know yet
+          try { body = makeBody(p.body, p.medal ? `🥇 ${p.name}` : p.name); } catch (e) { console.warn('could not draw player', p.name, e); continue; } // a race this game doesn't know yet
           scene.add(body);
           o = { body, sig, name: p.name, snaps: [], speed: 0, pose: '', live: 0 };
           seen.set(p.id, o);
@@ -159,6 +160,11 @@ export function createOthers(scene, hooks = {}) {
         const lying = o.pose === 'lie';
         o.body.rotation.z = lying ? Math.PI / 2 : 0;
         animateCharacter(o.body, t, lying || o.pose === 'sit' || o.pose === 'ride' || o.pose === 'fly' ? 0 : o.speed / WALK * 1.6);
+        // swimming: the same front crawl or treading water as your own body
+        if (o.pose === 'swim') { poseSwim(o.body, x, y, z, h, t, o.speed / (WALK * 0.45)); o.swam = true; }
+        else if (o.swam) { o.swam = false; endSwim(o.body); }
+        // a blow (seen in a Colosseum fight): the weapon arm comes down from over the shoulder
+        if (o.pose === 'swing') { const arm = o.body.userData.rig?.arms?.[0]; if (arm) arm.shoulder.rotation.x = -2.4 + ((t * 5) % 1) * 2.6; }
         // a swing or spell they did: their arms and body act it out over its own time
         if (o.act) {
           o.act.t += dt;
@@ -201,6 +207,8 @@ export function createOthers(scene, hooks = {}) {
     // where every player close by is (monsters may go for them too: see creatures.js)
     spots: () => [...seen.values()].filter((o) => o.snaps.length).map((o) => ({ x: o.body.position.x, z: o.body.position.z, dead: o.pose === 'lie' })),
     clear() { for (const id of [...seen.keys()]) drop(id); },
+    // one player by their account id: where they stand now (for a duel in the Colosseum)
+    get(id) { const o = seen.get(id); return o ? { x: o.body.position.x, y: o.body.position.y, z: o.body.position.z, height: o.body.userData.height || 1.8, name: o.name } : null; },
     count: () => seen.size,
     has: (id) => seen.has(id),
     list: () => [...seen.values()].map((o) => ({ name: o.name, x: o.body.position.x, z: o.body.position.z, live: nowMs() - o.live < LIVE_FRESH, snaps: o.snaps.length, act: o.act ? o.act.kind || o.act.move?.name : '' })),

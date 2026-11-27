@@ -28,6 +28,8 @@ export const KINDS = {
   wisp: { name: 'Fae Wisp', body: { race: 'fairy', form: 'monster', size: 1.6 }, levels: [4, 8], aggressive: false, speed: 2.5, drops: [['fae_dust', 0.7, 1, 2]] },
   drake: { name: 'Young Drake', body: { race: 'dragonewt', form: 'monster', size: 0.7 }, levels: [20, 30], aggressive: true, speed: 3.2, drops: [['drake_horn', 0.4, 1, 1], ['potion', 0.2, 1, 1]] },
   frostslime: { name: 'Frost Slime', body: { race: 'slime', form: 'monster', look: { skin: '#dff3ff' }, size: 0.9 }, levels: [14, 20], aggressive: true, speed: 1.5, drops: [['frost_core', 0.5, 1, 1], ['slime_gel', 0.6, 1, 2]] },
+  // the Colosseum's practice fighter (see world.js practice): no loot, it yields when beaten
+  gladiator: { name: 'Gladiator', body: { race: 'beastkin', form: 'humanoid' }, levels: [1, 1], aggressive: true, speed: 3, drops: [] },
   sandlizard: { name: 'Sand Lizard', body: { race: 'lizardman', form: 'monster', look: { skin: '#c9a060' } }, levels: [12, 18], aggressive: true, speed: 3, drops: [['lizard_scale', 0.7, 1, 2], ['cactus_flesh', 0.3, 1, 1]] },
 };
 // The Monster Kings' courts: the King (in humanoid form, crowned), the Overlords and the castle guards.
@@ -756,7 +758,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       if (m.nid && folk.length && !m.kind.animal) {
         for (const o of folk) { if (o.dead) continue; const d = Math.hypot(o.x - m.x, o.z - m.z); if (d < dist - 1) { dist = d; dx = o.x - m.x; dz = o.z - m.z; other = o; } }
       }
-      const hidden = p.safe && !m.hurtBy && !other; // a torch or a campfire keeps you hidden
+      const hidden = p.safe && !m.hurtBy && !m.raid && !other; // a torch or a campfire keeps you hidden (but not from monsters attacking a town)
       // lurkers wait without moving until you walk into them (or hit one)
       if (m.state === 'lurk') {
         if (!p.dead && (dist < 13 || m.hurtBy)) spring(m.pack);
@@ -764,7 +766,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       }
       // by day only angry monsters come for you; at night they all do. They notice you from afar
       // and creep closer before they charge; an ambusher that has sprung tracks you down.
-      const sense = m.hunting ? 140 : m.state === 'chase' ? 40 : night ? NOTICE + 10 : NOTICE;
+      const sense = m.hunting ? 140 : m.raid ? 45 : m.state === 'chase' ? 40 : night ? NOTICE + 10 : NOTICE;
       const chase = (m.angry || night) && !p.dead && !hidden && dist < sense;
       const stalk = !chase && m.angry && !p.dead && !hidden && dist < STALK;
       const baited = m.kind.animal ? lureMove(m, dt, p, dist, dx, dz) : -1;
@@ -790,6 +792,11 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         // guards hold their post, watching the way in
         m.state = 'wander';
         m.heading = m.guard.heading;
+      } else if (!stalk && m.leash && Math.hypot(m.leash.x - m.x, m.leash.z - m.z) > m.leash.r) {
+        // (monsters attacking a town keep close to it: back they go)
+        m.state = 'wander';
+        m.heading = Math.atan2(m.leash.x - m.x, m.leash.z - m.z);
+        speed = m.speed * 0.6;
       } else if (!stalk) {
         m.state = 'wander';
         m.timer -= dt;
@@ -991,6 +998,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     update, target, targets, hit, netState, netApply, netHit,
     // how many seconds until a slain great beast's lair has a new one (0: it is there)
     slainIn: (lairId) => Math.max(0, (slain.get(lairId) || 0) - nowT),
+    // the realm's keepers bring slain great beasts back: their empty lairs have them again at once
+    revive(lairIds) { let n = 0; for (const id of lairIds) if ((slain.get(id) || 0) > nowT) { slain.delete(id); n++; } beastTimer = 0; return n; },
     calm() { for (const m of list) { m.angry = false; m.state = 'wander'; m.timer = 4; } },
     // the living grazing animal nearest (x, z) within r metres (to feed or pet)
     animalNear(x, z, r) {

@@ -19,7 +19,7 @@ import { renderLand, renderCave, renderEstate } from './landui.js';
 import { renderBank, renderDerrick, renderOilSpot } from './bankui.js';
 import { depositById, BANK_ID, bankPlace } from './data/economy.mjs';
 import { caveById } from './data/depths.mjs';
-import { portalFee, portalKm, portalLevel } from './data/portals.mjs';
+import { portalFee, portalKm, portalLevel, portalShut } from './data/portals.mjs';
 import { openBuilder as openBuilderView } from './builder.js';
 import { loadSculpts } from './characters/sculpt.js';
 
@@ -43,10 +43,12 @@ import { GATES_R } from './data/cults.mjs';
 import { gameTime as realmTime, DAY_TEXT } from './data/clock.mjs';
 import { placesWithPositions } from './data/world-layout.mjs';
 import { createSocial } from './social.js';
+import { createGifts } from './gifts.js';
 import { createVoice } from './voice.js';
 import { createVoiceCommands } from './voicecmd.js';
 import { createPowers } from './powersui.js';
 import { createRadar } from './radarui.js';
+import { createArena } from './arenaui.js';
 import { POWER_IDS } from './data/staff.mjs';
 
 // Nothing in the game can be selected, copied or right-clicked, except the boxes you type in
@@ -181,11 +183,13 @@ function openCreation(username) {
 
 let world = null;
 let liveRef = null; // the live link to nearby players (live.js), once it is running
+let arena = null; // the Colosseum (see arenaui.js)
 let tutorial = null; // the guide for new players, while it runs (see tutorial.js)
 let journey = null; // a newcomer's first journey: goals with arrows and notices (see journey.js)
 let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
+let gifts = null; // gifts and pet orders from the realm's keepers (gifts.js)
 const settings = (() => {
   try { return { camera: 'free', ...JSON.parse(localStorage.getItem('ar-settings') || '{}') }; } catch { return { camera: 'free' }; }
 })();
@@ -305,9 +309,12 @@ function startGame(character) {
     if (overlay.dataset.panel === 'groups' && !overlay.classList.contains('hidden') && !ui.groupBusy) drawPanel();
   }
   // who may walk into the Emperors' Castle today
+  const castleRights = () => ({ emperor: !!ui.groups?.nation, guildMaster: !!ui.groups?.guild?.mine, guest: (ui.rentals || []).some((r) => r.room.startsWith('castle') && r.allowed && !r.mine) });
   function castleAccess() {
-    world?.setCastleAccess({ emperor: !!ui.groups?.nation, guildMaster: !!ui.groups?.guild?.mine, guest: (ui.rentals || []).some((r) => r.room.startsWith('castle') && r.allowed && !r.mine) });
+    world?.setCastleAccess(castleRights());
   }
+  // who may use the castle's private portal: the castle's own people, and admins
+  const portalRights = () => ({ ...castleRights(), admin: !!ui.isAdmin || !!(myAccount?.powers || []).length });
   function loadGroups() { api.groupsList().then(takeGroups).catch(() => {}); }
   // ---------- cults and the Order of the Dawn ----------
   // Missions are counted here (kills near towns, kills by night, a night visit to a village waystone)
@@ -645,6 +652,7 @@ function startGame(character) {
     else if (name === 'groups') renderGroups(overlay, game, ui.groups, { message: ui.groupMsg, busy: ui.groupBusy });
     else if (name === 'rooms') renderRooms(overlay, game, { rentals: ui.rentals, pick: ui.roomPick, message: ui.roomMsg, busy: ui.roomBusy, castle: !!ui.roomsCastle, emperor: !!ui.groups?.nation });
     else if (name === 'appraise') renderAppraise(overlay, game, ui.appraise || {});
+    else if (name === 'colosseum') arena?.render(overlay);
     else if (name === 'parents') renderParents(overlay, game, { visited: ui.parentsVisited });
     else if (name === 'academy') renderAcademy(overlay, game, { school: ui.academySchool, message: ui.academyMsg || '' });
     else if (name === 'ceremony') renderCeremony(overlay, game, { result: ui.grown, busy: ui.ceremonyBusy, message: ui.ceremonyMsg || '' });
@@ -677,7 +685,7 @@ function startGame(character) {
     else if (name === 'power') { if (ui.powers.length) renderPower(overlay, game, ui.powers[0], { binding: ui.binding, message: ui.skillMsg, more: ui.powers.length - 1 }); else closePanel(); }
     else if (name === 'welcome') renderWelcome(overlay, character.name, !(character.level === 1 && !character.exp));
     else if (name === 'portal' && world?.atPortal) {
-      ui.trip = { from: world.atPortal, to: null, onPick: showTrip, level: character.level };
+      ui.trip = { from: world.atPortal, to: null, onPick: showTrip, level: character.level, shut: (p) => portalShut(p, portalRights()) };
       renderMap(overlay, () => world?.position(), [], { plots: ui.myPlots || [], caves: [] }, null, ui.trip);
     }
     else if (name === 'rankings') renderRankings(overlay, ui.top, character.name, ui.courts || []);
@@ -732,6 +740,7 @@ function startGame(character) {
     const what = cause === 'age' ? 'Your body gave out to old age.'
       : cause === 'fall' ? 'You fell from too high.'
       : cause === 'drown' ? 'You drowned.'
+      : cause === 'fire' ? 'You burned to death in a campfire.'
       : `You were killed by ${cause === 'monster' && !/^the /i.test(by) ? 'a ' : ''}${esc(by)}.`;
     const lives = out.free
       ? (out.renewed ? `Past level ${UNDYING_LEVEL}, death cannot hold you: the shrine renews you at the age of ${RENEW_AGE}.` : `Past level ${UNDYING_LEVEL}, death cannot hold you. <b>No life lost.</b>`)
@@ -983,6 +992,7 @@ function startGame(character) {
   const ORE_COLORS = { iron_ore: '#5a5a60', silver_ore: '#c8ccd4', gold_ore: '#e0b040', ruby: '#c0202a', dragonite: '#7a2a24' };
   const SMITH_SAYS = { ok: 'Merged! The item is stronger.', evolved: 'Merged, and the weapon evolved! It climbed a rank.', coins: 'Not enough coins to pay for the merge.', parts: 'You need more monster parts for this merge.', class: 'Only a Blacksmith can merge.', pick: 'Pick two items.', kind: 'Those two are different kinds.', max: 'That item is already at its strongest.' };
   // Portals: after picking where to go on the portal's map, the fee shows before you pay
+  const PRIVATE_PORTAL_SAYS = 'This is the castle\'s private portal. Only Emperors, Guild Masters on council days and an Emperor\'s invited guests on trade days may use it. The public portal stands outside the south gate.';
   function showTrip(to, message = '') {
     const box = overlay.querySelector('.portal-pick');
     if (!box) return;
@@ -993,15 +1003,20 @@ function startGame(character) {
         <p class="error">🔒 Monsters there are up to level ${lv}. The portal won't send you until you are level ${lv}.</p>`;
       return;
     }
+    if (portalShut(to, portalRights())) {
+      box.innerHTML = `<p><b>${to.name}</b></p><p class="error">🔒 Private: only the castle's own people may travel there.</p>`;
+      return;
+    }
     const fee = portalFee(ui.trip.from, to);
     box.innerHTML = `<p><b>${to.name}</b> · ${portalKm(ui.trip.from, to).toFixed(1)} km away · monsters up to Lv ${lv}</p>
-      <p>Fee: <b>${money(fee)}</b> <small>(you have ${money(character.coins)})</small></p>
+      <p>Fee: <b>${fee ? money(fee) : 'free (the castle\'s own portal)'}</b> <small>(you have ${money(character.coins)})</small></p>
       ${message ? `<p class="error">${message}</p>` : ''}
-      <button type="button" class="gold-button" data-portal-go="${to.id}">Pay ${money(fee)} and travel</button>`;
+      <button type="button" class="gold-button" data-portal-go="${to.id}">${fee ? `Pay ${money(fee)} and travel` : 'Travel'}</button>`;
   }
   function openPortal() {
     if (world?.underground) { showArea(world.indoors ? 'Go outside to use a portal.' : 'There are no portals underground.'); return; }
     if (!world?.atPortal) { showArea('Stand on a portal stone to use it. The map (M) shows them as purple rings.'); return; }
+    if (portalShut(world.atPortal, portalRights())) { showArea(PRIVATE_PORTAL_SAYS); return; }
     openPanel('portal');
   }
 
@@ -1084,13 +1099,13 @@ function startGame(character) {
       if (v === 'controls' && tab) { ui.ctlTab = tab; ui.bindingControl = null; ui.clash = null; ui.controlMsg = ''; } overlay.dataset.panel = ''; if (v === 'portal') { closePanel(); openPortal(); } else openPanel(v); return; }
     if ((v = t('data-portal-go')) != null) {
       const to = ui.trip?.to;
-      const r = to ? game.usePortal(ui.trip.from.id, v) : 'pick';
+      const r = to ? game.usePortal(ui.trip.from.id, v, portalRights()) : 'pick';
       if (r === 'ok') {
         closePanel();
         world.teleport(to.x, to.z);
         showArea(`The portal hums and you step out at ${to.name}.`);
         drawHud();
-      } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : r === 'level' ? 'The monsters there are stronger than you.' : 'That portal is across the sea.');
+      } else if (to) showTrip(to, r === 'coins' ? 'Not enough coins.' : r === 'level' ? 'The monsters there are stronger than you.' : r === 'private' ? 'That is the castle\'s private portal.' : 'That portal is across the sea.');
       return;
     }
     if (t('data-treat') != null) {
@@ -1318,6 +1333,7 @@ function startGame(character) {
     if (t('data-campfire') != null) { closePanel(); world?.lightCampfire(); return; }
     if ((v = t('data-plant')) != null) { closePanel(); world?.plantSeed(v); return; }
     if ((v = t('data-mount')) != null) { closePanel(); world?.callMount(v); return; }
+    if ((v = t('data-open-gift')) != null) { gifts?.open(v); return; }
     if ((v = t('data-egg')) != null) { closePanel(); world?.placeEgg(v); return; }
     if ((v = t('data-cult')) != null) {
       const btn = e.target.closest('[data-cult]');
@@ -1504,6 +1520,8 @@ function startGame(character) {
       if (type === 'act') { liveRef?.act(data); return; }
       tutorial?.saw(type, data);
       journey?.saw(type, data);
+      // the Colosseum's board, blows in a duel, sitting in the stands (see arenaui.js)
+      if (arena?.onWorldEvent(type, data)) return;
       // the phone took the graphics away for a moment (see world.js): wait, or reload if they don't come back
       if (type === 'graphicsLost') { showArea('Getting the graphics back...'); return; }
       if (type === 'graphicsBack') { showArea('Graphics are back'); return; }
@@ -1594,6 +1612,9 @@ function startGame(character) {
         return;
       }
       if (type === 'npc' && data.kind === 'stall') { ui.market = data.market; openPanel('market'); return; }
+      // a town near a monster attack talks of nothing else (see world/raids.js)
+      const news = type === 'npc' && !(data.kind === 'parent' && data.mine) && data.kind !== 'teacher' && data.kind !== 'child' ? world?.raidTalk(data, String(data.name || '').length) : null;
+      if (news) { showArea(`${data.name}: "${news}"`); return; }
       if (type === 'npc') {
         const job = PARENT_JOBS[data.job]?.name;
         const line = data.kind === 'parent'
@@ -1631,7 +1652,7 @@ function startGame(character) {
       }
       if (type === 'chest') showArea(`The chest held ${money(data.coins)}, ${data.items.join(', ')}.`);
       if (type === 'portal') drawHud();
-      if (type === 'portal' && data) showArea(`${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
+      if (type === 'portal' && data) showArea(portalShut(data, portalRights()) ? `${data.name}: private, for the castle's own people. The public portal stands outside the south gate.` : `${data.name}: press G (or tap Portal) to travel to another portal on this continent.`);
       if (type === 'wonder' && data) showArea(`${data.name}: ${data.text}`);
       if (type === 'ambush') showArea(`Ambush! ${data.n} goblins leap out of hiding!`);
       if (type === 'tired') showArea('You are getting very tired. Sleep (Z) by a fire or a torch before you collapse.');
@@ -1663,7 +1684,21 @@ function startGame(character) {
 
   window.addEventListener('pagehide', () => game.saveNow());
   // Friends and chat: search at the top right, chat at the bottom left
-  social = createSocial($('game'), { onDone: () => world?.lockMouse() });
+  // gifts and pet orders from the realm's keepers, monster attacks on the towns, and great beasts
+  // brought back to life: they come with the chat's check every few seconds (no reload needed)
+  gifts?.dispose();
+  gifts = createGifts({ game, world: () => world, say: (t) => world?.say(t, 'note'), onBag: () => { if (overlay.dataset.panel === 'bag' && !overlay.classList.contains('hidden')) drawPanel(); } });
+  let reviveSeen = null;
+  const onWorld = (r) => {
+    if (r.deliveries) gifts.take(r.deliveries);
+    if (r.raids) world?.setRaids(r.raids);
+    if (r.revive !== undefined) {
+      const at = r.revive?.at || 0;
+      if (reviveSeen !== null && at > reviveSeen) world?.reviveBeasts(r.revive.kind);
+      reviveSeen = at;
+    }
+  };
+  social = createSocial($('game'), { onDone: () => world?.lockMouse(), onWorld });
   // Other players close by: every second or so the game says where you are and draws who is near
   // (every few seconds while nobody is). Your body is sent again whenever it or your gear changes.
   if (!presenceOn) (async () => {
@@ -1713,6 +1748,10 @@ function startGame(character) {
         busy = true;
         try {
           const spot = world.presence();
+          // in a Colosseum fight, or watching one: seen there by the fighters and those watching
+          const ring = arena?.place();
+          if (ring) spot.place = ring;
+          if (arena?.watchId()) spot.watch = arena.watchId();
           const body = myBody(), sig = P.bodySig(body);
           // the body goes with the first report, when it changes, and once a minute in case the server forgot it
           if (sig !== sentSig || Date.now() - sentAt > 60000) { spot.body = body; sentSig = sig; sentAt = Date.now(); }
@@ -1723,12 +1762,20 @@ function startGame(character) {
           if (!liveAsked) { liveAsked = true; startLiveMoves(r); }
           if (r.players?.length) wait = live?.on ? P.POLL_LIVE_MS : P.POLL_MS;
           if (r.online != null) showOnline(r.online);
+          arena?.take(r.arena);
+          if (arena?.fast()) wait = 600; // a fight on: both HP bars keep up
         } catch (e) { sentSig = ''; console.warn('presence', e); } finally { busy = false; }
       }
       setTimeout(tick, wait);
     };
     tick();
   })();
+  // The Colosseum: challenges, the summons to a fight, the fight's bars, the board (see arenaui.js)
+  arena = createArena({
+    root: $('game'), overlay, api, world: () => world, game, me: () => myAccount,
+    say: (text, kind) => world?.say(text, kind), showArea,
+    openPanel, closePanel, drawPanel, isOpen: () => !overlay.classList.contains('hidden') && overlay.dataset.panel === 'colosseum',
+  });
   // Voice chat (16+): a mic button under the chat button; voices fade with distance
   createVoice($('game'), { position: () => world?.position() });
   // Voice commands: your pet's name and an order, or a skill or spell name, said aloud
@@ -1767,6 +1814,7 @@ function startGame(character) {
   // The private preview page belongs to the owner, so there every power is there to switch on.
   api.isPreviewMode().then((preview) => {
     const radar = (preview || (myAccount?.powers || []).includes('radar')) ? createRadar($('game'), { read: () => world?.radar(), onOpen: () => world?.releaseMouse() }) : null;
+    ui.isAdmin = preview || !!(myAccount?.powers || []).length;
     ui.adminPowers = createPowers($('game'), preview ? POWER_IDS : myAccount?.powers || [], {
       apply(p, down) {
         world?.setPowers(p);

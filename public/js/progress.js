@@ -25,7 +25,7 @@ export const INJURY = {
   ribs: { name: 'Broken ribs', effect: 'Your SP is 30% lower.' },
 };
 import { BOSS_RETURNS_MS } from './data/depths.mjs';
-import { portalById, portalFee, portalOpen } from './data/portals.mjs';
+import { portalById, portalFee, portalOpen, portalShut } from './data/portals.mjs';
 import { actionFor, FIXED_KEYS } from './data/controls.mjs';
 import { SKILLS, UPGRADE_EVERY, UPGRADE_STATS, SKILL_BAR, DEFAULT_KEYS, randomSkill } from './data/skills.mjs';
 import { SPELLS, randomSpell, staffSlots } from './data/spells.mjs';
@@ -629,10 +629,12 @@ export function createProgress(c, { save, onChange, onEvent }) {
     canHire: () => c.cls === 'potion_maker',
     makerHired: () => false,
     // Pay a portal's fee to go to another portal on the same continent
-    usePortal(fromId, toId) {
+    usePortal(fromId, toId, access = {}) {
       const from = portalById(fromId), to = portalById(toId);
       if (!from || !to || from === to) return 'pick';
       if (from.region !== to.region) return 'sea';
+      // the castle's private portal serves only the castle's own people
+      if (portalShut(from, access) || portalShut(to, access)) return 'private';
       // only to where the monsters are your level or lower
       if (!portalOpen(to, c.level)) return 'level';
       const fee = portalFee(from, to);
