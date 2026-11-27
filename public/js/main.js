@@ -1924,7 +1924,8 @@ function showCarcass(d) {
   world?.releaseMouse?.();
   const pop = showItemPop(`<div class="item-pop-box" role="dialog" aria-label="Hunted animal">
       <button type="button" class="sw-close" data-pop-close aria-label="Close">×</button>
-      <h3>${escHtml(d.name)}</h3>
+      <h3>${escHtml(d.name)}${d.sizeWord ? ` <span class="bag-hint">· ${escHtml(d.sizeWord)}</span>` : ''}</h3>
+      ${d.meat && d.full ? `<p class="bag-hint">About ${d.full} ${escHtml(d.meatName || 'meat')} on this body. A butcher keeps it all.${d.tool ? ` Cut with your ${escHtml(d.tool)}, you keep about ${d.share}% (${d.keep < 1 ? 1 : Math.round(d.keep)}).` : ''} Bigger, stronger animals give more; a better blade wastes less.</p>` : ''}
       <p class="bag-hint">${d.meat ? 'Halal game. Take it whole to a Halal Butcher on a farm (he prepares and cooks it for a small fee), or cut it up here and cook the meat over a fire.' : 'Its meat is not halal and is not eaten, but its hide and fangs can be sold.'}</p>
       <div class="pop-actions">
         <button type="button" class="gold-button small" data-carcass="drag">Drag it (E)</button>

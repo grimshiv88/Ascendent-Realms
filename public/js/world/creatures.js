@@ -7,6 +7,7 @@ import { sample, toWorld, PLACES, safeZoneAt } from '../data/world-layout.mjs';
 import { EVOLUTIONS, rollKillExp } from '../data/game-data.mjs';
 import { wildLevelAt, stageForLevel, wardedAt } from '../data/wilds.mjs';
 import { ANIMALS, wildAnimalsAt } from '../data/animals.mjs';
+import { rollGrow, strengthOf } from '../data/butchery.mjs';
 import { buildAnimal, animateAnimal, lieDown } from './animalbody.js';
 import { CORPSE_SECS, animalWounds, tickAnimalBlood } from './deaths.js';
 import { TAMEABLE, BEAST_TAME } from '../data/mounts.mjs';
@@ -130,7 +131,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const r = m.radius * 0.8;
     const hit = blockedAt(nx, nz, r, m.y);
     if (hit) return hit;
-    const reach = m.kind.animal ? m.kind.animal.len * 0.45 : m.radius * 0.7;
+    const reach = m.kind.animal ? m.kind.animal.len * (m.grow || 1) * 0.45 : m.radius * 0.7;
     return blockedAt(nx + Math.sin(m.heading) * reach, nz + Math.cos(m.heading) * reach, Math.max(0.1, r * 0.5), m.y);
   }
   // after moving: slide out of anything it has ended up inside
@@ -208,15 +209,19 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     const fierce = a.temper === 'fierce';
     const body = buildAnimal(a);
     body.position.set(x, y, z);
-    const h = body.userData.height;
+    // each one is born a little bigger or smaller than the next: a bigger one is stronger and
+    // carries more meat (data/butchery.mjs)
+    const grow = extra.grow ?? rollGrow();
+    body.scale.setScalar(grow);
+    const h = body.userData.height * grow;
     const tag = plate(extra.title || a.name, level, fierce);
     tag.sprite.visible = fierce;
     scene.add(body, tag.sprite);
-    const maxHp = Math.round(fierce ? (8 + level * 3.5) * (a.hp / 50) : a.hp);
+    const maxHp = Math.max(1, Math.round((fierce ? (8 + level * 3.5) * (a.hp / 50) : a.hp) * strengthOf(grow)));
     const m = {
       kind, kindId, level, stage: 0, body, tag, x, z, y, heading: Math.random() * 6.28, hp: maxHp, maxHp,
       atk: Math.round((7 + level * 0.75) * (a.atk || 1)), def: fierce ? 1 + level : 0, speed: a.speed,
-      radius: Math.max(0.12, Math.min(a.len * 0.3, 0.9)), height: h, state: 'wander', timer: 0, attackCd: 0,
+      radius: Math.max(0.12, Math.min(a.len * grow * 0.3, 0.9)), height: h, grow, state: 'wander', timer: 0, attackCd: 0,
       angry: fierce, hurt: 0, dead: 0, fleeT: 0, ...extra,
     };
     list.push(m);
