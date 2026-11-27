@@ -10,7 +10,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', 
 const POLL_MS = 3000;
 const KEEP = 150; // messages kept per tab
 
-export function createSocial(host, { onError, onDone } = {}) {
+// `onWorld(r)`: the rest of each check (gifts and pet orders, monster attacks, great beasts brought back)
+export function createSocial(host, { onError, onDone, onWorld } = {}) {
   host.insertAdjacentHTML('beforeend', `
     <div id="social-top">
       <div class="so-search">
@@ -149,6 +150,7 @@ export function createSocial(host, { onError, onDone } = {}) {
       takeRooms(r.rooms);
       takeLists(r);
       showAnnouncement(r.announcement);
+      try { onWorld?.(r); } catch (err) { console.warn(err); }
       loaded = true;
     } catch { /* try again next time */ }
     if (alive && !once) setTimeout(poll, POLL_MS);

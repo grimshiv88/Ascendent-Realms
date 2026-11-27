@@ -47,6 +47,42 @@ async function send(to, subject, html, text) {
 
 const link = (params) => `${appUrl()}/?${new URLSearchParams(params)}`;
 
+// Many emails at once (the Weekly Championship's draw): Resend takes up to 100 in one go
+async function sendMany(list) {
+  if (!ready() || !list.length) return { sent: 0 };
+  let sent = 0;
+  for (let i = 0; i < list.length; i += 100) {
+    const part = list.slice(i, i + 100).map((m) => ({ from: from(), ...m }));
+    try {
+      const res = await fetch(process.env.RESEND_BATCH_URL || 'https://api.resend.com/emails/batch', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(part),
+      });
+      if (res.ok) sent += part.length; else console.error('emails not sent:', res.status, await res.text().catch(() => ''));
+    } catch (e) { console.error('emails not sent:', e); }
+  }
+  return { sent };
+}
+// (the Colosseum's emails say how to turn them off)
+const OFF_NOTE = 'You can turn these emails off at the Colosseum\'s board in the game.';
+const clock = (t) => { const d = new Date(t); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+const dayClock = (t) => `${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(t).getUTCDay()]} ${clock(t)} UTC`;
+// the first fight of the Weekly Championship and the times of the rounds after it (sent with sendMany)
+function cupScheduleMessage(to, name, { first, foe, bye, times, players }) {
+  const later = times.filter((t) => t > first).map(clock).join(', ');
+  const lines = [
+    `The draw for this week's championship at the Colosseum is made, <b>${esc(name)}</b>. Every player is in it: ${players} in all. The winner takes the <b>No.1 medal</b> and keeps it until next week's champion.`,
+    bye ? `You are one of the strongest, so you go straight through the first round. <b>Your first fight is on ${dayClock(first)}</b>, against whoever wins before you.` : `<b>Your first fight is on ${dayClock(first)}, against ${esc(foe)}.</b>`,
+    'Be in the game at that time. The game calls you to the Colosseum; if you are not there within 3 minutes, you are out of the championship straight away.',
+    later ? `Each win takes you to the next round, every 15 minutes: ${later} (UTC).` : 'It is the final.',
+    'A fight in the Colosseum never costs a life: whoever is beaten just leaves the championship.',
+    OFF_NOTE,
+  ];
+  const text = `${bye ? 'Your first championship fight' : `Your championship fight against ${foe}`} is on ${dayClock(first)}. Be in the game then, or you are out. ${later ? `Next rounds: ${later} UTC.` : ''}`;
+  return { to: [to], subject: bye ? `Championship: your first fight is ${dayClock(first)}` : `Championship: you fight ${foe} on ${dayClock(first)}`, html: page('The Weekly Championship', lines, { button: { href: appUrl(), text: 'Open the game' } }), text };
+}
+
 const emails = {
   verify: (to, name, ticket, code) => send(to, `Confirm your email: ${code}`,
     page('Confirm your email', [`Welcome, <b>${esc(name)}</b>. Confirm this is your email to finish making your account.`, 'Click the button, or type this code in the game. It works for 5 minutes. If it runs out, ask the game to send a new one.'], { code, button: { href: link({ verify: ticket, code }), text: 'Confirm my email' } }),
@@ -74,4 +110,15 @@ const emails = {
     `The email of ${name} was changed to ${newEmail}.`),
 };
 
-module.exports = { ready, appUrl, ...emails };
+// the Colosseum's own emails
+emails.duelChallenge = (to, name, by) => send(to, `${by} challenges you to a duel`,
+  page('A challenge at the Colosseum', [`<b>${esc(by)}</b> challenges you, <b>${esc(name)}</b>, to a duel in the Colosseum of the Central City.`, 'Open the game within a day to accept or turn it down. If you accept, you are both called to the sand to fight. A Colosseum fight never costs a life.', OFF_NOTE], { button: { href: appUrl(), text: 'Answer the challenge' } }),
+  `${by} challenges you to a duel in the Colosseum. Open ${appUrl()} within a day to answer.`);
+emails.duelAccepted = (to, name, by) => send(to, `${by} accepted your challenge`,
+  page('Your challenge was accepted', [`<b>${esc(by)}</b> accepted your challenge, <b>${esc(name)}</b>.`, 'Come into the game within the hour: you are both called to the Colosseum, and the fight starts as soon as you are both there.', OFF_NOTE], { button: { href: appUrl(), text: 'Go and fight' } }),
+  `${by} accepted your challenge. Come into the game within the hour to fight: ${appUrl()}`);
+emails.cupChampion = (to, name) => send(to, 'You won the Weekly Championship',
+  page('Champion of the Colosseum', [`You won this week's championship, <b>${esc(name)}</b>. The <b>No.1 medal</b> is yours, and it shows by your name until next week's champion takes it.`, OFF_NOTE], { button: { href: appUrl(), text: 'Enter the realm' } }),
+  `You won this week's championship, ${name}. The No.1 medal is yours until next week.`);
+
+module.exports = { ready, appUrl, sendMany, cupScheduleMessage, ...emails };

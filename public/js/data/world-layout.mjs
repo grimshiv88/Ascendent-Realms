@@ -269,6 +269,14 @@ function gridAdd(map, x, z, r, item) {
 const NONE = [];
 const gridAt = (map, x, z) => map.get(Math.floor(x / GRID) * 100003 + Math.floor(z / GRID)) || NONE;
 
+// How big each lake's water surface is drawn (a disc this many times its radius, see land.js)
+export const LAKE_DRAWN = 1.3;
+// The lakes of Frostreach are frozen over: ice you walk on, drawn as land, with no water surface
+export function isFrozen(L) {
+  return (L.frozen ??= sample(L.x, L.z, {}, false).region === 'frost');
+}
+export const frozenLake = (i) => !!LAKE_POS[i] && isFrozen(LAKE_POS[i]); // (by its place in LAKES)
+
 // A lake's water level: just below the lowest land around its shore
 function lakeLevel(L) {
   L.level = 0;
@@ -296,7 +304,7 @@ export function setUnderground(fn) { underground = fn; }
 export function sample(x, z, out = {}, withLakes = true) {
   if (x > DEPTHS_X) {
     if (underground) return underground(x, z, out);
-    out.h = -1e5; out.water = -1e4; out.region = null; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0;
+    out.h = -1e5; out.water = -1e4; out.region = null; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0; out.ice = 0;
     return out;
   }
   const px = ORIGIN_PX.x + x / METRES_PER_PX;
@@ -423,6 +431,7 @@ export function sample(x, z, out = {}, withLakes = true) {
 
   // lakes
   let water = SEA_LEVEL;
+  let ice = 0; // on a frozen lake (in Frostreach the lakes are ice you walk on)
   if (withLakes) {
     for (const L of gridAt(lakeGrid, x, z)) {
       const dx = x - L.x, dz = z - L.z;
@@ -430,10 +439,21 @@ export function sample(x, z, out = {}, withLakes = true) {
       const dn = Math.hypot(dx, dz) / (L.r * (1 + noise1(Math.atan2(dz, dx), L.seed) * 0.22));
       if (dn >= 1.8) continue;
       const level = L.level ?? (L.level = lakeLevel(L));
+      if (isFrozen(L)) {
+        // a sheet of ice, flat at the water's height, that you walk on (no water to sink into);
+        // it fills the low ground round the shore too, where open water would lie
+        if (dn >= 1) h = lerp(level + 0.4, h, smoothstep(dn, 1, 1.8));
+        if (dn < 1 || (h < level && Math.hypot(dx, dz) < L.r * LAKE_DRAWN)) { h = level; ice = 1; }
+        forest *= smoothstep(dn, 1.05, 1.35);
+        continue;
+      }
       if (dn < 1) h = level - L.depth * (1 - dn * dn);
       else h = lerp(level + 0.4, h, smoothstep(dn, 1, 1.8));
       forest *= smoothstep(dn, 1.05, 1.35);
-      if (dn < 1.1) water = Math.max(water, level);
+      // the water: the lake itself, and any low ground round its shore that the lake's surface
+      // (a disc 1.3 times its size, see land.js) is drawn over. Standing there used to look like
+      // sinking into the ground, as you were under the drawn water but not in it.
+      if (dn < 1.1 || (h < level && Math.hypot(dx, dz) < L.r * LAKE_DRAWN)) water = Math.max(water, level);
     }
   }
 
@@ -483,6 +503,7 @@ export function sample(x, z, out = {}, withLakes = true) {
   out.lake = lake;
   out.coast = coast;
   out.dark = dark;
+  out.ice = ice;
   out.biome = region ? sectionAt(px, py, region)?.biome || region : null;
   return out;
 }
@@ -513,6 +534,7 @@ export const plotOf = (x, z) => ({ ix: Math.floor(x / PLOT), iz: Math.floor(z / 
 const CLEARED = new Set(); // plots cleared of trees, rocks and grass but keeping their shape
 const FIXED = new Map(); // ground levelled for good (under the Monster Kings' castles)
 export function setPreparedPlots(plots) {
+  hCache.clear(); // (levelled ground: the remembered heights are out of date)
   PREPARED.clear();
   CLEARED.clear();
   for (const [k, f] of FIXED) PREPARED.set(k, f);
@@ -522,6 +544,7 @@ export function setPreparedPlots(plots) {
   }
 }
 export function addFixedFlats(plots) {
+  hCache.clear();
   for (const p of plots) { FIXED.set(`${p.ix},${p.iz}`, p.flat); PREPARED.set(`${p.ix},${p.iz}`, p.flat); }
 }
 // the level a plot was set to, if it was levelled
@@ -550,13 +573,40 @@ export function surfaceAt(x, z) {
   const S = SURFACE_STEP;
   const gx = Math.floor(x / S), gz = Math.floor(z / S);
   const fx = x / S - gx, fz = z / S - gz;
-  const h = (i, j) => sample((gx + i) * S, (gz + j) * S, _tmp).h;
+  const h = (i, j) => gridHeight(gx + i, gz + j);
   // each square is split along the same diagonal as the drawn land
   if (fx + fz <= 1) { const h00 = h(0, 0); return h00 + (h(1, 0) - h00) * fx + (h(0, 1) - h00) * fz; }
   const h11 = h(1, 1);
   return h11 + (h(0, 1) - h11) * (1 - fx) + (h(1, 0) - h11) * (1 - fz);
 }
 const _tmp = {};
+// The ground's height at the corners of the SURFACE_STEP grid, remembered: surfaceAt is asked about
+// the same corners again and again (you, the camera, every tree, tuft of grass and monster), and
+// working one out from the noise is the slowest thing the game does while you walk. Land tiles
+// fill it in as they are built (rememberHeight). Forgotten when plots are levelled.
+const H_KEEP = 250000; // corners kept (about a 2 km square), then it starts afresh
+const hCache = new Map();
+const hKey = (gx, gz) => (gx + 200000) * 400000 + (gz + 200000);
+function gridHeight(gx, gz) {
+  const x = gx * SURFACE_STEP, z = gz * SURFACE_STEP;
+  if (x > DEPTHS_X || x < -DEPTHS_X) return sample(x, z, _tmp).h; // (the caves underground change)
+  const k = hKey(gx, gz);
+  let h = hCache.get(k);
+  if (h === undefined) {
+    h = sample(x, z, _tmp).h;
+    if (hCache.size >= H_KEEP) hCache.clear();
+    hCache.set(k, h);
+  }
+  return h;
+}
+// a land tile worked out the height at (x, z): keep it, if it is a corner of the grid
+export function rememberHeight(x, z, h) {
+  const gx = x / SURFACE_STEP, gz = z / SURFACE_STEP;
+  if (!Number.isInteger(gx) || !Number.isInteger(gz) || Math.abs(x) > DEPTHS_X) return;
+  if (hCache.size >= H_KEEP) hCache.clear();
+  hCache.set(hKey(gx, gz), h);
+}
+export const forgetHeights = () => hCache.clear();
 
 export function placesWithPositions() {
   for (const p of PLACE_POS) if (p.y === undefined) p.y = placeBaseHeight(p);

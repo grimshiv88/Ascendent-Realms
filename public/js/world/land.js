@@ -2,7 +2,7 @@
 // Near the player the ground is detailed and has trees, rocks and grass; further away it gets
 // coarser; a low-detail "horizon" covers everything out to about 24 km so mountains show far off.
 import * as THREE from 'three';
-import { sample, vnoise, SEA_LEVEL, lakesWithLevels, VOLCANOES, toWorld, cityFloorAt } from '../data/world-layout.mjs';
+import { sample, rememberHeight, forgetHeights, vnoise, SEA_LEVEL, lakesWithLevels, isFrozen, LAKE_DRAWN, VOLCANOES, toWorld, cityFloorAt } from '../data/world-layout.mjs';
 import { scenery, hideInstance, BREAKABLE, setSceneryQuality } from './scenery.js';
 
 export const CHUNK = 256;                 // metres per terrain tile
@@ -25,6 +25,7 @@ const PAL = {
   snow: C('#e9eef3'), sand: C('#cdb88a'), seabed: C('#6a6450'), deep: C('#3c4a48'),
   clay: C('#a8764a'), clay2: C('#c69a68'), fae: C('#4f9a68'), fae2: C('#6fb08a'),
   mud: C('#4a4630'), moss: C('#566a32'), dune: C('#d8b678'), dune2: C('#c49a5e'),
+  ice: C('#a9c9d8'), ice2: C('#d6e6ee'),
   tundra: C('#9aa08a'), darkFloor: C('#1f2a17'), gold: C('#a39a48'), gold2: C('#b8a457'),
   jungle: C('#3f8a2c'), heath: C('#7a7a52'), cinder: C('#2a2220'), lavaRock: C('#6a2412'),
 };
@@ -35,6 +36,8 @@ const tmpC = new THREE.Color();
 function groundColor(s, ny, wx, wz, far, out) {
   const h = s.h;
   const n = vnoise(wx / 37, wz / 37);
+  // a frozen lake: pale blue ice, with whiter patches of snow blown over it
+  if (s.ice) return out.copy(PAL.ice).lerp(PAL.ice2, Math.max(0, n - 0.35) * 1.4);
   if (h < -0.4) {
     out.copy(PAL.seabed).lerp(PAL.deep, Math.min(1, -h / 30));
     return out;
@@ -164,7 +167,9 @@ function waterNormals() {
 // ---------- one terrain tile ----------
 
 const S = {};
-function buildTileGeometry(cx, cz, segs) {
+// (a generator: it hands back control every few rows, so a tile can be built over several frames;
+// see buildTile)
+function* tileGeometrySteps(cx, cz, segs) {
   const step = CHUNK / segs;
   const ox = cx * CHUNK, oz = cz * CHUNK;
   const n = segs + 1;
@@ -176,11 +181,13 @@ function buildTileGeometry(cx, cz, segs) {
       const wx = ox + i * step, wz = oz + j * step;
       const inner = i >= 0 && j >= 0 && i < n && j < n;
       const s = sample(wx, wz, inner ? {} : S);
+      rememberHeight(wx, wz, s.h); // (for surfaceAt: the trees, grass and you stand on these points)
       // inside a great city's inner wall the land sinks out of sight: the city draws its own floors
       const city = cityFloorAt(wx, wz, 0.3);
       hs[(j + 1) * b + (i + 1)] = city ? city.flat - 2.5 : s.h;
       if (inner) info[j * n + i] = s;
     }
+    if (j % 6 === 5) yield;
   }
   const skirtN = 4 * segs;
   const vCount = n * n + skirtN;
@@ -241,13 +248,19 @@ function buildTileGeometry(cx, cz, segs) {
 
 // ---------- the horizon ----------
 
-function buildFarGeometry(centreX, centreZ) {
+// Built a few rows at a time (a generator: each step is a row), so moving the horizon along as you
+// travel never stalls a frame: it used to work out all 58,000 of its points in one go every 4 km
+let FAR_INDEX = null; // (the triangles are the same every time)
+function* farGeometrySteps(centreX, centreZ) {
   const n = FAR_SEGS + 1;
   const step = FAR_SIZE / FAR_SEGS;
   const hs = new Float32Array(n * n);
   const infos = new Array(n * n);
   const x0 = centreX - FAR_SIZE / 2, z0 = centreZ - FAR_SIZE / 2;
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const s = sample(x0 + i * step, z0 + j * step, {}); hs[j * n + i] = s.h; infos[j * n + i] = s; }
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) { const s = sample(x0 + i * step, z0 + j * step, {}); hs[j * n + i] = s.h; infos[j * n + i] = s; }
+    yield;
+  }
   const pos = new Float32Array(n * n * 3);
   const nor = new Float32Array(n * n * 3);
   const col = new Float32Array(n * n * 3);
@@ -263,17 +276,21 @@ function buildFarGeometry(centreX, centreZ) {
       groundColor(infos[k], nv.y, x0 + i * step, z0 + j * step, true, tmpC);
       col[k * 3] = tmpC.r; col[k * 3 + 1] = tmpC.g; col[k * 3 + 2] = tmpC.b;
     }
+    if (j % 8 === 7) yield;
   }
-  const idx = [];
-  for (let j = 0; j < FAR_SEGS; j++) for (let i = 0; i < FAR_SEGS; i++) {
-    const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
-    idx.push(a, c, b, b, c, d);
+  if (!FAR_INDEX) {
+    FAR_INDEX = new Uint32Array(FAR_SEGS * FAR_SEGS * 6);
+    let q = 0;
+    for (let j = 0; j < FAR_SEGS; j++) for (let i = 0; i < FAR_SEGS; i++) {
+      const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+      FAR_INDEX.set([a, c, b, b, c, d], q); q += 6;
+    }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  geo.setIndex(idx);
+  geo.setIndex(new THREE.BufferAttribute(FAR_INDEX, 1));
   geo.computeBoundingSphere();
   return geo;
 }
@@ -378,25 +395,32 @@ export function createLand(scene) {
   // inland lakes, each with its own water surface
   const lakeMats = [], lakeDiscs = [];
   for (const L of lakesWithLevels()) {
+    if (isFrozen(L)) continue; // (ice: the land itself is drawn flat and pale blue there)
     const n = normals.clone();
     n.repeat.set((L.r * 2.6) / 14, (L.r * 2.6) / 14);
     const lakeMat = waterMat.clone();
     lakeMat.normalMap = n;
     lakeMats.push(lakeMat);
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(L.r * 1.3, 64), lakeMat);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(L.r * LAKE_DRAWN, 64), lakeMat);
     disc.rotation.x = -Math.PI / 2;
     disc.position.set(L.x, L.level, L.z);
     disc.receiveShadow = true;
-    disc.userData.reach = L.r * 1.3 + 30000; // far lakes are hidden (the fog covers them anyway)
+    disc.userData.reach = L.r * LAKE_DRAWN + 30000; // far lakes are hidden (the fog covers them anyway)
     lakeDiscs.push(disc);
     scene.add(disc);
   }
 
   let far = null;
   let farCentre = null;
-  function placeFar(x, z) {
+  let farJob = null; // the next horizon, being built a few rows a frame (the old one stays till it's done)
+  function placeFar(x, z, budgetMs) {
     const cx = Math.round(x / 1000) * 1000, cz = Math.round(z / 1000) * 1000;
-    const geo = buildFarGeometry(cx, cz);
+    if (farJob?.cx !== cx || farJob?.cz !== cz) farJob = { it: farGeometrySteps(cx, cz), cx, cz };
+    const t0 = performance.now();
+    let r;
+    do r = farJob.it.next(); while (!r.done && performance.now() - t0 < budgetMs);
+    if (!r.done) return;
+    const geo = r.value;
     if (far) { far.geometry.dispose(); far.geometry = geo; } else {
       far = new THREE.Mesh(geo, farMat);
       far.receiveShadow = false;
@@ -404,13 +428,26 @@ export function createLand(scene) {
     }
     far.position.set(cx, 0, cz);
     farCentre = { x: cx, z: cz };
+    farJob = null;
   }
 
   const tkey = (cx, cz) => `${cx},${cz}`;
   const lodFor = (d) => { for (const [r, s] of LODS) if (d <= r) return s; return 0; };
 
-  function buildTile(cx, cz, segs, d) {
-    const { geo, info, n, step } = buildTileGeometry(cx, cz, segs);
+  // A tile being built a few rows a frame: key -> { segs, it }. Building a whole detailed tile
+  // (4,500 points of the land) in one frame was the biggest stutter while walking.
+  const building = new Map();
+  // work on tile (cx, cz) for up to budgetMs; the finished tile, or null if it isn't done yet
+  function buildTile(cx, cz, segs, d, budgetMs = Infinity) {
+    const k0 = tkey(cx, cz);
+    let b = building.get(k0);
+    if (!b || b.segs !== segs) building.set(k0, (b = { segs, it: tileGeometrySteps(cx, cz, segs) }));
+    const t0 = performance.now();
+    let r;
+    do r = b.it.next(); while (!r.done && performance.now() - t0 < budgetMs);
+    if (!r.done) return null;
+    building.delete(k0);
+    const { geo } = r.value;
     const mesh = new THREE.Mesh(geo, groundMat);
     mesh.position.set(cx * CHUNK, 0, cz * CHUNK);
     mesh.receiveShadow = true;
@@ -425,12 +462,14 @@ export function createLand(scene) {
     return t;
   }
 
-  function setVeg(t, want, wantGrass) {
+  // (oneStep: build the trees or the grass, not both, so each costs a frame of its own)
+  function setVeg(t, want, wantGrass, oneStep = false) {
     if (want && !t.veg) {
       t.veg = veg.forTile(t.cx, t.cz, CHUNK, (k) => broken.has(k));
       t.veg.view(lastX, lastZ);
       root.add(t.veg.group);
       colliders.add(t.veg.solid);
+      if (oneStep && wantGrass && !t.grass) return;
     } else if (!want && t.veg) {
       root.remove(t.veg.group);
       colliders.remove(t.veg.solid);
@@ -454,7 +493,8 @@ export function createLand(scene) {
     lastX = x; lastZ = z;
     for (const t of tiles.values()) t.veg?.view(x, z);
     for (const d of lakeDiscs) d.visible = Math.hypot(x - d.position.x, z - d.position.z) < d.userData.reach;
-    if (!farCentre || Math.hypot(x - farCentre.x, z - farCentre.z) > FAR_RECENTRE) placeFar(x, z);
+    if (!farCentre) placeFar(x, z, Infinity);
+    else if (farJob || Math.hypot(x - farCentre.x, z - farCentre.z) > FAR_RECENTRE) placeFar(farJob && budgetMs !== Infinity ? farJob.cx : x, farJob && budgetMs !== Infinity ? farJob.cz : z, Math.min(budgetMs, 3));
     // snap the water to whole ripple repeats so the ripples don't jump when it moves
     water.position.set(Math.round(x / 1400) * 1400, SEA_LEVEL, Math.round(z / 1400) * 1400);
 
@@ -475,6 +515,7 @@ export function createLand(scene) {
         if (t && (!!t.veg !== wantVeg || !!t.grass !== wantGrass)) jobs.push({ cx, cz, d, kind: 'veg', wantVeg, wantGrass });
       }
     }
+    for (const k of building.keys()) if (!keep.has(k)) building.delete(k);
     for (const [k, t] of tiles) {
       if (keep.has(k)) continue;
       setVeg(t, false, false);
@@ -487,11 +528,14 @@ export function createLand(scene) {
     for (const j of jobs) {
       if (performance.now() - start > budgetMs) break;
       if (j.kind === 'tile') {
-        const t = buildTile(j.cx, j.cz, j.segs, j.d);
-        setVeg(t, j.d <= VEG_RANGE, j.d <= GRASS_RANGE);
+        const t = buildTile(j.cx, j.cz, j.segs, j.d, budgetMs === Infinity ? Infinity : Math.max(2, budgetMs - (performance.now() - start)));
+        if (!t) break; // (carries on next frame)
+        // its trees and grass come on a later frame (a 'veg' job), so one frame never pays for both
+        // (when everything is built at once, behind the loading clouds, they come now)
+        if (budgetMs === Infinity) setVeg(t, j.d <= VEG_RANGE, j.d <= GRASS_RANGE);
       } else {
         const t = tiles.get(tkey(j.cx, j.cz));
-        if (t) setVeg(t, j.wantVeg, j.wantGrass);
+        if (t) setVeg(t, j.wantVeg, j.wantGrass, budgetMs !== Infinity);
       }
     }
     // the square around you where every detailed tile is built: the horizon is hidden inside it
@@ -512,6 +556,7 @@ export function createLand(scene) {
 
   // The ground changed around (x, z) (a plot was levelled): drop those tiles so they are rebuilt
   function refreshAt(x, z, r = 30) {
+    building.clear(); forgetHeights(); // (half-built tiles and remembered heights are of the old ground)
     for (const [k, t] of tiles) {
       const x0 = t.cx * CHUNK, z0 = t.cz * CHUNK;
       if (x + r < x0 || x - r > x0 + CHUNK || z + r < z0 || z - r > z0 + CHUNK) continue;

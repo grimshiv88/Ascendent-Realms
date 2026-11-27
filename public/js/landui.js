@@ -5,6 +5,7 @@ import { THEMES, SIZES, cavePrice, caveOres, strongCave } from './data/depths.mj
 import { ITEMS } from './data/items.mjs';
 import { money } from './data/money.mjs';
 import { cityPlan, HOUSE_PRICE } from './data/citylayout.mjs';
+import { underColosseum } from './data/arena.mjs';
 import { TIERS } from './data/citylevels.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -93,7 +94,7 @@ export function renderEstate(el, game, { city, homes = [], ring = 'common', mess
   const c = game.character;
   const here = new Map(homes.filter((h) => h.city === city.id).map((h) => [h.house, h]));
   const mineCount = homes.filter((h) => h.mine).length;
-  const list = cityPlan().sale.filter((h) => h.tier === ring);
+  const list = cityPlan().sale.filter((h) => h.tier === ring && !underColosseum(city.id, h.x, h.z, Math.max(h.w, h.d) / 2 + 2));
   const rows = list.map((h) => {
     const own = here.get(h.id);
     const what = `${KIND[h.style]}, ${h.floors} floor${h.floors > 1 ? 's' : ''}, ${Math.round(h.w)} m wide <span>·</span> ${side(h.a)} side`;

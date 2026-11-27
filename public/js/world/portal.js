@@ -100,6 +100,19 @@ export function buildPortal(p) {
     l.position.set(lx, 2.6, lz);
     group.add(l);
   }
+  // the castle's private portal says so over its door
+  if (p.private) {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#2a1d10'; g.fillRect(0, 0, 512, 128);
+    g.strokeStyle = '#d8b060'; g.lineWidth = 8; g.strokeRect(6, 6, 500, 116);
+    g.fillStyle = '#f2d890'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 46px Georgia, serif'; g.fillText('PRIVATE', 256, 48);
+    g.font = '26px Georgia, serif'; g.fillText('The Castle\'s own portal', 256, 96);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.8), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c) }));
+    sign.position.set(0, 4.6, HALL + 0.42);
+    group.add(sign);
+  }
   const inLight = new GlowLight('#e0d0ff', 5, 16, 1.4);
   inLight.position.set(0, 4.5, 0);
   group.add(inLight);
