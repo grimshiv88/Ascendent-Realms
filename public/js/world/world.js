@@ -370,6 +370,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (helper && helper.body.visible !== false) off(helper.x, helper.z, 0.32);
     if (guard && !inside && !depth) off(guard.x, guard.z, 0.34);
     for (const m of creatures?.list || []) if (!m.dead && m.hp > 0 && Math.abs(m.x - p.x) < 6 && Math.abs(m.z - p.z) < 6) off(m.x, m.z, m.radius * 0.8);
+    // other players close by: you bump into them instead of walking through
+    for (const b of others?.near(p.x, p.z, 2) || []) if (Math.abs(b.y - pos.y) < 1.6) off(b.x, b.z, 0.34);
   }
   // a helper or bodyguard: kept out of walls and out of you (tried in steps, so it slides along)
   function stepFollower(f, nx, nz) {
@@ -431,7 +433,15 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let prepared = new Set();
 
   // Other players close by (the game reports where you are and hears who is near: see main.js)
-  const others = createOthers(scene);
+  const others = createOthers(scene, {
+    // another player's swing, skill or spell, acted out on their body
+    pose(o, a) {
+      const rig = o.body.userData.rig, h = o.body.userData.height || 1.8;
+      if (!rig?.root) return;
+      if (a.kind === 'swing') poseAttack(rig, Math.min(1, a.t / a.dur), a.armed, a.bow, a.blade, h);
+      else poseSkill(rig, a, { bodyH: h, avatar: o.body, heading: o.body.rotation.y });
+    },
+  });
 
   // Your character, wearing your gear
   let avatar = buildCharacter({ race: character.race, form: character.form, stage: character.stage || 0, look: character.look, age: ageOf(character) });
@@ -704,6 +714,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   let lastFoe = null, sicOn = null, dragonCd = 0; // (your tamed dragon: what attacked you, what you set it on)
   const skillFx = createSkillFx(scene);
   creatures = createCreatures(scene, {
+    // other players close by, and what is sent to them about the monsters (see creatures.js)
+    getOthers: () => others.spots(),
+    onNet: (k, a) => share({ k, ...a }),
     getPlayer: () => ({ x: pos.x, z: pos.z, y: pos.y, heading, radius: bodyR, dead, safe: isSafe(pos.x, pos.z), level: game?.character.level || character.level || 1, stage: game?.character.stage || 0, moving: speedNow > 1, running: runningNow && speedNow > WALK, underground: !!depth || !!inside, flying: !!riding?.flying, grudges: game?.character.grudges || null, lure: speedNow < 0.3 && !riding?.riding && !!game?.character.inventory.some((e) => ITEMS[e.id]?.feed) }),
     isNight: () => night,
     groundAt: (x, z, fromY) => groundAt(x, z, fromY),
@@ -1643,6 +1656,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     swingDone = false;
     if (comboStep > 1) floatText(`${c.name}${comboStep === 3 ? '!' : ''}`, pos.clone().add(new THREE.Vector3(0, bodyH + 0.35, 0)), 'crit');
     swungAt = clock.elapsedTime;
+    // (a bow's shot is shared as the arrow; see shootArrow)
+    if (w?.type !== 'bow') share({ k: 'swing', armed: !!w, blade: bladeHeld(), d: Math.round(Math.max(0.25, (w || FIST).speed * 0.8) * 100) / 100 });
   }
 
   // ---------- arrows ----------
@@ -1681,6 +1696,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     obj.position.copy(from);
     scene.add(obj);
     arrows.push({ obj, from, to, m, t: 0, dur: Math.max(0.08, dist / ARROW_SPEED), lift: dist * 0.04, stuck: 0, sharp: r.sharp, w });
+    share({ k: 'arrow', f: vec(from), t: vec(to), d: Math.round(Math.max(0.25, w.speed * 0.8) * 100) / 100 });
     if (!game.has('arrow')) say('That was your last arrow', 'note');
   }
   const arrowPrev = new THREE.Vector3();
@@ -1825,6 +1841,57 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     }
   }
 
+  // ---------- what you do, shown to players close by (see live.js), and what they do, shown here ----------
+  const rd = (v) => Math.round(v * 100) / 100;
+  const vec = (v) => [rd(v.x), rd(v.y), rd(v.z)];
+  const toVec = (a) => (Array.isArray(a) && a.length === 3 && a.every(Number.isFinite) ? new THREE.Vector3(a[0], a[1], a[2]) : null);
+  const share = (a) => onEvent?.('act', a);
+  // the parts of a skill its look and move need (a Unique Skill is your own, so it is sent whole)
+  function slimSkill(sk) {
+    const out = {};
+    for (const [k, v] of Object.entries(sk)) if (['string', 'number', 'boolean'].includes(typeof v) && k.length < 24 && String(v).length < 60) out[k] = v;
+    return out;
+  }
+  function actOther(m) {
+    // their monsters, and their blows on yours
+    if (m.k === 'mobs') { if (!inside) creatures.netApply(m.i, m.l); return; }
+    if (m.k === 'mobhit') { creatures.netHit(m.n, Number(m.d), m.how); return; }
+    const o = others.entry(m.i);
+    if (!o || !o.body.visible) return;
+    const b = o.body, p = b.position.clone(), h = b.userData.height || 1.8, hd = b.rotation.y;
+    if (Math.hypot(p.x - pos.x, p.z - pos.z) > 150) return;
+    const pose = (move, dur) => others.act(m.i, { move, t: 0, dur });
+    if (m.k === 'swing') others.act(m.i, { kind: 'swing', t: 0, dur: Math.min(2, Math.max(0.2, Number(m.d) || 0.4)), armed: !!m.armed, blade: !!m.blade, bow: false });
+    else if (m.k === 'arrow') {
+      const from = toVec(m.f), to = toVec(m.t);
+      others.act(m.i, { kind: 'swing', t: 0, dur: Math.min(2, Math.max(0.2, Number(m.d) || 0.6)), armed: true, bow: true, blade: false });
+      if (from && to && from.distanceTo(to) < 200) {
+        const obj = arrowMesh();
+        obj.position.copy(from);
+        scene.add(obj);
+        const dist = from.distanceTo(to);
+        // (only for show: it hurts nothing here; the shooter's own game deals the damage)
+        arrows.push({ obj, from, to, m: null, t: 0, dur: Math.max(0.08, dist / ARROW_SPEED), lift: dist * 0.04, stuck: 0, sharp: 0, w: null });
+      }
+    } else if (m.k === 'skill' && m.sk && typeof m.sk === 'object') {
+      const sk = { ...m.sk };
+      const mv = moveFor(sk);
+      pose(mv, mv.dur);
+      const to = m.to && [m.to.x, m.to.y, m.to.z].every(Number.isFinite) ? m.to : null;
+      const look = { p, h, heading: hd, to, path: Array.isArray(m.path) ? m.path.slice(0, 20).map(toVec).filter(Boolean) : [] };
+      const go = () => { try { skillFx.play(sk, look); } catch { /* a skill this game doesn't know */ } };
+      if (mv.hit > 0) setTimeout(go, mv.dur * mv.hit * 1000); else go();
+    } else if (m.k === 'self') {
+      skillFx.play({ id: 'self', unique: true, element: String(m.el || 'Light'), tier: 1, type: m.heal ? 'heal' : 'buff' }, { p, h, heading: hd });
+      pose(moveFor(m.heal ? { type: 'heal' } : { type: 'buff', stat: 'def' }), 0.8);
+    } else if (m.k === 'spell') {
+      const from = toVec(m.f), to = toVec(m.t), el = String(m.el || 'Light');
+      if (!m.plain) pose(moveFor({ type: 'bolt' }), 0.6);
+      if (from && to && from.distanceTo(to) < 100) skillFx.spell(el, from, to);
+      else if (from && !m.t) for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; skillFx.spell(el, from, new THREE.Vector3(p.x + Math.sin(a) * 6, p.y + 0.4, p.z + Math.cos(a) * 6)); }
+    }
+  }
+
   // Use a skill (see data/skills.mjs). Returns 'ok', 'sp' (not enough SP), 'none' (nothing to hit) or 'busy'.
   function useSkill(sk) {
     if (!game || dead || resting()) return 'busy';
@@ -1907,6 +1974,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     attackT = -1;
     swungAt = clock.elapsedTime;
     skillPose = { move: mv, t: 0, dur: mv.dur };
+    share({ k: 'skill', sk: slimSkill(sk), to: look.to ? { x: rd(look.to.x), y: rd(look.to.y), z: rd(look.to.z), h: rd(look.to.h || 1.6) } : null,
+      path: look.path ? look.path.filter((q, i, a) => i % Math.ceil(a.length / 16) === 0 || i === a.length - 1).map(vec) : null });
     if (mv.hit > 0) setTimeout(() => skillFx.play(sk, look), mv.dur * mv.hit * 1000);
     else skillFx.play(sk, look);
     say(sk.name, 'exp');
@@ -1937,6 +2006,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       } else buffs[sp.kind === 'ward' ? 'def' : 'matk'] = { pct, until: clock.elapsedTime + sp.secs };
       const look = darkSpells(c) ? 'Dark' : sp.element;
       skillFx.play({ id: sp.id, unique: true, element: look, tier: 1, type: sp.kind === 'heal' ? 'heal' : 'buff' }, { p: pos.clone(), h: bodyH, heading });
+      share({ k: 'self', el: look, heal: sp.kind === 'heal' });
       c.sp = Math.max(0, c.sp - cost);
       game.touch('sp');
       spellReady[sp.id] = clock.elapsedTime + sp.cd;
@@ -1970,6 +2040,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const look = darkSpells(c) ? 'Dark' : sp.element;
       if (to) skillFx.spell(look, from, to);
       else for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; skillFx.spell(look, from, new THREE.Vector3(pos.x + Math.sin(a) * 6, pos.y + 0.4, pos.z + Math.cos(a) * 6)); }
+      share({ k: 'spell', el: look, f: vec(from), t: to ? vec(to) : null });
       c.sp = Math.max(0, c.sp - cost);
       game.touch('sp');
       spellReady[sp.id] = clock.elapsedTime + sp.cd;
@@ -1984,6 +2055,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     if (m) { to = at(m); damageMonster(m, 1, true, howOf({ element })); }
     else to = ahead(SPELL_REACH);
     skillFx.spell(element, from, to);
+    share({ k: 'spell', el: element, f: vec(from), t: vec(to), plain: true });
   }
   // ---------- the city gates: the guards check your ID on the way in ----------
   // Walking in from outside stops you at the gate until you show your ID; once let in you can come
@@ -2430,12 +2502,14 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   resize();
 
   // The arm swing: punch straight ahead, or a downward slash with a weapon
+  let mobsSent = 0; // (see the world loop: your monsters shared with players close by)
   let skillPose = null; // { kind, t, dur } while a skill is being acted out
-  function poseSkill(rig, p) {
+  // (`who` is another player's body: see others.js; your own by default)
+  function poseSkill(rig, p, who = { bodyH, avatar, heading }) {
     const k = Math.min(1, p.t / p.dur);
     if (rig.arms || rig.legs) {
       rig.restPose ??= { head: rig.head?.rotation.x || 0, y: rig.root.position.y };
-      p.move.pose({ arms: rig.arms, legs: rig.legs, spine: rig.spine, head: rig.head, headBase: rig.restPose.head, root: rig.root, baseY: rig.restPose.y, bodyH, avatar, heading }, k);
+      p.move.pose({ arms: rig.arms, legs: rig.legs, spine: rig.spine, head: rig.head, headBase: rig.restPose.head, root: rig.root, baseY: rig.restPose.y, bodyH: who.bodyH, avatar: who.avatar, heading: who.heading }, k);
       if (k >= 1) { // (back to standing, nothing left bent)
         rig.root.position.y = rig.restPose.y;
         if (rig.head) rig.head.rotation.x = rig.restPose.head;
@@ -2443,16 +2517,17 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         for (const l of rig.legs || []) l.hip.rotation.z = 0;
         for (const a of rig.arms || []) a.elbow.rotation.x = 0;
       }
-    } else rig.root.position.z = Math.sin(k * Math.PI) * bodyH * 0.2; // (bodies without arms lunge instead)
+    } else rig.root.position.z = Math.sin(k * Math.PI) * who.bodyH * 0.2; // (bodies without arms lunge instead)
   }
   // the weapon arm's ready pose [shoulder, elbow] with a blade (see gear.js: the blade then points ahead)
   const READY = [-0.35, -0.85];
   const bladeHeld = () => { const w = game?.weapon(); return !sheathed && !!w && w.type !== 'spear' && w.type !== 'staff' && w.type !== 'bow'; };
-  function poseAttack(rig, k, armed) {
+  // (`bow` and `blade` for another player's swing: see others.js)
+  function poseAttack(rig, k, armed, bow = game?.weapon()?.type === 'bow', blade = bladeHeld(), h = bodyH) {
     const arm = rig.arms?.[0];
     if (comboStep > 1 && meleeNow()) { poseCombo(rig, comboStep, k, armed, bladeHeld() ? READY : [0, -0.3]); return; }
     if (arm) {
-      if (armed && game?.weapon()?.type === 'bow') {
+      if (armed && bow) {
         // a shot: the bow arm comes up straight ahead, the other hand draws the string back to the
         // cheek, lets go, then both come down
         const L = THREE.MathUtils.lerp, pull = rig.arms[1];
@@ -2469,7 +2544,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (armed) {
         // an overhead slash: up from the ready pose until the blade points at the sky, down hard
         // until it points ahead and low, then back to ready
-        const L = THREE.MathUtils.lerp, from = bladeHeld() ? READY : [0, -0.3];
+        const L = THREE.MathUtils.lerp, from = blade ? READY : [0, -0.3];
         if (k < 0.35) { const q = k / 0.35; arm.shoulder.rotation.x = L(from[0], -2.6, q); arm.elbow.rotation.x = L(from[1], -0.3, q); }
         else if (k < 0.75) { const q = (k - 0.35) / 0.4; arm.shoulder.rotation.x = L(-2.6, -0.5, q * q); arm.elbow.rotation.x = -0.3; }
         else { const q = (k - 0.75) / 0.25; arm.shoulder.rotation.x = L(-0.5, from[0], q); arm.elbow.rotation.x = L(-0.3, from[1], q); }
@@ -2482,7 +2557,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       if (rig.spine) rig.spine.rotation.y = -0.35 * Math.sin(k * Math.PI);
     } else {
       // bodies without arms lunge forward instead
-      rig.root.position.z = Math.sin(Math.min(1, k) * Math.PI) * bodyH * 0.25;
+      rig.root.position.z = Math.sin(Math.min(1, k) * Math.PI) * h * 0.25;
     }
   }
 
@@ -2708,6 +2783,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     moveHelper(dt, t);
     moveGuard(dt, t);
     others.tick(dt, t);
+    // your monsters, for players close by to see (4 times a second)
+    mobsSent -= dt;
+    if (mobsSent <= 0 && others.count() > 0) { mobsSent = 0.25; share({ k: 'mobs', l: creatures.netState(pos) }); }
 
     if (skillPose) { skillPose.t += dt; poseSkill(rig, skillPose); if (skillPose.t >= skillPose.dur) skillPose = null; }
     // Attacks
@@ -3166,8 +3244,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       m.angry = true; m.heading = spot.heading;
       return { stop: () => creatures.removeWhere((q) => q === m), hp: () => ({ hp: Math.max(0, Math.round(m.hp)), max: m.maxHp }) };
     },
+    actOther: (m) => actOther(m),
     get othersNear() { return others.count(); },
     debugOthers: () => others.list(),
+    debugMobs: () => creatures.list.filter((m) => m.nid || m.ghost).map((m) => ({ k: m.kindId, ghost: !!m.ghost, hp: m.hp, x: Math.round(m.x), z: Math.round(m.z), dead: !!m.dead })),
     // where you are out in the world (the door you came in by, while indoors)
     outdoors: () => (inside ? { x: inside.back.x, z: inside.back.z } : { x: pos.x, z: pos.z }),
     // for testing: where you and the camera are

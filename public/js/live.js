@@ -23,10 +23,11 @@ function roomsFor(place, x, z) {
 const myRoom = (place, x, z) => (place === 'out' ? `ar-out-${Math.floor(x / CELL)}_${Math.floor(z / CELL)}` : roomsFor(place, x, z)[0]);
 
 // { url: 'https://<ref>.supabase.co', key: '<anon key>' }, my account id, and what to do with an update
-export function startLive({ url, key }, myId, onMove, onState = () => {}) {
+// onAct gets the attacks and spells they do (see world.js actOther)
+export function startLive({ url, key }, myId, onMove, onState = () => {}, onAct = () => {}) {
   let ws = null, ref = 0, beat = null, closed = false, tries = 0;
   let joined = new Map(); // topic -> join ref
-  let lastSent = null, lastAt = 0, wantRooms = [];
+  let lastSent = null, lastAt = 0, wantRooms = [], lastSpot = null, near = false, acts = [];
   const socketUrl = `${url.replace(/^http/, 'ws').replace(/\/$/, '')}/realtime/v1/websocket?apikey=${encodeURIComponent(key)}&vsn=1.0.0`;
 
   const send = (msg) => { if (ws?.readyState === 1) ws.send(JSON.stringify(msg)); };
@@ -60,6 +61,9 @@ export function startLive({ url, key }, myId, onMove, onState = () => {}) {
       if (m.event === 'broadcast' && m.payload?.event === 'pos') {
         const p = m.payload.payload;
         if (p && p.i !== myId && Number.isFinite(p.x) && Number.isFinite(p.z)) onMove(p);
+      } else if (m.event === 'broadcast' && m.payload?.event === 'act') {
+        const p = m.payload.payload;
+        if (p && p.i !== myId && typeof p.k === 'string') onAct(p);
       } else if (m.event === 'phx_reply' && m.payload?.status === 'error') onState('refused', m.payload?.response);
     };
     ws.onclose = () => { clearInterval(beat); beat = null; onState('off'); retry(); };
@@ -72,6 +76,7 @@ export function startLive({ url, key }, myId, onMove, onState = () => {}) {
     // called every frame with where you are; sends when you moved (at most 10 a second)
     update(spot, anyoneNear) {
       listen(roomsFor(spot.place, spot.x, spot.z));
+      lastSpot = spot; near = !!anyoneNear;
       if (!anyoneNear || ws?.readyState !== 1) return;
       const now = performance.now();
       const moved = !lastSent || lastSent.place !== spot.place || lastSent.pose !== spot.pose
@@ -83,6 +88,19 @@ export function startLive({ url, key }, myId, onMove, onState = () => {}) {
       send({ topic, event: 'broadcast', payload: { type: 'broadcast', event: 'pos',
         payload: { i: myId, x: r2(spot.x), y: r2(spot.y), z: r2(spot.z), h: Math.round(spot.heading * 1000) / 1000, s: r2(spot.speed), p: spot.pose || '' } },
       ref: String(++ref), join_ref: joined.get(topic) });
+    },
+    // an attack or spell you just did, for players close by to see (at most 8 a second)
+    act(a) {
+      if (!lastSpot || !near || ws?.readyState !== 1 || !a) return;
+      // (monster updates have their own pace: see world.js)
+      if (a.k !== 'mobs' && a.k !== 'mobhit') {
+        const now = performance.now();
+        acts = acts.filter((t) => now - t < 1000);
+        if (acts.length >= 8) return;
+        acts.push(now);
+      }
+      const topic = `realtime:${myRoom(lastSpot.place, lastSpot.x, lastSpot.z)}`;
+      send({ topic, event: 'broadcast', payload: { type: 'broadcast', event: 'act', payload: { ...a, i: myId } }, ref: String(++ref), join_ref: joined.get(topic) });
     },
     get on() { return ws?.readyState === 1; },
     stop() { closed = true; clearInterval(beat); try { ws?.close(); } catch { /* gone */ } },

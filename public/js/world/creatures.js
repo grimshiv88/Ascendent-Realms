@@ -121,7 +121,7 @@ export function monsterHit(atk, level, def) {
 export const monsterExp = (level, stage = 0) => rollKillExp(level, stage);
 
 // `groundAt(x, z, fromY)` is where feet rest (the drawn ground, and built floors); monsters walk on it as players do
-export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null, blockedAt = null, pushOut = null, onCrash = null, onBeast = null, onSnare = null }) {
+export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, isNight = () => false, onAmbush, groundAt = null, blockedAt = null, pushOut = null, onCrash = null, onBeast = null, onSnare = null, getOthers = () => [], onNet = null }) {
 
   // Is something solid (a wall, fence, tree, rock) in the way of `m` stepping to (nx, nz)? Checks
   // its body and its nose, so long animals don't push their heads into walls. Gives back what it hit.
@@ -549,7 +549,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       for (let i = 0; i < n; i++) {
         const q = i ? spot(at.x, at.z, rand(2, 5)) : at;
         if (!q) continue;
-        make(pick.id, i ? levelFor(q.x, q.z) : level, q.x, q.y, q.z, pick.stage ? { stage: pick.stage, title: pick.title } : {});
+        share(make(pick.id, i ? levelFor(q.x, q.z) : level, q.x, q.y, q.z, pick.stage ? { stage: pick.stage, title: pick.title } : {}));
       }
       return;
     }
@@ -573,7 +573,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       const id = evolveFor(i === 0 ? lead : pickOne(kinds), level).id;
       const q = i ? spot(at.x, at.z, rand(3, 7), Math.random() * 6.28) : at;
       if (!q) continue;
-      const m = make(id, level, q.x, q.y, q.z, { state: 'lurk', pack });
+      const m = share(make(id, level, q.x, q.y, q.z, { state: 'lurk', pack }));
       m.heading = Math.atan2(p.x - q.x, p.z - q.z);
       m.tag.sprite.visible = false;
       m.body.scale.y = 0.72; // crouched low in the grass
@@ -592,7 +592,98 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     if (n) onAmbush?.(n);
   }
 
+  // ---------- monsters shared with players close by (see live.js) ----------
+  // The wild monsters your game spawns are yours: your game moves them and tells players close by
+  // where they are a few times a second (netState). Theirs show in your game as copies (m.ghost)
+  // that walk where their game says. A copy still bites you if you stand next to it while it is
+  // fighting; your blows on it are sent to its owner (onNet 'mobhit'), and the blow that kills it
+  // here is yours, with its EXP and loot.
+  let nextNid = 1;
+  const ghosts = new Map(); // 'owner:nid' -> monster
+  const fallen = new Set(); // copies that died here: not brought back by a late update
+  function share(m) { if (m) m.nid = nextNid++; return m; }
+  function netState(me) {
+    const out = [];
+    for (const m of list) {
+      if (!m.nid || m.ghost) continue;
+      if (m.dead && m.dead > 2) continue;
+      if (Math.hypot(m.x - me.x, m.z - me.z) > DESPAWN) continue;
+      out.push([m.nid, m.kindId, m.level, m.stage || 0, m.title || '', Math.round(m.x * 100) / 100, Math.round(m.y * 100) / 100, Math.round(m.z * 100) / 100,
+        Math.round(m.heading * 100) / 100, Math.ceil(m.hp), m.maxHp, m.state === 'chase' ? 1 : m.state === 'lurk' ? 2 : 0, m.lastSpeed ? Math.round(m.lastSpeed * 10) / 10 : 0, m.lastHow || '']);
+      if (out.length >= 30) break;
+    }
+    return out;
+  }
+  function netApply(owner, rows) {
+    if (!Array.isArray(rows)) return;
+    const got = new Set();
+    for (const r of rows) {
+      if (!Array.isArray(r) || r.length < 14) continue;
+      const [nid, kindId, level, stage, title, x, y, z, heading, hp, maxHp, mode, speed, how] = r;
+      if (!KINDS[kindId] || KINDS[kindId].animal || KINDS[kindId].beast || ![x, y, z, heading, hp, maxHp].every(Number.isFinite)) continue;
+      const key = `${owner}:${nid}`;
+      got.add(key);
+      let m = ghosts.get(key);
+      if (!m && fallen.has(key)) continue;
+      if (!m) {
+        if (hp <= 0) continue; // (already dead when we first heard of it)
+        try { m = make(kindId, Math.max(1, Math.min(9999, level | 0)), x, y, z, { stage: stage | 0 || undefined, title: title || undefined }); } catch { continue; }
+        m.ghost = { owner, nid, key }; m.heading = heading; m.keep = true;
+        m.maxHp = maxHp; m.hp = hp; m.tag.draw(hp / maxHp);
+        ghosts.set(key, m);
+      }
+      const g = m.ghost;
+      g.x = x; g.y = y; g.z = z; g.h = heading; g.speed = speed; g.mode = mode; g.heard = nowT;
+      if (m.dead) continue;
+      if (hp < m.hp) { m.hurt = 0.25; }
+      m.maxHp = maxHp; m.hp = Math.min(m.hp, hp); m.tag.draw(m.hp / m.maxHp);
+      if (mode === 2 && m.state !== 'lurk') { m.state = 'lurk'; m.tag.sprite.visible = false; m.body.scale.y = 0.72; }
+      else if (mode !== 2 && m.state === 'lurk') { m.state = 'wander'; m.tag.sprite.visible = true; m.body.scale.y = 1; }
+      if (m.hp <= 0) { m.dead = 0.001; startDeath(m, how || 'blunt', scene, {}); }
+    }
+    // the owner's game no longer has it (gone too far from them): it goes here too
+    for (const [key, m] of ghosts) if (m.ghost.owner === owner && !got.has(key) && !m.dead) { ghosts.delete(key); remove(m); }
+  }
+  // a blow from another player's game on one of your monsters (they get the reward if it killed)
+  function netHit(nid, dmg, how) {
+    const m = list.find((q) => q.nid === nid && !q.ghost);
+    if (!m || m.dead || !Number.isFinite(dmg) || dmg <= 0) return;
+    m.hp = Math.max(0, m.hp - Math.min(dmg, 1e7));
+    m.hurt = 0.25; m.angry = true; m.hurtBy = true;
+    if (m.state === 'lurk') spring(m.pack);
+    m.tag.draw(m.hp / m.maxHp);
+    if (m.hp <= 0) { m.dead = 0.001; m.lastHow = String(how || 'blunt').slice(0, 12); startDeath(m, m.lastHow, scene, {}); }
+  }
+  // a copy, every frame: walks to where its owner's game says it is, and bites you if you are in reach
+  function stepGhost(m, dt, t, p, dist) {
+    const g = m.ghost;
+    if (nowT - g.heard > 4) { ghosts.delete(g.key); remove(m); return; }
+    const k = Math.min(1, dt * 8);
+    const was = { x: m.x, z: m.z };
+    m.x += (g.x - m.x) * k; m.z += (g.z - m.z) * k; m.y += (g.y - m.y) * k;
+    if (Math.hypot(g.x - m.x, g.z - m.z) > 20) { m.x = g.x; m.z = g.z; m.y = g.y; }
+    let d = g.h - m.heading; d = Math.atan2(Math.sin(d), Math.cos(d)); m.heading += d * k;
+    const speed = Math.hypot(m.x - was.x, m.z - was.z) / Math.max(dt, 1e-3);
+    if (m.state !== 'lurk' && g.mode === 1 && !p.dead) {
+      const reach = m.radius + p.radius + 0.6;
+      m.attackCd -= dt;
+      if (dist <= reach + 0.3 && m.attackCd <= 0 && !(m.stun > 0)) { m.attackCd = 1.6; m.lunge = 0.3; onHitPlayer(m); }
+    }
+    if (m.stun > 0) m.stun -= dt;
+    m.hurt = Math.max(0, m.hurt - dt);
+    m.lunge = Math.max(0, (m.lunge || 0) - dt);
+    const lunge = m.lunge > 0 ? Math.sin((m.lunge / 0.3) * Math.PI) * 0.4 : 0;
+    m.body.position.set(m.x + Math.sin(m.heading) * lunge, m.y + (m.hurt > 0 ? Math.sin(m.hurt * 30) * 0.05 : 0), m.z + Math.cos(m.heading) * lunge);
+    m.body.rotation.y = m.heading;
+    animate(m, t, m.state === 'lurk' ? 0 : Math.max(speed, g.speed * 0.3));
+    m.tag.sprite.position.set(m.x, m.y + m.height + 0.45, m.z);
+  }
+
   function remove(m) {
+    if (m.ghost) {
+      ghosts.delete(m.ghost.key);
+      if (m.dead) { fallen.add(m.ghost.key); if (fallen.size > 300) fallen.delete(fallen.values().next().value); }
+    }
     if (m.breath) endBreath(m);
     if (m.nova) endNova(m);
     clearDeath(m);
@@ -632,11 +723,14 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     // no more than 20 bodies lying about: the oldest rots away first
     const bodies = list.filter((m) => m.death && m.death.left > 0 && !m.death.harvested);
     if (bodies.length > 20) bodies.sort((a, b) => a.death.left - b.death.left)[0].death.left = 0;
+    const folk = getOthers() || [];
     for (const m of [...list]) {
-      const dx = p.x - m.x, dz = p.z - m.z;
-      const dist = Math.hypot(dx, dz);
+      let dx = p.x - m.x, dz = p.z - m.z;
+      let dist = Math.hypot(dx, dz);
       if (m.kind.beast) { stepBeast(m, dt, t, p, dx, dz, dist); continue; }
-      if (dist > DESPAWN && !m.keep) { remove(m); continue; }
+      if (m.ghost && !m.dead) { stepGhost(m, dt, t, p, dist); continue; }
+      // (one of yours that another player is near stays for them)
+      if (dist > DESPAWN && !m.keep && !(m.nid && folk.some((o) => Math.hypot(o.x - m.x, o.z - m.z) < DESPAWN))) { remove(m); continue; }
       if (m.dead && m.kind.animal) {
         // a fallen animal rolls onto its side and lies there until it is cut up, taken to the
         // Butcher, or left to rot (a body being dragged doesn't rot)
@@ -659,7 +753,12 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       if (m.bits) for (const p of m.bits) { if (p.done) continue; p.vy -= 9.8 * dt; p.obj.position.y += p.vy * dt; p.obj.rotation.x += dt * 4; if (p.obj.position.y < m.y + 0.08) { p.obj.position.y = m.y + 0.08; p.done = true; } }
       if (m.kind.animal && !m.kind.aggressive) { stepAnimal(m, dt, t, p, dx, dz, dist); continue; }
       let speed = 0;
-      const hidden = p.safe && !m.hurtBy && !m.raid; // a torch or a campfire keeps you hidden (but not from monsters attacking a town)
+      // one of yours goes for whichever player is nearest (their own game takes the bites: see stepGhost)
+      let other = null;
+      if (m.nid && folk.length && !m.kind.animal) {
+        for (const o of folk) { if (o.dead) continue; const d = Math.hypot(o.x - m.x, o.z - m.z); if (d < dist - 1) { dist = d; dx = o.x - m.x; dz = o.z - m.z; other = o; } }
+      }
+      const hidden = p.safe && !m.hurtBy && !m.raid && !other; // a torch or a campfire keeps you hidden (but not from monsters attacking a town)
       // lurkers wait without moving until you walk into them (or hit one)
       if (m.state === 'lurk') {
         if (!p.dead && (dist < 13 || m.hurtBy)) spring(m.pack);
@@ -687,7 +786,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
         if (dist <= reach + 0.3 && m.attackCd <= 0 && !(m.stun > 0)) {
           m.attackCd = 1.6;
           m.lunge = 0.3;
-          onHitPlayer(m);
+          if (!other) onHitPlayer(m);
         }
       } else if (!stalk && m.guard) {
         // guards hold their post, watching the way in
@@ -731,6 +830,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
       const lunge = m.lunge > 0 ? Math.sin((m.lunge / 0.3) * Math.PI) * 0.4 : 0;
       m.body.position.set(m.x + Math.sin(m.heading) * lunge, m.y + (m.hurt > 0 ? Math.sin(m.hurt * 30) * 0.05 : 0), m.z + Math.cos(m.heading) * lunge);
       m.body.rotation.y = m.heading;
+      m.lastSpeed = speed;
       animate(m, t, speed);
       m.tag.sprite.position.set(m.x, m.y + m.height + 0.45, m.z);
     }
@@ -848,6 +948,8 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   // of its health), for what it does to the body
   function hit(m, dmg, how = 'blunt', strong = false) {
     if (m.dead) return null;
+    if (m.ghost) onNet?.('mobhit', { o: m.ghost.owner, n: m.ghost.nid, d: Math.round(dmg), how: String(how || 'blunt') });
+    if (m.nid && !m.ghost) m.lastHow = String(how || 'blunt').slice(0, 12);
     const before = m.hp;
     m.hp = Math.max(0, m.hp - dmg);
     m.hurt = 0.25;
@@ -893,7 +995,7 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
   }
 
   return {
-    update, target, targets, hit,
+    update, target, targets, hit, netState, netApply, netHit,
     // how many seconds until a slain great beast's lair has a new one (0: it is there)
     slainIn: (lairId) => Math.max(0, (slain.get(lairId) || 0) - nowT),
     // the realm's keepers bring slain great beasts back: their empty lairs have them again at once

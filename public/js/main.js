@@ -182,6 +182,7 @@ function openCreation(username) {
 }
 
 let world = null;
+let liveRef = null; // the live link to nearby players (live.js), once it is running
 let arena = null; // the Colosseum (see arenaui.js)
 let tutorial = null; // the guide for new players, while it runs (see tutorial.js)
 let journey = null; // a newcomer's first journey: goals with arrows and notices (see journey.js)
@@ -1515,6 +1516,8 @@ function startGame(character) {
     onMouseFreed: () => { ui.freedAt = performance.now(); },
     onSaveLocation: (loc) => { character.location = { ...character.location, ...loc }; api.saveLocation(loc).catch(() => {}); },
     onEvent(type, data) {
+      // an attack or spell you did: players close by see it (live.js)
+      if (type === 'act') { liveRef?.act(data); return; }
       tutorial?.saw(type, data);
       journey?.saw(type, data);
       // the Colosseum's board, blows in a duel, sitting in the stands (see arenaui.js)
@@ -1707,7 +1710,8 @@ function startGame(character) {
     const startLiveMoves = async (r) => {
       if (!r.live || !r.me || typeof WebSocket === 'undefined') return;
       const { startLive } = await import('./live.js');
-      live = startLive(r.live, r.me, (m) => world?.moveOther(m), (state, why) => { if (state === 'refused') console.warn('live movement refused', why); });
+      live = startLive(r.live, r.me, (m) => world?.moveOther(m), (state, why) => { if (state === 'refused') console.warn('live movement refused', why); }, (m) => { if (m.k !== 'mobhit' || m.o === r.me) world?.actOther(m); });
+      liveRef = live;
       setInterval(() => { if (world && document.visibilityState !== 'hidden') live.update(world.presence(), world.othersNear > 0); }, 50);
     };
     const myBody = () => {
