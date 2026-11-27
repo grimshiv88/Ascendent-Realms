@@ -2633,7 +2633,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     sky.follow(camera);
 
     if (camOverride) { camera.position.set(...camOverride[0]); camera.lookAt(...camOverride[1]); avatar.visible = !!camOverride[2]; }
-    if (t - lastCrowd > 0.25) { lastCrowd = t; updateCrowd(camera.position.x, camera.position.y, camera.position.z, scene); }
+    if (t - lastCrowd > 0.1) { lastCrowd = t; updateCrowd(camera.position.x, camera.position.y, camera.position.z, scene); }
     renderer.render(scene, camera);
 
     // floating text rises and fades

@@ -657,7 +657,7 @@ export function buildInterior(shop) {
     // on the stairs you stand on the step under you (not a slope through them)
     if (ramp && lx >= ramp.x0 && lx <= ramp.x1 && lz >= ramp.z0 && lz <= ramp.z1) { const n = ramp.top ? 16 : STEPS; h = (Math.min(n, Math.floor(((lz - ramp.z0) / (ramp.z1 - ramp.z0)) * n) + 1) / n) * (ramp.top || UP); }
     else if ((kind === 'guild' || kind === 'tavern') && lz > D) h = UP;
-    out.h = h; out.water = -1e6; out.region = 'indoors'; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0;
+    out.h = h; out.water = -1e6; out.region = 'indoors'; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0; out.ice = 0;
     return out;
   }
   const tmp = {};

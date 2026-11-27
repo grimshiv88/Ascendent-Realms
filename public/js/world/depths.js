@@ -52,7 +52,7 @@ export function buildDepths(cave) {
     const inside = s.d < 0;
     out.h = inside ? s.floor + bump(x, z) - (s.pit ? CHASM_DEPTH : 0) : s.floor + Math.min(9, 0.5 + s.d * 2.5);
     out.water = inside ? -1e6 : out.h + 1; // walls count as deep water, so monsters turn back
-    out.region = 'depths'; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0;
+    out.region = 'depths'; out.forest = 0; out.wet = 0; out.lake = 0; out.coast = 0; out.ice = 0;
     return out;
   }
 
