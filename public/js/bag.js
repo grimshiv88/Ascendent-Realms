@@ -6,6 +6,7 @@ import { SKILLS } from './data/skills.mjs';
 import { codeFor, keyName } from './data/controls.mjs';
 import { subOf, LADDERS, MERGES, MERGE_COUNT, mergesWith, ladderName } from './data/merges.mjs';
 import { money, MINT } from './data/money.mjs';
+import { DAY_TEXT } from './data/clock.mjs';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const keyOf = (e) => e.uid || e.id;
@@ -223,16 +224,16 @@ function treatHtml(game) {
   const j = game.injury();
   if (!j) return '';
   return `<h3 class="sys-sub">Treatment</h3>
-    <div class="sys-row"><span class="sys-name"><b>${esc(j.name)} · ${j.left} treatment${j.left > 1 ? 's' : ''} left</b><small>${esc(j.effect)} One treatment a day of the realm (one real hour).${j.waitMin ? ` Next treatment in ${j.waitMin} min.` : ''}</small></span>
+    <div class="sys-row"><span class="sys-name"><b>${esc(j.name)} · ${j.left} treatment${j.left > 1 ? 's' : ''} left</b><small>${esc(j.effect)} One treatment a day of the realm (${DAY_TEXT}).${j.waitMin ? ` Next treatment in ${j.waitMin} min.` : ''}</small></span>
       ${j.waitMin ? '' : `<button type="button" class="sys-button" data-treat>Treat · ${money(j.price)}</button>`}</div>`;
 }
 
-// A tavern room: rent it for a day of the realm (one real hour), sleep in it to wake rested
+// A tavern room: rent it for a day of the realm, sleep in it to wake rested
 function roomHtml(game) {
   const room = game.room();
   const price = game.roomPrice();
   return `<h3 class="sys-sub">Rooms</h3>
-    <div class="sys-row"><span class="sys-name"><b>${room ? `Your room: Room ${room.n}, upstairs · ${room.minutes} min left` : 'A room for the day'}</b><small>${room ? 'Go up the stairs to your room and lie on the bed (E) to wake with full HP and SP and no Fatigue.' : 'No land or money for a house? Rent a room upstairs for a day of the realm (one real hour). Sleep in its bed to wake fully rested.'}</small></span>
+    <div class="sys-row"><span class="sys-name"><b>${room ? `Your room: Room ${room.n}, upstairs · ${room.minutes} min left` : 'A room for the day'}</b><small>${room ? 'Go up the stairs to your room and lie on the bed (E) to wake with full HP and SP and no Fatigue.' : `No land or money for a house? Rent a room upstairs for a day of the realm (${DAY_TEXT}). Sleep in its bed to wake fully rested.`}</small></span>
       ${room ? '' : `<button type="button" class="sys-button" data-room="rent">Rent · ${money(price)}</button>`}</div>
     <p class="sys-hint">Drinks are made to order: pay here, find a seat, and the waiter brings yours to you. A fresh drink does a little more than one from your bag.</p>`;
 }

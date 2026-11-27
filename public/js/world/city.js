@@ -11,7 +11,7 @@ import { lazyCharacter, isShown } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { mergeStill, showDetail } from './merge.js';
 import { buildHouse, buildTower, buildShack, paved, pavedGeometry, TOWN_TONES } from './houses.js';
-import { marketStall } from './farms.js';
+import { marketStall, twoFacedSign } from './farms.js';
 import { cityHouses, CASTLE_SPOT, ACADEMIES, ACADEMY_W, ACADEMY_D, SCHOOLS, familyOf, PARENT_JOBS, townName, seeded } from '../data/birth.mjs';
 import { TIERS, TOP_Y, TERRACE, INNER_R, ROAD_ANGLES, ROAD_HALF, RAMPS, RAMP_IN, RAMP_OUT, RAMP_WALL, ringY, rampAt, alongRoad, cityLift } from '../data/citylevels.mjs';
 import { cityPlan, PLAZA_R, GUILD_SPOT, RING_ROADS, ESTATE_ID, BANK_ID, tierY, RACE_HOME, homeFootprint } from '../data/citylayout.mjs';
@@ -64,6 +64,46 @@ const matOf = (color, roughness = 0.9, extra = null) => {
   if (!MATS.has(k)) MATS.set(k, new THREE.MeshStandardMaterial({ color, roughness, ...(extra || {}) }));
   return MATS.get(k);
 };
+// The city's stone walls (terraces, ramps, the gates between the rings): laid blocks of stone,
+// not flat grey. stoneBox is a box whose faces show the blocks at their true size (about 1.2 m
+// by 0.6 m a block) however big the box is.
+let stoneTex = null;
+function stoneTexture() {
+  if (stoneTex) return stoneTex;
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  let sd = 7;
+  const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  g.fillStyle = '#6a6a6a'; g.fillRect(0, 0, 256, 256); // the mortar
+  const rows = 4, bh = 256 / rows, bw = 128;
+  for (let r = 0; r < rows; r++) {
+    const off = r % 2 ? bw / 2 : 0;
+    for (let x = -bw; x < 256 + bw; x += bw) {
+      const v = 200 + Math.floor(rnd() * 50);
+      g.fillStyle = `rgb(${v},${v},${Math.floor(v * 0.97)})`;
+      g.fillRect(x + off + 3, r * bh + 3, bw - 6, bh - 6);
+      // a little wear on each block
+      for (let k = 0; k < 14; k++) { const w = 150 + Math.floor(rnd() * 60); g.fillStyle = `rgba(${w},${w},${w},0.35)`; g.fillRect(x + off + 3 + rnd() * (bw - 14), r * bh + 3 + rnd() * (bh - 12), 4 + rnd() * 8, 3 + rnd() * 6); }
+    }
+  }
+  stoneTex = new THREE.CanvasTexture(c);
+  stoneTex.wrapS = stoneTex.wrapT = THREE.RepeatWrapping;
+  stoneTex.colorSpace = THREE.SRGBColorSpace;
+  return stoneTex;
+}
+const STONE_MATS = new Map();
+const stoneWallMat = (color) => {
+  if (!STONE_MATS.has(color)) STONE_MATS.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.95, map: stoneTexture() }));
+  return STONE_MATS.get(color);
+};
+function stoneBox(w, h, d) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const uv = geo.attributes.uv;
+  // faces in order: +x, -x (d by h), +y, -y (w by d), +z, -z (w by h); one texture is 2.4 m by 2.4 m
+  const size = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * size[f][0] / 2.4, uv.getY(i) * size[f][1] / 2.4); }
+  return geo;
+}
 // A guard in the city's armour, built only when you come near (see lazyCharacter)
 const lazyGuard = (race, gear) => lazyCharacter(() => { const b = buildCharacter({ race, form: 'humanoid', look: {} }); wearGear(b, gear); return b; }, bodyHeight(race, 'humanoid'));
 
@@ -186,8 +226,8 @@ function cityGate(fixed, R, T, line, stoneMat, capMat, cx, cz) {
   const span = ROAD_HALF + RAMP_WALL / 2, H = 7.5;
   // the towers on the walls, with battlements
   for (const sx of [-1, 1]) {
-    add(new THREE.BoxGeometry(RAMP_WALL + 0.4, H, 3), stoneMat, sx * span, H / 2 - 1, 0);
-    for (const dz of [-1, 1]) for (const dx of [-1, 1]) add(new THREE.BoxGeometry(0.9, 0.8, 0.9), stoneMat, sx * span + dx * 1.4, H - 0.6, dz * 1.05);
+    add(stoneBox(RAMP_WALL + 0.4, H, 3), stoneMat, sx * span, H / 2 - 1, 0);
+    for (const dz of [-1, 1]) for (const dx of [-1, 1]) add(stoneBox(0.9, 0.8, 0.9), stoneMat, sx * span + dx * 1.4, H - 0.6, dz * 1.05);
   }
   // the arch over the road, and the portcullis drawn up into it
   add(new THREE.BoxGeometry(ROAD_HALF * 2, 1.6, 2.6), capMat, 0, H - 2.2, 0);
@@ -206,8 +246,9 @@ function cityGate(fixed, R, T, line, stoneMat, capMat, cx, cz) {
 }
 
 // how far a city's small details (window frames, rails) are drawn: less on phones (quality.js)
-let DETAIL_FAR = 90;
-export function setCityDetail(m) { DETAIL_FAR = m || 90; }
+let DETAIL_FAR = 90, CELL_FAR = Infinity;
+// (cellFar: whole patches of the city further than this aren't drawn: quality.js)
+export function setCityDetail(m, cellFar) { DETAIL_FAR = m || 90; CELL_FAR = cellFar || Infinity; }
 const detailFar = () => DETAIL_FAR;
 
 export function buildCity(place, opts = {}) {
@@ -272,11 +313,12 @@ export function buildCity(place, opts = {}) {
   // buildings and walls never move: they are merged into a few meshes at the end
   const fixed = new THREE.Group();
   g.add(fixed);
-  const stoneMat = matOf(S.wall, 0.95);
+  const stoneMat = stoneWallMat(S.wall);
   const capMat = matOf(monster ? S.tones[0][0] : '#a8a090', 0.95);
 
   // ---------- the terrace walls holding up each ring, and the ramps through them ----------
   const rampBands = []; // for deckAt: the walkway on top of each terrace wall
+  const wallBase = heightAt(cx, cz); // the city's own height (Castle Hill's) in the world
   const innerGates = []; // the gates between the rings (see cityGate)
   for (let k = 0; k < TIERS.length - 1; k++) {
     const b = TIERS[k].r1, up = TIERS[k].y - TOP_Y, low = TIERS[k + 1].y - TOP_Y;
@@ -290,7 +332,7 @@ export function buildCity(place, opts = {}) {
       if (gap(a, face, ROAD_HALF + 0.5)) continue;
       // the face of the wall, from the lower ring up past the higher one (a parapet), and the walk on top
       const h = up - low + 1.1;
-      const w = new THREE.Mesh(new THREE.BoxGeometry(seg + 0.25, h + 0.6, 1.2), stoneMat);
+      const w = new THREE.Mesh(stoneBox(seg + 0.25, h + 0.6, 1.2), stoneMat);
       w.position.set(Math.sin(a) * (face - 0.4), low - 0.6 + (h + 0.6) / 2, Math.cos(a) * (face - 0.4));
       w.rotation.y = a;
       fixed.add(w);
@@ -300,9 +342,10 @@ export function buildCity(place, opts = {}) {
         walk.rotation.y = a;
         fixed.add(walk);
       }
-      if (i % 2 === 0) { const m = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.6, 1.2), stoneMat); m.position.set(Math.sin(a) * (face - 0.4), up + 1.4, Math.cos(a) * (face - 0.4)); m.rotation.y = a; fixed.add(m); }
-      // solid all along (two to a stretch, so nobody small slips between them and up the bank)
-      for (const da of [0, seg / 2 / face]) if (!gap(a + da, face, ROAD_HALF + RAMP_WALL + 0.5)) solid.push({ x: cx + Math.sin(a + da) * (face + 0.2), z: cz + Math.cos(a + da) * (face + 0.2), r: 1.0, kind: 'wall', height: up - low + 2 });
+      if (i % 2 === 0) { const m = new THREE.Mesh(stoneBox(1.3, 0.6, 1.2), stoneMat); m.position.set(Math.sin(a) * (face - 0.4), up + 1.4, Math.cos(a) * (face - 0.4)); m.rotation.y = a; fixed.add(m); }
+      // solid all along (two to a stretch, so nobody small slips between them and up the bank), up
+      // to a little over the battlements: too high to jump over, but you can fly over it
+      for (const da of [0, seg / 2 / face]) if (!gap(a + da, face, ROAD_HALF + RAMP_WALL + 0.5)) solid.push({ x: cx + Math.sin(a + da) * (face + 0.2), z: cz + Math.cos(a + da) * (face + 0.2), r: 1.0, kind: 'wall', y: wallBase + low - 1, height: up - low + 3.2 });
     }
     rampBands.push({ r0: b - 3.5, r1: face, y: up });
     // the ramps: a road climbing between two stone walls, cut into the higher ring and built out
@@ -317,7 +360,7 @@ export function buildCity(place, opts = {}) {
           const mid = along + 1, rY = (rampAt(Math.sin(R.a) * mid, Math.cos(R.a) * mid)?.y ?? ringY(mid)) - TOP_Y, gY = ringY(mid) - TOP_Y;
           const top2 = Math.max(rY, gY) + 0.9, bot = Math.min(rY, gY) - 0.6;
           const x = Math.sin(R.a) * mid + Math.cos(R.a) * lat, z = Math.cos(R.a) * mid - Math.sin(R.a) * lat;
-          const w = new THREE.Mesh(new THREE.BoxGeometry(RAMP_WALL, top2 - bot, 2.05), stoneMat);
+          const w = new THREE.Mesh(stoneBox(RAMP_WALL, top2 - bot, 2.05), stoneMat);
           w.position.set(x, (top2 + bot) / 2, z);
           w.rotation.y = R.a;
           fixed.add(w);
@@ -629,6 +672,7 @@ export function buildCity(place, opts = {}) {
     stall_grill: [['#f0e4cc', '#a83a2a'], ['#8a4a2a', '#a85a3a', '#e8d0a0']], stall_drinks: [['#e8f0f0', '#2a7a8a'], ['#6ac8d0', '#e8a040', '#f0f0e0']],
     stall_cloth: [['#efe4d4', '#7a3a6a'], ['#c84a5a', '#4a6aa8', '#e8d8b0', '#6a8a4a']], stall_tools: [['#d8d0c0', '#4a4a4a'], ['#6a5a4a', '#8a8a8a', '#4a3a2a']],
     stall_herbs: [['#e8f0d8', '#3a6a3a'], ['#4a8a3a', '#8ac85a', '#c8d890']], stall_soup: [['#d8c8a8', '#8a5a2a'], ['#8a6a3a', '#c8a060', '#5a4a3a']],
+    stall_sweets: [['#f8e8d8', '#c8506a'], ['#8a5a2a', '#c8a050', '#6a2a4a']], stall_roast: [['#f0e0c8', '#8a3a1a'], ['#9a5a2a', '#b8703a', '#e0c090']],
     stall_scrap: [['#a89a80', '#6a5a4a'], ['#7a5a3a', '#5a5a5a', '#8a6a4a', '#6a4a3a']],
   };
   const vendorRnd = seeded(`${place.id}:market`);
@@ -644,7 +688,7 @@ export function buildCity(place, opts = {}) {
     market.add(sg);
     const c = Math.cos(st.rot), sn = Math.sin(st.rot);
     const local = (lx, lz) => ({ x: st.x + lx * c + lz * sn, z: st.z - lx * sn + lz * c });
-    for (const [lx, lz, r, height] of parts) { const w = local(lx, lz); solid.push({ x: cx + w.x, z: cz + w.z, r, kind: 'wall', height }); }
+    for (const [lx, lz, r, height, lift] of parts) { const w = local(lx, lz); solid.push({ x: cx + w.x, z: cz + w.z, r, kind: 'wall', height, ...(lift ? { lift, camOnly: true } : {}) }); }
     // the seller behind the counter (talk to them to buy), and a shopper or two in front
     const v = local(0, -0.45);
     addNpc(S.guards[(i * 5 + 2) % S.guards.length], v.x, v.z, st.rot, { kind: 'stall', market: st.id, title: MARKETS[st.id].name, name: townName(side, vendorRnd), still: true });
@@ -653,6 +697,19 @@ export function buildCity(place, opts = {}) {
       addNpc(S.guards[(i * 3 + k + 4) % S.guards.length], q.x, q.z, st.rot + Math.PI, { kind: 'shopper', name: townName(side, vendorRnd), range: 5 });
     }
   });
+  // a sign at each end of Market Street, where it meets the south road
+  {
+    const r = plan.marketStreet.r + plan.marketStreet.w / 2 + 1.2, y = ringRel('common');
+    const postMat = matOf('#5a3e26', 1);
+    for (const dir of [-1, 1]) {
+      const a = dir * (11.5 / r);
+      const at = new THREE.Group(); at.position.set(Math.sin(a) * r, y, Math.cos(a) * r); at.rotation.y = a + Math.PI / 2; market.add(at);
+      for (const x of [-1.25, 1.25]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.14, 3.4, 0.14), postMat); p.position.set(x, 1.7, 0); at.add(p); }
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.1, 0.16), postMat); bar.position.set(0, 3.42, 0); at.add(bar);
+      const board = twoFacedSign('Market Street', 2.4, 0.55); board.position.set(0, 3.0, 0); at.add(board);
+      for (const x of [-1.25, 1.25]) { const w = { x: at.position.x + Math.cos(at.rotation.y) * x, z: at.position.z - Math.sin(at.rotation.y) * x }; solid.push({ x: cx + w.x, z: cz + w.z, r: 0.15, kind: 'wall', height: 3.4 }); }
+    }
+  }
   // ---------- life in the Dump: children playing in the dirt, folk lying or sitting about ----------
   const dirtMat = matOf('#6e5e46', 1, { polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -24 });
   const ballMats = ['#c8402a', '#3a6ab0', '#d8b030'].map((col) => matOf(col, 0.6));
@@ -716,7 +773,7 @@ export function buildCity(place, opts = {}) {
   let detailAt = -1;
   const update = (t, you, blocked) => {
     centre.update?.(t);
-    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z, detailFar()); doors.lod(you, detailFar() + 20); for (const sg of saleSigns.values()) sg.lod(you, detailFar()); }
+    if (you && t - detailAt > 0.5) { detailAt = t; showDetail(fixed, you.x, you.z, detailFar(), CELL_FAR); showDetail(market, you.x, you.z, detailFar(), CELL_FAR); doors.lod(you, detailFar() + 20); for (const sg of saleSigns.values()) sg.lod(you, detailFar()); }
     doors.update(you, t);
     for (const b of guards) if (isShown(b)) animateCharacter(b, t, 0);
     walkFolk(t, you, blocked);

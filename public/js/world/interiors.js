@@ -44,6 +44,7 @@ export function buildInterior(shop) {
   let lastLife = null;
   const spots = []; // things to use with E: { x, z, y, event, r }
   let training = null; // an Academy's training floor (world x, z, r)
+  let practice = null; // an Academy's practice monster (see practice.js)
   const mats = [];
   const mat = (color, extra = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra }); mats.push(m); return m; };
   const box = (w, h, d, m, x, y, z, ry = 0) => {
@@ -587,6 +588,18 @@ export function buildInterior(shop) {
     }
     lamp(MAT.x, H - 0.8, MAT.z, 16);
     lamp(3, H - 0.8, D / 2, 12);
+    // the practice monster, beside the mat: a tame goblin (a slime for the Mages and Herbalists),
+    // with a little straw on its back so nobody takes it for a wild one (see practice.js)
+    const slime = school === 'mage' || school === 'potion_maker';
+    const pm = buildCharacter({ race: slime ? 'slime' : 'goblin', form: 'monster', look: {} });
+    const px = MAT.x + 3.9, pz = MAT.z - 1.2;
+    pm.position.set(px, 0, pz);
+    pm.rotation.y = -Math.PI / 2;
+    const tag = cyl(0.18, 0.22, 0.12, straw, 0, (pm.userData.height || 1.2) + 0.05, 0, 8);
+    g.remove(tag); pm.add(tag); tag.position.set(0, (pm.userData.height || 1.2) + 0.05, 0);
+    g.add(pm); people.push(pm);
+    block(px, pz, 0.45, 0, 1.6);
+    practice = { body: pm, ox: OX, oz: OZ, school };
   }
 
   // ---------- the tavern's life: orders, the keeper pressing juice, and the waiter ----------
@@ -670,7 +683,7 @@ export function buildInterior(shop) {
   };
   return {
     standAt,
-    kind, group: g, solid, seats, rooms, nooks, spots, counter, exit, start, training,
+    kind, group: g, solid, seats, rooms, nooks, spots, counter, exit, start, training, practice,
     sample: sampleAt,
     floorAt: (x, z) => sampleAt(x, z, tmp).h,
     roofAt: (x, z) => (z - OZ > D ? (kind === 'guild' ? UP + 4 : kind === 'tavern' ? UP + 3.6 : 6) : H) - 0.3,

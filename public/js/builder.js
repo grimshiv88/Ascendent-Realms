@@ -1,7 +1,7 @@
 // The Builder View (V): your land in 3D from above, with ready-made buildings and single pieces to
 // place on it. Pieces you place go into a plan first; Build pays for the whole plan at once.
 import * as THREE from 'three';
-import { codeFor } from './data/controls.mjs';
+import { codesFor, actionFor } from './data/controls.mjs';
 import { heightAt, PLOT } from './data/world-layout.mjs';
 import {
   CELL, STOREY, MAX_LEVEL, PIECES, BUILDINGS, COUNTRY_PLOTS, isRuler, homePlot, pieceKey, placeBuilding, buildingSize,
@@ -373,8 +373,8 @@ export function openBuilder(host, opts) {
   const onKey = (e) => {
     if (e.target.closest?.('input, textarea')) return;
     e.stopImmediatePropagation();
-    if (e.code === 'Escape' || e.code === codeFor('builder')) close();
-    if (e.code === 'KeyR') { turn = (turn + 1) % 4; hover = null; drawGhost(null); }
+    if (e.code === 'Escape' || codesFor('builder').includes(e.code)) close();
+    if (actionFor(e.code, { building: true }) === 'b_turn') { turn = (turn + 1) % 4; hover = null; drawGhost(null); }
   };
   window.addEventListener('keydown', onKey, true);
 
