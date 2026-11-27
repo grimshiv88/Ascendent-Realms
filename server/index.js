@@ -215,6 +215,11 @@ app.post('/api/bank', requireAccount, async (req, res) => { const r = await econ
 app.get('/api/oil', requireAccount, async (req, res) => res.json(await economy.oil(req.account.id)));
 app.post('/api/oil', requireAccount, async (req, res) => { const r = await economy.oilAct(req.account.id, req.body || {}); res.status(r.error ? 400 : 200).json(r); });
 
+// Trading between players who stand close together (see server/trade.js)
+const trade = require('./trade');
+app.get('/api/trade', requireAccount, async (req, res) => { const r = await trade.list(req.account.id); res.status(r.error ? 400 : 200).json(r); });
+app.post('/api/trade', requireAccount, async (req, res) => { const r = await trade.act(req.account.id, req.body || {}); res.status(r.error ? 400 : 200).json(r); });
+
 // Friends, chat and Status privacy
 app.get('/api/players', requireAccount, async (req, res) => res.json(await social.search(req.account.id, req.query.q)));
 app.get('/api/appraise/:name', requireAccount, async (req, res) => {

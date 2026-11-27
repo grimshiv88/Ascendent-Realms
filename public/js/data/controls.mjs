@@ -52,6 +52,7 @@ export const CONTROLS = [
   ['quests', 'Quests', ['KeyQ', null], 'windows'],
   ['skills', 'Skills', ['KeyK', null], 'windows'],
   ['groups', 'Party and guild', ['KeyY', null], 'windows'],
+  ['trade', 'Trade with a player', ['Digit8', null], 'windows', 'Swap items and coins with a player standing next to you.'],
   ['map', 'World map', ['KeyM', null], 'windows'],
   ['rankings', 'Top players', ['KeyR', null], 'windows'],
   ['settings', 'Settings', ['KeyO', null], 'windows'],

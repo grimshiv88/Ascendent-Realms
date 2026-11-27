@@ -149,7 +149,7 @@ export function createProgress(c, { save, onChange, onEvent }) {
   const snapshot = () => ({
     level: c.level, exp: c.exp, coins: c.coins, hp: Math.round(c.hp), sp: Math.round(c.sp), stats: c.stats,
     unspentPoints: c.unspentPoints, uniquePoints: c.uniquePoints, inventory: c.inventory, equipped: c.equipped, boosts: c.boosts,
-    journey: c.journey || null, room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), hunger: Math.round(c.hunger), crops: c.crops, mount: c.mount || null, torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, dayPass: c.dayPass || null, country: c.country || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
+    journey: c.journey || null, tradesTaken: c.tradesTaken || [], room: c.room || null, guildQuests: c.guildQuests || [], guildNext: c.guildNext || 0, quests: c.quests, questNext: c.questNext || 0, questDay: c.questDay || null, fatigue: Math.round(c.fatigue), hunger: Math.round(c.hunger), crops: c.crops, mount: c.mount || null, torches: c.torches, savedAt: Date.now(), injury: c.injury || null, growth: c.growth, visitPlay: c.visitPlay || 0, neglect: !!c.neglect, guard: c.guard || null, dayPass: c.dayPass || null, country: c.country || null, spouse: c.spouse || null, children: c.children || [], lastChildPlay: c.lastChildPlay || 0, livesLeft: livesLeft(c), ageShift: c.ageShift || 0, techniques: c.techniques,
     spells: c.spells, spellPick: c.spellPick, skills: c.skills, skillBar: c.skillBar, skillPicks: c.skillPicks, tent: c.tent, potionMaker: c.potionMaker, trained: c.trained, caves: c.caves, villages: c.villages, form: c.form, guildCard: c.guildCard || null, playMs: c.playMs || 0, pact: c.pact || null, child: c.child || null,
   });
 
@@ -212,6 +212,26 @@ export function createProgress(c, { save, onChange, onEvent }) {
       return true;
     },
     bagFull: () => used() >= BAG_SLOTS,
+    // A trade with another player (see data/trade.mjs): what was given leaves, what was got comes in
+    // (even past a full bag: the server checked there was room, and nothing traded may be lost).
+    // Each trade is taken in once: its id is remembered and saved with the bag.
+    takeTrade(id, give, get) {
+      c.tradesTaken ||= [];
+      if (c.tradesTaken.includes(id)) return false;
+      for (const it of give.items) {
+        if (it.uid) { const e = c.inventory.find((x) => x.uid === it.uid); if (e) { c.inventory.splice(c.inventory.indexOf(e), 1); for (const [slot, v] of Object.entries(c.equipped)) if (v === it.uid) c.equipped[slot] = null; } }
+        else { const e = c.inventory.find((x) => !x.uid && x.id === it.id); if (e) { e.n -= Math.min(e.n, it.n); if (e.n <= 0) c.inventory.splice(c.inventory.indexOf(e), 1); } }
+      }
+      for (const it of get.items) {
+        if (!ITEMS[it.id]) continue;
+        if (it.uid || isGear(ITEMS[it.id])) c.inventory.push({ ...it, n: 1, uid: it.uid && !c.inventory.some((x) => x.uid === it.uid) ? it.uid : uid() });
+        else { const e = c.inventory.find((x) => !x.uid && x.id === it.id); if (e) e.n += it.n; else c.inventory.push({ id: it.id, n: it.n }); }
+      }
+      c.coins = Math.max(0, c.coins - (give.coins || 0)) + (get.coins || 0);
+      c.tradesTaken = [...c.tradesTaken, id].slice(-50);
+      changed('bag'); changed('coins');
+      return true;
+    },
     // Mint every piece of one ore you carry into coins (see data/money.mjs MINT); returns the Copper made
     mint(id) {
       const n = count(id);

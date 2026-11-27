@@ -68,6 +68,7 @@ import { money, moneyWords } from './data/money.mjs';
 import { PASS_NAME } from './data/citypass.mjs';
 import { flagHtml, fillFlags, countryOptions, wireCountryPicker } from './flag.js';
 import { accountSteps } from './accountsteps.js';
+import { createTrade } from './tradeui.js';
 
 paintCloudBanks();
 
@@ -184,6 +185,7 @@ let journey = null; // a newcomer's first journey: goals with arrows and notices
 let presenceOn = false; // (the loop that shows other players runs once, whatever world is current)
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 let social = null; // friends and chat
+let trade = null; // trading with other players (see tradeui.js)
 const settings = (() => {
   try { return { camera: 'free', ...JSON.parse(localStorage.getItem('ar-settings') || '{}') }; } catch { return { camera: 'free' }; }
 })();
@@ -686,6 +688,7 @@ function startGame(character) {
       const own = (ui.caves || []).find((q) => q.cave === ui.atCave.id);
       renderCave(overlay, ui.atCave, game, { owner: own?.owner, mine: own?.mine, message: ui.caveMsg || '', busy: ui.caveBusy });
     }
+    else if (name === 'trade' && trade) trade.render(overlay);
     else if (name === 'bank' && ui.bankCity) renderBank(overlay, game, { city: ui.bankCity, info: ui.bankInfo, tab: ui.bankTab, message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy, wells: ui.wells || [] });
     else if (name === 'derrick' && ui.well) renderDerrick(overlay, ui.well, { message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
     else if (name === 'oilspot' && ui.oilSpot) renderOilSpot(overlay, game, ui.oilSpot, { info: ui.bankInfo, well: (ui.wells || []).find((w) => w.id === ui.oilSpot.id), message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
@@ -707,6 +710,7 @@ function startGame(character) {
     ui.workshop = false;
     ui.shopMsg = ''; ui.smithMsg = ''; ui.questMsg = ''; ui.passwordMsg = ''; ui.acct = {}; ui.skillMsg = ''; ui.binding = null; ui.bindingControl = null; ui.clash = null; ui.controlMsg = '';
     if (name === 'groups') { ui.groupMsg = ''; loadGroups(); }
+    if (name === 'trade') trade?.opened();
     if (name === 'cult') { ui.cultMsg = ''; loadCult(); }
     if (name === 'family') { ui.familyMsg = ''; loadFamily(); }
     if (name === 'rankings') {
@@ -1056,6 +1060,7 @@ function startGame(character) {
   }
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay || e.target.closest('[data-close]')) { closePanel(); return; }
+    if (overlay.dataset.panel === 'trade' && trade?.click(e)) return;
     // touching an item (its picture, name or box) shows what it does; its buttons still do their job
     const info = e.target.closest('[data-info],[data-info-entry]'), btn = e.target.closest('button');
     if (info && (!btn || btn.contains(info))) {
@@ -1622,7 +1627,7 @@ function startGame(character) {
     },
     onKey(e) {
       const act = actionFor(e.code);
-      const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', controls: 'controls', rankings: 'rankings', skills: 'skills', groups: 'groups' }[act];
+      const open = { status: 'status', bag: 'bag', shop: 'shop', smith: 'smith', quests: 'quests', help: 'help', map: 'map', settings: 'settings', controls: 'controls', rankings: 'rankings', skills: 'skills', groups: 'groups', trade: 'trade' }[act];
       if (open) openPanel(open);
       if (act === 'builder' && !ui.builder) { if (e.shiftKey && !ui.walk) walkBuild(); else openBuilder(); }
       if (act === 'walkbuild' && !ui.builder && !ui.walk) walkBuild();
@@ -1645,6 +1650,17 @@ function startGame(character) {
   window.addEventListener('pagehide', () => game.saveNow());
   // Friends and chat: search at the top right, chat at the bottom left
   social = createSocial($('game'), { onDone: () => world?.lockMouse() });
+  // Trading with a player standing close by: the Trade window, and requests to trade as a small card
+  trade?.dispose();
+  trade = createTrade({
+    game, api, root: $('game'),
+    isOpen: () => overlay.dataset.panel === 'trade' && !overlay.classList.contains('hidden'),
+    open: () => { if (overlay.dataset.panel !== 'trade' || overlay.classList.contains('hidden')) openPanel('trade'); },
+    redraw: () => { if (overlay.dataset.panel === 'trade' && !overlay.classList.contains('hidden') && !overlay.contains(document.activeElement?.tagName === 'INPUT' ? document.activeElement : null)) drawPanel(); },
+    say: (text) => showArea(text),
+    nearby: () => { const me = world?.position(); return me ? (ui.nearPlayers || []).map((p) => ({ name: p.name, dist: Math.hypot(p.x - me.x, p.z - me.z) })).sort((a, b) => a.dist - b.dist) : []; },
+  });
+  if (!window.arTradeHooked) { window.arTradeHooked = true; window.addEventListener('ar-trade', (e) => trade?.ask(e.detail?.name)); }
   // Other players close by: every second or so the game says where you are and draws who is near
   // (every few seconds while nobody is). Your body is sent again whenever it or your gear changes.
   if (!presenceOn) (async () => {
@@ -1700,6 +1716,7 @@ function startGame(character) {
           const r = await api.presence(spot);
           if (r.preview) return; // the preview page has nobody else in it
           world.showOthers(r.players || []);
+          ui.nearPlayers = r.players || [];
           if (!liveAsked) { liveAsked = true; startLiveMoves(r); }
           if (r.players?.length) wait = live?.on ? P.POLL_LIVE_MS : P.POLL_MS;
           if (r.online != null) showOnline(r.online);

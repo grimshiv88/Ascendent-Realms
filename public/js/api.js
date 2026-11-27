@@ -972,6 +972,8 @@ const previewSocial = {
       d.bounties = [...bounties.values()];
       // parties and guilds: the newest copy wins
       if (remote.groups && (remote.groups.t || 0) > (d.groups?.t || 0)) d.groups = remote.groups;
+      // trades between players: the newest copy wins
+      if (remote.trades && (remote.trades.t || 0) > (d.trades?.t || 0)) d.trades = remote.trades;
       // the cults and the Order: the newest copy wins
       if (remote.cults && (remote.cults.t || 0) > (d.cults?.t || 0)) d.cults = remote.cults;
       storage.set('ar.preview.social', JSON.stringify(d));
@@ -1225,6 +1227,58 @@ export async function groupsAct(body) {
     return { ok: true, ...(coins !== undefined ? { coins } : {}), ...(await previewGroupsView(d, me.username)) };
   }
   return request('api/groups', { method: 'POST', body });
+}
+
+// ---------- trading between players (see data/trade.mjs) ----------
+// The preview page has nobody else in it, so there a trade is between two accounts of the owner's
+// (on two devices); standing close together isn't checked there.
+export async function tradeView() {
+  if (await isPreviewMode()) {
+    const T = await import('./data/trade.mjs');
+    await previewSocial.sync();
+    return { ok: true, ...T.view(previewSocial.load().trades || T.emptyTrades(), previewMe().username, Date.now()) };
+  }
+  return request('api/trade');
+}
+// body: { action: 'ask'|'answer'|'offer'|'confirm'|'cancel'|'taken', name, id, accept, offer, v }
+export async function tradeAct(body) {
+  if (await isPreviewMode()) {
+    const T = await import('./data/trade.mjs');
+    const { ITEMS } = await import('./data/items.mjs');
+    await previewSocial.sync();
+    const me = previewMe(), d = previewSocial.load(), now = Date.now();
+    const s = d.trades || T.emptyTrades();
+    const id = String(body.id || '');
+    let r;
+    if (body.action === 'ask') {
+      const t = previewSocial.find(body.name);
+      if (t && !t.character) throw new Error(`${t.username} has no character yet.`);
+      r = T.ask(s, me.username, t?.username || null, now);
+    } else if (body.action === 'answer') r = T.answer(s, me.username, id, body.accept === true, now);
+    else if (body.action === 'offer') {
+      r = T.cleanOffer(body.offer, (x) => (ITEMS[x?.id] && Number.isInteger(x.n) && x.n >= 1 ? { ...x } : null));
+      if (!r.error) r = T.canGive(me.character, r.offer).error ? T.canGive(me.character, r.offer) : T.setOffer(s, me.username, id, r.offer, now);
+    } else if (body.action === 'confirm') {
+      const t = s.list.find((x) => x.id === id && x.state === 'open');
+      const other = t && previewSocial.find(T.otherOf(t, me.username));
+      if (t && other?.character) {
+        const { give, get } = T.sides(t, me.username);
+        const can = T.canGive(me.character, give);
+        if (can.error) throw new Error(can.error);
+        if (T.bagAfter(me.character, give, get) > 30) throw new Error('Your bag has no room for all of that. Make some space first.');
+        if (T.bagAfter(other.character, get, give) > 30) throw new Error(`${other.username}'s bag has no room for all of that.`);
+      }
+      r = T.confirm(s, me.username, id, body.v, now);
+    } else if (body.action === 'cancel') r = T.cancel(s, me.username, id, now);
+    else if (body.action === 'taken') r = T.taken(s, me.username, id, now);
+    else r = { error: 'Do what?' };
+    if (r.error) throw new Error(r.error);
+    s.t = now;
+    d.trades = s;
+    previewSocial.save(d);
+    return { ok: true, done: !!r.done, ...T.view(s, me.username, now) };
+  }
+  return request('api/trade', { method: 'POST', body });
 }
 
 // ---------- meeting rooms in the Main Guild Hall ----------

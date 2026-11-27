@@ -407,6 +407,7 @@ const OPTIONS = [
   ['Sleep / wake', 'sleep', 'act:sleep', 'By a fire, a torch or in your tent'],
   ['Pitch / pack tent', 'tent', 'act:tent', 'Pitch your tent in front of you'],
   ['Torch', 'torch', 'act:torch', 'Place a torch, or pick one back up'],
+  ['Trade', 'trade', 'trade', 'Swap items and coins with a player next to you'],
   ['Top players', 'rankings', 'rankings', 'The highest-level characters'],
   ['Settings', 'settings', 'settings', 'Camera, keys, password and accounts'],
   ['Controls', 'controls', 'controls', 'Change any key, or leave it empty'],
