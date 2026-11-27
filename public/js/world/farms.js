@@ -396,6 +396,16 @@ export function buildFarm(f) {
   box(0.1, 1.3, 0.1, mat('#6a4a2c'), sign, -0.9, 0.65, 0); box(0.1, 1.3, 0.1, mat('#6a4a2c'), sign, 0.9, 0.65, 0);
   const board = twoFacedSign("Visitors' beds", 2.1, 0.4);
   board.position.set(0, 1.15, 0); sign.add(board);
+  // a hitching rail beside the Farm Stand with a tall sign, so you can see from the road where
+  // horses are sold (the Farm Stand sells a Riding Horse and a Riding Donkey)
+  const rail = new THREE.Group(); rail.position.set(-9.6, 0, 15.2); g.add(rail);
+  const wood = mat('#6a4a2c');
+  for (const x of [-1, 1]) { box(0.14, 3.3, 0.14, wood, rail, x, 1.65, 0); const p = toW(-9.6 + x, 15.2); solid.push({ x: p.x, z: p.z, r: 0.2, kind: 'wall', height: 3.3 }); }
+  box(2.2, 0.1, 0.1, wood, rail, 0, 1.05, 0);
+  const horseSign = twoFacedSign('🐎 Horses for sale', 2.3, 0.5);
+  horseSign.position.set(0, 2.9, 0); rail.add(horseSign);
+  const donkeySign = twoFacedSign('and donkeys · ask the Farmer', 2.1, 0.32);
+  donkeySign.position.set(0, 2.42, 0); rail.add(donkeySign);
   for (const s of solid) s.y = f.flat; // (everything stands on the farm's level ground)
   // the farmer behind the stand, the butcher behind the counter, facing the town
   const npcs = [];

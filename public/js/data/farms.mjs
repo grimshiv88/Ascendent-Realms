@@ -76,3 +76,17 @@ export const LAYOUT = {
   butcher: { x: 4, z: 15 },                       // the Halal Butcher's shed, with the butcher
   fire: { x: -15, z: 14 },                        // a cooking fire anyone may use
 };
+
+// Where you stand to buy at a farm's Farm Stand (in front of its counter), in the world
+export function standOf(f) {
+  return farmToWorld(f, LAYOUT.stand.x, LAYOUT.stand.z + 1.6);
+}
+// The Farm Stand nearest to (x, z): { farm, x, z, d } (horses and donkeys are sold there)
+export function nearestStand(x, z) {
+  let best = null;
+  for (const f of allFarms()) {
+    const s = standOf(f), d = Math.hypot(s.x - x, s.z - z);
+    if (!best || d < best.d) best = { farm: f, x: s.x, z: s.z, d };
+  }
+  return best;
+}

@@ -6,6 +6,7 @@ import { toMap, toWorld, METRES_PER_PX, placesWithPositions, PLOT } from './data
 import { allPortals, portalsFrom, portalLevel } from './data/portals.mjs';
 import { allCastles } from './data/kings.mjs';
 import { allWonders } from './data/wonders.mjs';
+import { allFarms, standOf } from './data/farms.mjs';
 import { CITY_R } from './data/world-layout.mjs';
 import { drawCityPlan } from './world/cityplan.js';
 
@@ -168,6 +169,19 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
         ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)'; ctx.strokeText(pl.name, x, y - 12);
         ctx.fillStyle = '#f5ebd0'; ctx.fillText(pl.name, x, y - 12);
+      }
+      // every farm's Farm Stand, where horses and donkeys are sold
+      ctx.font = '600 13px Cinzel, Georgia, serif';
+      for (const f of allFarms()) {
+        const st = standOf(f), m = toMap(st.x, st.z);
+        const [x, y] = toCanvas(m.x, m.y);
+        if (x < -100 || y < -40 || x > W + 100 || y > H + 40) continue;
+        ctx.fillStyle = '#3d7a2a'; ctx.strokeStyle = '#fff4d8'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.font = '12px serif'; ctx.fillText('🐎', x, y + 4);
+        ctx.font = '600 13px Cinzel, Georgia, serif';
+        ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)'; ctx.strokeText('Farm Stand · horses', x, y - 13);
+        ctx.fillStyle = '#d8f5c0'; ctx.fillText('Farm Stand · horses', x, y - 13);
       }
       ctx.restore();
     }

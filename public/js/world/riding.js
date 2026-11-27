@@ -95,7 +95,7 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     if (riding) { if (flying) { say('Land first: hold Shift to fly down', 'note'); return 'no'; } dismount(); return 'off'; }
     const p = getPos();
     const item = ownedItem(want || horse?.item);
-    if (!item) { say('You have no mount. Buy a horse or a donkey at a Farm Stand, or tame a wild horse (stand still with a carrot or an apple)', 'note'); return 'none'; }
+    if (!item) return 'none'; // (world.js then points the way to the nearest Farm Stand)
     const why = canRide();
     if (why) { say(why, 'note'); return 'no'; }
     if (horse && horse.item === item && Math.hypot(horse.x - p.x, horse.z - p.z) < (horse.reach || MOUNT_REACH)) { mount(); return 'on'; }

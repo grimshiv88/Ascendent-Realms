@@ -13,6 +13,10 @@ import { CITY_R } from './data/citylevels.mjs';
 import { familyOfChar, SCHOOLS, ceremonyDue, isChild } from './data/birth.mjs';
 import { CLASSES } from './data/game-data.mjs';
 import { codeFor, keyName } from './data/controls.mjs';
+import { allFarms, standOf } from './data/farms.mjs';
+import { MOUNT_ITEMS } from './data/mounts.mjs';
+import { ITEMS } from './data/items.mjs';
+import { money } from './data/money.mjs';
 
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const key = (id) => `<kbd>${esc(keyName(codeFor(id)))}</kbd>`;
@@ -54,6 +58,8 @@ export function placesOf(cityId) {
     shrine: at(0, 0),
     // out of the south gate, along the road, to where the wilds begin
     wilds: at(0, CITY_R + 90),
+    // the Farm Stand on the city's farm, just outside the walls (horses and donkeys are sold there)
+    stand: (() => { const f = allFarms().find((q) => q.place === cityId); return f ? standOf(f) : null; })(),
   };
 }
 
@@ -74,7 +80,8 @@ function cityFor(character, at) {
 //   goal: the line at the top · target: where the arrow points · near: reached within this many metres
 //   reach: the notice shown when you get there (then the step is done)
 //   done(): done some other way · skip(): not for this character
-function buildSteps(c, P) {
+function buildSteps(c, P, game, getWorld) {
+  const ownsMount = () => MOUNT_ITEMS.some((id) => game?.has?.(id));
   const school = () => c.child?.school && SCHOOLS[c.child.school];
   return [
     { id: 'street', child: true, goal: 'Go to Academy Street', target: P.street, near: 22,
@@ -102,7 +109,15 @@ function buildSteps(c, P) {
     { id: 'wilds', goal: 'Leave the city by the south gate', target: P.wilds, near: 30, skip: () => isChild(c),
       reach: { title: 'The wilds', text: `Beyond the walls monsters roam, and nights are dangerous away from the light. <b>Hunt your first monster: a goblin or a slime.</b> ${fightTip(c.cls)}` } },
     { id: 'hunt', goal: 'Defeat a goblin or a slime', skip: () => isChild(c), event: 'kill',
-      after: () => ({ title: 'Your first kill!', text: `Your journey has begun. Take on Quests (${key('quests')}) for EXP and coins, train your skills, and come back to the city to rest, eat and trade. Good luck!` }) },
+      after: () => ({ title: 'Your first kill!', text: `Your journey has begun. Take on Quests (${key('quests')}) for EXP and coins, train your skills, and come back to the city to rest, eat and trade. Next, get yourself a horse: the world is big.` }) },
+    // a horse: the Farm Stand on the city's farm, buying one, and the first ride
+    { id: 'stand', goal: 'Get a horse: go to the Farm Stand on the farm outside the city', target: P.stand, near: 6,
+      skip: () => isChild(c) || !P.stand, done: () => ownsMount(),
+      reach: { title: 'The Farm Stand', text: `The Farmer sells horses and donkeys to ride, along with vegetables, hay, seeds and tools. Press ${key('interact')} at the counter: a <b>Riding Horse</b> costs ${money(ITEMS.riding_horse.price)} and a <b>Riding Donkey</b> ${money(ITEMS.riding_donkey.price)}. No coins yet? Tame a wild horse for free instead: they roam the Heartland in herds. Stand still with a carrot or an apple in your bag, and when one walks up, feed it (${key('interact')}) 3 times.` } },
+    { id: 'ride', goal: `Buy a horse or a donkey (or tame one), then press ${keyName(codeFor('mount'))} to ride`,
+      get target() { return ownsMount() ? null : P.stand; },
+      skip: () => isChild(c) || !P.stand, done: () => !!getWorld()?.riding?.(),
+      after: () => ({ title: 'In the saddle!', text: `Hold run to gallop. ${key('mount')} gets you off, and your mount waits where you leave it, even after you log out. Press ${key('mount')} anywhere and it comes to you.` }) },
   ];
 }
 
@@ -114,7 +129,7 @@ export function startJourney(host, { character, game, getWorld, paused }) {
   const cityId = cityFor(c, v0);
   const P = cityId ? placesOf(cityId) : null;
   if (!P || !c.journey || c.journey.off) return null;
-  const steps = buildSteps(c, P);
+  const steps = buildSteps(c, P, game, getWorld);
   const seen = new Set(c.journey.seen || []);
   const save = () => { c.journey = { seen: [...seen], off: !!c.journey?.off }; game.setJourney?.(c.journey); };
 
@@ -151,8 +166,10 @@ export function startJourney(host, { character, game, getWorld, paused }) {
     notify(note);
     shown = null;
   }
+  let hadArrow = false;
   function draw(s) {
     shown = s;
+    hadArrow = !!s.target;
     lastText = '';
     bar.innerHTML = `
       ${s.target ? '<svg class="jg-arrow" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3 33 34 20 26 7 34Z"/></svg>' : '<span class="jg-dot" aria-hidden="true">✦</span>'}
@@ -165,7 +182,7 @@ export function startJourney(host, { character, game, getWorld, paused }) {
     if (paused?.()) { bar.classList.add('hidden'); guided = undefined; return; }
     const s = current();
     if (!s) { stop(); return; }
-    if (s !== shown) draw(s);
+    if (s !== shown || !!s.target !== hadArrow) draw(s);
     bar.classList.remove('hidden');
     // done some other way (an Academy joined, grown up)
     if (s.done?.()) { finish(s, s.after?.()); return; }
