@@ -299,7 +299,7 @@ export function createSocial(host, { onError, onDone, onWorld } = {}) {
               ${s.stats ? `<dt>Stats</dt><dd>STR ${s.stats.str} · AGI ${s.stats.agi} · DEX ${s.stats.dex} · STA ${s.stats.sta} · INT ${s.stats.int}</dd>` : ''}
             </dl>`
           : `<p class="so-empty">${esc(p.name)} ${why}.</p>`}
-          <div class="so-actions">${relButton(p.name, p.relation)}${p.relation === 'friend' ? `<button type="button" class="ghost" data-unfriend="${esc(p.name)}">Remove friend</button>` : ''}${p.relation !== 'self' ? `<button type="button" class="ghost" data-report="${esc(p.name)}">Report</button>` : ''}</div>
+          <div class="so-actions">${relButton(p.name, p.relation)}${p.relation === 'friend' ? `<button type="button" class="ghost" data-unfriend="${esc(p.name)}">Remove friend</button>` : ''}${p.relation !== 'self' ? `<button type="button" data-trade-with="${esc(p.name)}">Trade</button>` : ''}${p.relation !== 'self' ? `<button type="button" class="ghost" data-report="${esc(p.name)}">Report</button>` : ''}</div>
         </div>`);
     } catch (err) { openDrop('profile', `<p class="so-empty">${esc(err.message)}</p>`); }
   }
@@ -312,6 +312,7 @@ export function createSocial(host, { onError, onDone, onWorld } = {}) {
     let n;
     if ((n = d('player'))) return showProfile(n);
     if ((n = d('report'))) return showReport(n);
+    if ((n = d('trade-with'))) { closeDrop(); window.dispatchEvent(new CustomEvent('ar-trade', { detail: { name: n } })); return; }
     if ((n = d('add'))) return act(() => api.friendRequest(n), () => showProfile(n));
     if ((n = d('accept'))) return act(() => api.friendRespond(n, true), () => (dropMode === 'friends' ? drawFriends() : showProfile(n)));
     if ((n = d('decline'))) return act(() => api.friendRespond(n, false), drawFriends);

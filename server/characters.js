@@ -383,6 +383,8 @@ async function saveProgress(accountId, p) {
   const crops = cleanBeds(p.crops);
   const mount = p.mount && ITEMS[p.mount.item]?.kind === 'mount' && Number.isFinite(p.mount.x) && Number.isFinite(p.mount.z)
     ? { item: p.mount.item, x: Math.round(p.mount.x * 10) / 10, z: Math.round(p.mount.z * 10) / 10 } : null;
+  // trades whose goods this game has already taken in (so a trade never lands twice)
+  const tradesTaken = (Array.isArray(p.tradesTaken) ? p.tradesTaken : []).filter((id) => typeof id === 'string' && /^t[a-z0-9]{1,24}$/.test(id)).slice(-50);
   // the names you gave your dragons and mounts (for voice commands), by their item id
   const petNames = {};
   if (p.petNames && typeof p.petNames === 'object') {
@@ -391,7 +393,7 @@ async function saveProgress(accountId, p) {
       if (clean) petNames[item] = clean;
     }
   }
-  Object.assign(character, fields, { petNames, crops, mount, stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, dayPass, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages, journey });
+  Object.assign(character, fields, { tradesTaken, petNames, crops, mount, stats, inventory, equipped, boosts, quests, questNext, questDay, guildQuests, guildNext, room, injury, dayPass, growth, visitPlay, neglect, guard, livesLeft, ageShift, spouse, children, lastChildPlay, techniques, torches, skills, skillBar, skillPicks, spells, spellPick, tent, potionMaker, trained, caves, villages, journey });
   await store(accountId, character);
   return { ok: true };
 }

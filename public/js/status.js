@@ -238,7 +238,7 @@ const CTL_ICONS = {
 // Rows of the Controls screen that can be opened or done straight from there (it took over the old
 // Menu window): a window to open, or an action to do now
 const OPENS = { status: 'open:status', bag: 'open:bag', shop: 'open:shop', smith: 'open:smith', quests: 'open:quests', skills: 'open:skills',
-  groups: 'open:groups', map: 'open:map', rankings: 'open:rankings', settings: 'open:settings', help: 'open:help',
+  groups: 'open:groups', map: 'open:map', rankings: 'open:rankings', settings: 'open:settings', help: 'open:help', trade: 'open:trade',
   portal: 'act:portal', land: 'act:land', sleep: 'act:sleep', tent: 'act:tent', torch: 'act:torch', builder: 'act:builder' };
 const openBtn = (id) => {
   const go = OPENS[id];
