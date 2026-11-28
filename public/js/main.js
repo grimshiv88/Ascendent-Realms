@@ -229,6 +229,7 @@ function startGame(character) {
       list: () => character?.mapMarks || [],
       save(list) {
         character.mapMarks = cleanMarks(list);
+        world?.setMarkBeams?.(character.mapMarks);
         clearTimeout(marksTimer);
         marksTimer = setTimeout(() => api.saveMapMarks(character.mapMarks).catch((err) => showArea(err.message)), 700);
       },
@@ -1762,6 +1763,7 @@ function startGame(character) {
   });
   settings.graphicsNow = world.graphics; // what "Automatic" chose for this device
   if (ui.rentals) takeRentals(ui.rentals); else castleAccess(); // the world is here now
+  world.setMarkBeams?.(character.mapMarks || []); // a pillar of light over each place you marked on the map
   if (/[?&]debug\b/.test(location.search)) { window.__world = world; window.__game = game; } // for tests
 
   window.addEventListener('pagehide', () => game.saveNow());
