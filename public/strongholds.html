@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Strongholds test</title>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+<style>html,body{margin:0;height:100%}canvas{display:block;width:100%;height:100%}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+// dev page: one Monster Tower or Camp on a flat plain (?id=tower13&cx=..&cy=..&cz=..)
+import * as THREE from 'three';
+import { siteById } from './js/data/sites.mjs';
+import { buildTower, buildCamp } from './js/world/strongholds.js';
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+r.setSize(innerWidth, innerHeight, false);
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#9ab0c8');
+scene.add(new THREE.HemisphereLight('#ffffff', '#5a6a3a', 1.4));
+const sun = new THREE.DirectionalLight('#fff4e0', 2.2); sun.position.set(30, 50, 40); scene.add(sun);
+const s = siteById(q.get('id') || 'tower13');
+const b = s.kind === 'tower' ? buildTower(s) : buildCamp(s);
+// shown at the middle of the page's world
+const at = b.group.position.clone();
+b.group.position.set(0, 0, 0);
+scene.add(b.group);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: '#6a7a5a' })); ground.rotation.x = -Math.PI / 2; ground.position.y = s.kind === 'tower' ? -0.05 : 0; scene.add(ground);
+const cam = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000);
+const big = s.kind === 'tower' ? s.floors * 7 : 10;
+cam.position.set(Number(q.get('cx') ?? big * 0.9), Number(q.get('cy') ?? big * 0.6), Number(q.get('cz') ?? big * 1.6));
+cam.lookAt(0, Number(q.get('ly') ?? big * 0.45), 0);
+r.render(scene, cam);
+window.__done = true;
+</script></body></html>

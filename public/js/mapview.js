@@ -6,6 +6,8 @@ import { toMap, toWorld, METRES_PER_PX, placesWithPositions, PLOT } from './data
 import { allPortals, portalsFrom, portalLevel } from './data/portals.mjs';
 import { allCastles } from './data/kings.mjs';
 import { allWonders } from './data/wonders.mjs';
+import { allCaves } from './data/depths.mjs';
+import { allSites } from './data/sites.mjs';
 import { allFarms, standOf } from './data/farms.mjs';
 import { CITY_R } from './data/world-layout.mjs';
 import { drawCityPlan } from './world/cityplan.js';
@@ -41,6 +43,42 @@ function drawMe(ctx, x, y, heading, size, t) {
   ctx.restore();
 }
 
+// How dangerous a place is, as a colour: green, yellow, orange, red
+const dangerColour = (lv) => (lv < 30 ? '#6fd060' : lv < 100 ? '#e8d048' : lv < 250 ? '#f0902a' : '#e8402a');
+// The marks for caves, dungeons, Monster Towers and Monster Camps, edged in their danger's colour
+function siteMark(ctx, x, y, kind, lv, k = 1) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(k, k);
+  ctx.lineWidth = 2; ctx.strokeStyle = dangerColour(lv); ctx.lineJoin = 'round';
+  if (kind === 'cave') { // a rocky mound with a dark way in
+    ctx.fillStyle = '#6a5340';
+    ctx.beginPath(); ctx.moveTo(-8, 5); ctx.quadraticCurveTo(-7, -7, 0, -7); ctx.quadraticCurveTo(7, -7, 8, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#100a06'; ctx.beginPath(); ctx.moveTo(-3, 5); ctx.lineTo(-3, 0); ctx.arc(0, 0, 3, Math.PI, 0); ctx.lineTo(3, 5); ctx.closePath(); ctx.fill();
+  } else if (kind === 'dungeon') { // a stone gate: two pillars, a lintel and the dark way down
+    ctx.fillStyle = '#8a8478';
+    ctx.fillRect(-9, -9, 18, 4); ctx.strokeRect(-9, -9, 18, 4);
+    ctx.fillRect(-8, -5, 4, 11); ctx.strokeRect(-8, -5, 4, 11);
+    ctx.fillRect(4, -5, 4, 11); ctx.strokeRect(4, -5, 4, 11);
+    ctx.fillStyle = '#120808'; ctx.fillRect(-4, -5, 8, 11);
+    ctx.fillStyle = '#ff7a2a'; ctx.beginPath(); ctx.arc(0, -1, 1.6, 0, Math.PI * 2); ctx.fill();
+  } else if (kind === 'tower') { // a tall tower with battlements and glowing windows
+    ctx.fillStyle = '#4a4440';
+    ctx.beginPath(); ctx.moveTo(-5, 9); ctx.lineTo(-5, -8); ctx.lineTo(-3.5, -8); ctx.lineTo(-3.5, -11); ctx.lineTo(-1, -11); ctx.lineTo(-1, -8); ctx.lineTo(1, -8); ctx.lineTo(1, -11);
+    ctx.lineTo(3.5, -11); ctx.lineTo(3.5, -8); ctx.lineTo(5, -8); ctx.lineTo(5, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffb050'; ctx.fillRect(-1, -4, 2, 3); ctx.fillRect(-1, 2, 2, 3);
+  } else { // a camp: a hide tent and its fire
+    ctx.fillStyle = '#8a6a44';
+    ctx.beginPath(); ctx.moveTo(-8, 6); ctx.lineTo(-2, -7); ctx.lineTo(4, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff8a2a'; ctx.beginPath(); ctx.moveTo(5, 6); ctx.quadraticCurveTo(4, 1, 7, -2); ctx.quadraticCurveTo(10, 2, 9, 6); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+// every cave (and dungeon), tower and camp, for the maps
+let markList = null;
+const siteMarks = () => (markList ||= [
+  ...allCaves().map((c) => ({ x: c.place.x, z: c.place.z, kind: c.dungeon ? 'dungeon' : 'cave', name: c.name, lv: c.danger })),
+  ...allSites().map((s) => ({ x: s.x, z: s.z, kind: s.kind, name: s.name, lv: s.level, floors: s.floors })),
+]);
 function diamond(ctx, x, y, label) {
   ctx.save();
   ctx.shadowColor = '#3d9bff'; ctx.shadowBlur = 10;
@@ -146,7 +184,7 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
         ${pins ? '<div class="map-pin-edit" hidden></div>' : ''}
       </div>
       ${pins || pals ? '<div class="map-lists"></div>' : ''}
-      <p class="map-note">${warp && !pick && !travel ? '<b>Teleport is on: tap anywhere to go there.</b> ' : ''}${travel ? '' : 'Purple rings are portals. '}Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pins ? 'Your own marks (📍) are seen only by you. ' : ''}${pals ? 'Green dots are friends who share where they are (each player chooses this in their Status window). ' : ''}${pick ? '<b>Land grid is open: zoom in and tap squares to choose them, then press Buy. The dashed square is how far you can buy (1 km across, around you).</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
+      <p class="map-note">${warp && !pick && !travel ? '<b>Teleport is on: tap anywhere to go there.</b> ' : ''}${travel ? '' : 'Purple rings are portals. Caves, Dungeons (stone gates), Monster Towers and Monster Camps each have their own mark; its edge shows how dangerous it is (green, yellow, orange, red), and the danger rises the further you go from where your side starts. '}Scroll or pinch to zoom, drag to move around, ◎ to follow yourself. The red arrow is you, drawn small so you can see how big the land really is. Zoom right in to see the real ground. ${pins ? 'Your own marks (📍) are seen only by you. ' : ''}${pals ? 'Green dots are friends who share where they are (each player chooses this in their Status window). ' : ''}${pick ? '<b>Land grid is open: zoom in and tap squares to choose them, then press Buy. The dashed square is how far you can buy (1 km across, around you).</b> ' : ''}${mine.plots.length || mine.caves.length ? `<b>Gold is your territory:</b> ${mine.plots.length} plot${mine.plots.length === 1 ? '' : 's'} of land and ${mine.caves.length} cave${mine.caves.length === 1 ? '' : 's'}.` : 'Land and caves you buy show here in gold.'}</p>
     </div>`;
   // the painted map, drawn once at twice the size so it stays sharp when zoomed a little
   const full = document.createElement('canvas');
@@ -156,7 +194,7 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
   const ctx = cv.getContext('2d');
   const ground = createTerrainPainter(200, 125);
   let asked = null; // the area of real ground asked for
-  const places = placesWithPositions();
+  const places = placesWithPositions().filter((p) => !p.cave); // (caves have marks of their own: see siteMark)
 
   const clampView = () => {
     view.zoom = Math.min(MAX_ZOOM, Math.max(1, view.zoom));
@@ -333,6 +371,23 @@ export function renderMap(el, getPlayer, marks = [], mine = { plots: [], caves: 
       ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(w.name, x, y + 22);
       ctx.fillStyle = '#bfe8ff'; ctx.fillText(w.name, x, y + 22);
+    }
+    ctx.restore();
+    // caves (once zoomed in), dungeons, Monster Towers and Monster Camps, with names and levels close up
+    ctx.save();
+    ctx.font = '600 14px Cinzel, Georgia, serif'; ctx.textAlign = 'center';
+    for (const m of siteMarks()) {
+      const show = m.kind === 'tower' ? 1 : m.kind === 'dungeon' || m.kind === 'camp' ? 2 : 4;
+      if (view.zoom < show) continue;
+      const q = toMap(m.x, m.z);
+      const [x, y] = toCanvas(q.x, q.y);
+      if (x < -80 || y < -30 || x > W + 80 || y > H + 30) continue;
+      siteMark(ctx, x, y, m.kind, m.lv, view.zoom < 2 ? 1.1 : 1.6);
+      const named = m.kind === 'cave' ? view.zoom >= 8 : m.kind === 'tower' ? view.zoom >= 3 : view.zoom >= 5;
+      if (!named) continue;
+      const label = `${m.name}${m.floors ? ` (${m.floors} floors)` : ''} · Lv ${m.lv}`;
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; ctx.strokeText(label, x, y - 21);
+      ctx.fillStyle = '#f5ebd0'; ctx.fillText(label, x, y - 21);
     }
     ctx.restore();
     for (const m of marks) { const q = toMap(m.x, m.z); diamond(ctx, ...toCanvas(q.x, q.y), m.label); }
@@ -550,7 +605,7 @@ export function createMinimap(el, getPlayer, onOpen, extra = {}) {
   const ground = createTerrainPainter(72, 72); // 900 m square, 12.5 m per cell
   const AREA = 900;
   let asked = null;
-  const places = placesWithPositions();
+  const places = placesWithPositions().filter((p) => !p.cave);
   let alive = true;
 
   function frame(t) {
@@ -580,6 +635,13 @@ export function createMinimap(el, getPlayer, onOpen, extra = {}) {
         ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)'; ctx.strokeText(pl.name, x, y - 8);
         ctx.fillStyle = '#f5ebd0'; ctx.fillText(pl.name, x, y - 8);
+      }
+      for (const m of siteMarks()) {
+        const [x, y] = at(m.x, m.z);
+        if (x < -20 || y < -20 || x > SIZE + 20 || y > SIZE + 20) continue;
+        siteMark(ctx, x, y, m.kind, m.lv, 0.8);
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)'; ctx.strokeText(m.name, x, y - 12);
+        ctx.fillStyle = '#f5ebd0'; ctx.fillText(m.name, x, y - 12);
       }
       // your marks and your friends; ones beyond the edge sit on the rim, pointing the way
       const rim = (x, z) => {

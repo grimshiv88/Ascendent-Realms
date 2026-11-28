@@ -69,6 +69,39 @@ export function buildCave(place) {
   g.add(arch);
   // the arch's feet, each side of the way in
   for (const side of [-1, 1]) lumps.push([arch.position.x, side * (DOOR_W + 0.6), 1.5]);
+  // a Ruined Dungeon: an old stone gate stands before the way in, its pillars cracked, braziers
+  // still burning either side, and fallen blocks lying about
+  if (place.ruin) {
+    const stone = new THREE.MeshStandardMaterial({ color: '#7a756c', roughness: 0.95, flatShading: true });
+    const fire = new THREE.MeshStandardMaterial({ color: '#ff8a3a', emissive: '#ff6a18', emissiveIntensity: 2.2 });
+    const gx = DOOR_OUT - 3.5, half = DOOR_W + 2.2;
+    for (const side of [-1, 1]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.6, 8, 1.6), stone);
+      pillar.position.set(gx, 4, side * half); pillar.rotation.x = side * 0.03; pillar.castShadow = true;
+      g.add(pillar);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.7, 2.2), stone);
+      cap.position.set(gx, 8.2, side * half); g.add(cap);
+      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.35, 0.6, 8), stone);
+      bowl.position.set(gx - 1.6, 1.6, side * (half + 0.4)); g.add(bowl);
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.1, 7), fire);
+      flame.position.set(gx - 1.6, 2.4, side * (half + 0.4)); g.add(flame);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.3, 6), stone);
+      leg.position.set(gx - 1.6, 0.65, side * (half + 0.4)); g.add(leg);
+      lumps.push([gx, side * half, 1.1], [gx - 1.6, side * (half + 0.4), 0.7]);
+    }
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(2, 1.4, half * 2 + 2.4), stone);
+    lintel.position.set(gx, 9.2, 0); lintel.rotation.x = 0.04; lintel.castShadow = true;
+    g.add(lintel);
+    for (let i = 0; i < 6; i++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(1.2 + (i % 3) * 0.4, 0.8, 1), stone);
+      b.position.set(gx - 4 - (i % 3) * 2.2, 0.35, (i < 3 ? -1 : 1) * (half + 2 + (i % 2) * 1.5));
+      b.rotation.y = i * 0.9; b.castShadow = true;
+      g.add(b);
+    }
+    const lamp = new GlowLight('#ff7a2a', 30, 18, 1.5);
+    lamp.position.set(gx - 2, 3, 0);
+    g.add(lamp);
+  }
 
   // glowing crystals inside
   const crystalMat = new THREE.MeshStandardMaterial({ color: '#8fd8ff', emissive: '#3aa0ff', emissiveIntensity: 1.6, roughness: 0.2 });

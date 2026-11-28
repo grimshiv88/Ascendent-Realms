@@ -765,8 +765,60 @@ const SUMMIT_B = ['crest', 'peak', 'top', 'spire', 'height'];
   addCaves('heart', 45); addCaves('heart', 25, SECTIONS.find((q) => q.biome === 'highland'));
   addCaves('peaks', 16); addCaves('warrens', 12); addCaves('mire', 10); addCaves('frost', 8); addCaves('sun', 8); addCaves('fae', 4);
 })();
+
+// ---------- the far wilds ----------
+// The caves above crowd round the middle of the Heartland, so more are scattered out towards the
+// edges of every land, with the most furthest from Central City. Out there also stand places of a
+// new kind: Ruined Dungeons (old stone gates over a way down, always a dungeon wherever they are),
+// Monster Towers (floor upon floor of strong monsters, a Warden on the roof) and Monster Camps
+// (a warband round its fire, with a chief). These are added after the caves above, with dice of
+// their own, so every cave that was already there keeps its number (and its owner).
+// [kind, map x, map y, region]
+export const WILD_SITES = [];
+// how far from Central City a map point is, as a share of the way to the edge of the world (0-1)
+export const farOut = (px, py) => Math.min(1, Math.hypot(px - ORIGIN_PX.x, (py - ORIGIN_PX.y) * 1.25) / 620);
+(function spreadOut() {
+  const rnd = seededRnd(20261127);
+  const raw = {};
+  const rawAt = (px, py) => sample((px - ORIGIN_PX.x) * METRES_PER_PX, (py - ORIGIN_PX.y) * METRES_PER_PX, raw, false);
+  const far = (list, px, py, d) => list.every((q) => Math.hypot(q[0] - px, q[1] - py) >= d);
+  const placeSpots = PLACES.map((p) => [p.px, p.py]);
+  const caveSpots = CAVES.map(([x, y]) => [x, y]);
+  const siteSpots = [];
+  // `minOut`: how far from Central City (map px) it must be; further out is likelier (`pull`)
+  const add = (what, region, n, { minOut = 0, pull = 1.5, gap = 6 } = {}) => {
+    const box = regionBox(region);
+    for (let tries = 0, made = 0; made < n && tries < n * 400; tries++) {
+      const px = box.x0 + rnd() * (box.x1 - box.x0), py = box.y0 + rnd() * (box.y1 - box.y0);
+      if (Math.hypot(px - ORIGIN_PX.x, py - ORIGIN_PX.y) < minOut) continue;
+      if (region === 'heart' && rnd() > farOut(px, py) ** pull * 2.2) continue; // (the edges of the Heartland get the most)
+      if (inlandOf(px, py, region) < 4 || !far(placeSpots, px, py, what === 'cave' || what === 'ruin' ? 6 : 9)) continue;
+      if (!far(caveSpots, px, py, what === 'cave' || what === 'ruin' ? 5 : 3) || !far(siteSpots, px, py, gap)) continue;
+      const s0 = rawAt(px, py);
+      if (s0.h < 3 || s0.lake > 0.01 || s0.h < s0.water + 1.5) continue;
+      const x = Math.round(px * 10) / 10, y = Math.round(py * 10) / 10;
+      if (what === 'cave' || what === 'ruin') {
+        caveSpots.push([px, py]);
+        CAVES.push(what === 'ruin' ? [x, y, Math.round(rnd() * 628) / 100, 'ruin'] : [x, y, Math.round(rnd() * 628) / 100]);
+      } else { siteSpots.push([px, py]); WILD_SITES.push([what, x, y, region]); }
+      made++;
+    }
+  };
+  // more caves, out towards the edges
+  add('cave', 'heart', 36, { minOut: 75 });
+  add('cave', 'peaks', 12); add('cave', 'warrens', 10); add('cave', 'mire', 10); add('cave', 'frost', 10); add('cave', 'sun', 10); add('cave', 'fae', 4);
+  // Ruined Dungeons
+  add('ruin', 'heart', 10, { minOut: 90, pull: 2 });
+  add('ruin', 'peaks', 4); add('ruin', 'warrens', 4); add('ruin', 'mire', 4); add('ruin', 'frost', 3); add('ruin', 'sun', 3); add('ruin', 'fae', 2);
+  // Monster Towers, well away from the towns, never in sight of Central City
+  add('tower', 'heart', 14, { minOut: 70, pull: 2, gap: 30 });
+  add('tower', 'peaks', 5, { gap: 30 }); add('tower', 'warrens', 4, { gap: 30 }); add('tower', 'mire', 4, { gap: 30 }); add('tower', 'frost', 3, { gap: 30 }); add('tower', 'sun', 3, { gap: 30 }); add('tower', 'fae', 3, { gap: 20 });
+  // Monster Camps, the most common of the three
+  add('camp', 'heart', 22, { minOut: 30, gap: 14 });
+  add('camp', 'peaks', 6, { gap: 14 }); add('camp', 'warrens', 6, { gap: 14 }); add('camp', 'mire', 6, { gap: 14 }); add('camp', 'frost', 5, { gap: 14 }); add('camp', 'sun', 5, { gap: 14 }); add('camp', 'fae', 3, { gap: 12 });
+})();
 for (const p of PLACES) PLACE_POS.push({ ...p, ...toWorld(p.px, p.py) });
-CAVES.forEach(([px, py, facing], i) => PLACE_POS.push({ id: `cave${i}`, name: 'Cave', cave: true, px, py, facing, ...toWorld(px, py) }));
+CAVES.forEach(([px, py, facing, ruin], i) => PLACE_POS.push({ id: `cave${i}`, name: ruin ? 'Ruined Dungeon' : 'Cave', cave: true, ...(ruin ? { ruin: true } : {}), px, py, facing, ...toWorld(px, py) }));
 LAKES.forEach(([px, py, r], i) => LAKE_POS.push({ ...toWorld(px, py), r: r * METRES_PER_PX, seed: 50 + i, depth: 3 + r * 0.8 }));
 for (const p of PLACE_POS) gridAdd(placeGrid, p.x, p.z, 185, p);
 for (const L of LAKE_POS) gridAdd(lakeGrid, L.x, L.z, L.r * 1.8, L);

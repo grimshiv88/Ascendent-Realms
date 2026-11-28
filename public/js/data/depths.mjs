@@ -3,6 +3,7 @@
 import { placesWithPositions, sample, heightAt, DEPTHS_X } from './world-layout.mjs';
 import { ITEMS } from './items.mjs';
 import { wildLevelAt } from './wilds.mjs';
+import { dangerAt } from './sites.mjs';
 const oreRank = (id) => ITEMS[id]?.rank || 0;
 
 // What lives in each kind of cave, what can be mined there (with how often each ore turns up),
@@ -48,6 +49,9 @@ export const THEMES = {
 export const DUNGEON_HEIGHT = 150;
 const DUNGEON_NAME = { goblin: 'Goblin Dungeon', warren: 'Warren Dungeon', slime: 'Slime Dungeon', serpent: 'Serpent Dungeon', drake: 'Drake Dungeon', fae: 'Glimmer Dungeon', sand: 'Sandstone Dungeon' };
 const BIGGER = { small: 'medium', medium: 'deep', deep: 'deep' };
+// Ruined Dungeons: old stone gates over a way down, out in the far wilds (see world-layout.mjs).
+// Always dungeons (and always deep), wherever they stand.
+const RUIN_NAME = { goblin: 'Ruined Goblin Keep', warren: 'Ruined Warlord Halls', slime: 'Ruined Gel Vaults', serpent: 'Sunken Serpent Ruins', drake: 'Ruined Drake Forge', fae: 'Ruined Glimmer Halls', sand: 'Buried Sandstone Tombs' };
 const BY_REGION = { warrens: 'warren', heart: 'goblin', mire: 'serpent', peaks: 'drake', frost: 'slime', fae: 'fae', sun: 'sand' };
 
 export const SIZES = {
@@ -77,7 +81,8 @@ export function pickVein(ore, rnd = Math.random, deep = 0) {
 // only in their deeper half, and even there not often. Other caves never have them.
 export const RARE_RANK = 4;
 export const STRONG_LEVEL = 60;
-export const strongCave = (cave) => !!cave && cave.dungeon && cave.level >= STRONG_LEVEL;
+const caveStrength = (cave) => Math.max(cave.level || 0, cave.danger || 0);
+export const strongCave = (cave) => !!cave && cave.dungeon && caveStrength(cave) >= STRONG_LEVEL;
 // the ores a cave's chamber can hold, `deep` (0-1) being how far down it is
 export function caveOres(cave, deep = 1) {
   const all = THEMES[cave.theme].ores;
@@ -87,7 +92,7 @@ export function caveOres(cave, deep = 1) {
 }
 // a cave's boss level, for you at `level`: a little above you; a Dungeon's well above; a strong
 // cave's boss at least as strong as the wilds around it
-export const bossLevel = (cave, level) => Math.max(level + (cave.dungeon ? 10 : 3), strongCave(cave) ? cave.level : 0);
+export const bossLevel = (cave, level) => Math.max(level + (cave.dungeon ? 10 : 3), strongCave(cave) ? caveStrength(cave) : 0);
 // Orichalcum turns up only in strong caves, in their deepest chambers
 export const ORICHALCUM_CHANCE = 0.06;
 
@@ -108,9 +113,9 @@ export function allCaves() {
     if (theme === 'goblin' && i % 3 === 0) theme = 'slime'; // a third of the Heartland's caves are slime grottos
     const far = Math.hypot(p.x, p.z);
     let size = far < 3000 ? 'small' : far < 12000 ? (rnd() < 0.6 ? 'medium' : 'small') : rnd() < 0.5 ? 'deep' : 'medium';
-    const dungeon = heightAt(p.x, p.z) >= DUNGEON_HEIGHT;
-    if (dungeon) size = BIGGER[size];
-    return { id: p.id, index: i, place: p, theme, size, dungeon, level: Math.round(wildLevelAt(p.x, p.z)), name: dungeon ? DUNGEON_NAME[theme] : THEMES[theme].name };
+    const dungeon = !!p.ruin || heightAt(p.x, p.z) >= DUNGEON_HEIGHT;
+    if (dungeon) size = p.ruin ? 'deep' : BIGGER[size];
+    return { id: p.id, index: i, place: p, theme, size, dungeon, ruin: !!p.ruin, level: Math.round(wildLevelAt(p.x, p.z)), danger: dangerAt(p.x, p.z), name: p.ruin ? RUIN_NAME[theme] : dungeon ? DUNGEON_NAME[theme] : THEMES[theme].name };
   });
   // the nearest cave to the spawn is always a small goblin den, to learn on
   const first = caches.reduce((a, b) => (Math.hypot(b.place.x, b.place.z) < Math.hypot(a.place.x, a.place.z) ? b : a));
@@ -120,6 +125,9 @@ export function allCaves() {
 export const caveById = (id) => allCaves().find((c) => c.id === id) || null;
 export const cavePrice = (cave) => SIZES[cave.size].price;
 export const caveWord = (cave) => (cave.dungeon ? 'dungeon' : 'cave');
+// The weakest the monsters inside can be: the further from Central City a cave is, the stronger
+// they are (a cave near the middle is still sized to you). Dungeons are harder than caves.
+export const caveFloorLevel = (cave) => Math.round((cave.danger || 0) * (cave.dungeon ? 0.9 : 0.7));
 
 // The chambers underground, each lower than the last, joined by winding tunnels.
 // Laid out far beyond the edge of the map so nothing up top gets in the way.
