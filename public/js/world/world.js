@@ -1,4 +1,5 @@
 // The playable world: the whole map as streamed 3D land, your character, monsters, and a third-person camera.
+import { createMarkBeams } from './markbeams.js';
 import * as THREE from 'three';
 import { GlowLight, lightPool } from './lightpool.js';
 import { sharedNotices } from '../notices.js';
@@ -3271,6 +3272,8 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   // The journey's guide (setGuide), and for a while instead of it the way to the nearest Farm
   // Stand when you press H with no mount (horseGuide, gone once you get there or own a mount)
   let journeyGuide = null, horseGuide = null;
+  // pillars of light over the places you marked on the world map (markbeams.js)
+  const markBeams = createMarkBeams(scene, () => !!inside || !!depth);
   function setGuide(at) {
     journeyGuide = at || null;
     if (!horseGuide) showGuide(journeyGuide);
@@ -3310,6 +3313,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
   return {
     rebuildAvatar,
     setGuide,
+    setMarkBeams: (list) => markBeams.set(list),
     // for the tutorial's arrow: where you stand, which way the camera looks, and whether you are
     // indoors or down a cave (the arrow points outside the world then)
     guideView: () => ({ x: pos.x, z: pos.z, yaw, inside: !!inside, depth: !!depth }),
