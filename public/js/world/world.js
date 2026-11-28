@@ -3353,8 +3353,10 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       const place = depth ? `cave:${String(depth.cave.id).replace(/[^\w-]/g, "_").slice(0, 40)}` : inside ? `in:${String(inside.shop.id || 'room').replace(/[^\w-]/g, '_').slice(0, 40)}:${Math.round(inside.shop.x)},${Math.round(inside.shop.z)}` : 'out';
       const pose = dead || sleeping || collapsed > 0 ? 'lie' : sitting ? 'sit' : riding?.flying ? 'fly' : riding?.riding ? 'ride' : clock.elapsedTime - swungAt < 0.6 ? 'swing' : swimming ? 'swim' : '';
       // your dragon (ridden or beside you) or your hatchling, for everyone to see
-      const c = riding?.companion(), h = hatchery?.petSpot();
-      const pet = c ? { k: c.id, x: c.x, y: c.y, z: c.z, h: c.heading, air: c.air } : h ? { k: `h:${h.kind}`, x: h.x, y: h.y, z: h.z, h: h.heading, air: h.air, s: h.scale } : null;
+      // (or your horse, donkey or camel, under you or waiting where you left it; one animal is shown:
+      // the one you ride, else your hatchling, else the horse left waiting)
+      const c = riding?.companion(), h = hatchery?.petSpot(), m = !c && riding?.seen();
+      const pet = c ? { k: c.id, x: c.x, y: c.y, z: c.z, h: c.heading, air: c.air } : m && (riding.riding || !h) ? m : h ? { k: `h:${h.kind}`, x: h.x, y: h.y, z: h.z, h: h.heading, air: h.air, s: h.scale } : null;
       // (a swimmer's body is tipped and moved about the hips: send where they really are)
       const at = pose === 'swim' ? pos : avatar.position;
       return { x: at.x, y: at.y, z: at.z, heading, speed: speedNow, place, pose, pet };

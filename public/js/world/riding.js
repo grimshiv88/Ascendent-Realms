@@ -36,34 +36,14 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     const id = ITEMS[item].mount;
     if (MOUNTS[id]?.beast) return makeBeast(item, id, x, z, heading);
     const a = ANIMALS[id];
-    const root = buildAnimal(a);
-    // a saddle and a blanket on its back (on the moving body, so they rise and fall with the gait)
-    const p = root.userData.beast;
-    root.updateMatrixWorld(true);
-    const bb = new THREE.Box3().setFromObject(p.body);
-    const by = p.body.position.y;
-    const top = bb.max.y - by, W = (bb.max.x - bb.min.x) / 2, len = bb.max.z - bb.min.z;
-    const sz = len * 0.04; // a little in front of the middle of the back
-    const leather = new THREE.MeshStandardMaterial({ color: '#5a3018', roughness: 0.6 });
-    const blanket = new THREE.MeshStandardMaterial({ color: id === 'camel' ? '#8a2a3a' : '#2a4a7a', roughness: 0.95 });
-    const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; p.body.add(o); return o; };
-    const cloth = add(new THREE.CylinderGeometry(W * 1.06, W * 1.06, len * 0.3, 18, 1, true, -Math.PI * 0.62, Math.PI * 1.24), blanket, 0, top - W * 1.06 + 0.02, sz);
-    cloth.rotation.x = Math.PI / 2; cloth.material.side = THREE.DoubleSide;
-    add(new THREE.BoxGeometry(W * 0.95, 0.09, len * 0.2), leather, 0, top + 0.05, sz);
-    add(new THREE.BoxGeometry(W * 0.7, 0.14, 0.07), leather, 0, top + 0.1, sz + len * 0.1);  // the pommel
-    add(new THREE.BoxGeometry(W * 0.8, 0.12, 0.07), leather, 0, top + 0.09, sz - len * 0.1); // the cantle
-    for (const s of [-1, 1]) {
-      add(new THREE.BoxGeometry(0.03, top * 0.55, 0.05), leather, s * W * 0.98, top * 0.7, sz);
-      add(new THREE.TorusGeometry(0.06, 0.012, 6, 12), new THREE.MeshStandardMaterial({ color: '#9a9a9a', metalness: 0.8, roughness: 0.3 }), s * W * 1.02, top * 0.42, sz).rotation.y = Math.PI / 2;
-    }
-    const saddle = by + top + 0.1;
+    const { root, saddle, seatZ: sz } = saddledAnimal(id);
     // sized to its rider: a pony for a child, a great beast for a giant
     const k = Math.max(0.6, Math.min(2.4, riderHeight() / 1.8));
     root.scale.setScalar(k);
     root.position.set(x, groundAt(x, z), z);
     root.rotation.y = heading;
     scene.add(root);
-    horse = { item, id, a, m: MOUNTS[id], root, x, z, heading, saddle: saddle * k, seatZ: sz * k, come: false };
+    horse = { item, id, a, m: MOUNTS[id], root, x, z, heading, saddle: saddle * k, seatZ: sz * k, k, come: false };
     return horse;
   }
 
@@ -301,6 +281,8 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     seatZ: () => (riding ? horse.seatZ : 0),
     // the mount's legs reach out further than yours
     radius: () => (riding ? (horse.beast ? 1.5 : 0.7) : 0),
+    // your horse, donkey or camel (ridden or waiting), for players close by to see
+    seen: () => (horse && !horse.beast && game.has(horse.item) ? { k: `m:${horse.id}`, x: horse.x, y: horse.root.position.y, z: horse.z, h: horse.heading, air: 0, s: horse.k } : null),
     mount: () => (horse ? { item: horse.item, id: horse.id, x: horse.x, z: horse.z, riding, coming: horse.come } : null),
     // your dragon or wyvern, ridden or at your side (for world.js: what it fights, and what others see)
     companion: () => (horse?.beast && game.has(horse.item) ? { id: horse.id, x: horse.x, z: horse.z, y: horse.root.position.y, air: riding ? (flying ? 6 : 0) : horse.air || 0, heading: horse.heading, riding, len: BEASTS[horse.id].len, breath: BEASTS[horse.id].breath || null, reach: horse.reach } : null),
@@ -310,10 +292,39 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
   };
 }
 
+// A horse, donkey or camel with a saddle and a blanket on its back (on the moving body, so they rise
+// and fall with the gait). Gives the animal, the saddle's height and how far forward its seat is
+// (unscaled). Also used to draw other players' mounts (others.js).
+export function saddledAnimal(id) {
+  const root = buildAnimal(ANIMALS[id]);
+  const p = root.userData.beast;
+  root.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(p.body);
+  const by = p.body.position.y;
+  const top = bb.max.y - by, W = (bb.max.x - bb.min.x) / 2, len = bb.max.z - bb.min.z;
+  const sz = len * 0.04; // a little in front of the middle of the back
+  const leather = new THREE.MeshStandardMaterial({ color: '#5a3018', roughness: 0.6 });
+  const blanket = new THREE.MeshStandardMaterial({ color: id === 'camel' ? '#8a2a3a' : '#2a4a7a', roughness: 0.95 });
+  const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; p.body.add(o); return o; };
+  const cloth = add(new THREE.CylinderGeometry(W * 1.06, W * 1.06, len * 0.3, 18, 1, true, -Math.PI * 0.62, Math.PI * 1.24), blanket, 0, top - W * 1.06 + 0.02, sz);
+  cloth.rotation.x = Math.PI / 2; cloth.material.side = THREE.DoubleSide;
+  add(new THREE.BoxGeometry(W * 0.95, 0.09, len * 0.2), leather, 0, top + 0.05, sz);
+  add(new THREE.BoxGeometry(W * 0.7, 0.14, 0.07), leather, 0, top + 0.1, sz + len * 0.1);  // the pommel
+  add(new THREE.BoxGeometry(W * 0.8, 0.12, 0.07), leather, 0, top + 0.09, sz - len * 0.1); // the cantle
+  for (const s of [-1, 1]) {
+    add(new THREE.BoxGeometry(0.03, top * 0.55, 0.05), leather, s * W * 0.98, top * 0.7, sz);
+    add(new THREE.TorusGeometry(0.06, 0.012, 6, 12), new THREE.MeshStandardMaterial({ color: '#9a9a9a', metalness: 0.8, roughness: 0.3 }), s * W * 1.02, top * 0.42, sz).rotation.y = Math.PI / 2;
+  }
+  const saddle = by + top + 0.1;
+  return { root, saddle, seatZ: sz };
+}
+
 // The rider's pose: sitting astride, knees bent round the horse's sides, hands forward on the reins
 export function poseRide(rig) {
   if (!rig.legs || !rig.arms) return;
   rig.legs.forEach((leg, i) => {
+    // (the walk puts the legs back together: see walkCycle in model.js)
+    leg.rideZ0 ??= leg.hip.rotation.z;
     leg.hip.rotation.x = -0.8;
     leg.hip.rotation.z = (i === 0 ? -1 : 1) * 0.38;
     leg.knee.rotation.x = 1.05;

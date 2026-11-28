@@ -34,7 +34,7 @@ export function cleanSpot(s = {}) {
 // The tamed dragon or wyvern with them (ridden or at their side), or their hatchling ('h:<kind>'):
 // which beast, where it is, which way it faces, how high it flies, and (a hatchling) how big it is
 export function cleanPet(p) {
-  if (!p || typeof p !== 'object' || !/^(h:)?\w{1,24}$/.test(String(p.k || ''))) return null;
+  if (!p || typeof p !== 'object' || !/^([hm]:)?\w{1,24}$/.test(String(p.k || ''))) return null;
   return {
     k: String(p.k),
     x: round(num(p.x, -1e5, 1e5)), y: round(num(p.y, -1e4, 1e4)), z: round(num(p.z, -1e5, 1e5)),
