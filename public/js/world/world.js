@@ -162,11 +162,12 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         // a palace the size of half a city, in the King's own style (see kingcastle.js)
         const k = buildKingCastle(q.c);
         scene.add(k.group); colliders.add(k.solid);
-        q.built = { group: k.group, solid: k.solid, floorAt: k.floorAt, spots: k.spots };
+        q.built = { group: k.group, solid: k.solid, floorAt: k.floorAt, spots: k.spots, roomAt: k.roomAt, unseal: k.unseal, seals: k.seals };
+        colliders.add(k.seals);
         q.court = null;
         seatCourt(q);
       } else if (d > 1400 && q.built) {
-        scene.remove(q.built.group); colliders.remove(q.built.solid);
+        scene.remove(q.built.group); colliders.remove(q.built.solid); colliders.remove(q.built.seals);
         creatures?.removeWhere((m) => m.site === `castle-${q.c.race}`);
         q.built = null; q.court = null;
       }
@@ -189,20 +190,32 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     const { x, z, race, title } = q.c;
     const site = `castle-${race}`;
     const extra = (more) => ({ keep: true, site, angry: false, ...more });
-    // guards outside the gate, along the avenue and at the Throne Hall's doors
+    // guards outside the gate, along the avenue and in the keep's Hall of Guards
     const S = q.built.spots;
     for (const [gx, gz] of S.guards) {
       creatures.spawnAt(`guard_${race}`, 400 + Math.round(Math.random() * 200), x + gx, z + gz, extra({ guard: { heading: 0 }, title: 'Royal Guard' }));
     }
-    // the Overlords stand either side of the carpet before the throne
+    // a boss on each floor of the keep, keeping the stair up sealed until it falls
+    S.bosses.forEach((b, i) => {
+      const hp = Math.round((8 + b.level * 3.5) * (7 + i));
+      const boss = creatures.spawnAt(`floorboss_${race}`, b.level, x + b.x, z + b.z, extra({ y: q.c.flat + b.y, angry: true, boss: true, stage: i < 2 ? 4 : 5, leash: { x: x + b.x, z: z + b.z, r: 24 }, title: b.title, maxHp: hp, hp }));
+      boss.onDeath = () => {
+        const solid = q.built?.unseal(b.floor);
+        if (solid) colliders.remove(solid);
+        const next = b.floor === S.bosses.length ? 'the Throne Hall' : `Floor ${b.floor + 1}`;
+        say(`${b.title} has fallen! The stair up to ${next} is open`, 'exp');
+        onEvent?.('floor-boss', { race, floor: b.floor, title: b.title });
+      };
+    });
+    // the Overlords stand either side of the carpet before the throne, at the top of the keep
     court.overlords.forEach((o, i) => {
-      const [ox, oz] = S.overlords[i] || [(i % 2 ? 1 : -1) * 6, -62 + Math.floor(i / 2) * 9];
-      creatures.spawnAt(`overlord_${race}`, o.level, x + ox, z + oz, extra({ guard: { heading: 0 }, boss: true, title: o.name }));
+      const [ox, oz, oy] = S.overlords[i] || [(i % 2 ? 1 : -1) * 6, -62 + Math.floor(i / 2) * 9, S.king[2]];
+      creatures.spawnAt(`overlord_${race}`, o.level, x + ox, z + oz, extra({ y: q.c.flat + oy, guard: { heading: 0 }, boss: true, title: o.name }));
     });
     // the King sits the throne, unless it is empty or a player wears the crown
     if (court.king?.npc && Date.now() - (court.slainAt || 0) >= KING_RETURNS_MS) {
       const lvl = court.king.level;
-      const king = creatures.spawnAt(`king_${race}`, lvl, x + S.king[0], z + S.king[1], extra({ guard: { heading: 0 }, boss: true, title: `${court.king.name}, ${title}`, maxHp: Math.round((8 + lvl * 3.5) * 12), hp: Math.round((8 + lvl * 3.5) * 12) }));
+      const king = creatures.spawnAt(`king_${race}`, lvl, x + S.king[0], z + S.king[1], extra({ y: q.c.flat + S.king[2], guard: { heading: 0 }, boss: true, title: `${court.king.name}, ${title}`, maxHp: Math.round((8 + lvl * 3.5) * 12), hp: Math.round((8 + lvl * 3.5) * 12) }));
       king.onDeath = () => onEvent?.('king-slain', { race, name: court.king.name, title });
     }
   }
@@ -2957,7 +2970,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         // a King's castle, or one of the wonders of the realm
         const castle = castles.find((q) => Math.abs(pos.x - q.c.x) < 125 && Math.abs(pos.z - q.c.z) < 125);
         const wonder = wonders.find((q) => Math.hypot(pos.x - q.w.x, pos.z - q.w.z) < q.w.r + 150);
-        if (castle) here = `${regionName(sample(pos.x, pos.z, tmpS).region)} · ${castle.c.castle}`;
+        if (castle) { const room = castle.built?.roomAt?.(pos.x, pos.z, pos.y); here = `${regionName(sample(pos.x, pos.z, tmpS).region)} · ${castle.c.castle}${room ? ` · ${room}` : ''}`; }
         else if (wonder) {
           here = `${regionName(wonder.w.region)} · ${wonder.w.name}`;
           if (!wonder.seen) { wonder.seen = true; say(`You found ${wonder.w.name}`, 'note'); onEvent?.('wonder', wonder.w); }
