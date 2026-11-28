@@ -333,10 +333,13 @@ export function marketStall(label, colors, goods) {
   for (const x of [-1.2, 0, 1.2]) for (const z of [front, (front + back) / 2, back]) out.push([x, z, 0.95, 0.9, STALL.yFront - 0.25]);
   return { group: s, solid: out };
 }
+// (S.turn: how far the stall is turned from facing the farm's front; the Farm Stand is turned
+// right round, so its counter faces into the farmyard where you walk up to it)
 function stall(g, solid, toW, S, label, colors, goods) {
   const { group: s, solid: parts } = marketStall(label, colors, goods);
-  s.position.set(S.x, 0, S.z); g.add(s);
-  for (const [x, z, r, height, lift] of parts) { const p = toW(S.x + x, S.z + z); solid.push({ x: p.x, z: p.z, r, kind: 'wall', height, ...(lift ? { lift, camOnly: true } : {}) }); }
+  const t = S.turn || 0, c = Math.cos(t), sn = Math.sin(t);
+  s.position.set(S.x, 0, S.z); s.rotation.y = t; g.add(s);
+  for (const [x, z, r, height, lift] of parts) { const p = toW(S.x + x * c + z * sn, S.z - x * sn + z * c); solid.push({ x: p.x, z: p.z, r, kind: 'wall', height, ...(lift ? { lift, camOnly: true } : {}) }); }
   return s;
 }
 
@@ -398,22 +401,25 @@ export function buildFarm(f) {
   board.position.set(0, 1.15, 0); sign.add(board);
   // a hitching rail beside the Farm Stand with a tall sign, so you can see from the road where
   // horses are sold (the Farm Stand sells a Riding Horse and a Riding Donkey)
-  const rail = new THREE.Group(); rail.position.set(-9.6, 0, 15.2); g.add(rail);
+  // (on the buying side of the counter, like the stand itself)
+  const RAIL = { x: -9.6, z: LAYOUT.stand.z + LAYOUT.stand.face * 1.2 };
+  const rail = new THREE.Group(); rail.position.set(RAIL.x, 0, RAIL.z); g.add(rail);
   const wood = mat('#6a4a2c');
-  for (const x of [-1, 1]) { box(0.14, 3.3, 0.14, wood, rail, x, 1.65, 0); const p = toW(-9.6 + x, 15.2); solid.push({ x: p.x, z: p.z, r: 0.2, kind: 'wall', height: 3.3 }); }
+  for (const x of [-1, 1]) { box(0.14, 3.3, 0.14, wood, rail, x, 1.65, 0); const p = toW(RAIL.x + x, RAIL.z); solid.push({ x: p.x, z: p.z, r: 0.2, kind: 'wall', height: 3.3 }); }
   box(2.2, 0.1, 0.1, wood, rail, 0, 1.05, 0);
   const horseSign = twoFacedSign('🐎 Horses for sale', 2.3, 0.5);
   horseSign.position.set(0, 2.9, 0); rail.add(horseSign);
   const donkeySign = twoFacedSign('and donkeys · ask the Farmer', 2.1, 0.32);
   donkeySign.position.set(0, 2.42, 0); rail.add(donkeySign);
   for (const s of solid) s.y = f.flat; // (everything stands on the farm's level ground)
-  // the farmer behind the stand, the butcher behind the counter, facing the town
+  // the farmer behind the stand and the butcher behind the counter, each facing the buyers
   const npcs = [];
   for (const [kind, S, name] of [['farmer', LAYOUT.stand, 'Farmer'], ['butcher', LAYOUT.butcher, 'Halal Butcher']]) {
-    const body = person(kind);
-    body.position.set(S.x, 0, S.z - 0.4);
+    const body = person(kind), face = S.face || 1;
+    body.position.set(S.x, 0, S.z - 0.4 * face);
+    body.rotation.y = S.turn || 0;
     g.add(body);
-    const at = toW(S.x, S.z + 1.6); // where you stand to talk (in front of the counter)
+    const at = toW(S.x, S.z + 1.6 * face); // where you stand to talk (in front of the counter)
     npcs.push({ kind, name, body, x: at.x, z: at.z });
   }
   const P = LAYOUT.pen, Y = LAYOUT.yard;

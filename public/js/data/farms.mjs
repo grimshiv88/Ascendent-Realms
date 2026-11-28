@@ -72,14 +72,17 @@ export const LAYOUT = {
   pen: { x: 11, z: -9, hx: 7, hz: 8.5 },          // horses, cows, sheep, goats, a donkey
   yard: { x: 12.5, z: 6, hx: 5.5, hz: 4 },        // chickens and turkeys
   barn: { x: 14, z: 15, w: 10.5, d: 8 },          // the stable: a red barn with stalls, doors to the front
-  stand: { x: -6, z: 14 },                        // the Farm Stand, with the farmer behind it
+  // the Farm Stand, with the farmer behind it. It is turned right round (turn), so its counter
+  // faces back into the farmyard (face -1: towards -z) where you walk up to it, not out at the
+  // empty ground in front of the farm (Mohammed, 2026-11-28: it faced the wrong way)
+  stand: { x: -6, z: 14, turn: Math.PI, face: -1 },
   butcher: { x: 4, z: 15 },                       // the Halal Butcher's shed, with the butcher
   fire: { x: -15, z: 14 },                        // a cooking fire anyone may use
 };
 
 // Where you stand to buy at a farm's Farm Stand (in front of its counter), in the world
 export function standOf(f) {
-  return farmToWorld(f, LAYOUT.stand.x, LAYOUT.stand.z + 1.6);
+  return farmToWorld(f, LAYOUT.stand.x, LAYOUT.stand.z + 1.6 * LAYOUT.stand.face);
 }
 // The Farm Stand nearest to (x, z): { farm, x, z, d } (horses and donkeys are sold there)
 export function nearestStand(x, z) {
