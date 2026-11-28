@@ -59,7 +59,7 @@ import { howOf, canHarvest, harvest } from './deaths.js';
 import { createHusbandry, BURN_EVERY, BURN_SHARE } from './husbandry.js';
 import { createOil } from './oil.js';
 import { createCrops } from './crops.js';
-import { createRiding, poseRide } from './riding.js';
+import { createRiding, poseRide, seatRider } from './riding.js';
 import { createRaids } from './raids.js';
 import { createHatchery } from './hatchery.js';
 import { BEAST_TAME, MOUNT_ITEMS } from '../data/mounts.mjs';
@@ -914,6 +914,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       getPos: () => pos, getHeading: () => heading,
       groundAt: (x, z) => groundAt(x, z, pos.y),
       riderHeight: () => bodyH,
+      riderLegs: () => { const l = avatar?.userData.rig?.legs?.[0]; return l?.thighLen ? l.thighLen + (l.shinLen || 0) : null; },
       canRide: () => (inside ? 'Your mount waits outside' : depth ? 'Mounts can\'t go underground' : dead ? 'You can\'t ride now' : null),
     });
     riding.restore();
@@ -2903,6 +2904,9 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       avatar.updateMatrixWorld(true);
       const hipY = rig.legs?.[0]?.hip ? rig.legs[0].hip.getWorldPosition(v3).y - pos.y : bodyH * 0.5;
       avatar.position.y = pos.y + riding.saddle() - hipY + bodyH * 0.01;
+      // legs down its sides and feet in the stirrups, fitted to your body (riding.js)
+      avatar.updateMatrixWorld(true);
+      seatRider(avatar, riding.animal());
     }
     if (sitting) { poseSit(rig); avatar.position.y = sitting.y + 0.5 - bodyH * 0.27; }
     // swimming: a front crawl when you move, treading water when you stay still (moves.js); in first

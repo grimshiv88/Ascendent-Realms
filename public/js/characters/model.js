@@ -1055,8 +1055,8 @@ function walkCycle(rig, t, speed) {
     const dKnee = (wKnee + (rKnee - wKnee) * (r / Math.max(a, 1e-3))) * a;
     leg.hip.rotation.x = hip0 + dHip;
     leg.knee.rotation.x = knee0 + dKnee;
-    // straight from the saddle (poseRide spreads the thighs round the horse): legs back together
-    if (leg.rideZ0 !== undefined) { leg.hip.rotation.z = leg.rideZ0; leg.rideZ0 = undefined; }
+    // straight from the saddle (poseRide turns the thighs out round the horse): legs back together
+    if (leg.ride) { leg.hip.rotation.y = leg.ride.y; leg.hip.rotation.z = leg.ride.z; if (leg.ankle) leg.ankle.rotation.z = leg.ride.az; leg.ride = null; }
     if (leg.ankle) {
       leg.ankle0 ??= leg.ankle.rotation.x;
       // keep the sole level, then toes up as the heel lands and down as the foot pushes off

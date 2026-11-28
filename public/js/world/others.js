@@ -11,7 +11,7 @@ import { bodySig, GONE_MS } from '../data/presence.mjs';
 import { BEASTS } from '../data/beasts.mjs';
 import { buildBeast, animateBeast } from './beasts.js';
 import { animateAnimal } from './animalbody.js';
-import { saddledAnimal, poseRide } from './riding.js';
+import { saddledAnimal, poseRide, seatRider } from './riding.js';
 import { MOUNTS } from '../data/mounts.mjs';
 
 // a player's dragon, wyvern, hatchling ('h:<kind>') or saddled horse, donkey or camel ('m:<kind>'),
@@ -208,6 +208,8 @@ export function createOthers(scene, hooks = {}) {
           if (q.hatch) q.root.scale.setScalar(q.to?.s || q.base);
           q.root.position.set(q.x, q.y, q.z);
           q.root.rotation.y = q.h;
+          // on a horse: their legs down its sides, feet in its stirrups (fitted once to their body)
+          if (astride && q.steed) seatRider(o.body, q.root);
           const v = Math.hypot(q.x - was.x, q.z - was.z) / Math.max(dt, 1e-3);
           if (q.steed) animateAnimal(q.root, t, astride ? o.speed : v);
           else animateBeast(q.root, t, { air: o.pose === 'fly' ? 6 : o.pose === 'ride' ? 0 : q.air, speed: q.air > 0.8 ? 0 : v });
