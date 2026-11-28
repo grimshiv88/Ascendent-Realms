@@ -205,7 +205,7 @@ const SWORD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4l-9.5 9
 function startGame(character) {
   $('game').classList.remove('hidden');
   const overlay = $('overlay');
-  const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '', plot: null, landChoice: 'house', landMsg: '', landBusy: false, basket: [] };
+  const ui = { selected: null, pending: {}, pick: [], shopMsg: '', smithMsg: '', questMsg: '', plot: null, landChoice: 'house', landMsg: '', landBusy: false, basket: [], minePick: [] };
   // Your own marks on the world map (kept with your character) and where your friends are (asked for
   // every few seconds while friends are shown on the map and you have a friend in the game)
   const friendSpots = { list: [], at: 0, busy: false };
@@ -602,7 +602,7 @@ function startGame(character) {
       api.landList().then((r) => setLands(r.plots || [])).catch(() => {});
       showArea(`Land: tap squares to choose them, then buy them all at once. Green is for sale, blue is river (buy it beside your land), gold is yours. You can buy up to ${REACH} m away; the Map (M) shows more. Press L to leave.`);
     } else {
-      ui.basket = [];
+      ui.basket = []; ui.minePick = [];
       showArea('Left the land grid.');
     }
   }
@@ -614,6 +614,13 @@ function startGame(character) {
     ui.landMsg = '';
     ui.landChoice = info.owned?.purpose || ui.landChoice || 'house';
     const k = (p) => p.ix === ix && p.iz === iz;
+    // your own plots: each tap adds one to (or takes it out of) the ones chosen to clear or flatten together
+    if (info.owned?.mine) {
+      if (ui.minePick.some(k)) { if (ui.minePick.length > 1) ui.minePick = ui.minePick.filter((p) => !k(p)); }
+      else ui.minePick = [...ui.minePick, { ix, iz }];
+      world.pickMine(ui.minePick);
+      return info;
+    }
     if (ui.basket.some(k)) ui.basket = ui.basket.filter((p) => !k(p));
     else if (!info.owned && !info.why) {
       const me = here();
@@ -624,6 +631,28 @@ function startGame(character) {
     // river plots chosen beside other chosen plots may no longer be allowed: the info is checked again
     ui.plot = world.selectPlot({ ix, iz });
     return info;
+  }
+  // Holding the mouse (or a finger) still on the grid, then moving it, sweeps over plots: your own go
+  // into the ones chosen to clear or flatten, ones for sale into the basket. `done` once let go.
+  function sweepPlots(list, done) {
+    const me = here();
+    const mine = new Set((ui.myPlots || []).map((p) => `${p.ix},${p.iz}`));
+    const has = (arr, p) => arr.some((q) => q.ix === p.ix && q.iz === p.iz);
+    for (const p of list) {
+      if (mine.has(`${p.ix},${p.iz}`)) { if (!has(ui.minePick, p)) ui.minePick = [...ui.minePick, p]; continue; }
+      if (has(ui.basket, p)) continue;
+      const info = world.selectPlot(p);
+      if (!info.owned && !info.why && inReach(p.ix, p.iz, me.x, me.z)) ui.basket = [...ui.basket, p];
+    }
+    world.pickMine(ui.minePick);
+    world.choosePlots(ui.basket);
+    if (!done) return;
+    const last = list[list.length - 1];
+    ui.plot = world.selectPlot(ui.minePick.length ? ui.minePick[ui.minePick.length - 1] : last);
+    ui.landMsg = '';
+    overlay.dataset.panel = 'land';
+    drawPanel();
+    overlay.classList.remove('hidden');
   }
   const basketTotal = () => ui.basket.reduce((a, p) => a + plotPrice(p.ix, p.iz), 0);
   function updateMapBasket() {
@@ -643,6 +672,7 @@ function startGame(character) {
       game.setCoins(r.coins);
       setLands(r.plots);
       if (r.bought) { ui.basket = []; world.choosePlots([]); }
+      if (r.done) { ui.minePick = []; world.pickMine([]); }
       ui.plot = world.selectPlot({ ix: ui.plot.ix, iz: ui.plot.iz });
       ui.landMsg = typeof okText === 'function' ? okText(r) : okText;
     } catch (err) {
@@ -734,7 +764,8 @@ function startGame(character) {
     else if (name === 'derrick' && ui.well) renderDerrick(overlay, ui.well, { message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
     else if (name === 'oilspot' && ui.oilSpot) renderOilSpot(overlay, game, ui.oilSpot, { info: ui.bankInfo, well: (ui.wells || []).find((w) => w.id === ui.oilSpot.id), message: ui.econMsg || '', bad: ui.econBad, busy: ui.econBusy });
     else if (name === 'estate' && ui.estateCity) renderEstate(overlay, game, { city: ui.estateCity, homes: ui.homes || [], ring: ui.estateRing, message: ui.estateMsg || '', busy: ui.estateBusy });
-    else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy, basket: ui.basket.map((p) => ({ ...p, price: plotPrice(p.ix, p.iz) })) });
+    else if (name === 'land' && ui.plot) renderLand(overlay, ui.plot, game, { choice: ui.landChoice, message: ui.landMsg, busy: ui.landBusy, basket: ui.basket.map((p) => ({ ...p, price: plotPrice(p.ix, p.iz) })),
+      mine: ui.minePick.map((p) => (ui.myPlots || []).find((q) => q.ix === p.ix && q.iz === p.iz)).filter(Boolean) });
     else overlay.innerHTML = HELP_HTML;
     if (name !== 'bag') preview.unmount();
     if (name === 'map') updateMapBasket();
@@ -1191,6 +1222,12 @@ function startGame(character) {
     if (t('data-land-open') != null) { overlay.dataset.panel = 'land'; drawPanel(); return; }
     if (t('data-land-open-basket') != null && ui.basket.length) { ui.plot = world.selectPlot(ui.basket[0]); ui.landMsg = ''; drawPanel(); return; }
     if (t('data-land-change') != null) { landAction(() => api.landPurpose(ui.plot.ix, ui.plot.iz, ui.landChoice), 'Purpose changed.'); return; }
+    if ((v = t('data-land-prepare-all')) != null) {
+      landAction(() => api.landPrepareMany(ui.minePick, v), (r) => (v === 'clear' ? `${r.done} plots cleared. The trees, rocks and grass are gone.` : `${r.done} plots flattened. Ready to build on.`));
+      return;
+    }
+    if (t('data-land-mine-none') != null) { const one = ui.minePick[ui.minePick.length - 1]; ui.minePick = one ? [one] : []; world.pickMine(ui.minePick); if (one) ui.plot = world.selectPlot(one); drawPanel(); return; }
+    if ((v = t('data-land-unpick-mine')) != null) { const [ix, iz] = v.split(',').map(Number); ui.minePick = ui.minePick.filter((p) => p.ix !== ix || p.iz !== iz); world.pickMine(ui.minePick); if (ui.minePick.length) ui.plot = world.selectPlot(ui.minePick[ui.minePick.length - 1]); drawPanel(); return; }
     if ((v = t('data-land-prepare')) != null) { landAction(() => api.landPrepare(ui.plot.ix, ui.plot.iz, v), v === 'clear' ? 'Cleared. The trees, rocks and grass are gone; the ground keeps its shape.' : 'Flattened. Ready to build on.'); return; }
     if (t('data-signout') != null) { logOut(); return; }
     if (t('data-switch') != null) { logOut(true); return; }
@@ -1547,6 +1584,7 @@ function startGame(character) {
     view: { camera: settings.camera, camFollow: settings.camFollow, feel: settings.feel, mouse: settings.mouse, view: settings.view, graphics: safeStart ? 'low' : settings.graphics },
     onView(v) { settings.view = v; saveSettings(); showArea(v === 'first' ? 'First person view' : 'Third person view'); if (overlay.dataset.panel === 'settings' && !overlay.classList.contains('hidden')) drawPanel(); },
     onArea: (name) => showArea(name),
+    onSweep: (list, done) => sweepPlots(list, done),
     onPlot(info) {
       tapPlot(info.ix, info.iz);
       overlay.dataset.panel = 'land';

@@ -2,7 +2,7 @@
 // Near the player the ground is detailed and has trees, rocks and grass; further away it gets
 // coarser; a low-detail "horizon" covers everything out to about 24 km so mountains show far off.
 import * as THREE from 'three';
-import { sample, rememberHeight, forgetHeights, vnoise, SEA_LEVEL, lakesWithLevels, isFrozen, LAKE_DRAWN, VOLCANOES, toWorld, cityFloorAt } from '../data/world-layout.mjs';
+import { sample, rememberHeight, vnoise, SEA_LEVEL, lakesWithLevels, isFrozen, LAKE_DRAWN, VOLCANOES, toWorld, cityFloorAt } from '../data/world-layout.mjs';
 import { scenery, hideInstance, BREAKABLE, setSceneryQuality } from './scenery.js';
 
 export const CHUNK = 256;                 // metres per terrain tile
@@ -246,6 +246,59 @@ function* tileGeometrySteps(cx, cz, segs) {
   return { geo, info, n, step };
 }
 
+// The ground of a built tile changed inside a box (a plot was levelled): work out just the points
+// in the box again and move them, a few rows a frame, instead of throwing the whole 256 m tile away
+// and building it (and its trees and grass) again. The old ground stays drawn until it's done.
+const RINGS = new Map(); // segs -> Map(point -> its skirt points), see tileGeometrySteps
+function skirtsOf(segs) {
+  if (RINGS.has(segs)) return RINGS.get(segs);
+  const n = segs + 1, ring = [];
+  for (let i = 0; i < segs; i++) ring.push(i);
+  for (let j = 0; j < segs; j++) ring.push(j * n + segs);
+  for (let i = segs; i > 0; i--) ring.push(segs * n + i);
+  for (let j = segs; j > 0; j--) ring.push(j * n);
+  const m = new Map();
+  ring.forEach((src, r) => { if (!m.has(src)) m.set(src, []); m.get(src).push(n * n + r); });
+  RINGS.set(segs, m);
+  return m;
+}
+function* tilePatchSteps(geo, cx, cz, segs, box) {
+  const step = CHUNK / segs, n = segs + 1;
+  const ox = cx * CHUNK, oz = cz * CHUNK;
+  const i0 = Math.max(0, Math.floor((box.x0 - ox) / step)), i1 = Math.min(segs, Math.ceil((box.x1 - ox) / step));
+  const j0 = Math.max(0, Math.floor((box.z0 - oz) / step)), j1 = Math.min(segs, Math.ceil((box.z1 - oz) / step));
+  if (i0 > i1 || j0 > j1) return;
+  // the heights, with a border of one point all round for the slopes (normals)
+  const w = i1 - i0 + 3, hs = new Float32Array(w * (j1 - j0 + 3)), info = new Array(hs.length);
+  for (let j = j0 - 1; j <= j1 + 1; j++) {
+    for (let i = i0 - 1; i <= i1 + 1; i++) {
+      const wx = ox + i * step, wz = oz + j * step;
+      const s = sample(wx, wz, {});
+      rememberHeight(wx, wz, s.h);
+      const city = cityFloorAt(wx, wz, 0.3);
+      const q = (j - j0 + 1) * w + (i - i0 + 1);
+      hs[q] = city ? city.flat - 2.5 : s.h; info[q] = s;
+    }
+    if ((j - j0) % 6 === 5) yield;
+  }
+  const pos = geo.attributes.position, nor = geo.attributes.normal, col = geo.attributes.color;
+  const skirts = skirtsOf(segs), drop = step * 1.5 + 6, far = segs <= 16;
+  const nv = new THREE.Vector3();
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const q = (j - j0 + 1) * w + (i - i0 + 1), k = j * n + i;
+      nv.set(hs[q - 1] - hs[q + 1], 2 * step, hs[q - w] - hs[q + w]).normalize();
+      pos.setY(k, hs[q]);
+      nor.setXYZ(k, nv.x, nv.y, nv.z);
+      groundColor(info[q], nv.y, ox + i * step, oz + j * step, far, tmpC);
+      col.setXYZ(k, tmpC.r, tmpC.g, tmpC.b);
+      for (const e of skirts.get(k) || []) { pos.setY(e, hs[q] - drop); nor.setXYZ(e, nv.x, nv.y, nv.z); col.setXYZ(e, tmpC.r, tmpC.g, tmpC.b); }
+    }
+  }
+  pos.needsUpdate = nor.needsUpdate = col.needsUpdate = true;
+  geo.computeBoundingSphere();
+}
+
 // ---------- the horizon ----------
 
 // Built a few rows at a time (a generator: each step is a row), so moving the horizon along as you
@@ -457,32 +510,50 @@ export function createLand(scene) {
     const old = tiles.get(k);
     if (old) { root.remove(old.mesh); old.mesh.geometry.dispose(); }
     root.add(mesh);
-    const t = { mesh, segs, cx, cz, veg: old?.veg || null, grass: old?.grass || null };
+    const t = { mesh, segs, cx, cz, veg: old?.veg || null, grass: old?.grass || null, noGrass: !!old?.noGrass, vegIt: old?.vegIt || null, grassIt: old?.grassIt || null };
     tiles.set(k, t);
     return t;
   }
 
-  // (oneStep: build the trees or the grass, not both, so each costs a frame of its own)
-  function setVeg(t, want, wantGrass, oneStep = false) {
+  // Trees and grass for a tile, a few rows at a time: with `budgetMs` (while walking) each step stops
+  // when its time is up and carries on next frame; the trees first, then the grass, never both in one
+  // frame. Making a tile's grass in one go was a ~30 ms stall each time you came to a new tile (it
+  // showed most going up mountains, where new tiles come into reach quickly).
+  function setVeg(t, want, wantGrass, budgetMs = Infinity) {
+    const t0 = performance.now();
+    const run = (it) => { let r; do r = it.next(); while (!r.done && performance.now() - t0 < budgetMs); return r.done ? r.value : undefined; };
     if (want && !t.veg) {
-      t.veg = veg.forTile(t.cx, t.cz, CHUNK, (k) => broken.has(k));
+      t.vegIt ||= veg.forTileSteps(t.cx, t.cz, CHUNK, (k) => broken.has(k));
+      const v = run(t.vegIt);
+      if (v === undefined) return;
+      t.vegIt = null;
+      t.veg = v;
       t.veg.view(lastX, lastZ);
       root.add(t.veg.group);
       colliders.add(t.veg.solid);
-      if (oneStep && wantGrass && !t.grass) return;
-    } else if (!want && t.veg) {
-      root.remove(t.veg.group);
-      colliders.remove(t.veg.solid);
-      t.veg.dispose();
-      t.veg = null;
+      if (budgetMs !== Infinity && wantGrass && !t.grass && !t.noGrass) return;
+    } else if (!want) {
+      t.vegIt = null;
+      if (t.veg) {
+        root.remove(t.veg.group);
+        colliders.remove(t.veg.solid);
+        t.veg.dispose();
+        t.veg = null;
+      }
     }
-    if (wantGrass && !t.grass) {
-      t.grass = veg.grassForTile(t.cx, t.cz, CHUNK);
-      if (t.grass) root.add(t.grass);
-    } else if (!wantGrass && t.grass) {
-      root.remove(t.grass);
-      t.grass.dispose();
-      t.grass = null;
+    if (wantGrass && !t.grass && !t.noGrass) {
+      t.grassIt ||= veg.grassSteps(t.cx, t.cz, CHUNK);
+      const g = run(t.grassIt);
+      if (g === undefined) return;
+      t.grassIt = null;
+      // (no grass grows here: remembered, so it isn't looked for again every frame, which it was,
+      // all over the mountains, the snow and the deserts)
+      t.grass = g; t.noGrass = !g;
+      if (g) root.add(g);
+    } else if (!wantGrass) {
+      t.grassIt = null;
+      if (t.grass) { root.remove(t.grass); t.grass.dispose(); }
+      t.grass = null; t.noGrass = false;
     }
   }
 
@@ -512,7 +583,7 @@ export function createLand(scene) {
         const t = tiles.get(k);
         if (!t || t.segs !== segs) jobs.push({ cx, cz, segs, d, kind: 'tile' });
         const wantVeg = d <= VEG_RANGE, wantGrass = d <= GRASS_RANGE;
-        if (t && (!!t.veg !== wantVeg || !!t.grass !== wantGrass)) jobs.push({ cx, cz, d, kind: 'veg', wantVeg, wantGrass });
+        if (t && (!!t.veg !== wantVeg || !!(t.grass || t.noGrass) !== wantGrass)) jobs.push({ cx, cz, d, kind: 'veg', wantVeg, wantGrass });
       }
     }
     for (const k of building.keys()) if (!keep.has(k)) building.delete(k);
@@ -525,6 +596,7 @@ export function createLand(scene) {
     }
     jobs.sort((a, b) => a.d - b.d);
     const start = performance.now();
+    const mending = runPatches(budgetMs);
     for (const j of jobs) {
       if (performance.now() - start > budgetMs) break;
       if (j.kind === 'tile') {
@@ -535,7 +607,7 @@ export function createLand(scene) {
         if (budgetMs === Infinity) setVeg(t, j.d <= VEG_RANGE, j.d <= GRASS_RANGE);
       } else {
         const t = tiles.get(tkey(j.cx, j.cz));
-        if (t) setVeg(t, j.wantVeg, j.wantGrass, budgetMs !== Infinity);
+        if (t) setVeg(t, j.wantVeg, j.wantGrass, budgetMs === Infinity ? Infinity : Math.max(1, budgetMs - (performance.now() - start)));
       }
     }
     // the square around you where every detailed tile is built: the horizon is hidden inside it
@@ -543,7 +615,7 @@ export function createLand(scene) {
     for (const j of jobs) if (j.kind === 'tile' && j.d <= r && !tiles.has(tkey(j.cx, j.cz))) r = j.d - 1;
     if (r >= 0) nearBox.value.set((pcx - r) * CHUNK, (pcz - r) * CHUNK, (pcx + r + 1) * CHUNK, (pcz + r + 1) * CHUNK);
     else nearBox.value.set(1, 1, -1, -1);
-    return jobs.length;
+    return jobs.length + mending;
   }
 
   // Break a bush or small tree: hide it, stop it blocking, and remember it
@@ -554,24 +626,37 @@ export function createLand(scene) {
     return BREAKABLE[entry.kind];
   }
 
-  // The ground changed around (x, z) (a plot was levelled): drop those tiles so they are rebuilt
-  function refreshAt(x, z, r = 30) {
-    building.clear(); forgetHeights(); // (half-built tiles and remembered heights are of the old ground)
+  // The ground changed inside a box (a plot was cleared or levelled): the tiles there are mended in
+  // place over the next frames (see tilePatchSteps), and their trees, rocks and grass with them
+  const patches = []; // [{ t, it, box }]
+  function refreshAt(box) {
     for (const [k, t] of tiles) {
       const x0 = t.cx * CHUNK, z0 = t.cz * CHUNK;
-      if (x + r < x0 || x - r > x0 + CHUNK || z + r < z0 || z - r > z0 + CHUNK) continue;
-      setVeg(t, false, false);
-      root.remove(t.mesh);
-      t.mesh.geometry.dispose();
-      tiles.delete(k);
+      if (box.x1 < x0 || box.x0 > x0 + CHUNK || box.z1 < z0 || box.z0 > z0 + CHUNK) continue;
+      patches.push({ t, k, box, it: tilePatchSteps(t.mesh.geometry, t.cx, t.cz, t.segs, box) });
+      building.delete(k); // (a tile half-built from the old ground starts again)
     }
+  }
+  // work through the mending for up to budgetMs
+  function runPatches(budgetMs) {
+    const t0 = performance.now();
+    while (patches.length && performance.now() - t0 < budgetMs) {
+      const P = patches[0];
+      if (tiles.get(P.k) !== P.t) { patches.shift(); continue; } // (rebuilt meanwhile, from the new ground)
+      if (!P.it.next().done) continue;
+      patches.shift();
+      const t = P.t;
+      if (t.veg) { colliders.remove(t.veg.refresh(P.box)); t.veg.view(lastX, lastZ); }
+      if (t.grass) veg.refreshGrass(t.grass, P.box);
+    }
+    return patches.length;
   }
 
   // graphics quality: how far the land, trees and grass reach (tiles catch up on the next updates)
   function setQuality(q) {
     LODS = q.lods; VEG_RANGE = q.veg; GRASS_RANGE = q.grass;
     setSceneryQuality(q);
-    for (const t of tiles.values()) if (t.grass) { root.remove(t.grass); t.grass.dispose(); t.grass = null; } // regrown at the new thickness
+    for (const t of tiles.values()) { if (t.grass) { root.remove(t.grass); t.grass.dispose(); } t.grass = null; t.noGrass = false; t.grassIt = null; } // regrown at the new thickness
   }
 
   return {

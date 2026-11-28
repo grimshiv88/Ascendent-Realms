@@ -39,7 +39,7 @@ import { onFloor, inColosseum as inColosseumAt, startSpots, colosseumPlace, FLOO
 import { updateCrowd, setCrowdFar } from '../characters/crowd.js';
 import { wearGear } from '../characters/gear.js';
 import { allLairs, BEASTS } from '../data/beasts.mjs';
-import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, WORLD_BOUNDS, setPreparedPlots, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
+import { heightAt, surfaceAt, safeZoneAt, sample, placesWithPositions, regionName, WORLD_BOUNDS, setPreparedPlots, plotReach, PLOT, setUnderground, CITY_R } from '../data/world-layout.mjs';
 import { createPlots } from './plots.js';
 import { gameTime, now as realmNow } from '../data/clock.mjs';
 import { RACES, restCap, killExpScale, EVOLUTIONS } from '../data/game-data.mjs';
@@ -78,7 +78,7 @@ const STEER_RUN = 0.9;
 
 // `game` is the progress object (HP, bag, gear). `onEvent(type, data)` reports kills, pickups,
 // defeat and level-ups to the page.
-export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onMouseFreed, onView, windowOpen, view } = {}) {
+export function startWorld(canvas, character, { game, onSaveLocation, onKey, onArea, onEvent, onPlot, onSweep, onMouseFreed, onView, windowOpen, view } = {}) {
   allCastles(); // levels the ground under the Monster Kings' castles before any land is built
   allFarms(); // ...and under the farms outside the towns
   let quality = pickQuality(view?.graphics);
@@ -2443,7 +2443,13 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
         const want = pinch.dist0 * pinch.d0 / d;
         if (want < 1.6) { setView('first', true); pinch = { d0: d, dist0: 2 }; } else dist = THREE.MathUtils.clamp(want, 2, 30);
       }
+    } else if (look && e.pointerId === look.id && plots.on && (look.sweep || (!look.turned && performance.now() - look.t >= SWEEP_HOLD))) {
+      // held still on the land grid, then moved: sweep over plots to choose them all (no turning)
+      look.sweep ||= [];
+      const at = plotUnder(e.clientX, e.clientY);
+      if (at && !look.sweep.some((q) => q.ix === at.ix && q.iz === at.iz)) { look.sweep.push(at); onSweep?.(look.sweep, false); }
     } else if (look && e.pointerId === look.id) {
+      if (Math.hypot(e.clientX - look.sx, e.clientY - look.sy) >= 8) look.turned = true;
       // a finger turns the camera more gently than a mouse, so small swipes are small turns
       const k = look.mouse ? feel.mouse : 0.55 * feel.touch;
       // a mouse drag turns by how far the mouse moved (movementX/Y), so the view keeps turning even
@@ -2457,18 +2463,24 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       look.x = e.clientX; look.y = e.clientY;
     }
   });
+  // the plot under a point on the screen, or null
+  const SWEEP_HOLD = 300; // ms held still before a drag sweeps over plots instead of turning the view
+  function plotUnder(cx, cy) {
+    const r = canvas.getBoundingClientRect();
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
+    return plots.pick(ray.ray);
+  }
   const release = (e) => {
     if (fingers.delete(e.pointerId) && fingers.size < 2) pinch = null;
     if (e.pointerId === stick.id) { stick.id = null; stick.x = 0; stick.y = 0; stickEl.classList.add('hidden'); }
     if (look && e.pointerId === look.id) {
       if (look.hid) canvas.style.cursor = '';
       // a quick click without dragging is an attack, or picks a plot while the land grid is showing
-      const tap = e.type === 'pointerup' && Math.hypot(e.clientX - look.sx, e.clientY - look.sy) < 8 && performance.now() - look.t < 350;
-      if (tap && plots.on) {
-        const r = canvas.getBoundingClientRect();
-        const ray = new THREE.Raycaster();
-        ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
-        const at = plots.pick(ray.ray);
+      const tap = !look.sweep && e.type === 'pointerup' && Math.hypot(e.clientX - look.sx, e.clientY - look.sy) < 8 && performance.now() - look.t < 350;
+      if (look.sweep) { if (e.type === 'pointerup' && look.sweep.length) onSweep?.(look.sweep, true); }
+      else if (tap && plots.on) {
+        const at = plotUnder(e.clientX, e.clientY);
         if (at) onPlot?.(plots.select(at));
       } else if (tap && e.pointerType !== 'mouse' && tapUse(e.clientX, e.clientY)) { /* tapped a door, counter, chair, bed or chest */
       } else if (tap && talkAt(e.clientX, e.clientY)) { /* clicked a townsperson: they talk */
@@ -3499,6 +3511,7 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     get landMode() { return plots.on; },
     selectPlot(p) { return plots.select(p); },
     choosePlots(list) { plots.setChosen(list); },
+    pickMine(list) { plots.setPicked(list); },
     // where you are, as saved
     here: () => here(),
     setLands(list) {
@@ -3506,10 +3519,11 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
       // a plot redraws when it is cleared or flattened
       prepared = new Set(list.filter((p) => Number.isFinite(p.flat) || p.cleared).map((p) => `${p.ix},${p.iz}${Number.isFinite(p.flat) ? `,${p.flat}` : ''}`));
       setPreparedPlots(list);
-      for (const k of prepared) {
-        if (before.has(k)) continue;
+      // (only the ground on and around those plots is mended, a little each frame: see land.js)
+      const mend = new Set([...prepared].filter((k) => !before.has(k)).concat([...before].filter((k) => !prepared.has(k))).map((k) => k.split(',').slice(0, 2).join(',')));
+      for (const k of mend) {
         const [ix, iz] = k.split(',').map(Number);
-        land.refreshAt((ix + 0.5) * PLOT, (iz + 0.5) * PLOT, 30);
+        land.refreshAt(plotReach(ix, iz));
       }
       plots.setLands(list);
       myFarmPlots = list.filter((p) => p.mine && p.purpose === 'farm');

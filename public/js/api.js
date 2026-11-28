@@ -854,6 +854,26 @@ export async function landPrepare(ix, iz, how = 'flatten') {
   return request('api/land/prepare', { method: 'POST', body: { ix, iz, how } });
 }
 
+// Clear or flatten several of your plots at once ([{ix, iz}]); returns { coins, done, plots }
+export async function landPrepareMany(list, how = 'flatten') {
+  if (await isPreviewMode()) {
+    let done = 0;
+    const r = await previewLand.run((plots, acc, spend, R) => {
+      const plan = R.planPrepare(list, how, plots, (p) => p.owner === acc.character.name, acc.character.cls);
+      if (plan.error) throw new Error(plan.error);
+      spend(plan.cost);
+      for (const d of plan.done) {
+        const p = plots.find((q) => q.ix === d.ix && q.iz === d.iz);
+        p.cleared = true;
+        if (d.flat !== null) p.flat = d.flat;
+      }
+      done = plan.done.length;
+    });
+    return { ...r, done };
+  }
+  return request('api/land/prepare', { method: 'POST', body: { plots: list, how } });
+}
+
 // Build on your land: { add, remove } pieces, or { building: { type, x, z, r, how } }
 export async function landBuild(body) {
   if (await isPreviewMode()) {

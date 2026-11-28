@@ -1,6 +1,6 @@
 // Land plots in the world: the buying grid (press L), the chosen plot, and a coloured line round owned land.
 import * as THREE from 'three';
-import { PLOT, heightAt, surfaceAt } from '../data/world-layout.mjs';
+import { PLOT, surfaceAt } from '../data/world-layout.mjs';
 import { whyNot, isRiver, NEIGHBOURS } from '../data/land.mjs';
 import { isRuler } from '../data/building.mjs';
 
@@ -47,30 +47,41 @@ export function createPlots(scene) {
   // why a plot can't be bought right now, or null
   const why = (ix, iz) => (base(ix, iz).why || (base(ix, iz).river ? whyNot(ix, iz, besideMine) : null));
 
-  // Glowing strips along every plot edge near (cx, cz), coloured by who owns the plot
+  // Glowing strips along every plot edge near (cx, cz), coloured by who owns the plot. Plots of the
+  // same kind side by side (your own joined-up land, say) share one thin line where they touch; where
+  // the kind changes (the edge of your land) each side has a thick strip, the two touching, no gap.
+  const group = (ix, iz) => { const st = status(ix, iz); return st === 'taken' ? `taken:${lands.get(key(ix, iz)).owner}` : st; };
+  const THICK = 0.42, THIN = 0.07;
   function buildGrid(cx, cz) {
     if (grid) { scene.remove(grid); grid.geometry.dispose(); }
     const pos = [], col = [];
-    const W = 0.18; // half the strip width
-    const edge = (x0, z0, x1, z1, c) => {
+    // a strip along the line from (x0, z0) to (x1, z1), from `a` to `b` metres to its left
+    const strip = (x0, z0, x1, z1, a, b, c) => {
       const len = Math.hypot(x1 - x0, z1 - z0);
       const n = Math.ceil(len / STEP);
-      const nx = -(z1 - z0) / len * W, nz = (x1 - x0) / len * W; // sideways
+      const lx = -(z1 - z0) / len, lz = (x1 - x0) / len;
+      const y = (x, z) => Math.max(surfaceAt(x, z), 0) + LIFT; // (the ground as drawn; over rivers, on the water)
       for (let i = 0; i < n; i++) {
-        const a = i / n, b = (i + 1) / n;
-        const xa = x0 + (x1 - x0) * a, za = z0 + (z1 - z0) * a, xb = x0 + (x1 - x0) * b, zb = z0 + (z1 - z0) * b;
-        const ya = Math.max(heightAt(xa, za), 0) + LIFT, yb = Math.max(heightAt(xb, zb), 0) + LIFT; // over rivers, on the water
-        pos.push(xa - nx, ya, za - nz, xa + nx, ya, za + nz, xb + nx, yb, zb + nz);
-        pos.push(xa - nx, ya, za - nz, xb + nx, yb, zb + nz, xb - nx, yb, zb - nz);
+        const t0 = i / n, t1 = (i + 1) / n;
+        const xa = x0 + (x1 - x0) * t0, za = z0 + (z1 - z0) * t0, xb = x0 + (x1 - x0) * t1, zb = z0 + (z1 - z0) * t1;
+        const p1 = [xa + lx * a, za + lz * a], p2 = [xa + lx * b, za + lz * b], p3 = [xb + lx * b, zb + lz * b], p4 = [xb + lx * a, zb + lz * a];
+        const [y1, y2, y3, y4] = [p1, p2, p3, p4].map(([x, z]) => y(x, z));
+        pos.push(p1[0], y1, p1[1], p2[0], y2, p2[1], p3[0], y3, p3[1]);
+        pos.push(p1[0], y1, p1[1], p3[0], y3, p3[1], p4[0], y4, p4[1]);
         for (let k = 0; k < 6; k++) col.push(c.r, c.g, c.b);
       }
     };
+    const inWindow = (ix, iz) => Math.abs(ix - cx) <= GRID_R && Math.abs(iz - cz) <= GRID_R;
     for (let iz = cz - GRID_R; iz <= cz + GRID_R; iz++) {
       for (let ix = cx - GRID_R; ix <= cx + GRID_R; ix++) {
-        const c = COLORS[status(ix, iz)];
-        // draw each plot slightly inset so neighbours' colours don't overlap
-        const x0 = ix * PLOT + 0.4, z0 = iz * PLOT + 0.4, x1 = (ix + 1) * PLOT - 0.4, z1 = (iz + 1) * PLOT - 0.4;
-        edge(x0, z0, x1, z0, c); edge(x1, z0, x1, z1, c); edge(x1, z1, x0, z1, c); edge(x0, z1, x0, z0, c);
+        const g = group(ix, iz), c = COLORS[status(ix, iz)];
+        const x0 = ix * PLOT, z0 = iz * PLOT, x1 = x0 + PLOT, z1 = z0 + PLOT;
+        // each side, walked so the plot is on its left: [neighbour dx, dz, from, to]
+        for (const [dx, dz, ax, az, bx, bz] of [[0, -1, x1, z0, x0, z0], [-1, 0, x0, z0, x0, z1], [0, 1, x0, z1, x1, z1], [1, 0, x1, z1, x1, z0]]) {
+          const nx = ix + dx, nz = iz + dz;
+          if (group(nx, nz) !== g) strip(ax, az, bx, bz, 0, THICK, c);
+          else if (dx + dz < 0 || !inWindow(nx, nz)) strip(ax, az, bx, bz, -THIN, THIN, c); // (drawn once, by one of the two)
+        }
       }
     }
     const geo = new THREE.BufferGeometry();
@@ -82,25 +93,28 @@ export function createPlots(scene) {
   }
 
   // See-through sheets over the chosen plots (and the one last tapped), following the ground
+  const pickedMat = new THREE.MeshBasicMaterial({ color: '#ffd76a', transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });
+  let picked = new Set(); // "ix,iz" of your own plots chosen to clear or flatten together
+  function sheet(ix, iz, mat) {
+    const n = 8;
+    const geo = new THREE.PlaneGeometry(PLOT - 0.8, PLOT - 0.8, n, n);
+    geo.rotateX(-Math.PI / 2);
+    const p = geo.attributes.position;
+    const ox = (ix + 0.5) * PLOT, oz = (iz + 0.5) * PLOT;
+    for (let i = 0; i < p.count; i++) p.setY(i, Math.max(surfaceAt(ox + p.getX(i), oz + p.getZ(i)), 0) + LIFT * 0.8);
+    geo.translate(ox, 0, oz);
+    const m = new THREE.Mesh(geo, mat);
+    m.renderOrder = 1;
+    scene.add(m);
+    pickMeshes.push(m);
+  }
   function buildPick() {
     for (const m of pickMeshes) { scene.remove(m); m.geometry.dispose(); }
     pickMeshes = [];
     const show = new Set(chosen);
-    if (selected) show.add(key(selected.ix, selected.iz));
-    for (const k of show) {
-      const [ix, iz] = k.split(',').map(Number);
-      const n = 8;
-      const geo = new THREE.PlaneGeometry(PLOT - 0.8, PLOT - 0.8, n, n);
-      geo.rotateX(-Math.PI / 2);
-      const p = geo.attributes.position;
-      const ox = (ix + 0.5) * PLOT, oz = (iz + 0.5) * PLOT;
-      for (let i = 0; i < p.count; i++) p.setY(i, Math.max(heightAt(ox + p.getX(i), oz + p.getZ(i)), 0) + LIFT * 0.8);
-      geo.translate(ox, 0, oz);
-      const m = new THREE.Mesh(geo, pickMat);
-      m.renderOrder = 1;
-      scene.add(m);
-      pickMeshes.push(m);
-    }
+    if (selected && !picked.has(key(selected.ix, selected.iz))) show.add(key(selected.ix, selected.iz));
+    for (const k of show) { const [ix, iz] = k.split(',').map(Number); sheet(ix, iz, pickMat); }
+    for (const k of picked) { const [ix, iz] = k.split(',').map(Number); sheet(ix, iz, pickedMat); }
   }
 
   // A bright line along the outer border of each owner's land near you, following the ground:
@@ -147,8 +161,13 @@ export function createPlots(scene) {
   return {
     // `plots` from the server: [{ix, iz, owner, purpose, flat, mine}]
     setLands(plots) {
+      const old = lands;
       lands = new Map(plots.map((p) => [key(p.ix, p.iz), p]));
-      canBuy.clear();
+      // whether a plot can be bought hangs on the ground, so only the plots by land that was levelled
+      // (or that changed hands) are checked again; checking all of them was a stall after every change
+      const changed = [...lands.values()].filter((p) => { const o = old.get(key(p.ix, p.iz)); return !o || o.flat !== p.flat; }).concat([...old.values()].filter((p) => !lands.has(key(p.ix, p.iz))));
+      if (changed.length > 60) canBuy.clear();
+      else for (const p of changed) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) canBuy.delete(key(p.ix + dx, p.iz + dz));
       if (on && centre) buildGrid(centre.ix, centre.iz);
       if (postsCentre) buildPosts(postsCentre.ix, postsCentre.iz);
       buildPick();
@@ -159,6 +178,7 @@ export function createPlots(scene) {
         if (grid) { scene.remove(grid); grid.geometry.dispose(); grid = null; }
         selected = null;
         chosen = new Set();
+        picked = new Set();
         buildPick();
       }
       centre = null;
@@ -181,7 +201,7 @@ export function createPlots(scene) {
       const p = ray.origin.clone();
       for (let d = 0; d < 400; d += 0.5) {
         p.copy(ray.origin).addScaledVector(ray.direction, d);
-        if (p.y <= heightAt(p.x, p.z)) return { ix: Math.floor(p.x / PLOT), iz: Math.floor(p.z / PLOT) };
+        if (p.y <= Math.max(surfaceAt(p.x, p.z), 0)) return { ix: Math.floor(p.x / PLOT), iz: Math.floor(p.z / PLOT) };
       }
       return null;
     },
@@ -196,6 +216,11 @@ export function createPlots(scene) {
     setChosen(list) {
       chosen = new Set(list.map((p) => key(p.ix, p.iz)));
       if (on && centre) buildGrid(centre.ix, centre.iz);
+      buildPick();
+    },
+    // your own plots chosen to clear or flatten together ([{ix, iz}])
+    setPicked(list) {
+      picked = new Set(list.map((p) => key(p.ix, p.iz)));
       buildPick();
     },
     dispose() {

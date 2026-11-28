@@ -12,7 +12,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '
 
 // `plot` is { ix, iz, owned, why, river } (the one last tapped); `choice` is the purpose picked on the
 // cards; `basket` the plots chosen to buy together [{ix, iz, price}]
-export function renderLand(el, plot, game, { choice = 'house', message = '', busy = false, basket = [] } = {}) {
+export function renderLand(el, plot, game, { choice = 'house', message = '', busy = false, basket = [], mine: chosenMine = [] } = {}) {
   const c = game.character;
   const owned = plot.owned;
   const mine = owned?.mine;
@@ -35,6 +35,18 @@ export function renderLand(el, plot, game, { choice = 'house', message = '', bus
     body = `<p class="sys-hint">Tap squares on the grid, or on the Map (M), to choose land to buy. You can buy up to ${REACH} m from where you stand.</p>`;
   } else if (!mine) {
     body = `<p class="sys-top">Owned by <b>${esc(owned.owner)}</b> <span>·</span> ${PURPOSES[owned.purpose]?.name || 'Land'}</p>`;
+  } else if (chosenMine.length > 1) {
+    // several of your own plots chosen (tap more, or hold and sweep over them): clear or flatten them all
+    const n = chosenMine.length;
+    const toClear = chosenMine.filter((p) => !p.cleared && !Number.isFinite(p.flat)), toFlat = chosenMine.filter((p) => !Number.isFinite(p.flat));
+    const clearAll = toClear.length * clearCost(c.cls), flatAll = toFlat.reduce((a, p) => a + prepareCost(p.ix, p.iz, c.cls), 0);
+    const btn = (how, price, label) => `<button type="button" class="sys-button${how === 'clear' ? ' ghost' : ''}" data-land-prepare-all="${how}" ${busy ? 'disabled' : ''}>${c.coins < price ? `Needs ${money(price)}` : `${label} for ${money(price)}`}</button>`;
+    body = `<p class="sys-top">Your land <span>·</span> <b>${n} plots chosen</b></p>
+      <div class="land-basket">${chosenMine.map((p) => `<button type="button" class="land-chip" data-land-unpick-mine="${p.ix},${p.iz}" title="Take it out">${p.ix}, ${p.iz} <small>${Number.isFinite(p.flat) ? 'flat' : p.cleared ? 'cleared' : ''}</small> ×</button>`).join('')}</div>
+      <p class="sys-hint">Tap more of your squares on the grid to add them, or hold the mouse (or your finger) still for a moment and then sweep it over them. Side by side, flattened plots take the same level.${c.cls === 'builder' ? ' Builders pay half.' : ''}</p>
+      <h3 class="sys-sub">Clear and flatten</h3>
+      ${toFlat.length ? `<div class="land-actions">${toClear.length ? btn('clear', clearAll, `Clear ${toClear.length}`) : ''}${btn('flatten', flatAll, `Flatten ${toFlat.length}`)}</div>` : '<p class="sys-hint">✓ All of them are cleared and flattened.</p>'}
+      <div class="land-actions"><button type="button" class="sys-button ghost" data-land-mine-none>Choose just one</button></div>`;
   } else {
     const cost = prepareCost(plot.ix, plot.iz, c.cls), clear = clearCost(c.cls);
     const level = Number.isFinite(owned.flat), cleared = level || owned.cleared;

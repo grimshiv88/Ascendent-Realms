@@ -533,8 +533,9 @@ const PREPARED = new Map(); // "ix,iz" -> level height
 export const plotOf = (x, z) => ({ ix: Math.floor(x / PLOT), iz: Math.floor(z / PLOT) });
 const CLEARED = new Set(); // plots cleared of trees, rocks and grass but keeping their shape
 const FIXED = new Map(); // ground levelled for good (under the Monster Kings' castles)
+// Returns the plots whose ground changed (levelled, or no longer levelled): [{ ix, iz }]
 export function setPreparedPlots(plots) {
-  hCache.clear(); // (levelled ground: the remembered heights are out of date)
+  const before = new Map(PREPARED);
   PREPARED.clear();
   CLEARED.clear();
   for (const [k, f] of FIXED) PREPARED.set(k, f);
@@ -542,6 +543,14 @@ export function setPreparedPlots(plots) {
     if (Number.isFinite(p.flat)) PREPARED.set(`${p.ix},${p.iz}`, p.flat);
     if (p.cleared) CLEARED.add(`${p.ix},${p.iz}`);
   }
+  // only the remembered heights on and around the plots that changed are out of date (forgetting
+  // every one of them made the whole land around you be worked out again from the noise)
+  const changed = [];
+  for (const [k, f] of PREPARED) if (before.get(k) !== f) changed.push(k);
+  for (const k of before.keys()) if (!PREPARED.has(k)) changed.push(k);
+  if (changed.length > 400) hCache.clear();
+  else for (const k of changed) { const [ix, iz] = k.split(',').map(Number); forgetPlotHeights(ix, iz); }
+  return changed.map((k) => { const [ix, iz] = k.split(',').map(Number); return { ix, iz }; });
 }
 export function addFixedFlats(plots) {
   hCache.clear();
@@ -607,6 +616,15 @@ export function rememberHeight(x, z, h) {
   hCache.set(hKey(gx, gz), h);
 }
 export const forgetHeights = () => hCache.clear();
+// forget the remembered heights inside a box (x0..x1, z0..z1)
+export function forgetHeightsIn(x0, z0, x1, z1) {
+  for (let gx = Math.floor(x0 / SURFACE_STEP); gx <= Math.ceil(x1 / SURFACE_STEP); gx++) {
+    for (let gz = Math.floor(z0 / SURFACE_STEP); gz <= Math.ceil(z1 / SURFACE_STEP); gz++) hCache.delete(hKey(gx, gz));
+  }
+}
+// the ground a levelled plot reaches: the plot itself and the slope round it
+export const plotReach = (ix, iz) => ({ x0: ix * PLOT - PLOT_RAMP_MAX, z0: iz * PLOT - PLOT_RAMP_MAX, x1: (ix + 1) * PLOT + PLOT_RAMP_MAX, z1: (iz + 1) * PLOT + PLOT_RAMP_MAX });
+function forgetPlotHeights(ix, iz) { const b = plotReach(ix, iz); forgetHeightsIn(b.x0, b.z0, b.x1, b.z1); }
 
 export function placesWithPositions() {
   for (const p of PLACE_POS) if (p.y === undefined) p.y = placeBaseHeight(p);
