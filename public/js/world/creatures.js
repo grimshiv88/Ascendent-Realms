@@ -87,23 +87,30 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
 
 function plate(name, level, showLevel = true) {
+  const label = showLevel ? `${name}  Lv ${level}` : name;
   const c = document.createElement('canvas');
-  c.width = 256; c.height = 64;
+  // wide enough for the whole name (a King's long title is never cut off)
+  const font = 'bold 22px Cinzel, Georgia, serif';
+  const g0 = c.getContext('2d');
+  g0.font = font;
+  c.width = Math.max(256, Math.ceil(g0.measureText(label).width) + 24); c.height = 64;
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true, transparent: true }));
-  sprite.scale.set(1.6, 0.4, 1);
+  // (drawn at a fixed size on screen and laid out so tags never overlap or leave the screen: nametags.js)
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false }));
+  sprite.scale.set(0.12 * c.width / 256, 0.03, 1);
+  sprite.renderOrder = 50;
+  const W = c.width, mid = W / 2;
   const draw = (hpFrac) => {
     const g = c.getContext('2d');
-    g.clearRect(0, 0, 256, 64);
-    g.font = 'bold 22px Cinzel, Georgia, serif';
+    g.clearRect(0, 0, W, 64);
+    g.font = font;
     g.textAlign = 'center';
     g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.8)';
-    const label = showLevel ? `${name}  Lv ${level}` : name;
-    g.strokeText(label, 128, 24);
-    g.fillStyle = '#f5e6c0'; g.fillText(label, 128, 24);
-    g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(28, 38, 200, 14);
-    g.fillStyle = hpFrac > 0.5 ? '#c8382a' : '#e0662a'; g.fillRect(30, 40, 196 * Math.max(0, hpFrac), 10);
+    g.strokeText(label, mid, 24);
+    g.fillStyle = '#f5e6c0'; g.fillText(label, mid, 24);
+    g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(mid - 100, 38, 200, 14);
+    g.fillStyle = hpFrac > 0.5 ? '#c8382a' : '#e0662a'; g.fillRect(mid - 98, 40, 196 * Math.max(0, hpFrac), 10);
     tex.needsUpdate = true;
   };
   draw(1);
@@ -1019,8 +1026,16 @@ export function createCreatures(scene, { getPlayer, onHitPlayer, isInsideCave, i
     return { exp: monsterExp(m.level, m.stage), coins: 1 + m.level + Math.floor(Math.random() * (m.level / 2 + 2)), drops, name: m.title || m.kind.name, kind: m.kindId, level: m.level };
   }
 
+  // every monster's tag, for laying them out on screen before each frame is drawn (nametags.js)
+  const tagList = [];
+  function tags() {
+    tagList.length = 0;
+    for (const m of list) if (m.tag?.sprite.visible) tagList.push({ sprite: m.tag.sprite, foot: m.body?.position.y ?? m.y, far: m.kind.beast ? 400 : m.boss ? 150 : 90 });
+    return tagList;
+  }
+
   return {
-    update, target, targets, hit, netState, netApply, netHit, netWon,
+    update, target, targets, tags, hit, netState, netApply, netHit, netWon,
     // how many seconds until a slain great beast's lair has a new one (0: it is there)
     slainIn: (lairId) => Math.max(0, (slain.get(lairId) || 0) - nowT),
     // the realm's keepers bring slain great beasts back: their empty lairs have them again at once
