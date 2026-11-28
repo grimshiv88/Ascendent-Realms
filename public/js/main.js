@@ -158,7 +158,7 @@ function enterRealm({ account }) {
     intro.stop();
     $('scene').classList.add('hidden');
     $('ui').classList.add('hidden');
-    if (account.character) startGame(account.character);
+    if (account.character) await startGame(account.character);
     else openCreation(account.username);
   });
 }
@@ -178,7 +178,7 @@ function openCreation(username) {
       await cloudTransition(async () => {
         creator.close();
         $('creator-root').classList.add('hidden');
-        startGame(character);
+        await startGame(character);
       });
     },
   });
@@ -2008,6 +2008,8 @@ function startGame(character) {
   if (ui.tutorialDue && !character.journey) game.setJourney({ seen: [], off: false });
   runJourney();
   openPanel('welcome');
+  // the loading clouds stay up until the world has caught up (see world.settle)
+  return world.settle?.() || Promise.resolve();
 }
 
 // The region name fades in at the top of the screen when you enter a new area

@@ -3548,6 +3548,23 @@ export function startWorld(canvas, character, { game, onSaveLocation, onKey, onA
     setCeremonies,
     atShrine,
     riseAtShrine,
+    // Behind the loading clouds: do now the work the first seconds of play would otherwise do a bit
+    // at a time in front of you (the townsfolk in view, the last pieces of land) and get every
+    // shader ready, so the world is smooth the moment the clouds part (it used to lag after a
+    // refresh while all of that caught up). Never waits longer than `maxMs`.
+    async settle(maxMs = 8000) {
+      const end = performance.now() + maxMs;
+      const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+      const left = () => Math.max(0, end - performance.now());
+      await frame(); await frame(); // (the camera is in place)
+      updateCrowd(camera.position.x, camera.position.y, camera.position.z, scene, Infinity);
+      while (left() > 0 && !depth && !inside && land.update(pos.x, pos.z, 40) > 0) await frame();
+      // every material in the world, hidden ones too (far city detail, townsfolk just built),
+      // compiled side by side instead of one by one as each first comes into view
+      try { await Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, left()))]); } catch { /* only a head start */ }
+      await frame(); await frame();
+      smooth.reset(); // (the slow frames behind the clouds don't count against the sharpness)
+    },
     // build a little more of the land around you (`ms` of work); returns how many pieces are left
     catchUpLand: (ms = 12) => (depth || inside ? 0 : land.update(pos.x, pos.z, ms)),
     // hold still while the death screen is up (no input, monsters leave you be)

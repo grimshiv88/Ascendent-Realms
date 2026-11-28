@@ -54,8 +54,9 @@ function unbuild(holder) {
   delete holder.userData.rig;
 }
 
-// Hide or show each one by its distance from (x, y, z), the camera
-export function updateCrowd(x, y, z, scene) {
+// Hide or show each one by its distance from (x, y, z), the camera. `buildEach` is how many new
+// bodies may be built this time (behind the loading clouds every one in view is built at once)
+export function updateCrowd(x, y, z, scene, buildEach = BUILD_EACH) {
   const p = new THREE.Vector3();
   let built = 0;
   for (const b of crowd) {
@@ -69,7 +70,7 @@ export function updateCrowd(x, y, z, scene) {
     let show = d < far;
     if (b.userData.make) {
       if (b.userData.rig && d > far * KEEP + 10) unbuild(b);
-      else if (show && !b.userData.rig) { if (built < BUILD_EACH) { build(b); built++; } else show = false; }
+      else if (show && !b.userData.rig) { if (built < buildEach) { build(b); built++; } else show = false; }
       if (!b.userData.rig) continue;
     }
     const inner = b.children[0];
