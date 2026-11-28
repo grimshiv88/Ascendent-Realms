@@ -1,6 +1,7 @@
 // Other players close by: drawn with their own body, colours and gear, walking smoothly between
 // the spots their games report (see data/presence.mjs), with their username above their head.
-// Their tamed dragon or wyvern (ridden, or at their side) and their hatchling show too.
+// Their tamed dragon or wyvern (ridden, or at their side), their horse, donkey or camel (ridden,
+// or waiting where they left it) and their hatchling show too.
 import * as THREE from 'three';
 import { buildCharacter, animateCharacter } from '../characters/model.js';
 import { poseSwim, endSwim } from '../characters/moves.js';
@@ -9,9 +10,18 @@ import { ITEMS } from '../data/items.mjs';
 import { bodySig, GONE_MS } from '../data/presence.mjs';
 import { BEASTS } from '../data/beasts.mjs';
 import { buildBeast, animateBeast } from './beasts.js';
+import { animateAnimal } from './animalbody.js';
+import { saddledAnimal, poseRide, seatRider } from './riding.js';
+import { MOUNTS } from '../data/mounts.mjs';
 
-// a player's dragon, wyvern or hatchling ('h:<kind>'), drawn like the real thing
+// a player's dragon, wyvern, hatchling ('h:<kind>') or saddled horse, donkey or camel ('m:<kind>'),
+// drawn like the real thing
 function makePet(k) {
+  if (k.startsWith('m:')) {
+    const id = k.slice(2);
+    if (!MOUNTS[id] || MOUNTS[id].beast) return null;
+    return { k, root: saddledAnimal(id).root, steed: true };
+  }
   const kind = k.replace(/^h:/, ''), def = BEASTS[kind];
   if (!def || def.king || def.shape === 'spirit') return null;
   const root = buildBeast(def);
@@ -114,6 +124,13 @@ export function createOthers(scene, hooks = {}) {
         if (o.pet) {
           if (Math.hypot(pt.x - o.pet.x, pt.z - o.pet.z) > 40) Object.assign(o.pet, { x: pt.x, y: pt.y, z: pt.z });
           o.pet.to = pt;
+          if (o.pet.steed) o.pet.root.scale.setScalar(pt.s || 1);
+          // in the saddle: how far below and behind their body the animal is (its saddle is that high,
+          // its seat that far forward), so it stays right under them between the slower updates
+          if (p.pose === 'ride' || p.pose === 'fly') {
+            const fw = (p.x - pt.x) * Math.sin(p.heading) + (p.z - pt.z) * Math.cos(p.heading);
+            o.pet.under = { up: Math.max(-2, Math.min(15, p.y - pt.y)), fw: Math.max(-6, Math.min(6, fw)) };
+          }
         }
       }
       for (const id of [...seen.keys()]) if (!now.has(id)) drop(id);
@@ -159,7 +176,10 @@ export function createOthers(scene, hooks = {}) {
         o.body.rotation.y = h;
         const lying = o.pose === 'lie';
         o.body.rotation.z = lying ? Math.PI / 2 : 0;
-        animateCharacter(o.body, t, lying || o.pose === 'sit' || o.pose === 'ride' || o.pose === 'fly' ? 0 : o.speed / WALK * 1.6);
+        const astride = o.pose === 'ride' || o.pose === 'fly';
+        animateCharacter(o.body, t, lying || o.pose === 'sit' || astride ? 0 : o.speed / WALK * 1.6);
+        // in the saddle: sitting astride, hands on the reins (the walk puts their legs back after)
+        if (astride && o.body.userData.rig) poseRide(o.body.userData.rig);
         // swimming: the same front crawl or treading water as your own body
         if (o.pose === 'swim') { poseSwim(o.body, x, y, z, h, t, o.speed / (WALK * 0.45)); o.swam = true; }
         else if (o.swam) { o.swam = false; endSwim(o.body); }
@@ -174,10 +194,12 @@ export function createOthers(scene, hooks = {}) {
         const q = o.pet;
         if (q) {
           const k = Math.min(1, dt * 3), was = { x: q.x, z: q.z };
-          if (o.pose === 'ride' || o.pose === 'fly') {
+          if (astride) {
             // under its rider (they are drawn in the saddle)
-            q.x = x; q.z = z; q.h = h;
-            q.y += ((q.to?.y ?? y) - q.y) * k;
+            const u = q.under;
+            q.x = x - (u ? Math.sin(h) * u.fw : 0); q.z = z - (u ? Math.cos(h) * u.fw : 0); q.h = h;
+            if (u) q.y = y - u.up;
+            else q.y += ((q.to?.y ?? y) - q.y) * k;
           } else if (q.to) {
             q.x += (q.to.x - q.x) * k; q.y += (q.to.y - q.y) * k; q.z += (q.to.z - q.z) * k;
             q.h = turnTo(q.h, q.to.h, k);
@@ -186,8 +208,11 @@ export function createOthers(scene, hooks = {}) {
           if (q.hatch) q.root.scale.setScalar(q.to?.s || q.base);
           q.root.position.set(q.x, q.y, q.z);
           q.root.rotation.y = q.h;
+          // on a horse: their legs down its sides, feet in its stirrups (fitted once to their body)
+          if (astride && q.steed) seatRider(o.body, q.root);
           const v = Math.hypot(q.x - was.x, q.z - was.z) / Math.max(dt, 1e-3);
-          animateBeast(q.root, t, { air: o.pose === 'fly' ? 6 : o.pose === 'ride' ? 0 : q.air, speed: q.air > 0.8 ? 0 : v });
+          if (q.steed) animateAnimal(q.root, t, astride ? o.speed : v);
+          else animateBeast(q.root, t, { air: o.pose === 'fly' ? 6 : o.pose === 'ride' ? 0 : q.air, speed: q.air > 0.8 ? 0 : v });
         }
       }
     },

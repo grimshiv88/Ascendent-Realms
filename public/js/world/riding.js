@@ -19,7 +19,7 @@ import { buildBeast, animateBeast, makeBreath } from './beasts.js';
 const MOUNT_REACH = 3.2;  // how close you stand to get on
 const COME_FROM = 22;     // a called mount appears this far behind you (out of sight) and trots over
 
-export function createRiding({ scene, game, say, getPos, getHeading, groundAt, canRide, riderHeight = () => 1.8 }) {
+export function createRiding({ scene, game, say, getPos, getHeading, groundAt, canRide, riderHeight = () => 1.8, riderLegs = () => null }) {
   let horse = null;   // { item, id, a, m, root, x, z, heading, saddle, come }
   let riding = false;
   let flying = false; // (on a dragon or wyvern, up in the air)
@@ -36,34 +36,16 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     const id = ITEMS[item].mount;
     if (MOUNTS[id]?.beast) return makeBeast(item, id, x, z, heading);
     const a = ANIMALS[id];
-    const root = buildAnimal(a);
-    // a saddle and a blanket on its back (on the moving body, so they rise and fall with the gait)
-    const p = root.userData.beast;
-    root.updateMatrixWorld(true);
-    const bb = new THREE.Box3().setFromObject(p.body);
-    const by = p.body.position.y;
-    const top = bb.max.y - by, W = (bb.max.x - bb.min.x) / 2, len = bb.max.z - bb.min.z;
-    const sz = len * 0.04; // a little in front of the middle of the back
-    const leather = new THREE.MeshStandardMaterial({ color: '#5a3018', roughness: 0.6 });
-    const blanket = new THREE.MeshStandardMaterial({ color: id === 'camel' ? '#8a2a3a' : '#2a4a7a', roughness: 0.95 });
-    const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; p.body.add(o); return o; };
-    const cloth = add(new THREE.CylinderGeometry(W * 1.06, W * 1.06, len * 0.3, 18, 1, true, -Math.PI * 0.62, Math.PI * 1.24), blanket, 0, top - W * 1.06 + 0.02, sz);
-    cloth.rotation.x = Math.PI / 2; cloth.material.side = THREE.DoubleSide;
-    add(new THREE.BoxGeometry(W * 0.95, 0.09, len * 0.2), leather, 0, top + 0.05, sz);
-    add(new THREE.BoxGeometry(W * 0.7, 0.14, 0.07), leather, 0, top + 0.1, sz + len * 0.1);  // the pommel
-    add(new THREE.BoxGeometry(W * 0.8, 0.12, 0.07), leather, 0, top + 0.09, sz - len * 0.1); // the cantle
-    for (const s of [-1, 1]) {
-      add(new THREE.BoxGeometry(0.03, top * 0.55, 0.05), leather, s * W * 0.98, top * 0.7, sz);
-      add(new THREE.TorusGeometry(0.06, 0.012, 6, 12), new THREE.MeshStandardMaterial({ color: '#9a9a9a', metalness: 0.8, roughness: 0.3 }), s * W * 1.02, top * 0.42, sz).rotation.y = Math.PI / 2;
-    }
-    const saddle = by + top + 0.1;
-    // sized to its rider: a pony for a child, a great beast for a giant
-    const k = Math.max(0.6, Math.min(2.4, riderHeight() / 1.8));
+    const { root, saddle, seatZ: sz } = saddledAnimal(id);
+    // sized to its rider: a pony for a child or a short-legged dwarf or goblin, a great beast for a giant
+    // (by height and by leg length, so the legs reach down its sides)
+    const legs = riderLegs();
+    const k = Math.max(0.55, Math.min(2.4, legs ? 0.5 * riderHeight() / 1.8 + 0.5 * legs / 0.9 : riderHeight() / 1.8));
     root.scale.setScalar(k);
     root.position.set(x, groundAt(x, z), z);
     root.rotation.y = heading;
     scene.add(root);
-    horse = { item, id, a, m: MOUNTS[id], root, x, z, heading, saddle: saddle * k, seatZ: sz * k, come: false };
+    horse = { item, id, a, m: MOUNTS[id], root, x, z, heading, saddle: saddle * k, seatZ: sz * k, k, come: false };
     return horse;
   }
 
@@ -298,9 +280,12 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
     pace: (running, walk, run) => (riding ? (flying ? (running ? horse.m.fly / run : horse.m.fly / walk) : running ? horse.m.run / run : horse.m.walk / walk) : 1),
     jump: () => (riding ? horse.m.jump : null),
     saddle: () => (riding ? horse.saddle : 0),
+    animal: () => horse?.root || null, // (its body, for seatRider)
     seatZ: () => (riding ? horse.seatZ : 0),
     // the mount's legs reach out further than yours
     radius: () => (riding ? (horse.beast ? 1.5 : 0.7) : 0),
+    // your horse, donkey or camel (ridden or waiting), for players close by to see
+    seen: () => (horse && !horse.beast && game.has(horse.item) ? { k: `m:${horse.id}`, x: horse.x, y: horse.root.position.y, z: horse.z, h: horse.heading, air: 0, s: horse.k } : null),
     mount: () => (horse ? { item: horse.item, id: horse.id, x: horse.x, z: horse.z, riding, coming: horse.come } : null),
     // your dragon or wyvern, ridden or at your side (for world.js: what it fights, and what others see)
     companion: () => (horse?.beast && game.has(horse.item) ? { id: horse.id, x: horse.x, z: horse.z, y: horse.root.position.y, air: riding ? (flying ? 6 : 0) : horse.air || 0, heading: horse.heading, riding, len: BEASTS[horse.id].len, breath: BEASTS[horse.id].breath || null, reach: horse.reach } : null),
@@ -310,13 +295,162 @@ export function createRiding({ scene, game, say, getPos, getHeading, groundAt, c
   };
 }
 
-// The rider's pose: sitting astride, knees bent round the horse's sides, hands forward on the reins
-export function poseRide(rig) {
+// A horse, donkey or camel with a saddle and a blanket on its back (on the moving body, so they rise
+// and fall with the gait). Gives the animal, the saddle's height and how far forward its seat is
+// (unscaled). Also used to draw other players' mounts (others.js).
+export function saddledAnimal(id) {
+  const root = buildAnimal(ANIMALS[id]);
+  const p = root.userData.beast;
+  root.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(p.body);
+  const by = p.body.position.y;
+  const top = bb.max.y - by, W = (bb.max.x - bb.min.x) / 2, len = bb.max.z - bb.min.z;
+  const sz = len * 0.04; // a little in front of the middle of the back
+  const leather = new THREE.MeshStandardMaterial({ color: '#5a3018', roughness: 0.6 });
+  const blanket = new THREE.MeshStandardMaterial({ color: id === 'camel' ? '#8a2a3a' : '#2a4a7a', roughness: 0.95 });
+  const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; p.body.add(o); return o; };
+  const cloth = add(new THREE.CylinderGeometry(W * 1.06, W * 1.06, len * 0.3, 18, 1, true, -Math.PI * 0.62, Math.PI * 1.24), blanket, 0, top - W * 1.06 + 0.02, sz);
+  cloth.rotation.x = Math.PI / 2; cloth.material.side = THREE.DoubleSide;
+  add(new THREE.BoxGeometry(W * 0.95, 0.09, len * 0.2), leather, 0, top + 0.05, sz);
+  add(new THREE.BoxGeometry(W * 0.7, 0.14, 0.07), leather, 0, top + 0.1, sz + len * 0.1);  // the pommel
+  add(new THREE.BoxGeometry(W * 0.8, 0.12, 0.07), leather, 0, top + 0.09, sz - len * 0.1); // the cantle
+  // the stirrups, each on a leather strap from the saddle (seatRider hangs them where the rider's feet are)
+  const stirrups = [];
+  for (const s of [-1, 1]) {
+    const strap = add(new THREE.BoxGeometry(0.03, 1, 0.05), leather, s * W * 0.98, top * 0.7, sz);
+    strap.scale.y = top * 0.55;
+    const ring = add(new THREE.TorusGeometry(0.06, 0.012, 6, 12), new THREE.MeshStandardMaterial({ color: '#9a9a9a', metalness: 0.8, roughness: 0.3 }), s * W * 1.02, top * 0.42, sz);
+    ring.rotation.y = Math.PI / 2;
+    stirrups.push({ side: s, strap, ring });
+  }
+  const saddle = by + top + 0.1;
+  // the shape of its barrel (an oval along its length, on the moving body), for the rider's legs to go round
+  root.userData.seat = {
+    stirrups, top, sz, W, Hh: (bb.max.y - bb.min.y) / 2,
+    cx: (bb.min.x + bb.max.x) / 2 - p.body.position.x, cy: (bb.min.y + bb.max.y) / 2 - by,
+    z0: bb.min.z - p.body.position.z, z1: bb.max.z - p.body.position.z,
+  };
+  return { root, saddle, seatZ: sz };
+}
+
+// The rider's pose: sitting astride, knees bent round the horse's sides, hands forward on the reins.
+// This is the plain pose (on a dragon, or before the legs are fitted to a horse: see seatRider).
+// The rest values of what it turns are kept on each leg (leg.ride); the walk puts them back
+// (walkCycle in model.js), so the legs are straight again as soon as you get off.
+export function poseRide(rig, legs = null) {
   if (!rig.legs || !rig.arms) return;
   rig.legs.forEach((leg, i) => {
-    leg.hip.rotation.x = -0.8;
-    leg.hip.rotation.z = (i === 0 ? -1 : 1) * 0.38;
-    leg.knee.rotation.x = 1.05;
+    leg.ride ??= { y: leg.hip.rotation.y, z: leg.hip.rotation.z, az: leg.ankle ? leg.ankle.rotation.z : 0 };
+    const f = legs?.[i];
+    if (f) {
+      leg.hip.rotation.set(f[0], f[1], f[2]);
+      leg.knee.rotation.x = f[3];
+    } else {
+      leg.hip.rotation.x = -0.8;
+      leg.hip.rotation.z = (i === 0 ? -1 : 1) * 0.38;
+      leg.knee.rotation.x = 1.05;
+    }
+    // the foot flat in the stirrup, toes forward
+    if (leg.ankle) {
+      leg.ankle0 ??= leg.ankle.rotation.x;
+      leg.ankle.rotation.x = leg.ankle0 - (leg.hip.rotation.x + leg.knee.rotation.x) * 0.85;
+      leg.ankle.rotation.z = leg.ride.az - leg.hip.rotation.z * 0.8;
+    }
   });
-  for (const arm of rig.arms) { arm.shoulder.rotation.x = -0.35; arm.elbow.rotation.x = -0.95; }
+  // upright, hands low and forward over the pommel, holding the reins
+  for (const arm of rig.arms) { arm.shoulder.rotation.x = -0.2; if (arm.elbow) arm.elbow.rotation.x = -1.2; }
+}
+
+// Sitting properly on a saddled horse, donkey or camel (`mount` = its root, from saddledAnimal): each leg
+// goes over the saddle and down the animal's side, knee against the saddle flap, foot in the stirrup
+// low on its flank. Bodies differ (a dwarf's short legs, a giant's long ones, other leg shapes), so the
+// legs are fitted to this rider on this animal the first time, by trying small turns of the hip and knee
+// until the foot is as low as it reaches and no part of the leg goes into the animal; the fit is kept
+// (on the rig) and the stirrups are hung where the feet are. Call after the body is placed in the saddle.
+export function seatRider(body, mount) {
+  const rig = body.userData.rig;
+  const seat = mount?.userData.seat;
+  if (!rig?.legs || !rig.arms || !seat || !rig.legs.every((l) => l.knee)) { if (rig) poseRide(rig); return; }
+  const key = `${mount.uuid}:${mount.scale.x.toFixed(3)}`;
+  if (rig.rideFit?.key !== key) {
+    // (only once the body is really on its back: the moment you get on, it may not be under you yet)
+    mount.updateMatrixWorld(true);
+    body.updateMatrixWorld(true);
+    const h = mount.userData.beast.body.worldToLocal(rig.legs[0].hip.getWorldPosition(_v));
+    if (Math.abs(h.x - seat.cx) > seat.W || h.z < seat.z0 || h.z > seat.z1 || h.y < seat.cy) { poseRide(rig); return; }
+    rig.rideFit = { key, legs: fitLegs(body, rig, mount, seat) };
+  }
+  poseRide(rig, rig.rideFit.legs);
+}
+
+const _v = new THREE.Vector3(), _w = new THREE.Vector3();
+function fitLegs(body, rig, mount, seat) {
+  const B = mount.userData.beast.body;
+  mount.updateMatrixWorld(true);
+  body.updateMatrixWorld(true);
+  const { W, Hh, cx, cy, z0, z1, sz } = seat;
+  // where a point of the leg is, in the animal's body (its own size, before scaling to the rider)
+  const at = (o, y = 0) => B.worldToLocal(o.localToWorld(_v.set(0, y, 0)));
+  // how far inside the animal's barrel a point is (0 when outside it)
+  const inside = (p) => {
+    if (p.z < z0 || p.z > z1) return 0;
+    const r = Math.hypot((p.x - cx) / W, (p.y - cy) / Hh);
+    return Math.max(0, 1.1 - r);
+  };
+  const out = [];
+  rig.legs.forEach((leg, i) => {
+    const hipAt = at(leg.hip).clone();
+    const side = Math.sign(hipAt.x - cx) || (i === 0 ? -1 : 1);
+    const footY = cy - Hh * 0.5; // the stirrup hangs low on its flank...
+    const footZ = sz + (z1 - z0) * 0.02; // ...just under the seat
+    const foot = () => (leg.ankle ? at(leg.ankle) : at(leg.knee, -(leg.shinLen || 0.4)));
+    const cost = () => {
+      leg.hip.updateMatrixWorld(true);
+      let c = 0;
+      const k = at(leg.knee).clone();
+      for (const t of [0.35, 0.7]) c += inside(_w.copy(hipAt).lerp(k, t)) ** 2 * 60;
+      c += inside(k) ** 2 * 60;
+      const f = foot().clone();
+      for (const t of [0.5]) c += inside(_w.copy(k).lerp(f, t)) ** 2 * 60;
+      c += inside(f) ** 2 * 60;
+      c += ((f.y - footY) / Hh) ** 2 + ((f.z - footZ) / Hh) ** 2 * 0.6;
+      c += ((f.x - cx) * side / W - 1.25) ** 2 * 0.15; // the foot just out from its side
+      c += ((k.z - hipAt.z) / Hh) ** 2 * 0.05; // the knee not far forward or back
+      c += leg.hip.rotation.y ** 2 * 0.25; // (toes forward, not turned out)
+      return c;
+    };
+    // start from the plain pose, then improve it
+    const q = [-0.8, 0, (i === 0 ? -1 : 1) * 0.38, 1.05];
+    const lo = [-1.6, -0.6, -1.3, 0], hi = [0.4, 0.6, 1.3, 2.2];
+    const apply = () => { leg.hip.rotation.set(q[0], q[1], q[2]); leg.knee.rotation.x = q[3]; };
+    apply();
+    let best = cost(), step = 0.25;
+    for (let round = 0; round < 120 && step > 0.004; round++) {
+      let better = false;
+      for (let j = 0; j < 4; j++) {
+        for (const d of [step, -step]) {
+          const was = q[j];
+          q[j] = Math.min(hi[j], Math.max(lo[j], was + d));
+          apply();
+          const c = cost();
+          if (c < best - 1e-7) { best = c; better = true; break; }
+          q[j] = was;
+          apply();
+        }
+      }
+      if (!better) step *= 0.6;
+    }
+    out.push(q.slice());
+    // hang the stirrup on this side where the foot is
+    const st = seat.stirrups.find((s) => s.side === side);
+    if (st) {
+      leg.hip.updateMatrixWorld(true);
+      const f = foot();
+      st.ring.position.set(f.x, f.y - 0.03, f.z);
+      const topY = seat.top + 0.02;
+      st.strap.scale.y = Math.max(0.05, topY - f.y);
+      st.strap.position.set(f.x - side * 0.01, (topY + f.y) / 2, f.z);
+    }
+  });
+  return out;
 }
